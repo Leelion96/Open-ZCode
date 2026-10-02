@@ -1,3 +1,4 @@
+import { PRODUCT_USER_DIRECTORY } from "./product.js";
 export type BuiltinZCodeSlashCommandHelpEntry = {
   aliases?: readonly string[];
   details: readonly string[];
@@ -44,7 +45,7 @@ export const BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES: readonly BuiltinZCodeSlas
       details: [
         "Runs a normal agent turn that inspects the current workspace and creates or updates AGENTS.md.",
         "Existing AGENTS.md files should be edited rather than overwritten.",
-        "This command targets the workspace root, not the user default ~/.zcode/AGENTS.md.",
+        `This command targets the workspace root, not the user default ~/${PRODUCT_USER_DIRECTORY}/AGENTS.md.`,
       ],
       name: "init",
       summary: "Create or update workspace AGENTS.md instructions.",

@@ -1,10 +1,11 @@
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { maybeThrowStorageFsFault } from "../fs-fault-injection.js";
 
 export function getDefaultSessionDbPath(): string {
-  return join(homedir(), ".zcode", "cli", "db", "db.sqlite");
+  return join(homedir(), PRODUCT_USER_DIRECTORY, "cli", "db", "db.sqlite");
 }
 
 export function ensureParentDir(filePath: string): void {

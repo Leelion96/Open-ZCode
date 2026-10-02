@@ -1,4 +1,5 @@
 /* eslint-disable max-lines -- 桌面命令分发需要共享窗口与平台上下文，集中维护更便于一致性 */
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, session, shell } from "electron";
@@ -93,7 +94,7 @@ async function clearAllDataAndRelaunch(options: {
     title: "Clear All Data",
     message: "确定要清除所有数据吗？",
     detail:
-      "将删除 ~/.zcode/v2（配置、凭据、日志）和浏览器缓存（localStorage）。操作不可恢复，清除后应用将自动重启。",
+      `将删除 ~/${PRODUCT_USER_DIRECTORY}/v2（配置、凭据、日志）和浏览器缓存（localStorage）。操作不可恢复，清除后应用将自动重启。`,
   });
   if (response !== 1) {
     return;

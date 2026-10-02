@@ -1,5 +1,6 @@
 // File Config Adapter - Load and patch JSON configuration files
 
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import {
   existsSync,
   readFileSync,
@@ -59,7 +60,7 @@ export interface PluginRemovePatchResult {
 }
 
 const DEFAULT_CONFIG_FILE = "config.json";
-const DEFAULT_BASE_DIR = "~/.zcode/cli";
+const DEFAULT_BASE_DIR = `~/${PRODUCT_USER_DIRECTORY}/cli`;
 
 /**
  * Resolve path with ~ expansion

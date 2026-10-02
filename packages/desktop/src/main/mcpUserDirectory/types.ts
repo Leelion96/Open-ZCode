@@ -2,6 +2,7 @@
  * MCP 用户目录模块 - 类型和常量定义
  */
 
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import type { CliMcpSource, McpFileFormat } from "@zcode/shared";
 
 /**
@@ -22,7 +23,7 @@ export interface McpSourceDescriptor {
 export const MCP_SOURCE_DESCRIPTORS: McpSourceDescriptor[] = [
   {
     source: "zcodeagentmcp",
-    configDirSegments: [".zcode", "cli"],
+    configDirSegments: [PRODUCT_USER_DIRECTORY, "cli"],
     fileName: "config.json",
     format: "json",
     configKeyName: "mcp.servers",

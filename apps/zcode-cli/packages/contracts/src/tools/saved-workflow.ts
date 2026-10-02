@@ -7,6 +7,7 @@
 // 源运行）都以它为契约，core 侧的 store 也从这里取 schema——元数据形状一旦在写侧与读侧
 // 各自演化，症状是「刚保存的 workflow 列不出来」，而那是最难被单侧测试抓住的一类分叉。
 
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { z } from "zod";
 
 /**
@@ -28,7 +29,7 @@ export const WORKFLOW_DRAFTS_DIR = ".zcode/workflow-drafts";
  * 全局作用域的存放目录（相对 agent 进程的家目录）。落点 `~/.zcode/workflows/<name>.dwf.ts`
  * ——与 legacy Workflow 工具的用户根同一处，对所有项目可见。
  */
-export const SAVED_WORKFLOW_GLOBAL_DIR = ".zcode/workflows";
+export const SAVED_WORKFLOW_GLOBAL_DIR = `${PRODUCT_USER_DIRECTORY}/workflows`;
 
 /**
  * 名字的合法形状。与旧 `Workflow` 工具的解析器同一条模式（script-workflow-tool-port.ts）——

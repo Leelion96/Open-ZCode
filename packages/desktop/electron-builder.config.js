@@ -80,7 +80,7 @@ const desktopProductIdentity = resolveDesktopProductIdentity({
 const productKey = resolveProductKey(productConfig);
 // 安装器与客户端使用同一份产品配置，避免保护目录和安装清单归属漂移。
 await writeFile(new URL("./build/product.nsh", import.meta.url), [
-  `!define ZCODE_PRODUCT_USER_DIRECTORY ".zcode"`,
+  `!define ZCODE_PRODUCT_USER_DIRECTORY "${productConfig.isolateUserData ? `.${productKey}` : ".zcode"}"`,
   ...(productConfig.customizeIdentity ? [
     `!define ZCODE_INSTALL_MANIFEST_NAME "${resolveWindowsInstallManifestName(productKey, desktopProductIdentity.flavor)}"`,
     `!define ZCODE_INSTALLER_DEFAULT_LOG_PATH "$TEMP\\${productKey}-installer.log"`,

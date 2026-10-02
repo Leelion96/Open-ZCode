@@ -1,3 +1,4 @@
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { chmod, mkdir, open, readFile, rename, rm, stat, unlink } from "node:fs/promises";
 import type { FileHandle } from "node:fs/promises";
 import { execFile } from "node:child_process";
@@ -132,12 +133,12 @@ export async function resolveWorkspaceHookTrustStorePath(
 ): Promise<string> {
   const home = resolve(options.homeDir ?? homedir());
   const userConfigPath = resolve(
-    options.userConfigPath ?? join(home, ".zcode", "cli", "config.json"),
+    options.userConfigPath ?? join(home, PRODUCT_USER_DIRECTORY, "cli", "config.json"),
   );
   const config = await readUserConfig(userConfigPath);
   const storage = isRecord(config.storage) ? config.storage : {};
   const configured = typeof storage.dir === "string" ? storage.dir.trim() : "";
-  const storageRoot = configured ? resolveTrustedUserPath(configured, home) : join(home, ".zcode");
+  const storageRoot = configured ? resolveTrustedUserPath(configured, home) : join(home, PRODUCT_USER_DIRECTORY);
   return join(storageRoot, SECURITY_DIRECTORY, TRUST_STORE_FILE);
 }
 

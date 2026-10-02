@@ -2,6 +2,7 @@
  * MCP 用户目录模块 - Legacy 迁移
  */
 
+import { PRODUCT_CONFIG } from "@zcode/shared/product";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -197,6 +198,9 @@ function buildLegacyCommonMcpStorageCandidates(request?: MigrateLegacyCommonMcpR
   if (request?.legacyStorageDir) {
     candidates.push(request.legacyStorageDir);
   }
+
+  // 资料隔离开启后只导入用户明确指定的位置，不自动扫描官方 Electron 资料。
+  if (PRODUCT_CONFIG.isolateUserData) return candidates;
 
   const localAppData = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
   const appData = process.env.APPDATA ?? join(homedir(), "AppData", "Roaming");

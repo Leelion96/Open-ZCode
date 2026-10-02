@@ -1,3 +1,4 @@
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { open } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -15,8 +16,8 @@ export interface TrajectoryFileTail {
 // debug（开发态）与 rollout（生产态）都尝试，避免数据目录环境变量差异导致读不到。
 export function resolveModelIODirs(): string[] {
   const roots = new Set<string>([
-    join(homedir(), ".zcode", "cli"),
-    join(getDataBaseDir(), ".zcode", "cli"),
+    join(homedir(), PRODUCT_USER_DIRECTORY, "cli"),
+    join(getDataBaseDir(), PRODUCT_USER_DIRECTORY, "cli"),
   ]);
   return [...roots].flatMap((root) => [join(root, "debug"), join(root, "rollout")]);
 }

@@ -1,3 +1,4 @@
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import type {
   ScriptWorkflowRunStats,
   ScriptWorkflowStorePort,
@@ -171,7 +172,7 @@ export function inferScriptWorkflowScope(
   workingDirectory: string,
 ): "explicit" | "project" | "user" {
   if (isWithin(scriptPath, join(workingDirectory, ".zcode", "workflows"))) return "project";
-  if (isWithin(scriptPath, join(homedir(), ".zcode", "workflows"))) return "user";
+  if (isWithin(scriptPath, join(homedir(), PRODUCT_USER_DIRECTORY, "workflows"))) return "user";
   return "explicit";
 }
 

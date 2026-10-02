@@ -1,5 +1,5 @@
 /* path 规则集中维护：旧 task 快照与 provider 配置路径仍在这里收口。 */
-import { PRODUCT_CONFIG } from "@zcode/shared/product";
+import { PRODUCT_USER_DIRECTORY, PRODUCT_CONFIG } from "@zcode/shared/product";
 import { lstatSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -42,7 +42,7 @@ export function getDataBaseDir(): string {
 
 /** {dataBaseDir}/.zcode */
 export function getZCodeDataRootDir(): string {
-  return join(getDataBaseDir(), ".zcode");
+  return join(getDataBaseDir(), PRODUCT_USER_DIRECTORY);
 }
 
 /** 非项目对话共享的真实工作目录；默认 ~/.zcode/workspace/default。 */
@@ -236,8 +236,8 @@ export function getLegacyDeletedTaskSessionSnapshotPath(
  * state must only live at the default homedir location.
  */
 export async function copyDataDirectory(oldBaseDir: string, newBaseDir: string): Promise<void> {
-  const oldDir = join(oldBaseDir, ".zcode", "v2");
-  const newDir = join(newBaseDir, ".zcode", "v2");
+  const oldDir = join(oldBaseDir, PRODUCT_USER_DIRECTORY, "v2");
+  const newDir = join(newBaseDir, PRODUCT_USER_DIRECTORY, "v2");
   await cp(oldDir, newDir, {
     recursive: true,
     force: false,
