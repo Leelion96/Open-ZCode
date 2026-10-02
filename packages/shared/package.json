@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./product": "./src/product.ts",
     "./runtime-env": "./src/runtimeEnv.ts",
     "./mcp": "./src/mcp.ts",
     "./runtime-tool-runtime": "./src/runtime-tool-runtime.ts",

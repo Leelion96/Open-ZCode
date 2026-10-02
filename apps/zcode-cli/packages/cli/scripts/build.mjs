@@ -1,3 +1,4 @@
+import { loadProductConfig } from "../../../../../scripts/product-config.mjs";
 import { chmod, readFile, rm } from "node:fs/promises";
 import { readThirdPartyNotices, stageThirdPartyNotices } from "../../../../../scripts/third-party-notices.mjs";
 import { basename, dirname, relative, resolve } from "node:path";
@@ -125,6 +126,7 @@ export const resolveBuildOptions = (args = [], env = process.env) => {
   const e2eCoverage = env.ZCODE_E2E_COVERAGE === "1";
 
   return {
+    desktopAgent,
     // desktop-agent 正常发布仍需压缩且不携带 map；E2E coverage
     // 专用构建必须保留原始符号和 source map，c8 才能回映到各 package 的 TS 源码。
     minify: desktopAgent && !e2eCoverage,
@@ -136,6 +138,7 @@ export const resolveBuildAliases = ({
   cliDirectory = cliRoot,
   rootDirectory = projectRoot,
 } = {}) => ({
+  "@zcode/shared/product": resolve(rootDirectory, "../../packages/shared/src/product.ts"),
   "@zcode/shared-types": resolve(cliDirectory, "../shared-types/dist/index.js"),
   // plugin-host 启动只需这些独立入口，不能经通用 alias 重新求值 shared 总入口。
   "@zcode/shared/runtime-env": resolve(rootDirectory, "../../packages/shared/src/runtimeEnv.ts"),
@@ -204,6 +207,7 @@ export const resolveBuildAliases = ({
 export const buildCli = async ({
   cliDirectory = cliRoot,
   rootDirectory = projectRoot,
+  desktopAgent = false,
   minify = false,
   sourcemap = true,
   env = process.env,
@@ -231,6 +235,7 @@ export const buildCli = async ({
     bundle: true,
     define: {
       __CLI_VERSION__: JSON.stringify(cliVersion),
+      ...(desktopAgent ? { __ZCODE_PRODUCT_CONFIG__: JSON.stringify(await loadProductConfig()) } : {}),
     },
     entryPoints: [resolve(cliDirectory, "src/main.ts")],
     // Ink 7 and yoga-layout use top-level await, so the CJS CLI bundle loads the TUI

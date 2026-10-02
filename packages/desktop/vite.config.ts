@@ -1,3 +1,4 @@
+import { loadProductConfig } from "../../scripts/product-config.mjs";
 import { createRequire } from "node:module";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, resolve } from "node:path";
@@ -140,7 +141,7 @@ function stripViteRequestQuery(id: string) {
   return id.split("?")[0] ?? id;
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
   // `.env*` 只提供链接常量；当前产品环境由启动脚本或 CI 注入 ZCODE_ENV。
   const env = { ...loadEnv(mode, "../..", ""), ...process.env };
   const repoRoot = resolve(__dirname, "../..");
@@ -188,6 +189,7 @@ export default defineConfig(({ mode }) => {
     },
     server: { port: 5174, strictPort: true },
     define: {
+      __ZCODE_PRODUCT_CONFIG__: JSON.stringify(await loadProductConfig()),
       __ZCODE_ENDPOINT_ENV__: JSON.stringify(pickProductEndpointEnv(env)),
       __ZCODE_VERSION__: JSON.stringify(buildMetadata.appVersion),
       __ZCODE_COMMIT__: JSON.stringify(buildMetadata.buildCommitId),

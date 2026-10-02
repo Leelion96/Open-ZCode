@@ -1,3 +1,4 @@
+import { loadProductConfig } from "../../scripts/product-config.mjs";
 import { pickProductEndpointEnv } from "@zcode/shared/zcodeEndpoint";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -59,6 +60,7 @@ function loadEnvFiles(): Record<string, string> {
 }
 
 const env = loadEnvFiles();
+const productConfig = await loadProductConfig();
 const { environment: zcodeEnv } = await loadBuiltinProviderConfig();
 // 安装包身份与后端环境分轴：ZCODE_PREVIEW_IDENTITY=1 让生产后端的构建仍以 ZCode Preview 身份打包运行。
 const zcodeProductFlavor = resolveDesktopProductFlavor({ ...process.env, ZCODE_ENV: zcodeEnv });
@@ -96,6 +98,7 @@ const desktopTsupBundleSecurityOptions = resolveDesktopTsupBundleSecurityOptions
 
 function createSharedDefines() {
   return {
+    __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig),
     __ZCODE_VERSION__: JSON.stringify(buildMetadata.appVersion),
     __ZCODE_COMMIT__: JSON.stringify(buildMetadata.buildCommitId),
     __ZCODE_BUILD_TIME__: JSON.stringify(buildMetadata.buildTime),

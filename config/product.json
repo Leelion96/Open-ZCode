@@ -1,0 +1,7 @@
+{
+  "name": "Open-ZCode",
+  "appId": "dev.openzcode.app",
+  "customizeIdentity": true,
+  "isolateUserData": true,
+  "isolateProjectData": true
+}
