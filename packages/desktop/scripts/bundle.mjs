@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { loadProductConfig } from "../../../scripts/product-config.mjs";
 
 /* eslint-disable max-lines */
 // 该脚本聚合了打包入口、重试策略、计时与产物校验逻辑，短期内拆文件会影响 CI 稳定性。
@@ -43,7 +44,7 @@ const DEFAULT_TARGET_OS = "mac";
 const DEFAULT_TARGET_ARCH = "arm64";
 const desktopDistDir = process.env.ZCODE_DESKTOP_DIST_DIR || "dist";
 const desktopDistRoot = resolve(desktopRoot, desktopDistDir);
-const desktopProductIdentity = resolveDesktopProductIdentity(process.env);
+const desktopProductIdentity = resolveDesktopProductIdentity(process.env, await loadProductConfig());
 
 const osAliasMap = new Map([
   ["mac", "mac"],

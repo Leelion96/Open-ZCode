@@ -1,3 +1,5 @@
+!include "${__FILEDIR__}/product.nsh"
+
 !include nsDialogs.nsh
 !include FileFunc.nsh
 

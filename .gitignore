@@ -69,3 +69,6 @@ packages/desktop/.e2e-artifacts/
 packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
+
+# Generated from config/product.json by the desktop packaging config.
+packages/desktop/build/product.nsh

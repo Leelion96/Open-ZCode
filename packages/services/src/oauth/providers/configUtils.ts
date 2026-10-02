@@ -1,10 +1,11 @@
+import { PRODUCT_PROTOCOL_SCHEME } from "@zcode/shared/product";
 import {
   ZCODE_VERSION,
   buildRuntimeZCodeApiUrl,
   buildRuntimeZCodeEndpointUrls,
 } from "@zcode/shared";
 
-const DESKTOP_OAUTH_CALLBACK_URI = "zcode://oauth/callback";
+const DESKTOP_OAUTH_CALLBACK_URI = `${PRODUCT_PROTOCOL_SCHEME}://oauth/callback`;
 
 export function readEnv(env: NodeJS.ProcessEnv, key: string): string | undefined {
   const value = env[key];

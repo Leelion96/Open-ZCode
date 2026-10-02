@@ -1,3 +1,4 @@
+import { loadProductConfig, productKey as resolveProductKey } from "../../scripts/product-config.mjs";
 /* eslint-disable max-lines -- Electron Builder config keeps related packaging hooks together so build order stays explicit. */
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
@@ -71,10 +72,28 @@ import {
 const buildMetadata = getBuildMetadata();
 const targetPlatform = getTargetPlatform();
 const builtinProviderConfig = await loadBuiltinProviderConfig();
+const productConfig = await loadProductConfig();
 const desktopProductIdentity = resolveDesktopProductIdentity({
   ...process.env,
   ZCODE_ENV: builtinProviderConfig.environment,
-});
+}, productConfig);
+const productKey = resolveProductKey(productConfig);
+// 安装器与客户端使用同一份产品配置，避免保护目录和安装清单归属漂移。
+await writeFile(new URL("./build/product.nsh", import.meta.url), [
+  `!define ZCODE_PRODUCT_USER_DIRECTORY ".zcode"`,
+  ...(productConfig.customizeIdentity ? [
+    `!define ZCODE_INSTALL_MANIFEST_NAME "${resolveWindowsInstallManifestName(productKey, desktopProductIdentity.flavor)}"`,
+    `!define ZCODE_INSTALLER_DEFAULT_LOG_PATH "$TEMP\\${productKey}-installer.log"`,
+    `!define ZCODE_INSTALLER_ELEVATED_LOG_PATH "$WINDIR\\Logs\\${productKey}-installer.log"`,
+    `!define ZCODE_UNINSTALLER_LOG_PATH "$TEMP\\${productKey}-uninstaller.log"`,
+  ] : []),
+  "",
+].join("\n"));
+
+function resolveWindowsInstallManifestName(key, flavor) {
+  return `.${key}${flavor === "preview" ? "-preview" : ""}-install-manifest`;
+}
+
 const nativeSearchReleasePlan = resolveNativeSearchReleasePlan({
   platform: targetPlatform.os,
   arch: targetPlatform.arch,
@@ -167,7 +186,7 @@ const PACMAN_RUNTIME_DEPENDENCIES = [
   "xdg-utils",
 ];
 
-const WINDOWS_INSTALL_MANIFEST_NAME = ".zcode-install-manifest";
+const WINDOWS_INSTALL_MANIFEST_NAME = productConfig.customizeIdentity ? resolveWindowsInstallManifestName(productKey, desktopProductIdentity.flavor) : ".zcode-install-manifest";
 
 async function writeWindowsInstallManifest(context) {
   if (context.electronPlatformName !== "win32") return;
@@ -457,6 +476,7 @@ export default {
   // Linux deb 打包（fpm）会校验 package metadata 中的 homepage、author.email、maintainer。
   // CI 环境下若这些字段缺失会在产物阶段直接失败。这里统一在构建配置补齐，避免依赖外部注入。
   extraMetadata: {
+    ...(productConfig.customizeIdentity ? { name: desktopProductIdentity.packageName } : {}),
     version: buildMetadata.appVersion,
     zcodeProductFlavor: desktopProductIdentity.flavor,
     homepage: "https://zcode.z.ai",
@@ -654,7 +674,7 @@ export default {
       // 协议处理器的展示名之前使用小写 scheme，打包产物里的协议描述无法体现产品名。
       // 展示名跟随安装包身份；scheme 仍保持 zcode，因此两个应用中最后注册者会成为默认 handler。
       name: desktopProductIdentity.productName,
-      schemes: ["zcode"],
+      schemes: [productConfig.customizeIdentity ? productKey : "zcode"],
     },
   ],
   mac: {

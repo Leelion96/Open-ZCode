@@ -1,5 +1,7 @@
-const DEEP_LINK_SCHEME = "zcode";
-const DEEP_LINK_RE = /\bzcode:(?:\/\/|\/)?[^\s"'<>]+/i;
+import { PRODUCT_PROTOCOL_SCHEME } from "@zcode/shared/product";
+
+const DEEP_LINK_SCHEME = PRODUCT_PROTOCOL_SCHEME;
+const DEEP_LINK_RE = new RegExp(String.raw`(?<![\w+.-])${DEEP_LINK_SCHEME}:(?:\/\/|\/)?[^\s"'<>]+`, "i");
 const OAUTH_CALLBACK_HOSTS = new Set(["oauth"]);
 const PAYMENT_CALLBACK_HOST = "payment";
 const WORKSPACE_OPEN_HOST = "workspace";

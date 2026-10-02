@@ -1,4 +1,5 @@
 /* oxlint-disable eslint(max-lines) -- Deep Link 路由必须在同一模块内保持协议校验和投递原子性。 */
+import { PRODUCT_PROTOCOL_SCHEME } from "@zcode/shared/product";
 import { statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { app, BrowserWindow, dialog } from "electron";
@@ -402,7 +403,8 @@ export function registerDeepLinkProtocol(
   },
   options: { iconPath?: string } = {},
 ) {
-  const scheme = "zcode";
+  // 注册与解析必须使用同一协议，否则独立应用仍会接管官方回调。
+  const scheme = PRODUCT_PROTOCOL_SCHEME;
 
   if (process.defaultApp && process.argv.length >= 2) {
     const entry = resolve(process.argv[1]!);

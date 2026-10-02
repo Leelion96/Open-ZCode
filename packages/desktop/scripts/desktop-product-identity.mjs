@@ -1,3 +1,5 @@
+import { PRODUCT_CONFIG, productKey } from "@zcode/shared/product";
+
 /**
  * 构建期开关：为真时安装包使用 Preview 身份，而后端环境仍由 `ZCODE_ENV` 单独决定。
  * 典型用法是 `ZCODE_ENV=production ZCODE_PREVIEW_IDENTITY=1`，得到一个连接生产后端、
@@ -63,8 +65,22 @@ export function resolveDesktopProductFlavor(env = process.env) {
   return normalizeDesktopZCodeEnv(env) === "production" ? "production" : "preview";
 }
 
-export function resolveDesktopProductIdentity(env = process.env) {
-  return desktopProductIdentities[resolveDesktopProductFlavor(env)];
+export function resolveDesktopProductIdentity(env = process.env, product = PRODUCT_CONFIG) {
+  return resolveProductIdentityForFlavor(resolveDesktopProductFlavor(env), product);
+}
+
+function resolveProductIdentityForFlavor(flavor, product) {
+  const original = desktopProductIdentities[flavor];
+  if (!product.customizeIdentity) return original;
+  const suffix = flavor === "preview" ? "-preview" : "";
+  return {
+    ...original,
+    appId: `${product.appId}${flavor === "preview" ? ".preview" : ""}`,
+    productName: `${product.name}${flavor === "preview" ? " Preview" : ""}`,
+    packageName: `${productKey(product)}${suffix}`,
+    linuxExecutableName: `${productKey(product)}${suffix}`,
+    linuxPackageName: `${productKey(product)}${suffix}`,
+  };
 }
 
 /**
@@ -82,11 +98,15 @@ export function resolveDesktopArtifactSuffix(env = process.env) {
  * 和运行中的 Electron 进程会被 Windows 视为三个不同的应用。开发态继续保留旧身份，
  * 避免本地调试快捷方式和正式/Preview 安装包互相污染。
  */
-export function resolveWindowsAppUserModelIdForFlavor(flavor, runtime = { isPackaged: true }) {
+export function resolveWindowsAppUserModelIdForFlavor(
+  flavor,
+  runtime = { isPackaged: true },
+  product = PRODUCT_CONFIG,
+) {
   if (runtime.isPackaged === false) {
-    return "cn.aminer.zcode";
+    return product.customizeIdentity ? `${product.appId}.dev` : "cn.aminer.zcode";
   }
-  return desktopProductIdentities[flavor === "preview" ? "preview" : "production"].appId;
+  return resolveProductIdentityForFlavor(flavor === "preview" ? "preview" : "production", product).appId;
 }
 
 export function resolveWindowsAppUserModelId(env = process.env, runtime = { isPackaged: true }) {

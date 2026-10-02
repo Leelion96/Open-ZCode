@@ -1,3 +1,5 @@
+import rawProductConfig from "../../../config/product.json" with { type: "json" };
+import { parseProductConfig, productKey } from "@zcode/shared/product";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -6,6 +8,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { prepareDevElectronAppBundle } from "./devElectronAppBundle.mjs";
+const productConfig = parseProductConfig(rawProductConfig);
 
 const root = resolve(import.meta.dirname, "..");
 const mainBundle = resolve(root, "out/main/index.js");
@@ -121,7 +124,7 @@ if (process.platform === "darwin" && existsSync(electronBinary)) {
   const electronAppPath = resolve(electronBinary, "../../..");
   const devBundle = await prepareDevElectronAppBundle({
     electronAppPath,
-    runtimeRoot: resolve(root, "../../.zcode-runtime/desktop-dev"),
+    runtimeRoot: resolve(root, productConfig.customizeIdentity ? `../../.zcode-runtime/${productKey(productConfig)}-desktop-dev` : "../../.zcode-runtime/desktop-dev"),
     electronVersion: electronPackage.version,
     arch: process.arch,
   });

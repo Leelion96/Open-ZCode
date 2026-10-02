@@ -1,3 +1,5 @@
+import { PRODUCT_CONFIG, PRODUCT_PROTOCOL_SCHEME, PRODUCT_IDENTITY_KEY } from "@zcode/shared/product";
+import { ZCODE_PRODUCT_FLAVOR } from "@zcode/shared";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { installLinuxAppImageDesktopIconBestEffort } from "./desktopLinuxAppImageIcon.js";
@@ -8,10 +10,10 @@ import {
   type LinuxDeepLinkRegistrationLogger,
 } from "./desktopLinuxXdg.js";
 
-const LINUX_DEEP_LINK_DESKTOP_FILE = "zcode.desktop";
-const LINUX_DEEP_LINK_MIME_TYPE = "x-scheme-handler/zcode";
+const LINUX_DEEP_LINK_DESKTOP_FILE = `${PRODUCT_IDENTITY_KEY}${PRODUCT_CONFIG.customizeIdentity && ZCODE_PRODUCT_FLAVOR === "preview" ? "-preview" : ""}.desktop`;
+const LINUX_DEEP_LINK_MIME_TYPE = `x-scheme-handler/${PRODUCT_PROTOCOL_SCHEME}`;
 // 归属标记：用于识别用户级 zcode.desktop 是否由本应用写入（历史所有版本都带这行 Comment）。
-const LINUX_DESKTOP_ENTRY_OWNERSHIP_MARKER = "Comment=ZCode Desktop App";
+const LINUX_DESKTOP_ENTRY_OWNERSHIP_MARKER = PRODUCT_CONFIG.customizeIdentity ? `Comment=${PRODUCT_CONFIG.appId}` : "Comment=ZCode Desktop App";
 
 type LinuxDesktopEnv = {
   APPIMAGE?: string;
@@ -110,7 +112,7 @@ function createLinuxDeepLinkDesktopEntry(params: {
   iconName?: string;
 }): string {
   const productName = params.productName ?? "ZCode";
-  const iconName = params.iconName ?? "zcode";
+  const iconName = params.iconName ?? LINUX_DEEP_LINK_DESKTOP_FILE.slice(0, -8);
   const command = {
     executablePath: params.executablePath,
     args: params.args ?? [],

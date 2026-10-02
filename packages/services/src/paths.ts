@@ -1,4 +1,5 @@
 /* path 规则集中维护：旧 task 快照与 provider 配置路径仍在这里收口。 */
+import { PRODUCT_CONFIG } from "@zcode/shared/product";
 import { lstatSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -113,6 +114,12 @@ function collectWindowsForbiddenAppInstallDirs(
   const candidates = [
     options.appInstallDir,
     readEnvValue(env, ZCODE_WINDOWS_APP_INSTALL_DIR_ENV),
+    ...(PRODUCT_CONFIG.customizeIdentity ? [
+      programFiles ? win32.join(programFiles, PRODUCT_CONFIG.name) : null,
+      programFilesX86 ? win32.join(programFilesX86, PRODUCT_CONFIG.name) : null,
+      programW6432 ? win32.join(programW6432, PRODUCT_CONFIG.name) : null,
+      localAppData ? win32.join(localAppData, "Programs", PRODUCT_CONFIG.name) : null,
+    ] : []),
     programFiles ? win32.join(programFiles, "ZCode") : null,
     programFilesX86 ? win32.join(programFilesX86, "ZCode") : null,
     programW6432 ? win32.join(programW6432, "ZCode") : null,
