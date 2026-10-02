@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- skill 发现 + 校验 + 状态 + 通用目录管理在同一服务里聚合，分层后跳转成本更高 */
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import {
   access,
   appendFile,
@@ -72,7 +72,7 @@ interface SkillsServiceOptions {
 
 /** ZCode Agent 工作区级技能目录。 */
 function getWorkspaceZcodeSkillRoot(workspacePath: string): string {
-  return join(workspacePath, ".zcode", "skills");
+  return join(workspacePath, PRODUCT_PROJECT_DIRECTORY, "skills");
 }
 
 /** 兼容目录: workspace 级 `.agents/skills`, 仅在同层 `.zcode/skills` 没读到技能时 fallback。 */

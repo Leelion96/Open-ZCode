@@ -1,6 +1,6 @@
 # 产品配置基础设计
 
-状态：配置基础已实现；应用身份、用户资料和项目资料消费端按后续提交接入。
+状态：已实现配置基础及应用身份、用户资料、项目资料三类隔离。最终验收三类全开，不执行关闭场景。本轮不包含应用品牌配置或实现。
 
 ## 目标与范围
 
@@ -89,6 +89,7 @@ name + appId → 简单派生规则
 
 源码依据：packages/desktop/scripts/desktop-product-identity.mjs、packages/desktop/src/main/desktopRuntimeEnv.ts、packages/services/src/paths.ts、packages/services/src/runtime-tools/providerRuntimeResolver.ts、packages/shared/src/workspace-hook-config.ts、packages/ui/src/i18n/locales/zh-CN.ts。feature graph 尚缺产品配置种子，实现后按真实文件和符号更新。
 
+实施结果与实际验证见同目录 product-isolation-verification.md。关闭场景未验收。
 
 ## 最小必要改动原则
 

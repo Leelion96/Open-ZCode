@@ -2,7 +2,7 @@
  * MCP 用户目录模块 - 主入口
  */
 
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -39,7 +39,7 @@ const ZCODE_MCP_DESCRIPTOR: DirectoryMcpDescriptor = {
   source: "zcodeagentmcp",
   directorySource: "zcode",
   userConfigDirSegments: [PRODUCT_USER_DIRECTORY, "cli"],
-  workspaceConfigDirSegments: [".zcode"],
+  workspaceConfigDirSegments: [PRODUCT_PROJECT_DIRECTORY],
   fileName: "config.json",
   format: "json",
   configKeyName: "mcp.servers",

@@ -34,6 +34,8 @@ When a shortcut and the expert's way disagree, take the expert's way. Trim the w
 the task is genuinely small, never because thoroughness is inconvenient; trim the checking
 when a wrong claim costs little or a command has already decided it.
 
+Use the paths returned by the workflow tools: the product’s private directory name is configurable.
+
 ## 1. Is this the right tool, and how big should it be?
 
 | The request | The tool |
@@ -737,7 +739,7 @@ and §10 already carry its rules.
 
 Compilation happens first. **Diagnostics mean nothing ran** — there is no partially-started
 run to clean up — and they name the file your script is in. Every script you submit has one:
-an inline `script` is written under `.zcode/workflow-drafts/` before it is even compiled and
+an inline `script` is written under the product’s project `workflow-drafts/` directory before it is even compiled and
 the response hands you the path; a script you submitted by `path` is that file already. Each
 diagnostic reads `{path}:L{line}:C{column} {message}`, counted in the file, so it addresses
 an `Edit` as it stands.
@@ -811,7 +813,7 @@ nothing stopped and nothing created — that refusal means your `Edit` did not l
 the run cannot be amended (changing only `max_concurrency` or `subagent_model` is a real
 change and goes through).
 
-**Editing a draft asks nothing.** `.zcode/workflow-drafts/` is machine-owned and
+**Editing a draft asks nothing.** the product’s project `workflow-drafts/` directory is machine-owned and
 git-ignored, so an `Edit` or `Write` under it is pre-approved and opens no confirmation
 window. Editing a script is not running one: the window still stands between the file and
 the run, so fix the file freely and let the submission be the thing the user answers.
@@ -932,7 +934,7 @@ Compilation errors come back as diagnostics, counted in the script's file (§13)
 **Three sources; pass exactly one.**
 
 - `script`: a one-off workflow written inline. It is saved to a file under
-  `.zcode/workflow-drafts/` and the result names that file, whether the script compiled or
+  the product’s project `workflow-drafts/` directory and the result names that file, whether the script compiled or
   not; revise it by editing the file and resubmitting with `path`, never by pasting the
   script again.
 - `saved`: a workflow saved in this project or globally, by name —
@@ -1454,8 +1456,8 @@ settles. Do not wait for it or poll it with `TaskOutput`.
 
 Saves a script with its metadata so it can be run again by name — through `CreateWorkflow`'s
 `saved` source, discovered with `ListSavedWorkflows`. Project definitions go in
-`.zcode/workflows/<name>.dwf.ts`, committed with the repository and visible only inside it;
-global definitions go in `~/.zcode/workflows/<name>.dwf.ts` and are available from every
+the product’s project-private `workflows/<name>.dwf.ts`, committed with the repository and visible only inside it;
+global definitions go in the product’s user-private `workflows/<name>.dwf.ts` and are available from every
 project on this machine.
 
 **When to call it.**

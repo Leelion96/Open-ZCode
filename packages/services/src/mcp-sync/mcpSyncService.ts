@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- MCP 同步服务集中维护用户目录读写、远端导入和 filesystem 路径改写，拆分会增加远端配置同步回归面。 */
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -45,7 +45,7 @@ const ZCODE_MCP_DESCRIPTOR: DirectoryMcpDescriptor = {
   source: "zcode",
   directorySource: "zcode",
   userConfigDirSegments: [PRODUCT_USER_DIRECTORY, "cli"],
-  workspaceConfigDirSegments: [".zcode"],
+  workspaceConfigDirSegments: [PRODUCT_PROJECT_DIRECTORY],
   fileName: "config.json",
   configKeyName: "mcp.servers",
 };

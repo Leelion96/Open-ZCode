@@ -25,6 +25,19 @@ rules:
     - invariant-only
     - evidence-only
 nodes:
+  - id: capability.desktop-product-configuration
+    kind: capability
+    label: Desktop product identity and private data configuration
+    aliases: [product configuration, 应用身份隔离, 用户资料隔离, 项目资料隔离]
+    codeSeeds:
+      - file: packages/shared/src/product.ts
+        symbol: parseProductConfig
+      - file: packages/services/src/paths.ts
+        symbol: getZCodeDataRootDir
+    invariants:
+      - Desktop and its embedded Agent consume the same build configuration.
+      - User and project namespaces have independent switches; explicit paths retain priority.
+      - Standalone CLI and Web builds retain upstream defaults without product injection.
   - id: capability.model-selection
     kind: capability
     label: Model selection

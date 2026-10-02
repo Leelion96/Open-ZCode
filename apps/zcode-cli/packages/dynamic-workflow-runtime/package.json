@@ -20,7 +20,8 @@
     "lint:fix": "oxlint --write src"
   },
   "dependencies": {
-    "@zcode/dynamic-workflow": "workspace:*"
+    "@zcode/dynamic-workflow": "workspace:*",
+    "@zcode/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0"

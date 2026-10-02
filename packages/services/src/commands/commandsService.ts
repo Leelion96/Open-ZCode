@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- commandsService 需要集中处理目录来源优先级、读写和命令解析，拆分会削弱读取顺序的一致性 */
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { access, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -54,7 +54,7 @@ const ZCODE_COMMAND_DESCRIPTOR: CommandAgentSourceDescriptor = {
   agentSource: "zcodeAgent",
   directorySource: "zcode",
   userDirectorySegments: [PRODUCT_USER_DIRECTORY, "commands"],
-  workspaceDirectorySegments: [".zcode", "commands"],
+  workspaceDirectorySegments: [PRODUCT_PROJECT_DIRECTORY, "commands"],
   fileExtension: ".md",
   format: "markdown",
   namespaceSeparator: "/",

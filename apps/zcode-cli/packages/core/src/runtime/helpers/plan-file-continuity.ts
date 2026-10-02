@@ -1,3 +1,4 @@
+import { PRODUCT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 import { join } from "node:path";
 import {
   CoreErrorType,
@@ -21,7 +22,7 @@ function resolveApprovedPlanFilePath(input: {
 }): string {
   return join(
     input.workspaceRoot,
-    ".zcode",
+    PRODUCT_PROJECT_DIRECTORY,
     "plans",
     `plan-${sanitizePlanFileSessionId(input.sessionId)}.md`,
   );

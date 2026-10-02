@@ -1,3 +1,4 @@
+import { PRODUCT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import type { McpServerConfig, RuntimeConfigPatch } from "@zcode/contracts";
 import {
@@ -116,7 +117,9 @@ export function summarizeProjectConfigs(files: ProjectConfigFile[]): ProjectConf
 
 function getProjectConfigBaseDir(path: string): string {
   const configDirectory = dirname(path);
-  return basename(configDirectory) === ".zcode" ? dirname(configDirectory) : configDirectory;
+  return basename(configDirectory) === PRODUCT_PROJECT_DIRECTORY || basename(configDirectory) === ".zcode"
+    ? dirname(configDirectory)
+    : configDirectory;
 }
 
 function normalizeProjectConfig(config: RuntimeConfigPatch, baseDir: string): RuntimeConfigPatch {

@@ -1,4 +1,4 @@
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
@@ -22,7 +22,7 @@ export async function resolveUserSubagentRoot(options?: SubagentStorageOptions):
 }
 
 export function resolveWorkspaceSubagentRoot(workspacePath: string): string {
-  return join(workspacePath, ".zcode", "agents");
+  return join(workspacePath, PRODUCT_PROJECT_DIRECTORY, "agents");
 }
 
 export async function resolveSubagentStateFile(options?: SubagentStorageOptions): Promise<string> {

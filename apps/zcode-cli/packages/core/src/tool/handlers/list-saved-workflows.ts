@@ -15,6 +15,7 @@ import {
   ListSavedWorkflowsOutputJsonSchema,
   ListSavedWorkflowsOutputSchema,
   SAVED_WORKFLOW_PROJECT_DIR,
+  SAVED_WORKFLOW_GLOBAL_DIR,
   type ListSavedWorkflowsOutput,
   type ModelMessageContent,
 } from "@zcode/contracts";
@@ -26,7 +27,7 @@ const LIST_SAVED_WORKFLOWS_TIMEOUT_MS = 10_000;
 const LIST_SAVED_WORKFLOWS_MODEL_BYTES = 24_000;
 
 const LIST_SAVED_WORKFLOWS_DESCRIPTION = [
-  `Lists the dynamic workflows saved in this project (\`${SAVED_WORKFLOW_PROJECT_DIR}/\`, keyed on the session's working directory) and the global archive (\`~/.zcode/workflows\`, available from every project). These are workflow DEFINITIONS you can run, not past runs — for the run history use ListWorkflowRuns instead.`,
+  `Lists the dynamic workflows saved in this project (\`${SAVED_WORKFLOW_PROJECT_DIR}/\`, keyed on the session's working directory) and the global archive (\`~/${SAVED_WORKFLOW_GLOBAL_DIR}\`, available from every project). These are workflow DEFINITIONS you can run, not past runs — for the run history use ListWorkflowRuns instead.`,
   "",
   "- Each row gives the name, what the workflow does, when to reach for it, and the arguments it takes.",
   "- Run one by passing its name to CreateWorkflow as `saved: { name, args }`. The user still confirms the run.",

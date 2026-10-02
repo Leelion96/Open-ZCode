@@ -1,3 +1,4 @@
+import { PRODUCT_PROJECT_CONFIG_FILE, PRODUCT_PROJECT_DIRECTORY } from "./product.js";
 import { existsSync, statSync } from "node:fs";
 import { access, readFile, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
@@ -173,8 +174,8 @@ export function resolveWorkspaceHookConfiguredGates(input: {
  */
 function buildWorkspaceHookCandidatePaths(directories: readonly string[]): string[] {
   return directories.flatMap((directory) => [
-    join(directory, "zcode.json"),
-    join(directory, ".zcode", "config.json"),
+    join(directory, PRODUCT_PROJECT_CONFIG_FILE),
+    join(directory, PRODUCT_PROJECT_DIRECTORY, "config.json"),
   ]);
 }
 
@@ -232,17 +233,20 @@ export function createWorkspaceHookSourceInput(input: {
   const configDirectory = dirname(canonicalPath);
   return {
     canonicalPath,
-    baseDir: basename(configDirectory) === ".zcode" ? dirname(configDirectory) : configDirectory,
+    baseDir:
+      basename(configDirectory) === PRODUCT_PROJECT_DIRECTORY || basename(configDirectory) === ".zcode"
+        ? dirname(configDirectory)
+        : configDirectory,
     discoveryOrder: input.discoveryOrder,
     configFileKind: explicitProjectConfig
       ? "explicit"
-      : basename(canonicalPath) === "zcode.json"
+      : basename(canonicalPath) === PRODUCT_PROJECT_CONFIG_FILE
         ? "zcode.json"
         : ".zcode/config.json",
     explicitProjectConfig,
     editable:
       !explicitProjectConfig &&
-      canonicalPath === resolve(input.workingDirectory, ".zcode", "config.json"),
+      canonicalPath === resolve(input.workingDirectory, PRODUCT_PROJECT_DIRECTORY, "config.json"),
     hooks: input.hooks,
   };
 }

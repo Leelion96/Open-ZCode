@@ -1,3 +1,4 @@
+import { PRODUCT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 import { basename, resolve } from "node:path";
 import {
   createWorkspaceHookBundleSnapshot,
@@ -28,7 +29,7 @@ export function createWorkspaceHookReviewMutationPort(
   options: WorkspaceHookReviewMutationPortOptions,
 ): WorkspaceHookReviewMutationPort {
   const workingDirectory = resolve(options.workingDirectory);
-  const editableConfigPath = resolve(workingDirectory, ".zcode", "config.json");
+  const editableConfigPath = resolve(workingDirectory, PRODUCT_PROJECT_DIRECTORY, "config.json");
   const lockKey = editableConfigPath;
 
   return {

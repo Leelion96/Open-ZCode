@@ -1,4 +1,5 @@
 /* oxlint-disable eslint(max-lines) -- 发布、远端 staging、安全轮询和原子导入共享同一 attempt 生命周期，拆分会让清理与进度状态失去单一 owner。 */
+import { PRODUCT_PROJECT_SHARE_DIRECTORY } from "@zcode/shared/product";
 import { createHash, randomUUID } from "node:crypto";
 import type { Dirent } from "node:fs";
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -1387,7 +1388,7 @@ export class ConversationShareService implements IConversationShareService {
         : this.conversationWorkspaceRoot;
     const workspaceIdentity =
       input.targetWorkspaceIdentity && !remoteTarget ? input.targetWorkspaceIdentity : undefined;
-    const shareRoot = join(workspacePath, ".zcode-share");
+    const shareRoot = join(workspacePath, PRODUCT_PROJECT_SHARE_DIRECTORY);
     const importRoot = join(shareRoot, sanitizeFileSegment(continuation.share.share_id));
     const markerPath = join(importRoot, ".zcode-share-import.json");
     const stagingPath = join(importRoot, ".share-import-staging");
@@ -1546,7 +1547,7 @@ export class ConversationShareService implements IConversationShareService {
         await writeFile(join(stagingPath, fileName), bytes);
         installedArtifacts.push({
           artifactId: artifact.artifact_id,
-          workspaceRelativePath: `.zcode-share/${sanitizeFileSegment(continuation.share.share_id)}/shared-artifacts/${fileName}`,
+          workspaceRelativePath: `${PRODUCT_PROJECT_SHARE_DIRECTORY}/${sanitizeFileSegment(continuation.share.share_id)}/shared-artifacts/${fileName}`,
           displayName: artifact.display_name,
           mimeType: artifact.mime_type,
           sha256: artifact.sha256,
@@ -1714,7 +1715,7 @@ export class ConversationShareService implements IConversationShareService {
     workspacePath: string;
     contextId: string;
   }): Promise<ImportedConversationShare | null> {
-    const shareRoot = join(input.workspacePath, ".zcode-share");
+    const shareRoot = join(input.workspacePath, PRODUCT_PROJECT_SHARE_DIRECTORY);
     let entries: Dirent[];
     try {
       entries = await readdir(shareRoot, { withFileTypes: true });
@@ -2168,7 +2169,7 @@ export class ConversationShareService implements IConversationShareService {
     await this.completedImportsLoaded;
     // 只扫描默认 conversation workspace 的 import-owned 子目录；其它 workspace 的 marker
     // 在下一次带 target 的导入请求中处理，避免启动期枚举并触碰用户项目目录。
-    const shareRoot = join(this.conversationWorkspaceRoot, ".zcode-share");
+    const shareRoot = join(this.conversationWorkspaceRoot, PRODUCT_PROJECT_SHARE_DIRECTORY);
     const imports = await readdir(shareRoot, { withFileTypes: true }).catch(() => []);
     for (const entry of imports) {
       if (!entry.isDirectory()) continue;

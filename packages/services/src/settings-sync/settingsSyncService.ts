@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- settings-sync 需要集中维护外部 skills/commands/plugins/MCP 扫描、去重和导入状态机，后续按资源类别拆分 */
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import type {
   McpServerConfig,
   SettingsSyncAgent,
@@ -423,7 +423,7 @@ function resolveUserHomeDir(): string {
 }
 
 function getWorkspaceZcodeSkillRoot(workspacePath: string): string {
-  return join(workspacePath, ".zcode", "skills");
+  return join(workspacePath, PRODUCT_PROJECT_DIRECTORY, "skills");
 }
 
 function getUserZcodeSkillRoot(): string {
@@ -431,7 +431,7 @@ function getUserZcodeSkillRoot(): string {
 }
 
 function getWorkspaceZcodeCommandRoot(workspacePath: string): string {
-  return join(workspacePath, ".zcode", "commands");
+  return join(workspacePath, PRODUCT_PROJECT_DIRECTORY, "commands");
 }
 
 function getUserZcodeCommandRoot(): string {
@@ -439,7 +439,7 @@ function getUserZcodeCommandRoot(): string {
 }
 
 function getWorkspaceZcodePluginRoot(workspacePath: string): string {
-  return join(workspacePath, ".zcode", "plugins");
+  return join(workspacePath, PRODUCT_PROJECT_DIRECTORY, "plugins");
 }
 
 function getUserZcodePluginRoot(): string {
@@ -451,7 +451,7 @@ function getUserZcodeCliConfigPath(): string {
 }
 
 function getWorkspaceZcodeConfigPath(workspacePath: string): string {
-  return join(workspacePath, ".zcode", "config.json");
+  return join(workspacePath, PRODUCT_PROJECT_DIRECTORY, "config.json");
 }
 
 function getClaudeUserAgentsFileSourcePath(): string {

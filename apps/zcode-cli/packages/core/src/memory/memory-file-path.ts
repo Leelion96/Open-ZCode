@@ -1,3 +1,4 @@
+import { PRODUCT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 import { isAbsolute, relative } from "node:path";
 
 import { resolveWorkspacePath } from "../tool/path-policy.js";
@@ -15,6 +16,7 @@ const SENSITIVE_MEMORY_PATH_SEGMENTS = new Set([
   "objects",
   "refs",
   ".zcode",
+  PRODUCT_PROJECT_DIRECTORY,
   "skills",
   "commands",
   "agents",

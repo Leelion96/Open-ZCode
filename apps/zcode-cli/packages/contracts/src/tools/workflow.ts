@@ -2,6 +2,7 @@
 // Workflow Tool - deterministic multi-agent workflow launcher
 // ============================================================
 
+import { PRODUCT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 import { z } from "zod";
 import type { TraceId } from "../interfaces/shared.js";
 import { toToolJsonSchema } from "./json-schema.js";
@@ -28,7 +29,7 @@ export const WorkflowInputSchema = z
       .min(1)
       .optional()
       .describe(
-        "Name of a predefined workflow (built-in or from .zcode/workflows/). Resolves to a self-contained script.",
+        `Name of a predefined workflow (built-in or from ${PRODUCT_PROJECT_DIRECTORY}/workflows/). Resolves to a self-contained script.`,
       ),
     resumeFromRunId: z
       .string()

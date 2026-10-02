@@ -1,11 +1,11 @@
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_USER_DIRECTORY, PRODUCT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 import type { ZCodeProvider } from "@zcode/shared";
 
 type SkillSourceType = "glm" | "unknown";
 
 function resolveSkillSourceType(skillPath: string): SkillSourceType {
   const normalized = skillPath.replaceAll("\\", "/").toLowerCase();
-  if (normalized.includes(`/${PRODUCT_USER_DIRECTORY}/skills/`) || normalized.includes("/.zcode/skills/")) {
+  if (normalized.includes(`/${PRODUCT_USER_DIRECTORY}/skills/`) || normalized.includes(`/${PRODUCT_PROJECT_DIRECTORY}/skills/`) || normalized.includes("/.zcode/skills/")) {
     return "glm";
   }
   if (normalized.includes(`/${PRODUCT_USER_DIRECTORY}/cli/plugins/cache/`) || normalized.includes("/.zcode/cli/plugins/cache/")) {

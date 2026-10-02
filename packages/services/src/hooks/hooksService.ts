@@ -1,4 +1,4 @@
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -57,7 +57,7 @@ function resolveUserHomeDir(): string {
 function getRootDir(source: SettingsDirectorySource, workspacePath?: string): string {
   const baseDir = workspacePath ?? resolveUserHomeDir();
   if (source === "zcode") {
-    return workspacePath ? join(baseDir, ".zcode") : join(baseDir, PRODUCT_USER_DIRECTORY, "cli");
+    return workspacePath ? join(baseDir, PRODUCT_PROJECT_DIRECTORY) : join(baseDir, PRODUCT_USER_DIRECTORY, "cli");
   }
   return join(baseDir, source === "agents" ? ".agents" : ".claude");
 }
@@ -290,7 +290,7 @@ async function saveHooksImpl(params: {
   workspacePath: string;
   hooks: Hook[];
 }): Promise<void> {
-  const currentProjectConfigPath = resolve(params.workspacePath, ".zcode", "config.json");
+  const currentProjectConfigPath = resolve(params.workspacePath, PRODUCT_PROJECT_DIRECTORY, "config.json");
   const userHooks = params.hooks.filter(
     (hook) =>
       hook.editable !== false &&

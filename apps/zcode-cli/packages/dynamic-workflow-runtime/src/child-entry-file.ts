@@ -14,6 +14,7 @@
  *     由 harness 归一成 failed 结算。
  */
 
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_WORKFLOW_TEMP_DIRECTORY } from "@zcode/shared/product";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -44,12 +45,12 @@ export interface ChildEntryFile {
 
 /** 项目内的入口文件目录。 */
 export function workflowRunsDir(cwd: string): string {
-  return join(cwd, ".zcode", "workflow-runs");
+  return join(cwd, PRODUCT_PROJECT_DIRECTORY, "workflow-runs");
 }
 
 /** 回落目录（OS 临时目录下，跨项目共用）。 */
 export function fallbackWorkflowRunsDir(): string {
-  return join(tmpdir(), "zcode-workflow-runs");
+  return join(tmpdir(), PRODUCT_WORKFLOW_TEMP_DIRECTORY);
 }
 
 /** runId 安全字符集之外一律换成 `_`，杜绝路径分隔符之类混进文件名。 */

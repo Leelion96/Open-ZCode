@@ -1,4 +1,4 @@
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -315,7 +315,7 @@ async function resolveNamedWorkflowPath(
 ): Promise<string> {
   const fileName = workflowFileName(name);
   const candidates = [
-    join(deps.workingDirectory, ".zcode", "workflows", fileName),
+    join(deps.workingDirectory, PRODUCT_PROJECT_DIRECTORY, "workflows", fileName),
     join(homedir(), PRODUCT_USER_DIRECTORY, "workflows", fileName),
   ];
   const builtIn = BUILTIN_WORKFLOW_ALLOWLIST.get(name);

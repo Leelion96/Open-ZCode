@@ -2,6 +2,7 @@
  * 安全边界约束：本文件被匿名公开分享页（packages/web/src/share）直接引用，新增依赖必须考虑
  * 公开页 bundle 体积与无 Desktop 宿主（window.zcode / PlatformProvider / tab store）的运行环境；
  * Desktop 专属能力（如 open-with 子树）一律由消费方经组件注入，不得静态 import。 */
+import { PRODUCT_PROJECT_SHARE_DIRECTORY } from "@zcode/shared/product";
 import {
   createContext,
   Fragment,
@@ -184,7 +185,7 @@ function resolveImportedArtifactPath(
   if (
     segments.length !== 4 ||
     segments.some((segment) => !segment || segment === "." || segment === "..") ||
-    segments[0] !== ".zcode-share" ||
+    segments[0] !== PRODUCT_PROJECT_SHARE_DIRECTORY ||
     segments[2] !== "shared-artifacts"
   ) {
     return null;

@@ -461,6 +461,9 @@ importers:
       '@zcode/dynamic-workflow':
         specifier: workspace:*
         version: link:../dynamic-workflow
+      '@zcode/shared':
+        specifier: workspace:*
+        version: link:../../../../packages/shared
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

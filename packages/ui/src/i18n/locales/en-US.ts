@@ -4308,9 +4308,9 @@ const enUS: Record<string, string> = {
   "settings.hooks.title": "Hooks",
   "settings.workspaceFileSearch.title": "Workspace Search Scope",
   "settings.workspaceFileSearch.description":
-    "Edit .zcodeignore rules (gitignore syntax) that scope workspace file search. Takes effect on the next search after saving.",
+    "Edit {productProjectIgnoreFile} rules (gitignore syntax) that scope workspace file search. Takes effect on the next search after saving.",
   "settings.workspaceFileSearch.templateHint":
-    ".zcodeignore does not exist yet: the content below is the initial preview (.gitignore copy + default exclusions); it is written to the workspace only after saving.",
+    "{productProjectIgnoreFile} does not exist yet: the content below is the initial preview (.gitignore copy + default exclusions); it is written to the workspace only after saving.",
   "settings.workspaceFileSearch.editorLabel": "Workspace search ignore rules editor",
   "settings.workspaceFileSearch.save": "Save",
   "settings.workspaceFileSearch.saved": "Saved; effective on the next search",
@@ -4321,7 +4321,7 @@ const enUS: Record<string, string> = {
   "settings.workspaceFileSearch.transformFailed":
     "Failed to apply the section operation; check the logs",
   "settings.workspaceFileSearch.reveal": "Reveal file location",
-  "settings.workspaceFileSearch.revealHint": "Save first; .zcodeignore lives at the workspace root",
+  "settings.workspaceFileSearch.revealHint": "Save first; {productProjectIgnoreFile} lives at the workspace root",
   "settings.workspaceFileSearch.unsaved": "Unsaved changes",
   "settings.workspaceFileSearch.noWorkspace":
     "No workspace is open, so search ignore rules cannot be configured.",
