@@ -1,3 +1,4 @@
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import {
   DEFAULT_ZCODE_ENDPOINT_ORIGIN,
   ZCODE_VERSION,
@@ -66,7 +67,7 @@ function getForceUpdateMinimalVersionFromClientConfig(config: unknown): string |
   };
   if (typeof envelope.code === "number" && envelope.code !== 0) {
     // /client/configs 与服务层一样只有 code=0 才可信，避免错误 envelope 携带旧 data 时误触发启动强更。
-    throw new Error(`ZCode client config failed: ${envelope.code}`);
+    throw new Error(`${PRODUCT_DISPLAY_NAME} client config failed: ${envelope.code}`);
   }
   return getForceUpdateMinimalVersionFromConfig(envelope.data?.configs);
 }
@@ -195,7 +196,7 @@ function formatForceUpdateDialogText(
 ): ForceUpdateDialogText {
   if (locale === "zh-CN") {
     return {
-      title: "需要升级 ZCode",
+      title: `需要升级 ${PRODUCT_DISPLAY_NAME}`,
       message: "当前版本无法继续使用",
       detail: `当前版本：v${requirement.currentVersion}\n最低可用版本：v${requirement.minimalVersion}`,
       autoUpdateButton: "自动升级",
@@ -205,7 +206,7 @@ function formatForceUpdateDialogText(
   }
 
   return {
-    title: "Update ZCode",
+    title: `Update ${PRODUCT_DISPLAY_NAME}`,
     message: "The current version can no longer be used",
     detail: `Current version: v${requirement.currentVersion}\nMinimum supported version: v${requirement.minimalVersion}`,
     autoUpdateButton: "Auto update",

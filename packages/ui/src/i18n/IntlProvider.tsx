@@ -1,4 +1,4 @@
-import { PRODUCT_USER_DIRECTORY, PRODUCT_PROJECT_IGNORE_FILE } from "@zcode/shared/product";
+import { PRODUCT_USER_DIRECTORY, PRODUCT_PROJECT_IGNORE_FILE, PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import {
   createContext,
   useContext,
@@ -117,7 +117,7 @@ function createIntl(locale: Locale): IntlInstance {
   return {
     formatMessage({ id }, values) {
       let msg = messages[id] ?? id;
-      values = { productUserDirectory: PRODUCT_USER_DIRECTORY, productProjectIgnoreFile: PRODUCT_PROJECT_IGNORE_FILE, ...values };
+      values = { productName: PRODUCT_DISPLAY_NAME, productUserDirectory: PRODUCT_USER_DIRECTORY, productProjectIgnoreFile: PRODUCT_PROJECT_IGNORE_FILE, ...values };
       if (values) {
         for (const [key, val] of Object.entries(values)) {
           msg = msg.replaceAll(`{${key}}`, String(val));

@@ -45,6 +45,61 @@ test("packaging identities and callback parsing are Open-ZCode", async () => {
   assert.equal(links.isWorkspaceOpenUrl(new URL("zcode://workspace/open?path=/project")), false);
 });
 
+test("packaged company, publisher and copyright use the configured display name", async () => {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const { loadProductConfig } = await import("../product-config.mjs");
+  const product = await loadProductConfig();
+  const inspect = `
+    import { registerHooks, createRequire } from "node:module";
+    import { readFile } from "node:fs/promises";
+    import { pathToFileURL } from "node:url";
+    import { resolve } from "node:path";
+    const product = JSON.parse(process.argv[1]);
+    const configUrl = pathToFileURL(resolve("packages/desktop/electron-builder.config.js")).href;
+    const productUrl = pathToFileURL(resolve("scripts/product-config.mjs")).href;
+    const dataModule = (source) => ({ url: "data:text/javascript," + encodeURIComponent(source), shortCircuit: true });
+    registerHooks({ resolve(specifier, context, nextResolve) {
+      if (context.parentURL === configUrl && specifier === "node:fs/promises") {
+        return dataModule('export { readdir } from "node:fs/promises"; export async function writeFile() {}');
+      }
+      if (context.parentURL === configUrl && specifier.endsWith("scripts/product-config.mjs")) {
+        return dataModule('export { productKey } from ' + JSON.stringify(productUrl) + '; export async function loadProductConfig() { return ' + JSON.stringify(product) + '; }');
+      }
+      return nextResolve(specifier, context);
+    } });
+    const { default: config } = await import(configUrl);
+    const metadata = { ...JSON.parse(await readFile("packages/desktop/package.json", "utf8")), ...config.extraMetadata };
+    const require = createRequire(import.meta.url);
+    require("app-builder-lib");
+    const { AppInfo } = require("app-builder-lib/out/appInfo.js");
+    const { NsisTarget } = require("app-builder-lib/out/targets/nsis/NsisTarget.js");
+    const appInfo = new AppInfo({ metadata, config, framework: { defaultAppIdPrefix: "com.electron." } });
+    const versionKey = NsisTarget.prototype.computeVersionKey.call({ options: {}, packager: { appInfo, platformSpecificBuildOptions: {} } });
+    process.stdout.write(JSON.stringify({ companyName: appInfo.companyName, copyright: appInfo.copyright, versionKey, maintainer: config.linux.maintainer, author: metadata.author, homepage: metadata.homepage }));
+  `;
+  for (const name of [product.name, "Team Studio"]) {
+    for (const platform of ["darwin", "win32", "linux"]) {
+      const { stdout } = await promisify(execFile)(process.execPath, [
+        "--input-type=module", "-e", inspect, JSON.stringify({ ...product, name }),
+      ], { env: { ...process.env, ZCODE_ENV: "production", ZCODE_PREVIEW_IDENTITY: "0", ZCODE_TARGET_OS: platform, ZCODE_TARGET_ARCH: "x64" } });
+      const result = JSON.parse(stdout);
+      assert.equal(result.companyName, name);
+      assert.equal(result.copyright, `Copyright © ${new Date().getFullYear()} ${name}`);
+      assert.ok(result.versionKey.includes(`/LANG=1033 CompanyName "${name}"`));
+      assert.ok(result.versionKey.includes(`/LANG=1033 LegalCopyright "${result.copyright}"`));
+      assert.ok(result.maintainer.startsWith(`${name} <`));
+      if (platform === "linux") {
+        assert.equal(result.author.email, "dev@zcode.z.ai");
+        assert.equal(result.homepage, "https://zcode.z.ai");
+      } else {
+        assert.equal(Object.hasOwn(result.author, "email"), false);
+        assert.equal(Object.hasOwn(result, "homepage"), false);
+      }
+    }
+  }
+});
+
 test("Finder registration writes only the product-owned workflow", async () => {
   const home = join(fixtures, "finder-home");
   const official = join(home, "Library/Services/Open in ZCode.workflow/sentinel");

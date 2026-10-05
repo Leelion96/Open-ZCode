@@ -1,3 +1,4 @@
+import { PRODUCT_DISPLAY_NAME, PRODUCT_PROCESS_PREFIX } from "@zcode/shared/product";
 import { rm } from "node:fs/promises";
 import { isAbsolute, resolve, sep } from "node:path";
 import type { GitCheckpointDiff, GitCheckpointFileDiff } from "@zcode/shared";
@@ -184,10 +185,10 @@ export function buildAffectedRepoPaths(files: GitCheckpointFileDiff[]): string[]
 export function buildCheckpointEnv(tempIndexPath: string): NodeJS.ProcessEnv {
   return {
     GIT_INDEX_FILE: tempIndexPath,
-    GIT_AUTHOR_NAME: "ZCode Checkpoint",
-    GIT_AUTHOR_EMAIL: "checkpoint@zcode.local",
-    GIT_COMMITTER_NAME: "ZCode Checkpoint",
-    GIT_COMMITTER_EMAIL: "checkpoint@zcode.local",
+    GIT_AUTHOR_NAME: `${PRODUCT_DISPLAY_NAME} Checkpoint`,
+    GIT_AUTHOR_EMAIL: `checkpoint@${PRODUCT_PROCESS_PREFIX}.local`,
+    GIT_COMMITTER_NAME: `${PRODUCT_DISPLAY_NAME} Checkpoint`,
+    GIT_COMMITTER_EMAIL: `checkpoint@${PRODUCT_PROCESS_PREFIX}.local`,
   };
 }
 

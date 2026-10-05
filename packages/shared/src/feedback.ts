@@ -1,3 +1,4 @@
+import { PRODUCT_AGENT_DISPLAY_NAME } from "./product.js";
 export type FeedbackTicketType = "bug" | "usage" | "feature" | "performance";
 
 export type FeedbackTicketStatus =
@@ -212,7 +213,7 @@ export const DEFAULT_FEEDBACK_TICKET_FRAMEWORK: FeedbackTicketFramework = "zcode
 export const FEEDBACK_TICKET_FRAMEWORK_OPTIONS: {
   value: FeedbackTicketFramework;
   label: string;
-}[] = [{ value: "zcode-agent", label: "ZCode Agent" }];
+}[] = [{ value: "zcode-agent", label: PRODUCT_AGENT_DISPLAY_NAME }];
 
 /** 含「未指定」的完整列表，供管理端等场景使用。 */
 export const FEEDBACK_TICKET_FRAMEWORKS: {

@@ -84,6 +84,48 @@ test("ignore rule writes use new filename and leave official rules intact", asyn
   assert.equal(await readFile(join(projectDir, ".zcodeignore"), "utf8"), "official-secret/\n");
 });
 
+test("new ignore descriptions preserve custom sections from the historical marker", async () => {
+  const projectDir = join(fixtures, "ignore-legacy-marker");
+  await mkdir(projectDir, { recursive: true });
+  const rules = await moduleFrom(
+    "packages/services/src/file/workspaceFileIgnore.ts",
+    "ignore-marker",
+  );
+  const sync = "# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====";
+  const legacy =
+    "# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----";
+  await rules.writeWorkspaceFileSearchIgnore(
+    projectDir,
+    `old-generated/\n${sync}\nnode_modules/\n${legacy}\nmy-private-output/\n`,
+  );
+  await writeFile(join(projectDir, ".gitignore"), "new-generated/\n");
+  const synced = await rules.transformWorkspaceFileSearchIgnore(projectDir, "sync-gitignore");
+  assert.ok(synced.content.includes("my-private-output/"));
+  assert.ok(synced.content.includes("new-generated/"));
+  assert.ok(!synced.content.includes(legacy));
+  assert.ok(synced.content.includes("Open-ZCode 默认排除规则"));
+  await rules.writeWorkspaceFileSearchIgnore(projectDir, synced.content);
+  const reset = await rules.transformWorkspaceFileSearchIgnore(projectDir, "reset-defaults");
+  assert.ok(reset.content.includes("my-private-output/"));
+  assert.ok(reset.content.includes("new-generated/"));
+});
+
+test("default project creation and its desktop hint use the same configured directory", async () => {
+  const home = join(fixtures, "default-project-home");
+  const service = await moduleFrom(
+    "packages/services/src/setting/settingService.ts",
+    "default-project",
+  );
+  const hint = await moduleFrom(
+    "packages/ui/src/ChatEmptyScratchWorkspaceDialog.tsx",
+    "project-hint",
+  );
+  const project = await service.createSettingService().ensureDefaultProject(home);
+  assert.equal(project.path, join(home, "Open-ZCodeProject"));
+  assert.equal(hint.getScratchWorkspaceLocationHint("example"), "~/Open-ZCodeProject/example");
+  assert.equal((await service.createSettingService().ensureDefaultProject(home)).created, false);
+});
+
 test("workflow runtime writes and fallback paths are product-owned", async () => {
   const runtime = await moduleFrom(
     "apps/zcode-cli/packages/dynamic-workflow-runtime/src/child-entry-file.ts",

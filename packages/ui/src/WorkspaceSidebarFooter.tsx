@@ -1,3 +1,4 @@
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 /* oxlint-disable eslint(max-lines) -- footer 聚合账户、主题、模式和快捷键菜单。 */
 import type { Locale, UserInfo } from "@zcode/shared";
 import { memo, useCallback, useEffect, useState } from "react";
@@ -65,7 +66,7 @@ function getSidebarProfileName(user?: UserInfo | null): string {
     return username;
   }
 
-  return "ZCode";
+  return PRODUCT_DISPLAY_NAME;
 }
 
 function getSidebarProfileBadge(

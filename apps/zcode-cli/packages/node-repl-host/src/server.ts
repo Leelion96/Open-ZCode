@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- shared node_repl host 的 worker、CUA bridge 和生命周期必须保持同一边界。 */
 import { resolve } from "node:path";
+import { PRODUCT_PROCESS_PREFIX } from "@zcode/shared/product";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
 import { INVALID_PARAMS, Server, type Tool } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
@@ -39,7 +40,7 @@ import {
 const MAX_SYNC_TIMEOUT_MS = 120_000;
 const UNTRUSTED_SESSION_KEY = "__unscoped__";
 const WORKER_KIND = "zcode-node-repl-call";
-export const NODE_REPL_MCP_PROCESS_TITLE = "zcode-node-repl-mcp";
+export const NODE_REPL_MCP_PROCESS_TITLE = `${PRODUCT_PROCESS_PREFIX}-node-repl-mcp`;
 const pluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.cwd();
 // CUA 与 Browser Use 共用 node_repl host，但文档和 native 依赖必须按领域隔离；
 // 否则 CUA skill 会因为 host root 恰好来自 Browser Use 而再次产生隐式依赖。

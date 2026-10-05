@@ -1,3 +1,4 @@
+import { PRODUCT_DEFAULT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 /* eslint-disable max-lines */
 import type { Dirent } from "node:fs";
 import { mkdir, open, readFile, readdir, realpath, stat } from "node:fs/promises";
@@ -101,7 +102,7 @@ function isProbablyBinary(buffer: Buffer): boolean {
   }
   return suspiciousBytes / buffer.length > 0.3;
 }
-const SCRATCH_WORKSPACE_ROOT_NAME = "ZCodeProject";
+const SCRATCH_WORKSPACE_ROOT_NAME = PRODUCT_DEFAULT_PROJECT_DIRECTORY;
 function validateScratchWorkspaceName(name: string): string {
   const trimmedName = name.trim();
   if (!trimmedName) {

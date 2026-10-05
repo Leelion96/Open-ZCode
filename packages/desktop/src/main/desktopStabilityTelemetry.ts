@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- 稳定性上报集中单模块，拆分反而增加跨文件状态同步 */
 import { createHash, randomUUID } from "node:crypto";
+import { PRODUCT_PROCESS_PREFIX } from "@zcode/shared/product";
 import armsRum from "@arms/rum-electron";
 import { BrowserWindow, type WebContents } from "electron";
 import {
@@ -701,10 +702,11 @@ function mapChildProcessGoneToProcessRoleWithName(
   type: string,
   processName?: string,
 ): StabilityProcessRole {
-  if (processName?.startsWith("zcode-host")) {
+  // 修复原因：进程名称随品牌配置变化，写死 zcode 会把 Host 崩溃误判为可恢复的 Utility 退出。
+  if (processName?.startsWith(`${PRODUCT_PROCESS_PREFIX}-host`)) {
     return "host";
   }
-  if (processName?.startsWith("zcode-agent")) {
+  if (processName?.startsWith(`${PRODUCT_PROCESS_PREFIX}-agent`)) {
     return "agent";
   }
   switch (type) {

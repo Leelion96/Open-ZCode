@@ -15,7 +15,8 @@
         "@zcode/core#build",
         "@zcode/adapters#build",
         "@zcode/bootstrap#build",
-        "@zcode/i18n#build"
+        "@zcode/i18n#build",
+        "@zcode/browser-use-plugin#build"
       ],
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -39,7 +40,7 @@
         "$TURBO_ROOT$/../../pnpm-lock.yaml"
       ],
       "outputs": ["dist/**"],
-      "cache": true,
+      "cache": false,
       "env": ["ZCODE_ENV", "ZCODE_BUILTIN_PROVIDER_CONFIG_FILE", "NODE_ENV"]
     },
     "dev": {
@@ -50,6 +51,10 @@
     "lint:fix": {},
     "typecheck": {
       "dependsOn": ["^build"]
+    },
+    "@zcode/browser-use-plugin#build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "scripts/browser-client.mjs"]
     },
     "clean": {
       "cache": false

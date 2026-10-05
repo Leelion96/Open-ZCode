@@ -1,4 +1,5 @@
 import { loadProductConfig } from "../../../../../scripts/product-config.mjs";
+import { buildNodeReplHostBundle } from "../../node-repl-host/scripts/build.mjs";
 import { chmod, readFile, rm } from "node:fs/promises";
 import { readThirdPartyNotices, stageThirdPartyNotices } from "../../../../../scripts/third-party-notices.mjs";
 import { basename, dirname, relative, resolve } from "node:path";
@@ -219,6 +220,11 @@ export const buildCli = async ({
   const outfile = resolve(cliDirectory, "dist/zcode.cjs");
   const sourcemapFile = `${outfile}.map`;
   const notices = await readThirdPartyNotices(resolve(rootDirectory, "../.."));
+  const productConfig = desktopAgent ? await loadProductConfig() : undefined;
+  if (productConfig) {
+    // Node REPL 自己打包 shared；桌面任务不走缓存，确保跨包产物使用当前品牌配置。
+    await buildNodeReplHostBundle({ productConfig });
+  }
 
   await stageBuiltinProviderConfig({
     root: resolve(rootDirectory, "../.."),
@@ -235,7 +241,7 @@ export const buildCli = async ({
     bundle: true,
     define: {
       __CLI_VERSION__: JSON.stringify(cliVersion),
-      ...(desktopAgent ? { __ZCODE_PRODUCT_CONFIG__: JSON.stringify(await loadProductConfig()) } : {}),
+      ...(productConfig ? { __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig) } : {}),
     },
     entryPoints: [resolve(cliDirectory, "src/main.ts")],
     // Ink 7 and yoga-layout use top-level await, so the CJS CLI bundle loads the TUI

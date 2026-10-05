@@ -1,3 +1,4 @@
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import { ZCODE_OFFICIAL_PLUGIN_MARKETPLACE } from "@zcode/contracts";
 
 // 内置插件的商店信息 seed（原样写入官方 marketplace.json 的条目 raw，键名与 CDN 目录
@@ -230,7 +231,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       displayName_i18n: { "zh-CN": "恢复旧版会话" },
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/restore-legacy-sessions/icon.png`,
       description_i18n: {
-        "zh-CN": "将旧版会话恢复为 ZCode 任务与会话记录。",
+        "zh-CN": `将旧版会话恢复为 ${PRODUCT_DISPLAY_NAME} 任务与会话记录。`,
       },
     },
     name: "restore-legacy-sessions",
@@ -253,7 +254,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       // 创建器使用客户端自带图标，不再借用 skill-creator 的远端图片。
       displayName_i18n: { "zh-CN": "插件创建器" },
       description_i18n: {
-        "zh-CN": "开发、校验 ZCode 插件，完成本地 dev 市场安装、试用与更新。",
+        "zh-CN": `开发、校验 ${PRODUCT_DISPLAY_NAME} 插件，完成本地 dev 市场安装、试用与更新。`,
       },
     },
     rootCandidates: [
@@ -281,7 +282,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       displayName: "Skill Creator",
       displayName_i18n: { "zh-CN": "技能创建器" },
       icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/skill-creator/icon.png`,
-      description_i18n: { "zh-CN": "创建、编辑和验证可复用的 ZCode 技能。" },
+      description_i18n: { "zh-CN": `创建、编辑和验证可复用的 ${PRODUCT_DISPLAY_NAME} 技能。` },
     },
     name: "skill-creator",
     rootCandidates: [

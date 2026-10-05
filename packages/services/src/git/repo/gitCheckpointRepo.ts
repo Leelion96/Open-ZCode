@@ -1,5 +1,6 @@
 import { copyFile, lstat, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
+import { PRODUCT_PROCESS_PREFIX } from "@zcode/shared/product";
 import type {
   GitCheckpointConflict,
   GitCheckpointDiff,
@@ -324,7 +325,7 @@ export function createGitCheckpointRepo(options?: {
             "commit-tree",
             treeResult.stdout.trim(),
             "-m",
-            `zcode checkpoint ${params.checkpointId}`,
+            `${PRODUCT_PROCESS_PREFIX} checkpoint ${params.checkpointId}`,
           ],
           env,
         });

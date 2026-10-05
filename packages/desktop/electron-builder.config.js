@@ -78,8 +78,10 @@ const desktopProductIdentity = resolveDesktopProductIdentity({
   ZCODE_ENV: builtinProviderConfig.environment,
 }, productConfig);
 const productKey = resolveProductKey(productConfig);
+const productDisplayName = productConfig.name;
 // 安装器与客户端使用同一份产品配置，避免保护目录和安装清单归属漂移。
 await writeFile(new URL("./build/product.nsh", import.meta.url), [
+  `!define ZCODE_PRODUCT_DISPLAY_NAME "${productDisplayName}"`,
   `!define ZCODE_PRODUCT_USER_DIRECTORY "${productConfig.isolateUserData ? `.${productKey}` : ".zcode"}"`,
   ...(productConfig.customizeIdentity ? [
     `!define ZCODE_INSTALL_MANIFEST_NAME "${resolveWindowsInstallManifestName(productKey, desktopProductIdentity.flavor)}"`,
@@ -474,15 +476,16 @@ function assertPackagedNodePtyPrebuild(context) {
 export default {
   appId: desktopProductIdentity.appId,
   // Linux deb 打包（fpm）会校验 package metadata 中的 homepage、author.email、maintainer。
-  // CI 环境下若这些字段缺失会在产物阶段直接失败。这里统一在构建配置补齐，避免依赖外部注入。
+  // 仅为 Linux 补齐这些字段，避免 macOS/Windows 安装信息继续指向上游官网和邮箱。
   extraMetadata: {
     ...(productConfig.customizeIdentity ? { name: desktopProductIdentity.packageName } : {}),
     version: buildMetadata.appVersion,
     zcodeProductFlavor: desktopProductIdentity.flavor,
-    homepage: "https://zcode.z.ai",
+    ...(targetPlatform.os === "linux" ? { homepage: "https://zcode.z.ai" } : {}),
+    description: `${productDisplayName} Desktop App`,
     author: {
-      name: "ZCode",
-      email: "dev@zcode.z.ai",
+      name: productDisplayName,
+      ...(targetPlatform.os === "linux" ? { email: "dev@zcode.z.ai" } : {}),
     },
   },
   // macOS 签名阶段会对 Electron Framework 下每个语言包逐个 codesign。
@@ -500,6 +503,7 @@ export default {
     mirror: resolveElectronDownloadMirror(),
   },
   productName: desktopProductIdentity.productName,
+  copyright: `Copyright © ${new Date().getFullYear()} ${productDisplayName}`,
   directories: {
     // macOS arm64/x64 CI 可能共享同一个 checkout 并行打包。
     // 输出根目录允许按架构隔离，避免一个 job 清理 dist 时删除另一个 job 正在签名的 .app。
@@ -723,7 +727,7 @@ export default {
     // 与 /usr/share/icons/hicolor/*/apps/zcode.png 保持一致。
     executableName: desktopProductIdentity.linuxExecutableName,
     category: "Development",
-    maintainer: "ZCode <dev@zcode.z.ai>",
+    maintainer: `${productDisplayName} <dev@zcode.z.ai>`,
   },
   deb: {
     // 生产版与 Preview 必须是两个 dpkg package；只改可执行名仍会让安装器把另一版本当成升级替换。

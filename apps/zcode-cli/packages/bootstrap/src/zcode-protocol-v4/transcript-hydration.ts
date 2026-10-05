@@ -45,6 +45,7 @@ import {
 } from "@zcode/shared/zcode-protocol-v4";
 import { shouldHideInvalidToolCallFromProduct } from "../tool-call-product-visibility.js";
 import { HYDRATION_TRACE_ID } from "./projection-state.js";
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 
 const SUBAGENT_TOOL_NAMES = new Set(["Agent", "Task", "subagent"]);
 const LEGACY_MODEL_REQUEST_CANCELLED_MESSAGE = "Model request was cancelled.";
@@ -223,6 +224,7 @@ function isPersistedAssistantCancellation(error: AssistantErrorInfo): boolean {
     // 固定文案与旧记录的名称标记都只用于取消恢复，不展示双文案。
     (data?.message === "Protocol session stopped" ||
       data?.message === "Agent protocol session stopped" ||
+      data?.message === `${PRODUCT_DISPLAY_NAME} Protocol session stopped` ||
       data?.message === LEGACY_PROTOCOL_SESSION_STOPPED_MESSAGE)
   ) {
     // 旧 session/stop 使用普通 Error 作为 AbortSignal.reason，transcript 又未持久化

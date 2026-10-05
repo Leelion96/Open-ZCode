@@ -9,6 +9,7 @@ import {
   type OffPeakCodingPlanUnsupportedReason,
   type ZCodeAccountAccess,
 } from "@zcode/shared";
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import { isOffPeakMockEnabled, startOffPeakMockGateway } from "./offPeakMockGateway.js";
 import type { ServiceLogger } from "../logger/serviceLogger.js";
 import { AccountRequestCredentialUnavailableError } from "../model-provider/accountProviderRequestAuthService.js";
@@ -29,7 +30,7 @@ export class OffPeakCredentialsUnavailableError extends OffPeakPermanentDispatch
   constructor(readonly missing: "jwt" | "codingPlanApiKey") {
     super(
       missing === "jwt"
-        ? "off-peak requires zcode login (jwt missing)"
+        ? `off-peak requires ${PRODUCT_DISPLAY_NAME} login (jwt missing)`
         : "off-peak requires a coding plan provider api key",
     );
     this.name = "OffPeakCredentialsUnavailableError";

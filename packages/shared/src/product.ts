@@ -21,7 +21,8 @@ export function parseProductConfig(value: unknown): Readonly<ProductConfig> {
   const name = typeof raw.name === "string" ? raw.name.trim() : "";
   const appId = typeof raw.appId === "string" ? raw.appId.trim() : "";
   const key = name.toLowerCase().replace(/\s+/g, "-");
-  if (!/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(key) || key.length > 64) {
+  // 名称还会直接进入安装器宏；只校验派生 key 会放过名称中的换行。
+  if (!/^[A-Za-z0-9 -]+$/.test(name) || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(key) || key.length > 64) {
     throw new Error("product.name must produce a safe ASCII name (for example Open-ZCode)");
   }
   if (!/^[a-zA-Z][a-zA-Z0-9-]*(?:\.[a-zA-Z][a-zA-Z0-9-]*)+$/.test(appId) || appId.length > 100) {
@@ -87,3 +88,17 @@ export const PRODUCT_WORKFLOW_TEMP_DIRECTORY = PRODUCT_CONFIG.isolateProjectData
   : "zcode-workflow-runs";
 
 export const PRODUCT_IDENTITY_KEY = PRODUCT_CONFIG.customizeIdentity ? productKey() : "zcode";
+
+// 显示名称独立于安装身份和私有资料根。
+export const PRODUCT_DISPLAY_NAME = PRODUCT_CONFIG.name;
+
+export const PRODUCT_AGENT_DISPLAY_NAME = `${PRODUCT_DISPLAY_NAME} Agent`;
+export const PRODUCT_PROCESS_PREFIX = PRODUCT_DISPLAY_NAME.toLowerCase().replace(/\s+/g, "-");
+export const PRODUCT_DEFAULT_PROJECT_DIRECTORY = `${PRODUCT_DISPLAY_NAME}Project`;
+
+/** 用于 Linux 系统入口的显示名称；完整单词匹配，保留协议、路径、代码标识和配置名称。 */
+export function formatProductOwnedText(text: string): string {
+  // 完整配置名称优先匹配，避免 Open ZCode 等名称在再次消费时被重复加前缀。
+  const name = PRODUCT_DISPLAY_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`${name}|(?<![\\w./-])Z ?[Cc]ode(?![\\w/-])`, "g"), PRODUCT_DISPLAY_NAME);
+}

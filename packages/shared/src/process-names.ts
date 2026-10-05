@@ -1,4 +1,5 @@
-const ZCODE_PROCESS_PREFIX = "zcode";
+import { PRODUCT_DISPLAY_NAME, PRODUCT_PROCESS_PREFIX } from "./product.js";
+const ZCODE_PROCESS_PREFIX = PRODUCT_PROCESS_PREFIX;
 const MAX_PROCESS_NAME_SEGMENT_LENGTH = 24;
 
 function sanitizeProcessNameSegment(value: string | null | undefined): string | null {
@@ -49,7 +50,7 @@ export function formatZCodeHostProcessName(label?: string): string {
 
 export function formatZCodeRendererProcessName(windowTitle?: string): string {
   const normalizedTitle = windowTitle?.trim();
-  if (!normalizedTitle || normalizedTitle === "ZCode") {
+  if (!normalizedTitle || normalizedTitle === PRODUCT_DISPLAY_NAME) {
     return joinZCodeProcessName("renderer", "main");
   }
 
@@ -57,7 +58,7 @@ export function formatZCodeRendererProcessName(windowTitle?: string): string {
     return joinZCodeProcessName("renderer", "resource-manager");
   }
 
-  const remoteWindowPrefix = "ZCode - ";
+  const remoteWindowPrefix = `${PRODUCT_DISPLAY_NAME} - `;
   if (normalizedTitle.startsWith(remoteWindowPrefix)) {
     return joinZCodeProcessName(
       "renderer",

@@ -1,4 +1,4 @@
-import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { PRODUCT_DISPLAY_NAME, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { createLocalTtftExporter } from "./localTtftExporter.js";
 /* eslint-disable max-lines */
 import "./desktopEarlyDataBaseDirBootstrap.js";
@@ -1336,7 +1336,7 @@ function confirmAppQuit(originWindow?: BrowserWindow | null) {
     defaultId: 1,
     cancelId: 1,
     title: isZh ? "退出确认" : "Confirm Quit",
-    message: isZh ? "确认退出 Z Code?" : "Quit Z Code?",
+    message: isZh ? `确认退出 ${PRODUCT_DISPLAY_NAME}?` : `Quit ${PRODUCT_DISPLAY_NAME}?`,
     detail: detailLines.join("\n"),
     icon: nativeImage.createFromPath(iconPath),
   };

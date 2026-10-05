@@ -3,17 +3,23 @@ import test from "node:test";
 import { parseProductConfig, productKey } from "../../packages/shared/src/product.ts";
 import { loadProductConfig } from "../product-config.mjs";
 import { moduleFrom } from "./helpers/product-test.mjs";
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
 
-test("desktop product has five fields and derives Open-ZCode's namespace", async () => {
+test("desktop product accepts the configured name, appId and independent switches", async () => {
   const product = await loadProductConfig();
-  assert.deepEqual(product, {
-    name: "Open-ZCode",
-    appId: "dev.openzcode.app",
-    customizeIdentity: true,
-    isolateUserData: true,
-    isolateProjectData: true,
-  });
-  assert.equal(productKey(product), "open-zcode");
+  assert.deepEqual(
+    Object.keys(product).sort(),
+    ["name", "appId", "customizeIdentity", "isolateUserData", "isolateProjectData"].sort(),
+  );
+  assert.equal(typeof product.name, "string");
+  assert.equal(typeof product.appId, "string");
+  for (const flag of ["customizeIdentity", "isolateUserData", "isolateProjectData"]) {
+    assert.equal(typeof product[flag], "boolean");
+  }
+  assert.equal(productKey(product), product.name.toLowerCase().replace(/\s+/g, "-"));
+  assert.throws(() => parseProductConfig({ ...product, customizeBranding: true }), /unknown field/);
 });
 
 test("another enabled isolation product derives its own name", () => {
@@ -26,7 +32,50 @@ test("another enabled isolation product derives its own name", () => {
   });
   assert.equal(productKey(product), "team-studio");
   assert.throws(() => parseProductConfig({ ...product, name: "../unsafe" }), /safe ASCII/);
+  assert.throws(() => parseProductConfig({ ...product, name: "Open\nZCode" }), /safe ASCII/);
   assert.throws(() => parseProductConfig({ ...product, appId: "bad/id" }), /application ID/);
+});
+
+test("desktop names use the configured product without altering technical tokens", async () => {
+  const configured = await moduleFrom("packages/shared/src/product.ts", "product-names");
+  const product = await loadProductConfig();
+  assert.equal(configured.PRODUCT_DISPLAY_NAME, product.name);
+  assert.equal(configured.PRODUCT_AGENT_DISPLAY_NAME, `${product.name} Agent`);
+  assert.equal(configured.PRODUCT_DEFAULT_PROJECT_DIRECTORY, `${product.name}Project`);
+  assert.equal(
+    configured.formatProductOwnedText(
+      "ZCode browser; Open-ZCode; .zcode; ZCODE_TOKEN; ZCodeProtocol",
+    ),
+    `${product.name} browser; Open-ZCode; .zcode; ZCODE_TOKEN; ZCodeProtocol`,
+  );
+});
+
+test("owned text preserves a configured name containing the upstream name", async () => {
+  const product = { ...(await loadProductConfig()), name: "Open ZCode" };
+  const configured = await moduleFrom("packages/shared/src/product.ts", "spaced-name", [], product);
+  const text = "Open ZCode browser; ZCode browser; ZCodeProtocol; .zcode";
+  const expected = "Open ZCode browser; Open ZCode browser; ZCodeProtocol; .zcode";
+  assert.equal(configured.formatProductOwnedText(text), expected);
+  assert.equal(configured.formatProductOwnedText(expected), expected);
+});
+
+test("display name stays configured when all isolation switches are disabled", async () => {
+  const product = {
+    ...(await loadProductConfig()),
+    customizeIdentity: false,
+    isolateUserData: false,
+    isolateProjectData: false,
+  };
+  const configured = await moduleFrom(
+    "packages/shared/src/product.ts",
+    "isolation-off",
+    [],
+    product,
+  );
+  assert.equal(configured.PRODUCT_DISPLAY_NAME, product.name);
+  assert.equal(configured.PRODUCT_USER_DIRECTORY, ".zcode");
+  assert.equal(configured.PRODUCT_PROJECT_DIRECTORY, ".zcode");
+  assert.equal(configured.PRODUCT_PROTOCOL_SCHEME, "zcode");
 });
 
 test("error details remain primary for renamed and legacy session failure wrappers", async () => {
@@ -34,9 +83,11 @@ test("error details remain primary for renamed and legacy session failure wrappe
     "packages/ui/src/lib/zcodeUiError.ts",
     "ui-error",
   );
+  const product = await loadProductConfig();
   for (const message of [
     "Session failed",
     "Agent session failed",
+    `${product.name} session failed`,
     "ZCode session failed",
   ]) {
     const error = normalizeZCodeUiError({ message, detail: "Provider rejected the request" });
@@ -44,14 +95,17 @@ test("error details remain primary for renamed and legacy session failure wrappe
   }
 });
 
-test("OAuth API messages remain unchanged and BigModel credential errors stay generic", async () => {
+test("OAuth fallback distinguishes app login and BigModel credentials while preserving API messages", async () => {
   const { BigModelProviderAdapter } = await moduleFrom(
     "packages/services/src/oauth/providers/bigmodelProviderAdapter.ts",
     "oauth-fallback",
   );
+  const product = await loadProductConfig();
   const externalMessage = "ZCode service response";
   for (const [payload, message] of [
+    [{ code: 7 }, `通过 BigModel 授权换取 ${product.name} 登录凭据失败（code: 7）`],
     [{ code: 7, msg: externalMessage }, externalMessage],
+    [{ data: {} }, `登录响应缺少 ${product.name} JWT（data.token）`],
     [{ data: { token: "fixture-app-jwt" } }, "登录响应缺少 BigModel access token（data.bigmodel.access_token）"],
   ]) {
     const provider = new BigModelProviderAdapter(
@@ -152,5 +206,141 @@ test("internal Node REPL plugin descriptions are localized without altering thir
     } };
     assert.equal(resolveManagedPluginDisplay(thirdParty, item, locale).description,
       locale === "zh-CN" ? "第三方 ZCode 插件说明" : plugin.description);
+  }
+});
+
+test("skill metadata and loaded content keep their source wording regardless of brand", async () => {
+  const { buildSkillsSection } = await moduleFrom(
+    "apps/zcode-cli/packages/core/src/context/sections/skills.ts",
+    "skill-source-metadata",
+  );
+  const contracts = {
+    name: "skill-contracts-fixture",
+    setup(build) {
+      build.onLoad({ filter: /contracts[\\/]src[\\/]tools[\\/]saved-workflow\.ts$/ }, ({ path }) => ({
+        contents: 'export * from "./skill.ts"; export * from "../errors/index.ts";',
+        resolveDir: dirname(path),
+        loader: "js",
+      }));
+    },
+  };
+  const { skillToolEntry } = await moduleFrom(
+    "apps/zcode-cli/packages/core/src/tool/handlers/skill.ts",
+    "skill-source-content",
+    [contracts],
+  );
+  const description = "Use ZCode instructions without changing the source description.";
+  const content = "ZCode instructions; ZCODE_TOKEN; directory: ${ZCODE_SKILL_DIR}";
+  for (const pluginId of ["browser-use@zcode-plugins-official", "browser-use@third-party", undefined]) {
+    const metadata = {
+      name: "control-browser",
+      description,
+      path: "/fixture/skill/SKILL.md",
+      source: pluginId ? "plugin" : "user",
+      ...(pluginId ? { pluginId } : {}),
+    };
+    const section = buildSkillsSection({ outcome: { skills: [metadata], diagnostics: [] } });
+    assert.ok(section.content.includes(description));
+    const output = await skillToolEntry.handler({ skill: "control-browser" }, {
+      workingDirectory: "/fixture/workspace",
+      abortSignal: new AbortController().signal,
+      traceId: "fixture",
+      toolCallId: "fixture",
+      skillPort: { loadSkill: async () => ({ metadata, content, baseDirectory: "/fixture/skill", truncated: false }) },
+    });
+    assert.ok(output.includes("ZCode instructions; ZCODE_TOKEN; directory: /fixture/skill"));
+  }
+});
+
+test("browser documentation preserves source text regardless of bundled-looking directory names", async () => {
+  const { loadBrowserDocumentation } = await moduleFrom(
+    "apps/zcode-cli/packages/core/src/browser-client/documentation.ts",
+    "browser-documentation-original",
+  );
+  const fixture = await mkdtemp(join(tmpdir(), "browser-documentation-"));
+  const original = "ZCode is an external product in this document.";
+  try {
+    for (const parts of [
+      ["user-project", "browser-use", "docs"],
+      ["user-project", "packages", "browser-use-plugin", "docs"],
+      ["cache", "zcode-plugins-official", "browser-use", "fixture", "docs"],
+    ]) {
+      const root = join(fixture, ...parts);
+      await mkdir(root, { recursive: true });
+      await writeFile(join(root, "api.json"), JSON.stringify({ version: 10, objects: {} }));
+      await writeFile(join(root, "documents.json"), JSON.stringify({ documents: [{ path: "overview.md", mode: "included" }] }));
+      await writeFile(join(root, "overview.md"), original);
+      assert.ok(loadBrowserDocumentation(root).includes(original));
+      assert.equal(loadBrowserDocumentation(root, "overview"), original);
+    }
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test("configured Host and Agent names retain crash events while normal and Chromium exits keep their semantics", async () => {
+  const product = await loadProductConfig();
+  const fixtureKey = Symbol.for("test.desktop-stability-telemetry");
+  const mocks = {
+    electron: "export const BrowserWindow = { getFocusedWindow: () => null };",
+    "@arms/rum-electron": `export default {
+      setConfig() {},
+      sendCustom(event) { globalThis[Symbol.for("test.desktop-stability-telemetry")].events.push(event); }
+    };`,
+    "desktopCrashCapture.js": `export function registerCrashEventMonitor(logger, paths, callbacks) {
+      globalThis[Symbol.for("test.desktop-stability-telemetry")].callbacks = callbacks;
+    }`,
+    "resourceManagerWindow.js": "export function getResourceManagerWindowId() { return null; }",
+  };
+  const plugin = {
+    name: "stability-runtime-fixture",
+    setup(build) {
+      build.onResolve({ filter: /^(electron|@arms\/rum-electron)$|desktopCrashCapture\.js$|resourceManagerWindow\.js$/ }, ({ path }) => {
+        const fileName = path.split("/").at(-1);
+        return { path: fileName in mocks ? fileName : path, namespace: "stability-fixture" };
+      });
+      build.onLoad({ filter: /.*/, namespace: "stability-fixture" }, ({ path }) => ({ contents: mocks[path], loader: "js" }));
+    },
+  };
+  const logger = { info() {}, warn() {}, error() {} };
+  try {
+    for (const [index, name] of ["ZCode", product.name, "Team Studio"].entries()) {
+      const config = { ...product, name };
+      const fixture = { callbacks: null, events: [] };
+      globalThis[fixtureKey] = fixture;
+      const telemetry = await moduleFrom("packages/desktop/src/main/desktopStabilityTelemetry.ts", `stability-${index}`, [plugin], config);
+      const names = await moduleFrom("packages/shared/src/process-names.ts", `stability-names-${index}`, [], config);
+      telemetry.configureDesktopStabilityTelemetry({ deviceMid: "fixture", platform: "darwin", appVersion: "fixture", armsEnv: "development" });
+      telemetry.registerDesktopStabilityMonitors(logger, {});
+      const emit = (details) => {
+        fixture.events.length = 0;
+        fixture.callbacks.onChildProcessGone({ type: "Utility", name: "Network Service", reason: "crashed", exitCode: 1, ...details });
+        assert.equal(fixture.events.length, 1);
+        return fixture.events[0];
+      };
+      const hostName = names.formatZCodeHostProcessName("primary");
+      const host = emit({ serviceName: hostName });
+      assert.equal(host.name, "perf_crash");
+      assert.equal(host.properties.process_role, "host");
+      assert.equal(host.properties.crash_scope, "host");
+      const agent = emit({ serviceName: names.formatZCodeAgentProcessName("glm", "/fixture") });
+      assert.equal(agent.name, "perf_crash");
+      assert.equal(agent.properties.process_role, "agent");
+      for (const reason of ["killed", "clean-exit"]) {
+        const normal = emit({ serviceName: hostName, reason });
+        assert.equal(normal.name, "perf_process_exit");
+        assert.equal(normal.properties.process_role, "host");
+        assert.equal(normal.properties.exit_kind, "normal");
+      }
+      const utility = emit({ serviceName: "Network Service" });
+      assert.equal(utility.name, "perf_process_exit");
+      assert.equal(utility.properties.process_role, "utility");
+      assert.equal(utility.properties.exit_kind, "recoverable_child_crash");
+      const gpu = emit({ type: "GPU", serviceName: "GPU" });
+      assert.equal(gpu.name, "perf_process_exit");
+      assert.equal(gpu.properties.process_role, "gpu");
+    }
+  } finally {
+    delete globalThis[fixtureKey];
   }
 });

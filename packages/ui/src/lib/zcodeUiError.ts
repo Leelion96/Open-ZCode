@@ -1,4 +1,5 @@
 import type { ZCodeError, TraceId } from "@zcode/shared";
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import { errorAttributionSchema, type ErrorAttribution } from "@zcode/shared/zcode-protocol-v4";
 
 export interface ZCodeUiError extends ZCodeError {
@@ -23,6 +24,8 @@ const GENERIC_ZCODE_UI_ERROR_MESSAGES = new Set([
   "Agent session failed",
   "Session failed",
   "ZCode session failed",
+  // 保留旧记录的包装标记，同时识别通用回退，避免包装文案遮住真实原因。
+  `${PRODUCT_DISPLAY_NAME} session failed`,
 ]);
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {

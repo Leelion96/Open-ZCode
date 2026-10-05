@@ -1,5 +1,5 @@
 /* oxlint-disable eslint(max-lines) -- Deep Link 路由必须在同一模块内保持协议校验和投递原子性。 */
-import { PRODUCT_PROTOCOL_SCHEME } from "@zcode/shared/product";
+import { PRODUCT_DISPLAY_NAME, PRODUCT_PROTOCOL_SCHEME } from "@zcode/shared/product";
 import { statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { app, BrowserWindow, dialog } from "electron";
@@ -145,16 +145,16 @@ export function resolveExternalWorkspaceOpenDialogCopy(
   if (locale === "zh-CN") {
     return {
       buttons: ["打开文件夹", "取消"],
-      title: "打开外部 ZCode 链接？",
-      message: "是否在 ZCode 中打开此文件夹？",
+      title: `打开外部 ${PRODUCT_DISPLAY_NAME} 链接？`,
+      message: `是否在 ${PRODUCT_DISPLAY_NAME} 中打开此文件夹？`,
       detail: (path) => `${path}\n\n只打开你信任来源的文件夹。项目设置可能影响 agent runtime。`,
     };
   }
 
   return {
     buttons: ["Open folder", "Cancel"],
-    title: "Open external ZCode link?",
-    message: "Open this folder in ZCode?",
+    title: `Open external ${PRODUCT_DISPLAY_NAME} link?`,
+    message: `Open this folder in ${PRODUCT_DISPLAY_NAME}?`,
     detail: (path) =>
       `${path}\n\nOnly open folders from sources you trust. Project settings may affect the agent runtime.`,
   };

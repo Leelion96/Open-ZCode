@@ -1,4 +1,4 @@
-import { PRODUCT_CONFIG, PRODUCT_PROTOCOL_SCHEME, PRODUCT_IDENTITY_KEY } from "@zcode/shared/product";
+import { PRODUCT_CONFIG, PRODUCT_PROTOCOL_SCHEME, PRODUCT_IDENTITY_KEY, PRODUCT_DISPLAY_NAME, formatProductOwnedText } from "@zcode/shared/product";
 import { ZCODE_PRODUCT_FLAVOR } from "@zcode/shared";
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -111,7 +111,7 @@ function createLinuxDeepLinkDesktopEntry(params: {
   productName?: string;
   iconName?: string;
 }): string {
-  const productName = params.productName ?? "ZCode";
+  const productName = formatProductOwnedText(params.productName ?? PRODUCT_DISPLAY_NAME);
   const iconName = params.iconName ?? LINUX_DEEP_LINK_DESKTOP_FILE.slice(0, -8);
   const command = {
     executablePath: params.executablePath,
@@ -127,7 +127,7 @@ function createLinuxDeepLinkDesktopEntry(params: {
     `Icon=${iconName}`,
     "Categories=Development;",
     `MimeType=${LINUX_DEEP_LINK_MIME_TYPE};`,
-    `StartupWMClass=${productName}`,
+    `StartupWMClass=${params.productName ?? productName}`,
     "",
   ].join("\n");
 }

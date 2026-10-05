@@ -1,3 +1,4 @@
+import { PRODUCT_PROCESS_PREFIX } from "@zcode/shared/product";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -223,7 +224,7 @@ class NodeMcpAdapter implements McpPort {
   private readonly workingDirectory?: string;
 
   constructor(options: CreateMcpAdapterOptions) {
-    this.clientName = options.clientName ?? "zcode";
+    this.clientName = options.clientName ?? PRODUCT_PROCESS_PREFIX;
     this.clientVersion = options.clientVersion ?? "0.0.0";
     this.connectionContext = options.connectionContext;
     this.env = options.env;

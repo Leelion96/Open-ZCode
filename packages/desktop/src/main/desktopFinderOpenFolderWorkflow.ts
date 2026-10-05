@@ -1,4 +1,4 @@
-import { PRODUCT_CONFIG, PRODUCT_PROTOCOL_SCHEME, productKey } from "@zcode/shared/product";
+import { PRODUCT_DISPLAY_NAME, PRODUCT_CONFIG, PRODUCT_PROTOCOL_SCHEME, productKey } from "@zcode/shared/product";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -9,8 +9,8 @@ const WORKFLOW_NAME = PRODUCT_CONFIG.customizeIdentity ? `Open in ${productKey()
 const WORKFLOW_BUNDLE_ID = PRODUCT_CONFIG.customizeIdentity ? `${PRODUCT_CONFIG.appId}.finder-open-workflow` : "dev.zcode.app.finder-open-workflow";
 const WORKFLOW_VERSION = "5";
 const SERVICES_MENU_LABELS: Record<Locale, string> = {
-  "zh-CN": "在ZCode中打开",
-  "en-US": "Open in ZCode",
+  "zh-CN": `在${PRODUCT_DISPLAY_NAME}中打开`,
+  "en-US": `Open in ${PRODUCT_DISPLAY_NAME}`,
 };
 
 const workflowScript = `first=""

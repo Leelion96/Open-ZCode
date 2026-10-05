@@ -1,3 +1,4 @@
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -60,8 +61,8 @@ function generateSelfSignedCa(): { certPem: string; keyPem: string } {
   cert.validity.notAfter = notAfter;
 
   const attrs = [
-    { name: "commonName", value: "ZCode Network CA" },
-    { name: "organizationName", value: "ZCode" },
+    { name: "commonName", value: `${PRODUCT_DISPLAY_NAME} Network CA` },
+    { name: "organizationName", value: PRODUCT_DISPLAY_NAME },
   ];
   cert.setSubject(attrs);
   cert.setIssuer(attrs); // 自签：issuer == subject

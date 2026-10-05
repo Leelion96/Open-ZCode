@@ -3,7 +3,7 @@ import { type NodeReplRequestMeta, type NodeReplRunResult } from "@zcode/core/re
 import { type ComputerUseRuntime } from "@zcode/zcode-cua";
 import { type NodeReplCuaBrokerConnection } from "./cua-bridge.js";
 import { installNodeReplProcessGuards, installNodeReplShutdownTriggers } from "./process-lifecycle.js";
-export declare const NODE_REPL_MCP_PROCESS_TITLE = "zcode-node-repl-mcp";
+export declare const NODE_REPL_MCP_PROCESS_TITLE: string;
 export interface NodeReplExecuteInput {
     code: string;
     requestMeta: NodeReplRequestMeta;

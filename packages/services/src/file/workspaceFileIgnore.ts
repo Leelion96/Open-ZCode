@@ -1,4 +1,4 @@
-import { PRODUCT_PROJECT_IGNORE_FILE } from "@zcode/shared/product";
+import { PRODUCT_DISPLAY_NAME, PRODUCT_PROJECT_IGNORE_FILE } from "@zcode/shared/product";
 import { open, readFile, rename, rm } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import ignoreFactory from "ignore";
@@ -77,8 +77,8 @@ const BUILTIN_IGNORE_LINES = [
 ];
 
 const TEMPLATE_HEADER = [
-  `# ZCode 工作区文件搜索忽略规则（${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME}）`,
-  "# 语法与 .gitignore 一致，只影响 ZCode 的 @ 文件候选 / Command Center / 文件树搜索，",
+  `# ${PRODUCT_DISPLAY_NAME} 工作区文件搜索忽略规则（${WORKSPACE_FILE_SEARCH_IGNORE_FILE_NAME}）`,
+  `# 语法与 .gitignore 一致，只影响 ${PRODUCT_DISPLAY_NAME} 的 @ 文件候选 / Command Center / 文件树搜索，`,
   "# 不影响文件树浏览、上传或 Agent 文件访问。",
   "# 修改 .gitignore 不会自动同步到本文件；可在设置页「从 .gitignore 同步」。",
   "",
@@ -93,6 +93,8 @@ const TEMPLATE_HEADER = [
 const WORKSPACE_FILE_SEARCH_IGNORE_SYNC_MARKER =
   "# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====";
 const WORKSPACE_FILE_SEARCH_IGNORE_DEFAULTS_MARKER =
+  `# ----- ↑ 以上为 ${PRODUCT_DISPLAY_NAME} 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----`;
+const LEGACY_DEFAULTS_MARKER =
   "# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----";
 
 const CUSTOM_SECTION_HINT = "# 自定义规则写在下方（本行提示可删除）";
@@ -161,7 +163,8 @@ function splitWorkspaceFileSearchIgnoreSections(
     (line) => line.trim() === WORKSPACE_FILE_SEARCH_IGNORE_SYNC_MARKER,
   );
   const defaultsIndex = lines.findIndex(
-    (line) => line.trim() === WORKSPACE_FILE_SEARCH_IGNORE_DEFAULTS_MARKER,
+    // 旧文件的分区标记仍须识别，避免品牌改造触发整体重建并丢失自定义段。
+    (line) => line.trim() === WORKSPACE_FILE_SEARCH_IGNORE_DEFAULTS_MARKER || line.trim() === LEGACY_DEFAULTS_MARKER,
   );
   if (syncIndex === -1 || defaultsIndex === -1 || defaultsIndex <= syncIndex) {
     return null;

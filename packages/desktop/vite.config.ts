@@ -145,6 +145,7 @@ export default defineConfig(async ({ mode }) => {
   // `.env*` 只提供链接常量；当前产品环境由启动脚本或 CI 注入 ZCODE_ENV。
   const env = { ...loadEnv(mode, "../..", ""), ...process.env };
   const repoRoot = resolve(__dirname, "../..");
+  const productConfig = await loadProductConfig();
   const zcodeEnv = resolveZCodeEnv(env.ZCODE_ENV);
   // 安装包身份与后端环境分轴；renderer 用它决定是否展示更新入口。
   const zcodeProductFlavor = resolveDesktopProductFlavor({
@@ -189,7 +190,10 @@ export default defineConfig(async ({ mode }) => {
     },
     server: { port: 5174, strictPort: true },
     define: {
-      __ZCODE_PRODUCT_CONFIG__: JSON.stringify(await loadProductConfig()),
+      __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig),
+      "import.meta.env.VITE_PRODUCT_DISPLAY_NAME": JSON.stringify(
+        productConfig.name,
+      ),
       __ZCODE_ENDPOINT_ENV__: JSON.stringify(pickProductEndpointEnv(env)),
       __ZCODE_VERSION__: JSON.stringify(buildMetadata.appVersion),
       __ZCODE_COMMIT__: JSON.stringify(buildMetadata.buildCommitId),

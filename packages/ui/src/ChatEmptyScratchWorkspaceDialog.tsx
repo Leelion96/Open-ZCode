@@ -1,5 +1,6 @@
+import { PRODUCT_DEFAULT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 export function getScratchWorkspaceLocationHint(name: string) {
-  return `~/ZCodeProject/${name.trim()}`;
+  return `~/${PRODUCT_DEFAULT_PROJECT_DIRECTORY}/${name.trim()}`;
 }
 
 export function getScratchWorkspaceNameErrorKind(name: string) {

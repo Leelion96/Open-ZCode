@@ -18,7 +18,7 @@ after(async () => {
   await rm(fixtures, { recursive: true, force: true });
 });
 
-async function moduleFrom(file, tag, plugins = []) {
+async function moduleFrom(file, tag, plugins = [], productConfig = product) {
   const outfile = join(bundleDir, `${tag}.mjs`);
   await build({
     entryPoints: [join(root, file)],
@@ -28,7 +28,7 @@ async function moduleFrom(file, tag, plugins = []) {
     platform: "node",
     packages: "external",
     define: {
-      __ZCODE_PRODUCT_CONFIG__: JSON.stringify(product),
+      __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig),
       __ZCODE_ENV__: '"production"',
       __ZCODE_PRODUCT_FLAVOR__: '"production"',
     },

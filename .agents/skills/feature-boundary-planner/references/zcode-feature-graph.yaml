@@ -27,17 +27,20 @@ rules:
 nodes:
   - id: capability.desktop-product-configuration
     kind: capability
-    label: Desktop product identity and private data configuration
-    aliases: [product configuration, 应用身份隔离, 用户资料隔离, 项目资料隔离]
+    label: Desktop product identity, private data and display configuration
+    aliases: [product configuration, 应用身份隔离, 用户资料隔离, 项目资料隔离, 应用品牌, branding]
     codeSeeds:
       - file: packages/shared/src/product.ts
         symbol: parseProductConfig
+      - file: packages/shared/src/product.ts
+        symbol: PRODUCT_DISPLAY_NAME
       - file: packages/services/src/paths.ts
         symbol: getZCodeDataRootDir
     invariants:
       - Desktop and its embedded Agent consume the same build configuration.
+      - Brand surfaces use name by default; omit redundant subjects in generic copy and retain the name where app, account or runtime scope matters. Original Agent terms remain. Identity and private data remain independent; logos and icons are unchanged.
       - User and project namespaces have independent switches; explicit paths retain priority.
-      - Standalone CLI and Web builds retain upstream defaults without product injection.
+      - Standalone CLI and Web builds retain upstream name and namespaces without product injection; fixed generic copy is shared.
   - id: capability.model-selection
     kind: capability
     label: Model selection

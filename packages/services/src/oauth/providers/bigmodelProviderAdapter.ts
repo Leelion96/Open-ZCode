@@ -7,6 +7,7 @@ import {
   type OAuthTokenSet,
   type OAuthUserProfile,
 } from "@zcode/shared";
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import { readApiJson } from "../../providers/api/apiJson.js";
 import { createServiceLogger } from "../../logger/serviceLogger.js";
 import { parseOAuthLoginAttribution } from "../callbackAttribution.js";
@@ -170,7 +171,7 @@ export class BigModelProviderAdapter implements OAuthProviderAdapter {
           msg: payload.msg,
         });
         throw new Error(
-          payload.msg?.trim() || `BigModel zcode token 交换失败（code: ${payload.code}）`,
+          payload.msg?.trim() || `通过 BigModel 授权换取 ${PRODUCT_DISPLAY_NAME} 登录凭据失败（code: ${payload.code}）`,
         );
       }
       const zcodeJwtToken = payload.data?.token?.trim() || "";
@@ -179,7 +180,7 @@ export class BigModelProviderAdapter implements OAuthProviderAdapter {
           code: payload.code,
           msg: payload.msg,
         });
-        throw new Error("BigModel zcode token 交换失败：响应缺少 data.token");
+        throw new Error(`登录响应缺少 ${PRODUCT_DISPLAY_NAME} JWT（data.token）`);
       }
       const accessToken = resolveBigModelBusinessAccessToken(payload);
       if (!accessToken) {

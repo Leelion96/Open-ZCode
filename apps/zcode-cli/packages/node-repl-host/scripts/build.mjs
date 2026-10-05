@@ -41,6 +41,7 @@ const resolveCuaHelperBuildId = (env = process.env) =>
 export const buildNodeReplHostBundle = async ({
   outfile = resolve(packageRoot, "dist", "mcp", "server.js"),
   cuaHelperBuildId = resolveCuaHelperBuildId(),
+  productConfig,
 } = {}) => {
   await mkdir(dirname(outfile), { recursive: true });
   await build({
@@ -48,6 +49,7 @@ export const buildNodeReplHostBundle = async ({
     bundle: true,
     define: {
       __ZCODE_CUA_HELPER_BUILD_ID__: JSON.stringify(cuaHelperBuildId),
+      ...(productConfig ? { __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig) } : {}),
     },
     entryPoints: [resolve(packageRoot, "src", "server.ts")],
     format: "esm",

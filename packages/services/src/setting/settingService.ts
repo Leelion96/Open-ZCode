@@ -1,3 +1,4 @@
+import { PRODUCT_DEFAULT_PROJECT_DIRECTORY } from "@zcode/shared/product";
 import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { access, readFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
@@ -29,7 +30,7 @@ import {
   type LegacyTeamConnection,
 } from "#src/setting/legacyAccountConnectionSettings.js";
 const MAX_RECENT_PROJECTS = 10;
-const DEFAULT_PROJECT_NAME = "ZCodeProject";
+const DEFAULT_PROJECT_NAME = PRODUCT_DEFAULT_PROJECT_DIRECTORY;
 const SETTINGS_PARSE_RETRY_DELAY_MS = 300;
 const SETTINGS_PARSE_RETRY_COUNT = 3;
 
