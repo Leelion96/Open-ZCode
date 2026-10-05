@@ -28,7 +28,7 @@ export function buildPhasePrompt(
         ]
       : [];
   return [
-    `You are running the ZCode workflow phase: ${definition.phase}.`,
+    `You are running the workflow phase: ${definition.phase}.`,
     `Workflow run: ${snapshot.runId}`,
     `Working directory: ${snapshot.cwd}`,
     "",
@@ -63,7 +63,7 @@ export function buildScheduledNodePrompt(
     .map((artifact) => `- ${artifact.label}: ${artifact.path}`)
     .join("\n");
   return [
-    `You are running a ZCode workflow node inside phase: ${definition.phase}.`,
+    `You are running a workflow node inside phase: ${definition.phase}.`,
     `Workflow run: ${snapshot.runId}`,
     `Working directory: ${snapshot.cwd}`,
     "",

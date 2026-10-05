@@ -2161,7 +2161,7 @@ export async function goalSession(context: ZCodeProtocolAgentServerContext, rawP
         targetId: target.targetID,
         workspacePath: record.workspace.workspacePath,
       });
-      activeAbortController.abort(new Error("ZCode Protocol goal paused"));
+      activeAbortController.abort(new Error("Protocol goal paused"));
     }
     const snapshotAfterGoal = await afterStateMutation(context, record, "goal_paused");
     return {
@@ -2604,7 +2604,7 @@ export async function stopSession(context: ZCodeProtocolAgentServerContext, rawP
       sessionId: params.sessionId,
     });
   }
-  record.activeAbortController?.abort(new Error("ZCode Protocol session stopped"));
+  record.activeAbortController?.abort(new Error("Protocol session stopped"));
   if (pausedTarget) {
     await afterStateMutation(context, record, "session_stop_goal_paused");
   }

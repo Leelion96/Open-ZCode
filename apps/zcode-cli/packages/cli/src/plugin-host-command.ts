@@ -100,7 +100,7 @@ function assertCapturedBrokerLaunchIsAuthorized(credentials: CapturedBrokerCrede
     process.env[ZCODE_CUA_NODE_REPL_HOST_ENV_KEY] !== "1"
   ) {
     throw new Error(
-      "Captured ZCode CUA broker credentials may only launch the trusted shared node_repl host",
+      "Captured CUA broker credentials may only launch the trusted shared node_repl host",
     );
   }
 }

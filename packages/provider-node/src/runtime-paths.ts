@@ -25,7 +25,7 @@ export function resolveNodeProviderRuntimePaths(
   const personalFilePath = env[ZCODE_PERSONAL_PROVIDER_CONFIG_FILE_ENV]?.trim();
   if (!zcodeBuiltinFilePath && !personalFilePath) return null;
   if (!zcodeBuiltinFilePath || !personalFilePath) {
-    throw new Error("ZCode Built-in 与 Personal Provider Config 路径必须同时提供");
+    throw new Error("Built-in 与 Personal Provider Config 路径必须同时提供");
   }
   return Object.freeze({ zcodeBuiltinFilePath, personalFilePath });
 }

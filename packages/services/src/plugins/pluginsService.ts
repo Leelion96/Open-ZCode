@@ -15,7 +15,7 @@ function createRetiredOverview(): PluginsOverviewResult {
 }
 
 function throwRetiredPluginManagement(): never {
-  throw new Error("Legacy plugin management has been retired in ZCode Agent mode");
+  throw new Error("Legacy plugin management has been retired in Agent mode");
 }
 
 export function createPluginsService(_options?: PluginsServiceOptions): IPluginsService {

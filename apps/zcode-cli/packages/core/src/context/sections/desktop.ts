@@ -3,10 +3,10 @@ import { estimateTokens } from "../utils.js";
 
 export function buildDesktopContextSection(): ContextSection {
   return createDesktopSection(
-    "ZCode Desktop Context",
+    "Desktop Context",
     "desktop_context",
     [
-      "# ZCode Desktop Context",
+      "# Desktop Context",
       "",
       "### Files & URLs",
       "- Return local web URLs as Markdown links (e.g., [label](http://127.0.0.1:8080)).",

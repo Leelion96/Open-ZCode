@@ -43,7 +43,7 @@ export function decodeZCodeBuiltinRelease(input: unknown): ZCodeBuiltinRelease {
   // ZAPI 已退出产品，旧 Remote Release 或 LKG 不能在 Renderer 静态入口删除后
   // 又通过目标 Host Registry 将它重新发布。拒绝整份不兼容 Release，让 Source 回落到兼容候选。
   if (providers.has(RETIRED_ZAPI_PROVIDER_ID)) {
-    throw new Error(`ZCode Built-in Release 包含已退出的 Provider: ${RETIRED_ZAPI_PROVIDER_ID}`);
+    throw new Error(`Built-in Release 包含已退出的 Provider: ${RETIRED_ZAPI_PROVIDER_ID}`);
   }
   return Object.freeze({
     schemaVersion: ZCODE_BUILTIN_RELEASE_SCHEMA_VERSION,

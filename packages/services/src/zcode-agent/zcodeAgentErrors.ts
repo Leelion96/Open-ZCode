@@ -7,7 +7,7 @@ export class ZCodeAgentMcpStatusModeUnsupportedError extends Error {
   readonly code = ZCODE_AGENT_MCP_STATUS_MODE_UNSUPPORTED_ERROR_CODE;
 
   constructor() {
-    super("The connected ZCode Agent does not support MCP status-only refresh");
+    super("The connected Agent does not support MCP status-only refresh");
     this.name = "ZCodeAgentMcpStatusModeUnsupportedError";
   }
 }

@@ -190,7 +190,7 @@ export class BigModelProviderAdapter implements OAuthProviderAdapter {
           code: payload.code,
           msg: payload.msg,
         });
-        throw new Error("BigModel zcode token 交换失败：响应缺少 data.bigmodel.access_token");
+        throw new Error("登录响应缺少 BigModel access token（data.bigmodel.access_token）");
       }
 
       const refreshToken =

@@ -48,7 +48,7 @@ async function readAll(credentialsFile = getCredentialsFile()): Promise<Record<s
     if (getErrorCode(error) === "ENOENT") {
       return {};
     }
-    throw new Error(`Unable to read ZCode credentials: ${credentialsFile}`, { cause: error });
+    throw new Error(`Unable to read credentials: ${credentialsFile}`, { cause: error });
   }
 
   try {
@@ -68,7 +68,7 @@ async function readAll(credentialsFile = getCredentialsFile()): Promise<Record<s
       backupPath,
       credentialsFile,
     });
-    throw new Error(`ZCode credentials are corrupt: ${credentialsFile}`, { cause: error });
+    throw new Error(`Credentials are corrupt: ${credentialsFile}`, { cause: error });
   }
 }
 

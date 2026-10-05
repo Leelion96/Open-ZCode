@@ -5,6 +5,7 @@ import { toast } from "@/components/ui/toast.js";
 import { useFeedbackStore } from "@/feedback/feedbackStore.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { buildErrorFeedbackDescription } from "@/lib/errorFeedbackDraft.js";
+import { RUNTIME_RECYCLED_ERROR } from "@/v4/conversationProjectionStore.js";
 
 interface SessionSubscriptionErrorPanelProps {
   error: string;
@@ -20,6 +21,11 @@ export function SessionSubscriptionErrorPanel({
   onReconnect,
 }: SessionSubscriptionErrorPanelProps) {
   const { intl } = useZCodeIntl();
+  // 已知回收标识沿用现有本地化，其它错误原样展示。
+  const displayError =
+    error === RUNTIME_RECYCLED_ERROR
+      ? intl.formatMessage({ id: "chat.error.runtimeRecycled" })
+      : error;
   const openFeedbackSubmit = useFeedbackStore((state) => state.openSubmit);
   const handleOpenFeedback = useCallback(async () => {
     openFeedbackSubmit({
@@ -48,7 +54,7 @@ export function SessionSubscriptionErrorPanel({
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3 p-4 text-ui-base">
-      <p className="max-w-full break-words text-center font-mono text-destructive">{error}</p>
+      <p className="max-w-full break-words text-center font-mono text-destructive">{displayError}</p>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <Button type="button" variant="outline" onClick={handleOpenFeedback}>
           {intl.formatMessage({ id: "chat.error.feedback" })}

@@ -420,7 +420,8 @@ function supportsLegacyRemoteTaskAllowlist(workspaceIdentity: string | undefined
 }
 
 function isClosedStdioTransportError(error: unknown): boolean {
-  return error instanceof Error && error.message === "ZCode agent stdio transport is closed";
+  // 与 transport 的固定错误文案同步，避免去品牌后漏掉重连判断。
+  return error instanceof Error && error.message === "Agent stdio transport is closed";
 }
 
 interface SessionEventSequenceState {
@@ -599,7 +600,7 @@ function isProtocolRequestTimeout(error: unknown, method: string): boolean {
   if (error instanceof ZCodeProtocolRequestTimeoutError) {
     return error.method === method;
   }
-  return error instanceof Error && error.message === `ZCode Protocol request timed out: ${method}`;
+  return error instanceof Error && error.message === `Protocol request timed out: ${method}`;
 }
 
 function assertV4AttachmentNdjsonEnvelope(method: string, params: unknown): void {
@@ -850,7 +851,7 @@ function createRuntimeUnavailableError(params: ZCodeAgentWorkspaceTarget): Error
   code: typeof ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE;
   workspaceKey: string;
 } {
-  const error = new Error("ZCode Agent runtime is not running.") as Error & {
+  const error = new Error("Agent runtime is not running.") as Error & {
     code: typeof ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE;
     workspaceKey: string;
   };
@@ -2819,7 +2820,7 @@ export function createZCodeAgentService(
 
         void client.respondError(request.id, {
           code: -32601,
-          message: `Unsupported ZCode Protocol request: ${request.method}`,
+          message: `Unsupported protocol request: ${request.method}`,
         });
       }),
       client.onClose(() => {
@@ -3783,7 +3784,7 @@ export function createZCodeAgentService(
           }
         }
         if (!presentation) {
-          throw new Error("ZCode Protocol workspace/readPresentation did not return a result");
+          throw new Error("Protocol workspace/readPresentation did not return a result");
         }
         logger.info(undefined, "ZCode Protocol workspace/readPresentation 完成", {
           durationMs: Date.now() - startedAt,
@@ -4695,7 +4696,7 @@ export function createZCodeAgentService(
           module: "services.zcode_agent",
           requestId: params.requestId,
         });
-        throw new Error(`ZCode session runtime preferences request not found: ${params.requestId}`);
+        throw new Error(`Session runtime preferences request not found: ${params.requestId}`);
       }
       const responseContext = {
         event: "zcode_agent.runtime_preferences.host_response_received",

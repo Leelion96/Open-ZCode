@@ -14,7 +14,7 @@ export const ReadSessionContextInputSchema = z
     sessionId: z
       .string()
       .regex(SESSION_ID_PATTERN, "Session id must use the sess_* format.")
-      .describe("Target ZCode session id to read from persisted session history."),
+      .describe("Target session id to read from persisted session history."),
     query: z
       .string()
       .min(1)

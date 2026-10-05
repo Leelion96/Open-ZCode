@@ -333,7 +333,7 @@ function buildJsToolDescription(options: NodeReplToolOptions = {}): string {
     "Prefer `Promise.all`. Return `{ controlledTabs, userTabs }` as that cell's final result so the model makes " +
     "one decision from both lists. Do not return the controlled list first or decide whether to query user tabs " +
     "from its contents. " +
-    "`tab.snapshot()` plus ref actions remain only as a z-code compatibility fallback. For ordinary navigation, reading, search, and forms, " +
+    `\`tab.snapshot()\` plus ref actions remain only as a compatibility fallback. For ordinary navigation, reading, search, and forms, ` +
     // 模型可能跳过 lookup 文档并把 screenshot() 当最终表达式，导致 PNG bytes 以 Uint8Array 文本回灌；
     // 因此“是否截图”仍按需判断，但一旦截图，emitImage 输出契约必须直接出现在工具说明里。
     "use DOM snapshots only: opening a page is not a reason to capture a screenshot, and do not request both a snapshot " +

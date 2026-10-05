@@ -99,6 +99,6 @@ function formatPathReferenceReason(reason: PathReferenceReason): string {
   if (reason === "image_too_large") return "the image is larger than the inline media budget";
   if (reason === "pdf_too_large") return "the PDF is larger than the inline PDF input limit";
   if (reason === "text_too_large") return "the text file is larger than the inline text budget";
-  if (reason === "video_too_large") return "the video is larger than the ZCode video input limit";
+  if (reason === "video_too_large") return "the video is larger than the video input limit";
   return "the file is not a known text attachment";
 }

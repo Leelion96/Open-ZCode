@@ -80,7 +80,7 @@ export class ZCodeStdioTransport implements ZCodeProtocolTransport {
 
   async send(message: ZCodeProtocolMessage): Promise<void> {
     if (this.disposed || this.closed || this.child.killed || !this.child.stdin.writable) {
-      throw new Error("ZCode agent stdio transport is closed");
+      throw new Error("Agent stdio transport is closed");
     }
     const frame = `${JSON.stringify(message)}\n`;
     await new Promise<void>((resolve, reject) => {

@@ -104,7 +104,7 @@ export const EXIT_PLAN_MODE_MODEL_INSTRUCTIONS = [
 
 ## How This Tool Works
 - You should have already explored the codebase and finalized the plan you want the user to review
-- This tool DOES take the plan content as the required plan parameter in ZCode
+- In this runtime, this tool requires the complete plan in the plan parameter.
 - Pass the complete plan in the plan field; the user will review that content before approving implementation
 - This tool simply signals that you're done planning and ready for the user to review and approve
 - The user will see the contents of the plan parameter when they review it

@@ -117,7 +117,7 @@ const personalProviderConfigRuleSchema = providerConfigRuleSchema
       context.addIssue({
         code: "custom",
         path: ["config", "access"],
-        message: "固定 Account Provider 的 Access 只能由 ZCode Built-in Config 声明",
+        message: "固定 Account Provider 的 Access 只能由 Built-in Config 声明",
       });
     }
   });

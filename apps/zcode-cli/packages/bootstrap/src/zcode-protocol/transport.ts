@@ -102,7 +102,7 @@ export class ZCodeProtocolNdjsonConnection {
       this.buffer = "";
     }
     this.draining = true;
-    this.notifyTransportClosed(new Error("ZCode Protocol client connection closed"));
+    this.notifyTransportClosed(new Error("Protocol client connection closed"));
     // EOF 保留短请求半关闭响应，但挂起 handler 不能让进程永久保活。
     this.drainTimer = setTimeout(() => this.finish(), PROTOCOL_EOF_DRAIN_MS);
     void this.processing.then(
@@ -112,7 +112,7 @@ export class ZCodeProtocolNdjsonConnection {
   };
 
   private readonly onAbort = (): void => {
-    this.notifyTransportClosed(new Error("ZCode Protocol runtime stopping"));
+    this.notifyTransportClosed(new Error("Protocol runtime stopping"));
     this.finish();
   };
 
@@ -212,7 +212,7 @@ export class ZCodeProtocolNdjsonConnection {
 
     const parsed = zcodeProtocolMessageSchema.safeParse(decoded);
     if (!parsed.success) {
-      this.sendError("invalid-message", -32600, "Invalid ZCode Protocol message", {
+      this.sendError("invalid-message", -32600, "Invalid protocol message", {
         issues: parsed.error.issues,
       });
       return null;

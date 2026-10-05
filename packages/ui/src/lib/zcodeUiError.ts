@@ -20,6 +20,8 @@ const GENERIC_ZCODE_UI_ERROR_MESSAGES = new Set([
   "Turn execution failed",
   "Compact failed",
   "Rewind failed",
+  "Agent session failed",
+  "Session failed",
   "ZCode session failed",
 ]);
 

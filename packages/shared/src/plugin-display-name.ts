@@ -42,11 +42,13 @@ export function formatCanonicalPluginName(name: string, locale: string): string 
  * 不按裸 manifest name 猜测官方产品名，避免同名 marketplace 插件互相覆盖。
  */
 export function resolvePluginDisplayName(
-  plugin: { name: string; listing?: ZCodePluginStoreListing },
+  plugin: { id?: string; name: string; listing?: ZCodePluginStoreListing },
   locale: string,
 ): string {
   return (
     resolveLocalizedText(locale, plugin.listing?.displayName, plugin.listing?.displayNameI18n) ??
-    formatCanonicalPluginName(plugin.name, locale)
+    (plugin.id === "zcode-guide@zcode-plugins-official"
+      ? (locale.split("-")[0] === "zh" ? "配置与诊断指南" : "Configuration and Diagnostics Guide")
+      : formatCanonicalPluginName(plugin.name, locale))
   );
 }

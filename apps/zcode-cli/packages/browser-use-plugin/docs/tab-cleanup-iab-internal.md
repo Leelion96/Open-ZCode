@@ -1,6 +1,6 @@
 # Tab Lifecycle Marks
 
-- Agent-created tabs persist in the current ZCode process until the model explicitly calls `tab.close()`, the user
+- Agent-created tabs persist in the current process until the model explicitly calls `tab.close()`, the user
   closes the tab/window, or the process exits. Claimed user tabs return to the user when released.
 - `tab.markDeliverable()` keeps a user-facing result visible and releases it from browser control at turn cleanup.
 - `tab.markHandoff()` keeps unfinished work visible and controllable by this session in a later turn.

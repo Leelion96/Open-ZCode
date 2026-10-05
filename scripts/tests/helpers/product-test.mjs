@@ -34,9 +34,14 @@ async function moduleFrom(file, tag, plugins = []) {
     },
     alias: {
       "@zcode/shared/node": join(root, "packages/shared/src/node.ts"),
+      "@zcode/rpc": join(root, "packages/rpc/src/index.ts"),
       "@zcode/shared": join(root, "packages/shared/src/index.ts"),
       "@zcode/model-option-map": join(root, "packages/model-option-map/src/index.ts"),
       "@zcode/shared/product": join(root, "packages/shared/src/product.ts"),
+      "@zcode/shared/zcode-protocol-v4": join(
+        root,
+        "packages/shared/src/zcode-protocol-v4/index.ts",
+      ),
       "@zcode/contracts": join(
         root,
         "apps/zcode-cli/packages/contracts/src/tools/saved-workflow.ts",

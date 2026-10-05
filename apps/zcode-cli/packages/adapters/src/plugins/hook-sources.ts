@@ -130,7 +130,7 @@ export function listPluginHookEventNames(input: {
       if (!SUPPORTED_HOOK_EVENTS.has(eventName)) {
         input.diagnostics.push({
           code: "plugin_hook_unsupported_event",
-          message: `Plugin hook event is not supported by this ZCode runtime: ${eventName}`,
+          message: `Plugin hook event is not supported by this runtime: ${eventName}`,
           path: source.sourcePath,
           pluginId: input.loaded.id,
           severity: "warning",

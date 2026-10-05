@@ -40,5 +40,5 @@ latest DOM snapshot; use coordinates only for visually verified canvas/custom co
 have only one active recording. The hard duration limit is 90 seconds.
 
 Recording keeps a hidden IAB rendering surface alive during capture and releases it before finalizing
-the WebM stream. ZCode uses Electron's built-in Chromium `MediaRecorder`; recording does not require
+the WebM stream. The runtime uses Electron's built-in Chromium `MediaRecorder`; recording does not require
 FFmpeg or any executable on the application PATH.

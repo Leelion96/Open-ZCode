@@ -220,7 +220,10 @@ function isPersistedAssistantCancellation(error: AssistantErrorInfo): boolean {
   if (
     code === undefined &&
     error.name === "Error" &&
-    data?.message === LEGACY_PROTOCOL_SESSION_STOPPED_MESSAGE
+    // 固定文案与旧记录的名称标记都只用于取消恢复，不展示双文案。
+    (data?.message === "Protocol session stopped" ||
+      data?.message === "Agent protocol session stopped" ||
+      data?.message === LEGACY_PROTOCOL_SESSION_STOPPED_MESSAGE)
   ) {
     // 旧 session/stop 使用普通 Error 作为 AbortSignal.reason，transcript 又未持久化
     // cancelled result；冷恢复若只认 AbortError，会把用户停止重新合成为 TurnError 和错误 Banner。

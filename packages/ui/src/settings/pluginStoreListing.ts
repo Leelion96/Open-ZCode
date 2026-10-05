@@ -106,7 +106,21 @@ export function resolveItemDisplayName(item: StorePluginItem, locale: string): s
   return resolvePluginDisplayName(item, locale);
 }
 
+function resolveNodeReplHostDescription(id: string, locale: string): string | undefined {
+  if (id !== `node-repl-host@${ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID}`) return undefined;
+  // 内部宿主没有商店 listing，在现有展示入口补充翻译；完整 ID 避免改写同名第三方插件。
+  return resolveLocalizedText(
+    locale,
+    "Shared node_repl runtime host for app capabilities. Not user-facing: it carries no skill and appears in no marketplace listing; Browser Use and Computer Use enable it and contribute their own skills, docs and runtime assets.",
+    {
+      "zh-CN": "应用能力共用的 node_repl 运行时宿主。它是内部组件，不包含技能，也不在商店列表展示；Browser Use 和 Computer Use 使用它，并分别提供自己的技能、文档和运行资源。",
+    },
+  );
+}
+
 export function resolveItemDescription(item: StorePluginItem, locale: string): string | undefined {
+  const hostDescription = resolveNodeReplHostDescription(item.id, locale);
+  if (hostDescription) return hostDescription;
   const base =
     item.summary?.description ?? item.info?.description ?? item.installedMeta?.description;
   return resolveLocalizedText(locale, base, item.listing?.descriptionI18n);
@@ -121,7 +135,9 @@ export function resolveManagedPluginDisplay(
   const matchingItem = item?.id === plugin.id ? item : undefined;
   return {
     name: resolvePluginDisplayName(matchingItem ?? plugin, locale),
-    description: matchingItem ? resolveItemDescription(matchingItem, locale) : plugin.description,
+    description: matchingItem
+      ? resolveItemDescription(matchingItem, locale)
+      : resolveNodeReplHostDescription(plugin.id, locale) ?? plugin.description,
   };
 }
 

@@ -50,10 +50,10 @@ export function createZCodeBuiltinEndpointKey(zcodeEndpointOrigin: string): stri
 
 export function normalizeZCodeBuiltinEndpointOrigin(value: string): string {
   const normalized = value.trim();
-  if (!normalized) throw new Error("ZCode Built-in Endpoint Origin 不能为空");
+  if (!normalized) throw new Error("Built-in Endpoint Origin 不能为空");
   const url = new URL(normalized);
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("ZCode Built-in Endpoint Origin 只支持 HTTP(S)");
+    throw new Error("Built-in Endpoint Origin 只支持 HTTP(S)");
   }
   return url.origin;
 }
@@ -61,7 +61,7 @@ export function normalizeZCodeBuiltinEndpointOrigin(value: string): string {
 function normalizeSegment(value: string, name: string): string {
   const normalized = value.trim();
   if (!normalized || normalized === "." || normalized === ".." || /[\\/]/u.test(normalized)) {
-    throw new Error(`ZCode Built-in ${name} 不是合法路径段`);
+    throw new Error(`Built-in ${name} 不是合法路径段`);
   }
   return normalized;
 }

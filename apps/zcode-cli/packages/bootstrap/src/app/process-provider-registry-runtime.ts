@@ -48,7 +48,7 @@ export async function startProcessProviderRegistryRuntime(
 ) {
   const paths = resolveNodeProviderRuntimePaths(env);
   if (!paths) {
-    throw new Error("缺少进程 Provider Registry 的 ZCode Built-in / Personal Config 路径");
+    throw new Error("缺少进程 Provider Registry 的 Built-in / Personal Config 路径");
   }
 
   const accountSource = new MutableAccountProviderConfigSource();
