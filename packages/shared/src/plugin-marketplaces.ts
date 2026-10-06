@@ -1,3 +1,5 @@
+import { buildRuntimeZCodeApiUrl, readProductEndpointEnv } from "./zcodeEndpoint.js";
+
 export interface DefaultPluginMarketplace {
   id: string;
   source: string;
@@ -31,10 +33,11 @@ export const DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS: ReadonlySet<string> = new Set(
 
 export const DEFAULT_PLUGIN_MARKETPLACES: DefaultPluginMarketplace[] = [
   {
-    // ZCode 官方唯一市场：本地 seed 分片与 CDN 分片在 Agent storage 内合并。
-    // CDN manifest 的 name 必须与该 canonical id 一致。
+    // 本地 seed 分片与服务端目录在 Agent storage 内合并，manifest.name 保持 canonical id。
     id: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
-    source: "https://cdn-zcode.z.ai/zcode/official-plugin/marketplace.json",
+    get source() {
+      return buildRuntimeZCodeApiUrl(readProductEndpointEnv(), "/api/v1/plugins/marketplace.json");
+    },
     name: ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
     description: "Plugin marketplace for built-in and community plugins.",
     pluginCount: 0,
