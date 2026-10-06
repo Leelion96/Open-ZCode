@@ -208,12 +208,14 @@ export function ChatErrorBanner({
 
         {modelConfigMissing ? (
           <>
+            {/* 缺少模型时只保留配置入口，不展示上游套餐升级引导。 */}
             <CodingPlanEntryButton
               type="button"
               variant="default"
               size="sm"
               onClick={onOpenUpgrade}
               className={cn(
+                "hidden",
                 actionButtonClassName,
                 "button-gradient gap-1.5 text-white hover:bg-transparent hover:opacity-90 dark:bg-[#484A58] dark:hover:bg-[#484A58]",
               )}

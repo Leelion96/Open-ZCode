@@ -20,6 +20,7 @@ export function generateId(): string {
 }
 
 export const PRESET_SUBSCRIPTION_TIMEOUT_MS = 2 * 60 * 1000;
+export const DEFAULT_PLAN_NODE_KEY = "plan:default";
 export const BIGMODEL_REGISTRATION_URL = buildBigModelApiUrl({ ZCODE_ENV }, "/login");
 const BIGMODEL_CODING_PLAN_PERSONAL_MANAGE_URL = buildBigModelCodingPlanPersonalManageUrl({
   ZCODE_ENV,
@@ -133,6 +134,11 @@ export function resolveModelProviderDisplayName(
 }
 
 export type ModelProviderNavItem =
+  | {
+      key: typeof DEFAULT_PLAN_NODE_KEY;
+      type: "planPlaceholder";
+      label: string;
+    }
   | {
       key: string;
       type: "preset";

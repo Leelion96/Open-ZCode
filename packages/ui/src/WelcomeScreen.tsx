@@ -21,6 +21,7 @@ import { Alert, AlertDescription } from "./components/ui/alert.js";
 import { Button } from "./components/ui/button.js";
 import { ZCodeAboutLogo } from "@/components/ui/ZCodeAboutLogo.js";
 import { useOAuth } from "./hooks/useOAuth.js";
+import { useSkipLogin } from "./hooks/useSkipLogin.js";
 import { useZCodeIntl } from "./i18n/IntlProvider.js";
 import { LoginApiKeyForm } from "./login/LoginApiKeyForm.js";
 import { renderOAuthProviderIcon } from "./lib/oauthProviderIcon.js";
@@ -71,6 +72,7 @@ function shouldCompleteLoginFromExistingUser(params: {
 
 function LoginPanel({ active, onComplete }: LoginPanelProps) {
   const { intl } = useZCodeIntl();
+  const { skipping, skipLogin } = useSkipLogin(onComplete);
   const {
     startLogin,
     cancel,
@@ -327,6 +329,7 @@ function LoginPanel({ active, onComplete }: LoginPanelProps) {
                         ? TID_OAUTH_LOGIN_BUTTON
                         : testId(TID_OAUTH_LOGIN_BUTTON, provider.id)
                     }
+                    disabled={skipping}
                     onClick={() => void startTrackedLogin(provider.id)}
                   >
                     {renderOAuthProviderIcon(provider.id, "size-4")}
@@ -340,15 +343,14 @@ function LoginPanel({ active, onComplete }: LoginPanelProps) {
                   </Button>
                 ))}
                 <Button
-                  variant="outline"
-                  className="h-10 w-full text-ui-base"
-                  size="lg"
+                  type="button"
+                  variant="link"
+                  className="h-7 w-full text-ui-base text-foreground-subtle hover:text-foreground"
                   data-testid={TID_LOGIN_USE_API_KEY_BUTTON}
-                  onClick={() => {
-                    setLoginMode("apiKey");
-                  }}
+                  disabled={skipping}
+                  onClick={() => void skipLogin()}
                 >
-                  {intl.formatMessage({ id: "login.useApiKey" })}
+                  {intl.formatMessage({ id: "login.skip" })}
                 </Button>
               </div>
             ) : null}

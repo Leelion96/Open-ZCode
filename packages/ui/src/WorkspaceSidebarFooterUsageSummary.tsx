@@ -452,6 +452,7 @@ export function WorkspaceSidebarFooterUsageSummaryContent({
       </DropdownMenuItem>
       {/* 产品要求：升级入口始终显示；未解析出当前套餐时由当前 provider family 决定品牌。 */}
       <DropdownMenuItem
+        className="hidden"
         data-testid={TID_SIDEBAR_CODING_PLAN_UPGRADE_BUTTON}
         disabled={entryGate.status === "loading"}
         aria-busy={entryGate.status === "loading"}

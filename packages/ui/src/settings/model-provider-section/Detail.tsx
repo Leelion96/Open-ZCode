@@ -394,6 +394,20 @@ export function ModelProviderSectionDetail({
     return <ModelProviderLoadingCard loadingLabel={loadingLabel} />;
   }
 
+  if (selectedNavItem.type === "planPlaceholder") {
+    // TODO: 接入自有套餐业务后替换占位内容。
+    return (
+      <section
+        className="space-y-2 rounded-xl border border-border bg-surface p-4"
+      >
+        <h3 className="text-ui-lg font-semibold text-foreground">{selectedNavItem.label}</h3>
+        <p className="text-ui-base text-foreground-subtle">
+          TODO
+        </p>
+      </section>
+    );
+  }
+
   if (selectedNavItem.type === "preset") {
     if (!selectedNavItem.provider) {
       // 首屏慢网时预置供应商配置尚未返回，之前这里会直接展示“尚未同步，请先完成 OAuth 登录”，

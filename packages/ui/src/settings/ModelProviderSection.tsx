@@ -40,7 +40,7 @@ import { ModelProviderSectionDetail } from "./model-provider-section/Detail.js";
 import { ModelProviderSectionLayout } from "./model-provider-section/SectionLayout.js";
 import { ProviderTemplatePicker } from "./model-provider-section/ProviderTemplatePicker.js";
 import type { CodingPlanLoginOptions } from "./model-provider-section/codingPlanPricingCards.js";
-import { useModelProviderNavigation } from "./model-provider-section/useModelProviderNavigation.js";
+import { useOpenZCodeModelProviderNavigation } from "./model-provider-section/useOpenZCodeModelProviderNavigation.js";
 import { reportPresetSubscriptionSuccess } from "./model-provider-section/oauthActions.js";
 import {
   createCodingPlanProviderNodeKey,
@@ -680,7 +680,7 @@ export function ModelProviderSection({
   }, [presetSubscriptionProviderId]);
 
   const { navigationGroups, navigationItems, selectedNavItem, navigationUnavailable } =
-    useModelProviderNavigation({
+    useOpenZCodeModelProviderNavigation({
       presetProviders,
       modelProviders,
       entitledAccountProviderIds,
