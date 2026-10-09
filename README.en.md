@@ -150,6 +150,8 @@ ZCODE_SERVER_WORKSPACE=/path/to/project pnpm dev:web
 
 This starts both the Web development server (default: `http://localhost:5173`) and the backend (default: `http://localhost:3030`). Open the Web development server in your browser. `/ws` and general `/api` requests are proxied to the local backend; `/api/v1/oauth/token` is proxied separately to the configured product service.
 
+The Web frontend, backend, and its original Agent use the branding and user/project directory configuration from `config/product.json`. The startup command, Agent lookup order, and directory precedence retain their existing behavior, with no separate Web Agent output or automatic build step.
+
 After changing Agent source code, run `pnpm --filter @zcode/cli... build` and restart the service. To validate the complete distribution, extract and run it as described under Packaging → ZCode CLI distribution below.
 
 ### ZCode CLI distribution

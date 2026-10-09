@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Web 入口集中编排启动、路由与 workspace shell wiring，与 Root.tsx 同样先保持入口收口，避免跨层状态拆散。 */
 import { createRoot } from "react-dom/client";
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import {
   AppErrorBoundary,
   Root,
@@ -96,7 +97,7 @@ function isWebOAuthCallback(params: URLSearchParams): boolean {
 }
 
 function renderWebAuthCallbackPage(): void {
-  document.title = "ZCode - Sign In";
+  document.title = `${PRODUCT_DISPLAY_NAME} - Sign In`;
   const callbackState = parseOAuthState(
     new URLSearchParams(window.location.search).get("state") ?? "",
   );
@@ -121,7 +122,7 @@ async function renderConversationSharePage(): Promise<void> {
   document.documentElement.lang = routeLocale;
   // 分享页必须设置 title：否则浏览器标签只显示 index.html 的通用标题。
   // 会话标题要等 preview 加载完，先给一个语言正确的兜底。
-  document.title = routeLocale === "zh-CN" ? "ZCode 会话分享" : "ZCode Conversation Share";
+  document.title = routeLocale === "zh-CN" ? `${PRODUCT_DISPLAY_NAME} 会话分享` : `${PRODUCT_DISPLAY_NAME} Conversation Share`;
   const shareCode = resolveConversationShareCodeFromPath(window.location.pathname);
   if (!shareCode) {
     root.render(
@@ -416,7 +417,7 @@ function WebBootstrapErrorScreen({ message }: { message: string }) {
 }
 
 function renderWebBootstrapError(error: unknown): void {
-  document.title = "ZCode - Web";
+  document.title = `${PRODUCT_DISPLAY_NAME} - Web`;
   root.render(
     <WebBootstrapErrorScreen message={error instanceof Error ? error.message : String(error)} />,
   );
@@ -447,7 +448,7 @@ async function bootstrapWebApp() {
       onClose: () => {},
     });
     const platform = createWebPlatform();
-    document.title = "ZCode - Web + Server";
+    document.title = `${PRODUCT_DISPLAY_NAME} - Web + Server`;
 
     root.render(
       <AppErrorBoundary>

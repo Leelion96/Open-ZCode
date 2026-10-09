@@ -4,7 +4,7 @@
 
 fork 后一次性配置桌面产品，用一个名称、一个 appId 和三个独立开关派生应用身份、用户资料及项目资料的位置。应用品牌文字默认使用名称，没有开关；具体规则见 [应用品牌文字](application-brand-text.md)。
 
-范围包含桌面端及内嵌 Agent。Agent 的用户资料和程序查找归入用户资料，项目运行产物归入项目资料。不扩展独立 CLI/Web 的安装发布、Computer Use Helper、远程运行组件、更新分发或外部连接策略，也不通过本配置禁用这些能力。
+范围包含桌面端及内嵌 Agent，以及本机 Web 前端、HTTP Server 和应用 Agent。Agent 的用户资料和程序查找归入用户资料，项目运行产物归入项目资料。不扩展独立 CLI/Web 的安装发布、Computer Use Helper、远程运行组件、更新分发或外部连接策略，也不通过本配置禁用这些能力。
 
 ## 唯一配置入口
 
@@ -20,7 +20,7 @@ fork 后一次性配置桌面产品，用一个名称、一个 appId 和三个�
 }
 ```
 
-只接受这五个字段。三个开关必须为布尔值；名称和 appId 去除首尾空格后不能为空。不增加版本、品牌开关、路径覆盖、逐字段环境变量、多层合并、配置 Service、热更新或自动迁移。
+只接受这五个字段。三个开关必须为布尔值；名称和 appId 去除首尾空格后不能为空。不增加版本、品牌开关、路径覆盖、逐字段环境变量、多层合并、配置 Service、热更新或自动迁移。HTTP Host 向原 Agent 传递完整配置属于已有配置的进程传递，不新增人工配置源。
 
 名称仅接受单行 ASCII 字母、数字、空格和连字符。派生 key 时转为小写，连续空白转为一个连字符；结果必须以字母开头、符合安全 slug 格式、不超过 64 个字符，且不是 Windows 保留设备名。appId 必须符合反向域名格式，不超过 100 个字符。非法输入直接报错，不静默删除字符。
 
@@ -49,7 +49,9 @@ fork 后一次性配置桌面产品，用一个名称、一个 appId 和三个�
 
 ## 所有者与接入
 
-配置在开发和构建入口读取：`scripts/product-config.mjs` 使用 `packages/shared/src/product.ts` 的统一校验与派生规则。Desktop、Host、UI 和内嵌 Agent 消费同一配置；NSIS 由构建入口传值，不维护第二份人工配置。未注入的独立构建保留上游名称和命名空间；共用源码的固定通用文案允许同步变化。
+配置在开发和构建入口读取：`scripts/product-config.mjs` 使用 `packages/shared/src/product.ts` 的统一校验与派生规则。Desktop、Host、UI 和内嵌 Agent 消费同一配置；NSIS 由构建入口传值，不维护第二份人工配置。Web Vite 开发与生产构建复用该读取入口，注入完整 `__ZCODE_PRODUCT_CONFIG__`；初始 HTML 标题通过同一次读取注入的 `VITE_PRODUCT_DISPLAY_NAME` 生成。配置非法或读取失败时直接阻断启动/构建，不回退旧品牌。其他未注入的独立构建保留上游名称和命名空间；共用源码的固定通用文案允许同步变化。
+
+产品 Web 配置由 Vite 启动/构建入口读取一次，页面消费 `@zcode/shared/product` 的公共常量和既有 `{productName}` 国际化入口，不新增状态、配置副本或文字替换层。修改配置后重新启动/构建生效。HTTP Server 将同一完整配置通过原进程环境传给原 Agent，保持上游启动与查找方式；规则见 [Web 产品配置一致性](web-product-configuration.md)。普通独立 CLI 保留上游默认；OAuth 回调方式、浏览器存储、分享协议和桌面系统入口继续遵守各平台边界。
 
 用户资料复用 `packages/services/src/paths.ts` 等既有解析入口，保持 HOME、dataBaseDir、workspacePath 的区别，以及参数、环境变量、setter 和显式 storage/config/log 路径的优先级。保留 v2、cli、skills、commands、subagents、hooks、plugins、workflows 等内部结构；不重写真实 HOME，不扩大原有 v2-only 复制范围。
 

@@ -1,6 +1,6 @@
-# 桌面产品配置
+# 产品配置
 
-修改 `product.json`，然后重新启动桌面开发或重新构建。配置只有名称、appId 和三个独立开关：
+修改 `product.json`，然后重新启动桌面或本机 Web 开发，或重新构建。配置只有名称、appId 和三个独立开关：
 
 ```json
 {
@@ -58,4 +58,4 @@ Preview / Dev 使用对应名称和身份后缀；profile 分别为 `open-zcode-
 - 各开关独立：只改应用身份时，用户和项目业务目录仍保持上游默认。
 - 不自动迁移、合并或清理官方资料；已有显式路径覆盖继续生效。
 - 通用 `.agents/`、根 `AGENTS.md`、内部包名及兼容文件格式不改。
-- 只作用于桌面及其内嵌 Agent；独立 CLI、Web、Computer Use Helper、远端运行组件和服务连接策略不在本轮范围内。
+- 桌面及其内嵌 Agent、Web 前端/Server 及其启动的原 Agent 使用同一配置；普通独立 CLI、Computer Use Helper、远端运行组件和服务连接策略保持原有边界。本机 Web 规则见 [Web 产品配置一致性](../specs/features/web-product-configuration.md)。

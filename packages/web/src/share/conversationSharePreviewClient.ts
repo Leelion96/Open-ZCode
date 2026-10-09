@@ -1,3 +1,4 @@
+import { PRODUCT_PROTOCOL_SCHEME } from "@zcode/shared/product";
 import {
   conversationShareErrorEnvelopeSchema,
   conversationShareKnownErrorCodeSchema,
@@ -70,7 +71,8 @@ export function buildShareImportDeepLink(shareCode: string): string {
   if (!isSafeConversationShareCode(shareCode)) {
     throw new TypeError("Invalid conversation share code");
   }
-  return `zcode://share/import?code=${encodeURIComponent(shareCode)}`;
+  // 桌面已按产品身份注册协议；硬编码上游 scheme 会打开另一应用，无法继续当前分享。
+  return `${PRODUCT_PROTOCOL_SCHEME}://share/import?code=${encodeURIComponent(shareCode)}`;
 }
 
 function mapErrorKind(code: ConversationShareApiErrorCode): ConversationSharePreviewErrorKind {
@@ -244,7 +246,7 @@ export class ConversationSharePreviewClient {
       });
       throw new ConversationSharePreviewClientError({
         kind: "unsupported_schema_version",
-        message: "Conversation share requires a newer ZCode version",
+        message: "Conversation share requires a newer app version",
         status: response.status,
       });
     }

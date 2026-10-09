@@ -1,4 +1,4 @@
-/** 桌面构建注入五项产品配置；独立 CLI / Web 未注入时保留上游默认。 */
+/** Desktop/Web 构建注入配置；HTTP Host 将同一配置传给原 Agent，独立 CLI 保留默认。 */
 export interface ProductConfig {
   name: string;
   appId: string;
@@ -8,6 +8,8 @@ export interface ProductConfig {
 }
 
 declare const __ZCODE_PRODUCT_CONFIG__: ProductConfig | undefined;
+/** 仅供应用 Host 向原 Agent 传递已校验的完整配置，不维护另一份人工配置。 */
+export const PRODUCT_CONFIG_ENV_KEY = "ZCODE_PRODUCT_CONFIG_JSON";
 
 export function parseProductConfig(value: unknown): Readonly<ProductConfig> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -55,6 +57,9 @@ export function parseProductConfig(value: unknown): Readonly<ProductConfig> {
 export const PRODUCT_CONFIG: Readonly<ProductConfig> =
   typeof __ZCODE_PRODUCT_CONFIG__ !== "undefined"
     ? parseProductConfig(__ZCODE_PRODUCT_CONFIG__)
+    // 普通 Agent 产物/源码回退原先未注入配置；沿原 spawn 环境接入，避免继续写上游目录。
+    : typeof process !== "undefined" && process.env[PRODUCT_CONFIG_ENV_KEY]?.trim()
+      ? parseProductConfig(JSON.parse(process.env[PRODUCT_CONFIG_ENV_KEY]!))
     : Object.freeze({
         name: "ZCode",
         appId: "dev.zcode.app",

@@ -1,4 +1,5 @@
 import { createLocalServices, getAppConfigDir } from "@zcode/services/node";
+import { PRODUCT_CONFIG, PRODUCT_CONFIG_ENV_KEY } from "@zcode/shared/product";
 import {
   materializeBundledZCodeBuiltinProviderConfig,
   readBundledZCodeBuiltinProviderConfig,
@@ -6,6 +7,8 @@ import {
 import { createHttpServer } from "./http.js";
 
 async function main(): Promise<void> {
+  // 原 Agent 查找/启动方式不变，只继承 Host 已读取的品牌及资料目录配置。
+  process.env[PRODUCT_CONFIG_ENV_KEY] = JSON.stringify(PRODUCT_CONFIG);
   const zcodeBuiltinProviderConfigFilePath = await materializeBundledZCodeBuiltinProviderConfig({
     environmentConfigRoot: getAppConfigDir(),
     content: readBundledZCodeBuiltinProviderConfig(),

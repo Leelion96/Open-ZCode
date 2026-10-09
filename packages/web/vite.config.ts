@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { loadProductConfig } from "../../scripts/product-config.mjs";
 import { pdfJsCMapsPlugin } from "../ui/vite/pdfJsCMapsPlugin.js";
 import { thirdPartyNoticesVitePlugin } from "../../scripts/third-party-notices.mjs";
 // Vite 配置在 Node 加载期执行，不能导入 @zcode/shared 根入口。
@@ -23,11 +24,12 @@ function resolveZCodeEnv(value: string | undefined): "test" | "production" {
   return value?.trim().toLowerCase() === "production" ? "production" : "test";
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
   // `.env*` 只提供链接常量；当前产品环境由启动脚本或 CI 注入 ZCODE_ENV。
   // 启动脚本通过 process.env 显式选择 test/production；它必须优先于 .env 文件，
   // 否则 share:test 可能被 mode 的旧配置误解析到错误 endpoint。
   const env = { ...loadEnv(mode, REPO_ROOT, ""), ...process.env };
+  const productConfig = await loadProductConfig();
   const zcodeEnv = resolveZCodeEnv(env.ZCODE_ENV);
   const endpointEnv = {
     ...env,
@@ -82,6 +84,9 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
+      // Web 未注入产品配置时，共享 UI 会回退为 ZCode；与桌面端复用同一读取入口。
+      __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig),
+      "import.meta.env.VITE_PRODUCT_DISPLAY_NAME": JSON.stringify(productConfig.name),
       __ZCODE_ENDPOINT_ENV__: JSON.stringify(pickProductEndpointEnv(env)),
       __ZCODE_VERSION__: JSON.stringify(version),
       __ZCODE_COMMIT__: JSON.stringify(env.ZCODE_COMMIT || "unknown"),

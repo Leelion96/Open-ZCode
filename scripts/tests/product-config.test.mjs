@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- 产品配置回归集中覆盖共享品牌文案与既有隔离行为。 */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseProductConfig, productKey } from "../../packages/shared/src/product.ts";
@@ -6,6 +7,33 @@ import { moduleFrom } from "./helpers/product-test.mjs";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
+
+test("bot guidance remains generic while supplied workspace names are preserved", async () => {
+  const { formatBotMessage } = await moduleFrom(
+    "packages/services/src/bots/messages.ts",
+    "bot-guidance",
+  );
+  const product = await loadProductConfig();
+  for (const locale of ["zh-CN", "en-US"]) {
+    for (const id of [
+      "helpTitle",
+      "userNotBound",
+      "bindCodeInvalid",
+      "permissionExpired",
+      "elicitationExpired",
+      "remoteReconnectUnavailable",
+    ]) {
+      const message = formatBotMessage(locale, id, { workspacePath: "fixture" });
+      assert.ok(!/zcode/iu.test(message));
+      assert.ok(!message.includes(product.name));
+    }
+    const message = formatBotMessage(locale, "remoteReconnectUnavailable", {
+      workspacePath: "ZCode workspace",
+    });
+    assert.ok(message.includes("ZCode workspace"));
+    assert.ok(!message.includes("{workspacePath}"));
+  }
+});
 
 test("desktop product accepts the configured name, appId and independent switches", async () => {
   const product = await loadProductConfig();

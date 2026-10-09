@@ -77,7 +77,7 @@ pnpm dev:desktop
 
 ## 品牌与隔离配置
 
-[config/product.json](config/product.json) 是桌面产品的唯一配置入口：
+[config/product.json](config/product.json) 是桌面与本机 Web 产品的唯一配置入口：
 
 ```json
 {
@@ -148,6 +148,8 @@ ZCODE_SERVER_WORKSPACE=/path/to/project pnpm dev:web
 ```
 
 该命令同时启动 Web 开发服务器（默认 `http://localhost:5173`）和后端（默认 `http://localhost:3030`）；浏览器访问前者。`/ws` 和一般 `/api` 请求代理到本地后端，`/api/v1/oauth/token` 单独代理到当前配置的产品服务。
+
+Web 页面、后台和后台启动的原 Agent 使用 `config/product.json` 的品牌与用户/项目目录配置。启动命令、Agent 查找顺序和资料目录优先级沿用原有方式，不另建 Web 专用产物或自动构建步骤。
 
 Agent 源码修改后，执行 `pnpm --filter @zcode/cli... build` 并重启服务。需要验证完整发行包时，按下方“ZCode 命令行版”打包章节解压运行。
 

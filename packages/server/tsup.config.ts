@@ -9,6 +9,9 @@ const { loadBuiltinProviderConfig } = await import(
 const { stageThirdPartyNotices } = await import(
   pathToFileURL(resolve(import.meta.dirname, "../../scripts/third-party-notices.mjs")).href
 );
+const { loadProductConfig } = await import(
+  pathToFileURL(resolve(import.meta.dirname, "../../scripts/product-config.mjs")).href
+);
 
 // tsup config 可能从不同 cwd 加载，基于配置文件自身目录解析仓库根 package.json。
 const rootPackageJsonPath = resolve(import.meta.dirname, "../../package.json");
@@ -16,8 +19,10 @@ const { version } = JSON.parse(readFileSync(rootPackageJsonPath, "utf-8"));
 
 const { environment: zcodeEnv, content: zcodeBuiltinProviderConfigJson } =
   await loadBuiltinProviderConfig();
+const productConfig = await loadProductConfig();
 
 export const SERVER_HTTP_DEFINES = {
+  __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig),
   __ZCODE_VERSION__: JSON.stringify(version),
   __ZCODE_ENV__: JSON.stringify(zcodeEnv),
   __ZCODE_BUILTIN_PROVIDER_CONFIG_JSON__: JSON.stringify(zcodeBuiltinProviderConfigJson),
