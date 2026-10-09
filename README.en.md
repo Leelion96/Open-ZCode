@@ -98,7 +98,7 @@ Replace the example URL with your deployment address. Process environment variab
 | `isolateUserData`    | Isolates user-level business data and the embedded Agent's default user directory                                    |
 | `isolateProjectData` | Isolates project configuration, ignore files, shared attachments, and runtime artifacts                              |
 
-The three switches are independent. A disabled category follows upstream defaults. Restart desktop development or rebuild after changing the name or switches; official data is not automatically migrated, merged, or removed. See [Desktop Product Configuration](config/PRODUCT.md) for details and explicit path override boundaries.
+The three switches are independent. A disabled category follows upstream defaults. Restart desktop development or rebuild after changing the name or switches; official data is not automatically migrated, merged, or removed. See [Desktop Product Configuration](config/README.md#产品品牌与隔离配置) for details and explicit path override boundaries.
 
 ## Development and Usage
 
