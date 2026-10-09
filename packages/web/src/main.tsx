@@ -447,6 +447,10 @@ async function bootstrapWebApp() {
     const services = await connectViaWebSocket(bootstrap.wsUrl, {
       onClose: () => {},
     });
+    // 独立 HTTP Server 不提供窗口 Controller；手机远控继续使用桌面 Host 的 Controller。
+    const uiServices = params.get("remote")
+      ? services
+      : { ...services, windowControllerService: undefined };
     const platform = createWebPlatform();
     document.title = `${PRODUCT_DISPLAY_NAME} - Web + Server`;
 
@@ -457,7 +461,7 @@ async function bootstrapWebApp() {
           broadcastService={services.broadcastService}
         >
           <Root
-            services={services}
+            services={uiServices}
             platform={platform}
             initialWorkspaceAbsPath={bootstrap.initialWorkspaceAbsPath}
             initialWorkspaceIdentity={bootstrap.initialWorkspaceIdentity}

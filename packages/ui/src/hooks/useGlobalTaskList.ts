@@ -12,6 +12,7 @@ import { attachTaskListRowActivity } from "@/v4/taskListRowActivity.js";
 import { stabilizeTaskListItems } from "@/v4/taskListItemStabilization.js";
 import { getWindowControllerTaskListRegistry } from "@/v4/windowControllerTaskListRegistry.js";
 import type { WindowControllerTaskListVersion } from "@/v4/windowControllerTaskListRegistry.js";
+import { useStandaloneTaskList } from "@/hooks/useStandaloneTaskList.js";
 
 type GlobalTaskListItem = WindowHostControllerTaskListItem;
 
@@ -128,6 +129,11 @@ export function useGlobalTaskList(params: {
     ],
   );
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
+  const standaloneList = useStandaloneTaskList(
+    baseServices.zcodeTaskService,
+    controller ? null : query,
+    JSON.stringify([taskListVersionSignature, workspaceSourceGenerationSignature]),
+  );
 
   const load = useCallback(
     async (version: WindowControllerTaskListVersion) => {
@@ -141,8 +147,7 @@ export function useGlobalTaskList(params: {
         return;
       }
       if (!controllerRegistry) {
-        // 原子切换后 base attachment 必须提供 Controller；缺失代表 Host/Renderer 版本不一致。
-        logger.error("[useGlobalTaskList] window Host Controller channel unavailable");
+        // 独立 Web 的列表由 useStandaloneTaskList 读取。
         setLoading(false);
         return;
       }
@@ -200,6 +205,8 @@ export function useGlobalTaskList(params: {
       workspaceSourceGenerationSignature,
     });
   }, [controllerRevision, load, taskListVersionSignature, workspaceSourceGenerationSignature]);
+
+  if (!controller) return standaloneList;
 
   const hasRemoteScope = params.workspaceTabs.some((tab) => Boolean(tab.workspaceIdentity));
   return {
