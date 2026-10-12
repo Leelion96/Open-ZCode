@@ -12,8 +12,10 @@ This project is a fork of open-source [ZCode](https://github.com/zai-org/ZCode),
 The changes implemented so far fall into three categories:
 
 1. **Isolation from the official ZCode app**: separate brand names, application identities, user data, and project artifacts allow this fork and the official app to operate independently.
-2. **A self-hosted [Open-ZCode-Server](https://github.com/Leelion96/Open-ZCode-Server) to take over upstream service capabilities used by the project**: configuration delivery and the plugin marketplace are implemented. Login, sharing, feedback, and update business capabilities are not yet implemented; their APIs remain placeholders.
+2. **A self-hosted [Open-ZCode-Server](https://github.com/Leelion96/Open-ZCode-Server) to take over upstream service capabilities used by the project**: configuration delivery, the plugin marketplace, and ordinary announcements are implemented. Login, sharing, feedback, and update business capabilities are not yet implemented; their APIs remain placeholders.
 3. **Adjustments to official services and commercial entry points**: disable audit reporting, official account authorization, and commercial plan entry points.
+
+Upstream source: ZCode v3.15.1 (`aac4755`).
 
 ## Change Principles
 
@@ -193,6 +195,12 @@ node apps/zcode-cli/packages/cli/dist/zcode.cjs --help
 ```
 
 This entry runs the Agent CLI directly and does not handle the distribution's `--web` switch. Use `pnpm dev:web` for Web development, or the extracted `bin/zcode.mjs` shown below to test the unified command.
+
+### UI Plugin development
+
+See the [UI Plugin guide](UI_PLUGIN.en.md) for the Excalidraw workflow, supported APIs, plugin installation and updates, and host debugging.
+
+**Plugin PRs in `zcode-plugins` must declare whether they affect a UI Plugin and list the plugin names in the PR template.** See the [required plugin-type declaration](UI_PLUGIN.en.md#declare-the-plugin-type-in-pull-requests).
 
 ## Configuration
 

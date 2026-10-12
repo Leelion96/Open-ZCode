@@ -7,7 +7,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { buildErrorFeedbackDescription } from "@/lib/errorFeedbackDraft.js";
 import { RUNTIME_RECYCLED_ERROR } from "@/v4/conversationProjectionStore.js";
 
-interface SessionSubscriptionErrorPanelProps {
+export interface SessionSubscriptionErrorPanelProps {
   error: string;
   sessionId: string;
   workspacePath: string;
@@ -33,7 +33,7 @@ export function SessionSubscriptionErrorPanel({
       type: "bug",
       module: "Agent任务执行失败",
       severity: "P2-中",
-      includeLogs: false,
+      includeLogs: true,
       description: buildErrorFeedbackDescription({
         message: error,
         contextLines: [

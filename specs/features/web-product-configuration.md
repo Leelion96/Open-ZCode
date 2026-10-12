@@ -48,3 +48,7 @@ HOME、显式目录、`ZCODE_DATA_BASE_DIR` 及服务 setter 沿用各消费者�
 - 复用现有用户资料，页面标题显示自定义品牌；通过进程打开文件确认 HTTP Server 使用 `<HOME>/.open-zcode/v2/tasks-index.sqlite`，原 `dist/zcode.cjs` Agent 使用 `<HOME>/.open-zcode/cli/db/db.sqlite`。未发起模型推理或保存用户设置。
 - 目录控件、默认套餐占位等 UI 已恢复原样；上游 Web 总任务列表的 `window-controller` 缺失等问题未修改。未执行完整发行包组装、手机远控或跨平台验收。
 - 验证使用 Node 24.18.0、pnpm 10.33.2，未修改仓库锁定的工具链版本。
+
+## v3.15.1
+
+保留独立 Web 无 Controller 的列表读取修复，并接入上游远控恢复结构；地址派生、兼容接口和构建验证见 [合并规范](upstream-v3.15.1-merge.md)。

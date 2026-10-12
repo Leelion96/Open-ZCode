@@ -12,8 +12,10 @@
 当前已实现的改动可分为三大类：
 
 1. **和官方ZCode保持隔离**：品牌名、应用身份、用户资料、项目产物通通和官方ZCode区别开来，互不影响。
-2. **自建 [Open-ZCode-Server](https://github.com/Leelion96/Open-ZCode-Server) 服务，接管项目内各类上游服务能力**：目前已实现配置下发和插件市场；登录、分享、反馈、更新等业务暂未实现，相关 API 为占位接口。
+2. **自建 [Open-ZCode-Server](https://github.com/Leelion96/Open-ZCode-Server) 服务，接管项目内各类上游服务能力**：目前已实现配置下发、插件市场和普通公告；登录、分享、反馈、更新等业务暂未实现，相关 API 为占位接口。
 3. **调整官方服务与商业入口**：关闭审计上报、官方授权登录及商业套餐等入口。
+
+上游源码版本：ZCode v3.15.1（`aac4755`）。
 
 ## 改动原则
 
@@ -192,6 +194,12 @@ node apps/zcode-cli/packages/cli/dist/zcode.cjs --help
 ```
 
 这个入口直接运行 Agent CLI，不经过发行包的 `--web` 分流。开发 Web 用 `pnpm dev:web`；验证统一的 `zcode` 命令，用下方解压后的 `bin/zcode.mjs`。
+
+### UI Plugin 开发
+
+参见 [UI Plugin：能力、API 与调试](UI_PLUGIN.md)，从 Excalidraw 的画布协作示例开始，了解插件安装更新、页面 API 和宿主联调入口。
+
+**向 `zcode-plugins` 提交插件 PR 时，必须在 PR 模板中声明是否为 UI Plugin，并填写插件名称。** 判断标准见[提交 PR 时声明插件类型](UI_PLUGIN.md#提交-pr-时声明插件类型)。
 
 ## 配置
 

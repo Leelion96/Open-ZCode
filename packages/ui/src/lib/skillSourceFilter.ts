@@ -3,7 +3,7 @@ import type { ZCodeProvider } from "@zcode/shared";
 
 type SkillSourceType = "glm" | "unknown";
 
-function resolveSkillSourceType(skillPath: string): SkillSourceType {
+export function resolveSkillSourceType(skillPath: string): SkillSourceType {
   const normalized = skillPath.replaceAll("\\", "/").toLowerCase();
   if (normalized.includes(`/${PRODUCT_USER_DIRECTORY}/skills/`) || normalized.includes(`/${PRODUCT_PROJECT_DIRECTORY}/skills/`) || normalized.includes("/.zcode/skills/")) {
     return "glm";

@@ -29,23 +29,23 @@ export interface ForceUpdateGuardLogger {
   warn: (...args: unknown[]) => void;
 }
 
-interface ForceUpdateGuardResult {
+export interface ForceUpdateGuardResult {
   blocked: boolean;
   requirement?: ForceUpdateRequirement;
 }
 
-interface ForceUpdateGuardOptions {
+export interface ForceUpdateGuardOptions {
   locale: Locale;
   logger: ForceUpdateGuardLogger;
   endpointOrigin?: string;
   fetchRemoteConfig?: () => Promise<unknown>;
-  requestAutoUpdate?: (
-    onStateChange?: (state: ForceAutoUpdateState) => void,
-  ) => (() => void) | void;
+  requestAutoUpdate?: (onStateChange?: (state: ForceAutoUpdateState) => void) => (() => void) | void;
   onBlocked?: (requirement: ForceUpdateRequirement) => void;
 }
 
-function resolveForceUpdateClientConfigUrl(endpointOrigin = DEFAULT_ZCODE_ENDPOINT_ORIGIN): string {
+export function resolveForceUpdateClientConfigUrl(
+  endpointOrigin = DEFAULT_ZCODE_ENDPOINT_ORIGIN,
+): string {
   const url = new URL(
     `${buildZCodeEndpointUrls(endpointOrigin).origin}${ZCODE_CLIENT_CONFIG_API_PATH}`,
   );
@@ -148,7 +148,7 @@ async function fetchRemoteForceUpdateConfig(
   });
 }
 
-async function resolveDesktopForceUpdateRequirement(options: {
+export async function resolveDesktopForceUpdateRequirement(options: {
   logger: ForceUpdateGuardLogger;
   endpointOrigin?: string;
   fetchRemoteConfig?: () => Promise<unknown>;
@@ -182,7 +182,7 @@ async function resolveDesktopForceUpdateRequirement(options: {
   return null;
 }
 
-function resolveForceUpdateDownloadUrl(
+export function resolveForceUpdateDownloadUrl(
   locale: Locale,
   endpointOrigin = DEFAULT_ZCODE_ENDPOINT_ORIGIN,
 ): string {
@@ -190,7 +190,7 @@ function resolveForceUpdateDownloadUrl(
   return locale === "zh-CN" ? `${origin}/cn` : `${origin}/en`;
 }
 
-function formatForceUpdateDialogText(
+export function formatForceUpdateDialogText(
   requirement: ForceUpdateRequirement,
   locale: Locale,
 ): ForceUpdateDialogText {

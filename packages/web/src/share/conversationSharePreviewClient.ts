@@ -44,7 +44,7 @@ export class ConversationSharePreviewClientError extends Error {
   }
 }
 
-function isSafeConversationShareCode(value: string): boolean {
+export function isSafeConversationShareCode(value: string): boolean {
   return SHARE_CODE_PATTERN.test(value);
 }
 
@@ -97,13 +97,13 @@ function mapHttpStatus(status: number): ConversationSharePreviewErrorKind {
   return "unknown";
 }
 
-interface ConversationSharePreviewClientOptions {
+export interface ConversationSharePreviewClientOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
   diagnostics?: ConversationSharePreviewDiagnostics;
 }
 
-interface ConversationSharePreviewDiagnostics {
+export interface ConversationSharePreviewDiagnostics {
   info(event: string, details: Record<string, unknown>): void;
   warn(event: string, details: Record<string, unknown>): void;
 }
