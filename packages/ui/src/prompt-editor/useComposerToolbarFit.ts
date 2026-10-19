@@ -1,5 +1,24 @@
 import { useLayoutEffect, useRef } from "react";
 
+function toolbarOverflow(root: HTMLElement): number {
+  const available = root.querySelector<HTMLElement>("[data-composer-leading-actions]");
+  const content = root.querySelector<HTMLElement>("[data-composer-leading-content]");
+  if (!available || !content) return 0;
+  const trailing = root.querySelector<HTMLElement>("[data-composer-trailing-actions]");
+  const contentWidth = content.getBoundingClientRect().width;
+  const gap = Number.parseFloat(getComputedStyle(root).columnGap) || 12;
+  return Math.max(
+    0,
+    contentWidth - available.getBoundingClientRect().width,
+    trailing
+      ? contentWidth +
+          trailing.getBoundingClientRect().width +
+          gap -
+          root.getBoundingClientRect().width
+      : 0,
+  );
+}
+
 /** 仅拥有 DOM 布局投影；权限、Plan 和 CUA 业务状态仍由原有 hooks 管理。 */
 export function fitComposerToolbar(root: HTMLElement) {
   const available = root.querySelector<HTMLElement>("[data-composer-leading-actions]");
@@ -10,19 +29,7 @@ export function fitComposerToolbar(root: HTMLElement) {
   delete root.dataset.composerModelIcon;
   delete root.dataset.composerProviderCompact;
   for (const control of controls) delete control.dataset.composerCompact;
-  const trailing = root.querySelector<HTMLElement>("[data-composer-trailing-actions]");
-  const gap = Number.parseFloat(getComputedStyle(root).columnGap) || 12;
-  const overflow = () =>
-    Math.max(
-      0,
-      content.getBoundingClientRect().width - available.getBoundingClientRect().width,
-      trailing
-        ? content.getBoundingClientRect().width +
-            trailing.getBoundingClientRect().width +
-            gap -
-            root.getBoundingClientRect().width
-        : 0,
-    );
+  const overflow = () => toolbarOverflow(root);
   // 前四档依次收起 Computer、mode、Plan、think 文字，不能合并裁决。
   for (const priority of ["0", "1", "2", "3"]) {
     if (overflow() <= 0) return;
@@ -33,6 +40,11 @@ export function fitComposerToolbar(root: HTMLElement) {
     }
   }
   if (overflow() <= 0) return;
+  // 合并入口在最后一级仍保留绿条，不进入旧版独立 Think 的去绿条阶段。
+  if (root.querySelector("[data-composer-combined-model]")) {
+    root.dataset.composerModelIcon = "true";
+    return;
+  }
   if (root.querySelector(".composer-provider-prefix")) {
     root.dataset.composerProviderCompact = "true";
   }
@@ -51,6 +63,15 @@ export function useComposerToolbarFit() {
     if (!root) return;
     const update = () => {
       if (!root.parentElement || root.getBoundingClientRect().width <= 0) return;
+      // 面板动画每次改宽都会通知 observer；完整布局已放得下时，克隆/插入副本只会徒增样式重算。
+      // 已有压缩状态必须继续测量完整副本，才能在空间恢复、语言或模型变化时正确展开。
+      if (
+        !root.dataset.composerModelIcon &&
+        !root.dataset.composerProviderCompact &&
+        !root.querySelector("[data-composer-compact]") &&
+        toolbarOverflow(root) <= 0
+      )
+        return;
       // 在不可见副本上尝试展开，避免真实按钮测量时来回移动、丢失 hover 或关闭 Tooltip。
       const probe = root.cloneNode(true) as HTMLElement;
       probe.setAttribute("aria-hidden", "true");

@@ -1,39 +1,34 @@
 import { PRODUCT_PROTOCOL_SCHEME } from "@zcode/shared/product";
 import {
   conversationShareErrorEnvelopeSchema,
-  conversationShareKnownErrorCodeSchema,
+  classifyConversationShareError,
+  conversationShareRequestIdSchema,
   conversationSharePreviewDataSchema,
   createConversationShareSuccessEnvelopeSchema,
   decodeConversationShareRows,
   isConversationShareSchemaVersionSupported,
   parseConversationSharePathname,
-  type ConversationShareApiErrorCode,
+  type ConversationShareErrorKind,
   type ConversationSharePreview,
   type Locale,
 } from "@zcode/shared";
 
 const SHARE_CODE_PATTERN = /^[A-Za-z0-9._~-]{1,512}$/u;
 
-export type ConversationSharePreviewErrorKind =
-  | "authentication_required"
-  | "not_found"
-  | "expired"
-  | "rate_limited"
-  | "network"
-  | "invalid_contract"
-  | "unsupported_schema_version"
-  | "unknown";
+export type ConversationSharePreviewErrorKind = ConversationShareErrorKind;
 
 export class ConversationSharePreviewClientError extends Error {
   readonly kind: ConversationSharePreviewErrorKind;
   readonly status?: number;
-  readonly code?: ConversationShareApiErrorCode;
+  readonly code?: number;
+  readonly requestId?: string;
 
   constructor(options: {
     kind: ConversationSharePreviewErrorKind;
     message: string;
     status?: number;
-    code?: ConversationShareApiErrorCode;
+    code?: number;
+    requestId?: string;
     cause?: unknown;
   }) {
     super(options.message, options.cause === undefined ? undefined : { cause: options.cause });
@@ -41,6 +36,8 @@ export class ConversationSharePreviewClientError extends Error {
     this.kind = options.kind;
     this.status = options.status;
     this.code = options.code;
+    const requestId = conversationShareRequestIdSchema.safeParse(options.requestId);
+    if (requestId.success) this.requestId = requestId.data;
   }
 }
 
@@ -73,28 +70,6 @@ export function buildShareImportDeepLink(shareCode: string): string {
   }
   // 桌面已按产品身份注册协议；硬编码上游 scheme 会打开另一应用，无法继续当前分享。
   return `${PRODUCT_PROTOCOL_SCHEME}://share/import?code=${encodeURIComponent(shareCode)}`;
-}
-
-function mapErrorKind(code: ConversationShareApiErrorCode): ConversationSharePreviewErrorKind {
-  switch (code) {
-    case 3213:
-      return "authentication_required";
-    case 3211:
-      return "not_found";
-    case 3212:
-      return "expired";
-    case 3002:
-      return "rate_limited";
-    default:
-      return "unknown";
-  }
-}
-
-function mapHttpStatus(status: number): ConversationSharePreviewErrorKind {
-  if (status === 401) return "authentication_required";
-  if (status === 404 || status === 403) return "not_found";
-  if (status === 429) return "rate_limited";
-  return "unknown";
 }
 
 export interface ConversationSharePreviewClientOptions {
@@ -188,12 +163,28 @@ export class ConversationSharePreviewClient {
       contentType: response.headers.get("content-type"),
     });
 
-    const body = await response.text();
+    const headerId = conversationShareRequestIdSchema.safeParse(
+      response.headers.get("x-request-id"),
+    );
+    const requestId = headerId.success ? headerId.data : undefined;
+    let body: string;
+    try {
+      body = await response.text();
+    } catch (cause) {
+      throw new ConversationSharePreviewClientError({
+        kind: "network",
+        message: "Share response interrupted",
+        status: response.status,
+        requestId,
+        cause,
+      });
+    }
     if (!response.ok && !body.trim()) {
       throw new ConversationSharePreviewClientError({
-        kind: mapHttpStatus(response.status),
+        kind: classifyConversationShareError(response.status),
         message: "Conversation share API failed",
         status: response.status,
+        requestId,
       });
     }
     let payload: unknown;
@@ -201,9 +192,10 @@ export class ConversationSharePreviewClient {
       payload = JSON.parse(body) as unknown;
     } catch (error) {
       throw new ConversationSharePreviewClientError({
-        kind: "invalid_contract",
+        kind: response.ok ? "invalid_contract" : classifyConversationShareError(response.status),
         message: "Conversation share API returned invalid JSON",
         status: response.status,
+        requestId,
         cause: error,
       });
     }
@@ -211,19 +203,20 @@ export class ConversationSharePreviewClient {
     if (!response.ok) {
       const parsedError = conversationShareErrorEnvelopeSchema.safeParse(payload);
       if (parsedError.success) {
-        // 未知业务码保留服务端 msg，不再让整条信封解析失败退化成没有上下文的 HTTP 错误。
-        const knownCode = conversationShareKnownErrorCodeSchema.safeParse(parsedError.data.code);
+        // 未知业务码保留 code 和请求 ID，方便关联服务端日志。
         throw new ConversationSharePreviewClientError({
-          kind: knownCode.success ? mapErrorKind(knownCode.data) : mapHttpStatus(response.status),
+          kind: classifyConversationShareError(response.status, parsedError.data.code),
           message: parsedError.data.msg,
           status: response.status,
-          ...(knownCode.success ? { code: knownCode.data } : {}),
+          requestId: requestId ?? parsedError.data.logid,
+          code: parsedError.data.code,
         });
       }
       throw new ConversationSharePreviewClientError({
-        kind: mapHttpStatus(response.status),
+        kind: classifyConversationShareError(response.status),
         message: "Conversation share API failed",
         status: response.status,
+        requestId,
       });
     }
 
@@ -233,6 +226,7 @@ export class ConversationSharePreviewClient {
         kind: "invalid_contract",
         message: "Conversation share preview does not match the public contract",
         status: response.status,
+        requestId,
         cause: parsed.error,
       });
     }
@@ -248,6 +242,7 @@ export class ConversationSharePreviewClient {
         kind: "unsupported_schema_version",
         message: "Conversation share requires a newer app version",
         status: response.status,
+        requestId,
       });
     }
     // 逐行降级：认不出的行跳过并计数，不让整页打不开。

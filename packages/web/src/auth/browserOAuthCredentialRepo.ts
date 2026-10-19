@@ -17,6 +17,7 @@ const BIGMODEL_ACCESS_TOKEN_KEY = "oauth:bigmodel:access_token";
 const BIGMODEL_USER_INFO_KEY = "oauth:bigmodel:user_info";
 const OAUTH_PENDING_NONCE_KEY = "oauth_pending_nonce";
 const OAUTH_PENDING_PROVIDER_KEY = "oauth_pending_provider";
+const OAUTH_PENDING_REDIRECT_URI_KEY = "oauth_pending_redirect_uri";
 
 /** 本仓支持的登录 provider。private 分享的 owner 身份是 provider 特定的，两边都要能登。 */
 export type WebOAuthProviderId = typeof ZAI_PROVIDER_ID | typeof BIGMODEL_PROVIDER_ID;
@@ -114,6 +115,23 @@ export class BrowserOAuthCredentialRepo {
     return result.status === "authenticated" ? result.userInfo : null;
   }
 
+  /**
+   * 只读的账号展示资料（设备页账号行）。不是登录门禁：不校验 JWT、不清理残缺凭据，
+   * 否则渲染一次列表就可能提前登出；登录事实仍由 loadCachedSessionState / JWT 决定。
+   */
+  loadActiveAccount(): { provider: WebOAuthProviderId; userInfo: UserInfo } | null {
+    try {
+      const provider = this.localStorage.getItem(ACTIVE_PROVIDER_KEY);
+      if (!isWebOAuthProviderId(provider)) return null;
+      const rawUserInfo = this.localStorage.getItem(providerKeys(provider).userInfo);
+      if (!hasText(rawUserInfo)) return null;
+      const userInfo = toUserInfo(JSON.parse(rawUserInfo));
+      return userInfo ? { provider, userInfo } : null;
+    } catch {
+      return null;
+    }
+  }
+
   loadCachedSessionState(): OAuthCachedSessionRestoreResult {
     const activeProvider = this.localStorage.getItem(ACTIVE_PROVIDER_KEY);
     const zcodeJwtToken = this.localStorage.getItem(ZCODE_JWT_TOKEN_KEY);
@@ -206,5 +224,40 @@ export class BrowserOAuthCredentialRepo {
 
   clearPendingProvider(): void {
     this.sessionStorage.removeItem(OAUTH_PENDING_PROVIDER_KEY);
+  }
+
+  /** 与 nonce/provider 同属本次登录；跨页换 token 必须使用授权时的完整地址。 */
+  savePendingRedirectUri(nonce: string, redirectUri: string): void {
+    this.sessionStorage.setItem(
+      OAUTH_PENDING_REDIRECT_URI_KEY,
+      JSON.stringify({ nonce, redirectUri }),
+    );
+  }
+
+  loadPendingRedirectUri(nonce: string): string | null {
+    const raw = this.sessionStorage.getItem(OAUTH_PENDING_REDIRECT_URI_KEY);
+    if (!raw) return null;
+    try {
+      const pending: unknown = JSON.parse(raw);
+      // 旧页面只更新 nonce/provider；遗留地址必须与本次 nonce 匹配，不能串用。
+      if (
+        pending &&
+        typeof pending === "object" &&
+        "nonce" in pending &&
+        pending.nonce === nonce &&
+        "redirectUri" in pending &&
+        typeof pending.redirectUri === "string" &&
+        pending.redirectUri.trim()
+      ) {
+        return pending.redirectUri;
+      }
+    } catch {
+      // 损坏的可选元数据不能被当成本次授权地址。
+    }
+    return null;
+  }
+
+  clearPendingRedirectUri(): void {
+    this.sessionStorage.removeItem(OAUTH_PENDING_REDIRECT_URI_KEY);
   }
 }

@@ -6,6 +6,7 @@ import {
 import {
   buildOAuthState,
   buildReturnToCallbackUrl,
+  buildWebRemoteOAuthRedirectUri,
   isTrustedDevReturnTo,
   parseOAuthState,
   parseOptionalUrl,
@@ -86,20 +87,36 @@ export class WebAuthService {
   startLogin(options: WebAuthLoginOptions = {}): void {
     const nonce = this.runtime.createNonce();
     const provider = options.provider ?? ZAI_PROVIDER_ID;
+    const appReturnTo = options.appReturnTo ?? this.runtime.getCurrentHref();
+    const returnToOptions = { currentOrigin: this.runtime.getCurrentOrigin() };
+    const redirectUri = buildWebRemoteOAuthRedirectUri(
+      options.redirectUri ?? this.config.redirectUri,
+      appReturnTo,
+      returnToOptions,
+    );
     this.repo.savePendingNonce(nonce);
     this.repo.savePendingProvider(provider);
+    this.repo.savePendingRedirectUri(nonce, redirectUri);
 
     const state = buildOAuthState({
       nonce,
-      app_return_to: options.appReturnTo ?? this.runtime.getCurrentHref(),
-      ...(options.devReturnTo ? { return_to: options.devReturnTo } : {}),
+      app_return_to: appReturnTo,
+      ...(options.devReturnTo
+        ? {
+            return_to: buildWebRemoteOAuthRedirectUri(
+              options.devReturnTo,
+              appReturnTo,
+              returnToOptions,
+            ),
+          }
+        : {}),
     });
 
     this.runtime.assign(
       this.provider.buildAuthorizeUrl({
         state,
         provider,
-        redirectUri: options.redirectUri ?? this.config.redirectUri,
+        redirectUri,
       }),
     );
   }
@@ -141,14 +158,17 @@ export class WebAuthService {
     // provider 必须取跳转前记下的那个：authorize 参数名和 token 响应里 access_token 的位置
     // 都是 provider 特定的。缺失时按 zai 兜底，保持旧回调链接可用。
     const provider = this.repo.loadPendingProvider() ?? ZAI_PROVIDER_ID;
+    const pendingRedirectUri = this.repo.loadPendingRedirectUri(statePayload.nonce);
     this.repo.clearPendingNonce();
     this.repo.clearPendingProvider();
+    this.repo.clearPendingRedirectUri();
 
-    const callbackRedirectUri = ["/cn/share/callback", "/share/callback"].includes(
-      new URL(url).pathname,
-    )
-      ? this.config.shareRedirectUri
-      : this.config.redirectUri;
+    // 旧页面发起的登录没有 pending 地址，沿用原配置；不能把本次 code/state 当作 redirect_uri。
+    const callbackRedirectUri =
+      pendingRedirectUri ??
+      (["/cn/share/callback", "/share/callback"].includes(new URL(url).pathname)
+        ? this.config.shareRedirectUri
+        : this.config.redirectUri);
     const exchange = await this.provider.exchangeToken({
       code: callback.code,
       state: callback.state,
@@ -178,6 +198,22 @@ export class WebAuthService {
 
   getZCodeJwtToken(): string | null {
     return this.repo.loadZCodeJwtToken();
+  }
+
+  /** 设备页账号行的展示资料；只读，不参与登录判断。 */
+  getActiveAccount(): {
+    displayName: string;
+    avatarUrl?: string;
+    provider: WebOAuthProviderId;
+  } | null {
+    const account = this.repo.loadActiveAccount();
+    if (!account) return null;
+    const { userInfo, provider } = account;
+    return {
+      displayName: userInfo.displayName.trim() || userInfo.username,
+      ...(userInfo.avatarUrl ? { avatarUrl: userInfo.avatarUrl } : {}),
+      provider,
+    };
   }
 
   async logout(): Promise<void> {

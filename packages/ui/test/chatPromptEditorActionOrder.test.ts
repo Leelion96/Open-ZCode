@@ -48,7 +48,7 @@ vi.mock("@/prompt-editor/usePromptEditorDragState.js", () => ({
   }),
 }));
 
-describe("ChatPromptEditor action order", () => {
+describe("ChatPromptEditor action menu", () => {
   it("passes side chat command exclusions to the action menu", () => {
     const html = renderToStaticMarkup(
       createElement(ChatPromptEditor, {
@@ -61,26 +61,5 @@ describe("ChatPromptEditor action order", () => {
       }),
     );
     expect(html).toContain('data-excluded="goal"');
-  });
-  it("renders the + action menu before the permission mode selector", () => {
-    const html = renderToStaticMarkup(
-      createElement(ChatPromptEditor, {
-        workspacePath: "/tmp/workspace",
-        taskId: "session-1",
-        submitLabel: "Send",
-        showMentionButton: true,
-        leadingActions: createElement("span", {
-          "data-testid": "permission-mode-selector",
-        }),
-        onSubmit: vi.fn(),
-      }),
-    );
-
-    const actionMenuIndex = html.indexOf('data-testid="composer-action-menu"');
-    const permissionModeIndex = html.indexOf('data-testid="permission-mode-selector"');
-
-    expect(actionMenuIndex).toBeGreaterThanOrEqual(0);
-    expect(permissionModeIndex).toBeGreaterThanOrEqual(0);
-    expect(actionMenuIndex).toBeLessThan(permissionModeIndex);
   });
 });

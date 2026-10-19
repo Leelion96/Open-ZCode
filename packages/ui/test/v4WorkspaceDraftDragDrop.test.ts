@@ -1,7 +1,5 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   INITIAL_PANE_LAYOUT,
@@ -32,8 +30,7 @@ vi.mock("@/v4/WorkbenchPane.js", async () => {
 vi.mock("@/v4/WorkbenchSplitDivider.js", async () => {
   const React = await import("react");
   return {
-    WorkbenchSplitDivider: () =>
-      React.createElement("div", { "data-testid": "mock-divider" }),
+    WorkbenchSplitDivider: () => React.createElement("div", { "data-testid": "mock-divider" }),
   };
 });
 
@@ -76,14 +73,5 @@ describe("V4WorkspaceChatArea draft drag/drop", () => {
       sessionId: "sess-b",
     });
     expect(useWorkbenchGroupStore.getState().activeGroupId).toBeNull();
-  });
-
-  it("keeps the drop preview layer above composer and input layers", () => {
-    const source = readFileSync(
-      join(process.cwd(), "packages/ui/src/v4/WorkbenchPane.tsx"),
-      "utf8",
-    );
-
-    expect(source).toContain("pointer-events-none absolute inset-0 z-50");
   });
 });

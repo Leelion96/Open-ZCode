@@ -7,7 +7,6 @@ import {
   bumpTaskListMembershipVersionForWorkspaceEvent,
   useTaskListMembershipVersion,
 } from "@/v4/taskListMembershipVersion.js";
-import { shouldRefetchTaskListMembershipForWorkspaceEvent } from "@/lib/taskListRefreshPolicy.js";
 import {
   projectStandaloneTaskListItems,
   readStandaloneTaskList,
@@ -35,7 +34,7 @@ export function useStandaloneTaskList(
       service.onDynamicWorkspaceEvent(scope)((event) => {
         if (
           event.type === "workspace_task_list_changed" &&
-          shouldRefetchTaskListMembershipForWorkspaceEvent(event)
+          ["task_archived", "task_unarchived", "task_pinned", "task_unpinned", "task_created", "task_meta_changed", "task_deleted"].includes(event.reason)
         ) {
           bumpTaskListMembershipVersionForWorkspaceEvent(event);
         }

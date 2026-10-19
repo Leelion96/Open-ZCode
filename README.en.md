@@ -15,7 +15,7 @@ The changes implemented so far fall into three categories:
 2. **A self-hosted [Open-ZCode-Server](https://github.com/Leelion96/Open-ZCode-Server) to take over upstream service capabilities used by the project**: configuration delivery, the plugin marketplace, and ordinary announcements are implemented. Login, sharing, feedback, and update business capabilities are not yet implemented; their APIs remain placeholders.
 3. **Adjustments to official services and commercial entry points**: disable audit reporting, official account authorization, and commercial plan entry points.
 
-Upstream source: ZCode v3.15.1 (`aac4755`).
+Upstream source: ZCode v3.16.1 (`0a1fc56`).
 
 ## Change Principles
 
@@ -182,6 +182,8 @@ When starting the general Web service's HTTP entry directly, configure API/WebSo
 See Packaging below for build instructions. `pnpm build:zcode` only creates the distribution; it does not replace an existing `zcode` on `PATH`. If the command still points to an older installation or another checkout, check it with `command -v zcode` on macOS / Linux or `where.exe zcode` on Windows.
 
 ### CLI Source Development
+
+See the [CLI usage guide (Chinese)](apps/zcode-cli/docs/usage/README.md) for model configuration, non-interactive runs, tools and extensions, batch evaluation, and trajectory capture.
 
 Use the source entry when developing the TUI or Agent:
 

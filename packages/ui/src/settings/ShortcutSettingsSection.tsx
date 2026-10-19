@@ -24,10 +24,10 @@ import {
   resolveEffectiveShortcutBindings,
   setShortcutRecordingActive,
 } from "@/shortcuts/bindings.js";
-import { ShortcutBindingRow, type RecordingState } from "./ShortcutBindingRow.js";
-import { ShortcutSearchBar } from "./ShortcutSearchBar.js";
-import { useShortcutKeySearch } from "./useShortcutKeySearch.js";
-import { useShortcutRecording } from "./useShortcutRecording.js";
+import { ShortcutBindingRow, type RecordingState } from "@/settings/ShortcutBindingRow.js";
+import { ShortcutSearchBar } from "@/settings/ShortcutSearchBar.js";
+import { useShortcutKeySearch } from "@/settings/useShortcutKeySearch.js";
+import { useShortcutRecording } from "@/settings/useShortcutRecording.js";
 
 /**
  * 快捷键设置分区：命令表只读展示 + 键盘录入 + 冲突处理。
@@ -44,6 +44,8 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
   const [recording, setRecording] = useState<RecordingState | null>(null);
   const keySearch = useShortcutKeySearch();
   const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   const overrides = settings?.shortcutBindings;
   const effective = useMemo(() => resolveEffectiveShortcutBindings(overrides), [overrides]);
@@ -78,13 +80,19 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
       if (savingRef.current) {
         return;
       }
+      // 原因：仅用 ref 拦截会静默丢弃后续点击；保存态同步禁用入口，直到权威快照刷新完成。
       savingRef.current = true;
+      setSaving(true);
+      setSaveFailed(false);
+      setRecording(null);
       try {
         await update({ shortcutBindings: next });
       } catch (error) {
         logger.error("[shortcuts] 保存快捷键绑定失败", { error: String(error) });
+        setSaveFailed(true);
       } finally {
         savingRef.current = false;
+        setSaving(false);
       }
     },
     [update],
@@ -172,6 +180,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
       return;
     }
     const confirmed = await requestConfirmation({
+      confirmVariant: "destructive",
       title: intl.formatMessage({ id: "settings.shortcuts.resetAllConfirmTitle" }),
       description: intl.formatMessage({ id: "settings.shortcuts.resetAllConfirmDescription" }),
     });
@@ -212,7 +221,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
   const recordingCommandId = recording?.commandId ?? null;
 
   return (
-    <div className="space-y-4" data-testid="settings-shortcuts-section">
+    <div className="min-w-0 space-y-6" aria-busy={saving} data-testid="settings-shortcuts-section">
       <ShortcutSearchBar
         query={query}
         onQueryChange={setQuery}
@@ -223,17 +232,26 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
           <Button
             variant="outline"
             onClick={resetAll}
-            disabled={!overrides || Object.keys(overrides).length === 0}
+            disabled={saving || !settings || !overrides || Object.keys(overrides).length === 0}
             data-testid="settings-shortcut-reset-all"
           >
-            <RotateCcw className="mr-2 size-4" />
-            {intl.formatMessage({ id: "settings.shortcuts.resetAll" })}
+            <RotateCcw className="size-3.5" />
+            {intl.formatMessage({ id: saving ? "common.saving" : "settings.shortcuts.resetAll" })}
           </Button>
         }
       />
 
-      <div className="overflow-hidden rounded-xl border border-border">
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_72px] bg-surface px-4 py-3 text-ui-sm text-foreground-subtle">
+      {saveFailed ? (
+        <div
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive"
+          data-testid="settings-shortcut-save-error"
+        >
+          {intl.formatMessage({ id: "settings.shortcuts.saveFailed" })}
+        </div>
+      ) : null}
+      <div className="min-w-0 rounded-xl border border-card-border">
+        <div className="hidden grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_40px] rounded-t-xl bg-surface sm:grid px-4 py-3 text-ui-sm text-foreground-subtle">
           <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderCommand" })}</span>
           <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderBinding" })}</span>
           <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderScope" })}</span>
@@ -245,6 +263,7 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
             entry={entry}
             commandLabel={commandLabel(entry.id)}
             bindings={effective[entry.id] ?? []}
+            saving={saving || !settings}
             isOverridden={overrides?.[entry.id] !== undefined}
             isRecording={recordingCommandId === entry.id}
             recording={recording}

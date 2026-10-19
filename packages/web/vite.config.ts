@@ -12,6 +12,7 @@ import { resolveRemoteFrontendVersion } from "./vite/remoteFrontendVersion.mjs";
 // 根入口包含 NodeNext 风格的源码 re-export，Node 会按真实文件查找 .js 并在 bootstrap 阶段失败。
 import {
   pickProductEndpointEnv,
+  resolveBigModelApiOrigin,
   resolveRuntimeZCodeEndpointOrigin,
   resolveZaiOAuthClientId,
   resolveZaiOAuthOrigin,
@@ -19,7 +20,10 @@ import {
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(HERE, "../..");
-const { version } = JSON.parse(readFileSync(resolve(REPO_ROOT, "package.json"), "utf-8"));
+const { version, zcodeCompatibility } = JSON.parse(
+  readFileSync(resolve(REPO_ROOT, "package.json"), "utf-8"),
+) as { version: string; zcodeCompatibility?: { minCompatibleVersion?: string } };
+const minCompatibleVersion = zcodeCompatibility?.minCompatibleVersion ?? version;
 
 function resolveZCodeEnv(value: string | undefined): "test" | "production" {
   return value?.trim().toLowerCase() === "production" ? "production" : "test";
@@ -38,6 +42,8 @@ export default defineConfig(async ({ mode }) => {
   };
   const zcodeEndpointOrigin = resolveRuntimeZCodeEndpointOrigin(endpointEnv);
   const zaiOAuthOrigin = resolveZaiOAuthOrigin(endpointEnv);
+  // 远控与桌面/分享页一致，BigModel 授权域名必须跟随产品环境。
+  const bigmodelOAuthOrigin = resolveBigModelApiOrigin(endpointEnv);
   // ZAI OAuth client_id 是公开标识，允许注入浏览器包；secret/token 不得走 VITE_。
   const zaiOAuthClientId = resolveZaiOAuthClientId(endpointEnv);
 
@@ -66,6 +72,12 @@ export default defineConfig(async ({ mode }) => {
           changeOrigin: true,
           secure: true,
         },
+        "/api/v1/remote": {
+          target: zcodeEndpointOrigin,
+          changeOrigin: true,
+          secure: true,
+          ws: true,
+        },
         // 将 /ws 和 /api 请求代理到 server（默认 3030 端口）
         "/ws": { target: "ws://localhost:3030", ws: true },
         "/api": { target: "http://localhost:3030" },
@@ -92,6 +104,7 @@ export default defineConfig(async ({ mode }) => {
       __ZCODE_VERSION__: JSON.stringify(
         resolveRemoteFrontendVersion(version, process.env.WEB_REMOTE_FRONTEND_VERSION),
       ),
+      __ZCODE_MIN_COMPATIBLE_VERSION__: JSON.stringify(minCompatibleVersion),
       __ZCODE_COMMIT__: JSON.stringify(env.ZCODE_COMMIT || "unknown"),
       __ZCODE_ENV__: JSON.stringify(zcodeEnv),
       "import.meta.env.VITE_ZCODE_BASE_URL": JSON.stringify(zcodeEndpointOrigin),
@@ -100,6 +113,7 @@ export default defineConfig(async ({ mode }) => {
       // 明确注入 OAuth 公开配置，避免 Web 端在不同 mode 下隐式依赖源码 fallback。
       "import.meta.env.VITE_ZAI_OAUTH_CLIENT_ID": JSON.stringify(zaiOAuthClientId),
       "import.meta.env.VITE_ZAI_OAUTH_ORIGIN": JSON.stringify(zaiOAuthOrigin),
+      "import.meta.env.VITE_BIGMODEL_OAUTH_ORIGIN": JSON.stringify(bigmodelOAuthOrigin),
     },
     build: {
       // 生产不在浏览器产物暴露 sourceMappingURL，避免客户端侧还原业务源码。

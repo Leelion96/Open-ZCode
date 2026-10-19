@@ -169,6 +169,21 @@ export interface StoreCategoryGroup {
   items: StorePluginItem[];
 }
 
+export type PluginStoreSegment = "public" | "community" | "personal";
+
+export function resolvePluginStoreSegment(item: StorePluginItem): PluginStoreSegment {
+  if (!isPublicStoreMarketplaceId(item.marketplace)) return "personal";
+  return item.listing?.publisherType === "community" ? "community" : "public";
+}
+
+export function isUiPluginItem(item: StorePluginItem): boolean {
+  // 已安装清单优先于目录宣传；禁用仍保留经过校验的 surface 元数据。
+  if (item.info) return Boolean(item.info.uiSurfaces?.length);
+  return Boolean(
+    (item.installedMeta?.componentTypes ?? item.summary?.componentTypes)?.includes("ui"),
+  );
+}
+
 /** 个人分段的市场分组：marketplace 是排序键，title 是展示名。 */
 export interface PersonalMarketplaceGroup {
   marketplace: string;

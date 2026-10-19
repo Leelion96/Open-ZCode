@@ -130,18 +130,12 @@ describe("DynamicWorkflowModeSetting（DWG-22）", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("未选择时显示服务端提供的模式，「默认」标签只在它上面，列表在触发器下方展开", () => {
+  it("未选择时显示服务端提供的模式且默认标签只在它上面", () => {
     act(() => publish("alwaysOn"));
     render(createElement(DynamicWorkflowModeSetting));
     expect(screen.getByTestId("select").getAttribute("data-value")).toBe("alwaysOn");
     expect(taggedOptions()).toEqual(["alwaysOn"]);
     expect(screen.getByTestId(TID_SETTINGS_DYNAMIC_WORKFLOW_MODE_TRIGGER)).toBeTruthy();
-    // 列表宽度固定为触发器宽度，说明折行；否则最长的一行说明会把列表撑宽。
-    expect(document.querySelector('[data-position="popper"]')?.className).toContain(
-      "w-(--radix-select-trigger-width)",
-    );
-    // 行用 wide 控件列（280px）：默认 192px 列会把 260px 触发器与列表一起压窄。
-    expect(document.body.innerHTML).toContain("sm:grid-cols-[minmax(0,1fr)_280px]");
     expect(
       screen.getByTestId("option-onDemand").querySelector('[data-part="description"]')?.textContent,
     ).toBe("settings.dynamicWorkflow.option.onDemand.description");

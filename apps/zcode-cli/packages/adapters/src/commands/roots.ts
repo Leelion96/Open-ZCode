@@ -1,7 +1,7 @@
 import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { CustomCommandRoot, CustomCommandSource } from "@zcode/contracts";
 
 const COMMANDS_DIR = "commands";
@@ -12,6 +12,7 @@ const ZCODE_DIR = PRODUCT_PROJECT_DIRECTORY;
 const AGENTS_DIR = ".agents";
 
 export interface CustomCommandRootResolutionOptions {
+  additionalDirectories?: readonly string[];
   extraRoots?: string[];
   extraResolvedRoots?: CustomCommandRoot[];
   homeDirectory?: string;
@@ -52,6 +53,18 @@ export async function resolveDefaultCustomCommandRoots(
     if (includeZcode) {
       roots.push(...commandRootsForBase(directory, "project", nextPriority));
     }
+  }
+
+  for (const directory of new Set(
+    (options.additionalDirectories ?? []).map((path) => resolve(path)),
+  )) {
+    if (directory === resolvedWorkingDirectory) continue;
+    roots.push(
+      ...commandRootsForBase(directory, "project", nextPriority).map((item) => ({
+        ...item,
+        namespace: basename(directory),
+      })),
+    );
   }
 
   roots.push(...(options.extraResolvedRoots ?? []));

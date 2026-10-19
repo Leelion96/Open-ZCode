@@ -124,6 +124,34 @@ describe("BrowserOAuthCredentialRepo", () => {
     expect(repo.loadCachedSession()?.id).toBe("53291785835589288");
   });
 
+  it("只读返回当前 provider 的账号展示资料，缺 JWT 或资料损坏也不清理存储", () => {
+    const localStorage = new MemoryStorage();
+    const sessionStorage = new MemoryStorage();
+    const repo = new BrowserOAuthCredentialRepo({ localStorage, sessionStorage });
+
+    expect(repo.loadActiveAccount()).toBeNull();
+    repo.saveUserInfo(
+      { user_id: "53291785835589288", name: "Ada", avatar: "https://example.com/a.png" },
+      "bigmodel",
+    );
+    repo.setActiveProvider("bigmodel");
+    expect(repo.loadActiveAccount()).toEqual({
+      provider: "bigmodel",
+      userInfo: {
+        id: "53291785835589288",
+        username: "Ada",
+        displayName: "Ada",
+        avatarUrl: "https://example.com/a.png",
+      },
+    });
+
+    localStorage.setItem("oauth:bigmodel:user_info", "{not json");
+    expect(repo.loadActiveAccount()).toBeNull();
+    // 展示读取不是登录门禁：不能像 loadCachedSessionState 那样顺手清理残缺凭据。
+    expect(localStorage.getItem("oauth:active_provider")).toBe("bigmodel");
+    expect(localStorage.getItem("oauth:bigmodel:user_info")).toBe("{not json");
+  });
+
   it("记住并归还本次跳出去登录用的 provider", () => {
     const localStorage = new MemoryStorage();
     const sessionStorage = new MemoryStorage();

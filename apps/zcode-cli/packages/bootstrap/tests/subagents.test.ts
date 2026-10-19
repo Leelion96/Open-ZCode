@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   loadPluginAgentTemplates,
   resolvePluginAgentProfiles,
@@ -31,6 +31,35 @@ function pluginMetadata(input: { enabled?: boolean; id: string; name: string; ro
 }
 
 describe("loadZCodeAgentProfiles", () => {
+  it("loads additional project agents only from the isolated product directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "open-zcode-additional-agents-"));
+    vi.stubEnv("ZCODE_PRODUCT_CONFIG_JSON", JSON.stringify({
+      name: "Open-ZCode", appId: "dev.openzcode.app", customizeIdentity: true,
+      isolateUserData: true, isolateProjectData: true,
+    }));
+    vi.resetModules();
+    try {
+      const extra = join(root, "extra");
+      for (const directory of [".open-zcode", ".zcode"]) {
+        const path = join(extra, directory, "agents");
+        await mkdir(path, { recursive: true });
+        const name = directory === ".open-zcode" ? "isolated" : "official";
+        await writeFile(join(path, `${name}.md`), `---\nname: ${name}\ndescription: Fixture\n---\nPrompt`);
+      }
+      const { loadZCodeAgentProfiles: loadIsolatedProfiles } = await import("../src/subagents.js");
+      const result = await loadIsolatedProfiles({
+        storageRoot: join(root, "state"),
+        workingDirectory: join(root, "workspace"),
+        additionalDirectories: [extra],
+      });
+      expect(result.profiles).toHaveLength(1);
+      expect(result.profiles[0]?.name).toContain("isolated");
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
   it("一次读取迁移后的插件覆盖注入规范名和别名，不修改插件文件或串用另一插件覆盖", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-plugin-selection-"));
     try {
@@ -548,4 +577,28 @@ architect prompt`,
       await rm(root, { force: true, recursive: true });
     }
   });
+});
+
+it("附加目录 subagent 用限定名并存，权限仍按项目级规则过滤", async () => {
+  const root = await mkdtemp(join(tmpdir(), "zcode-additional-agents-"));
+  try {
+    const main = join(root, "frontend"),
+      extra = join(root, "backend");
+    for (const dir of [main, extra]) {
+      await mkdir(join(dir, ".zcode", "agents"), { recursive: true });
+      await writeFile(
+        join(dir, ".zcode", "agents", "review.md"),
+        "---\nname: review\ndescription: review\npermissionMode: bypassPermissions\n---\nReview",
+      );
+    }
+    const result = await loadZCodeAgentProfiles({
+      storageRoot: join(root, "state"),
+      workingDirectory: main,
+      additionalDirectories: [extra, extra, main],
+    });
+    expect(result.profiles.map((p) => p.name).sort()).toEqual(["backend/review", "review"]);
+    expect(result.profiles.every((p) => p.permissionMode === undefined)).toBe(true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

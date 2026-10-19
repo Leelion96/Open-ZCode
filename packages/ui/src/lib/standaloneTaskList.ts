@@ -5,7 +5,7 @@ import type {
   ZCodeTaskListQuery,
   ZCodeTaskListSortBy,
 } from "@zcode/services";
-import { mergeTaskIndexRowsWithSessions } from "@/v4/buildTaskListResultFromSessions.js";
+import { mergeTaskListMembershipFields } from "@/v4/taskListRowActivity.js";
 import { compareZCodeTaskListItems } from "@/lib/taskListOrdering.js";
 import { buildTaskListItemIdentityKey } from "@/v4/taskListItemStabilization.js";
 
@@ -42,7 +42,12 @@ export function projectStandaloneTaskListItems(
 ): ZCodeTaskListItem[] {
   // HTTP Server 没有窗口 Controller，复用项目行的持久行 + 实时摘要合并。
   // 必须合并、排序后再截取，避免旧历史中的运行任务被持久时间分页挡在首屏外。
-  const merged = mergeTaskIndexRowsWithSessions({ taskIndexItems: items, sessions });
+  // 上游已移除旧列表投影，复用现有活动与组织态合并，不能恢复旧模块或加入 session-only 行。
+  const byIdentity = new Map(sessions.map((session) => [buildTaskListItemIdentityKey(session), session]));
+  const merged = items.map((item) => {
+    const session = byIdentity.get(buildTaskListItemIdentityKey(item));
+    return session ? mergeTaskListMembershipFields(session, item) : item;
+  });
   merged.sort((left, right) => compareZCodeTaskListItems(left, right, sortBy));
   return limit === undefined ? merged : merged.slice(0, limit);
 }

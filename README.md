@@ -15,7 +15,7 @@
 2. **自建 [Open-ZCode-Server](https://github.com/Leelion96/Open-ZCode-Server) 服务，接管项目内各类上游服务能力**：目前已实现配置下发、插件市场和普通公告；登录、分享、反馈、更新等业务暂未实现，相关 API 为占位接口。
 3. **调整官方服务与商业入口**：关闭审计上报、官方授权登录及商业套餐等入口。
 
-上游源码版本：ZCode v3.15.1（`aac4755`）。
+上游源码版本：ZCode v3.16.1（`0a1fc56`）。
 
 ## 改动原则
 
@@ -181,6 +181,8 @@ Web 模式默认工作目录为当前目录，监听 `127.0.0.1`，默认不启�
 构建方式见下方打包章节。`pnpm build:zcode` 只生成发行包，不会替换 `PATH` 中已有的 `zcode`。如果命令仍指向旧安装或其他源码目录，macOS / Linux 可用 `command -v zcode` 检查，Windows 可用 `where.exe zcode` 检查。
 
 ### CLI 源码开发
+
+CLI 的模型配置、非交互调用、工具与扩展、批量评测和轨迹记录见 [CLI 使用指南](apps/zcode-cli/docs/usage/README.md)。
 
 直接开发 TUI 或 Agent 时，运行源码入口：
 
