@@ -10,7 +10,9 @@ Web 页面、HTTP Server 和它原来启动的 Agent 使用 `config/product.json
 
 ## 唯一配置来源与传递
 
-Web Vite 和 HTTP tsup 构建复用 `loadProductConfig()`，注入既有 `__ZCODE_PRODUCT_CONFIG__`。HTML 初始标题使用同次读取的名称。构建期配置优先，非法配置阻断；修改配置后沿用原来的重新构建流程。
+Web/Share Vite 和 HTTP tsup 构建复用 `loadProductConfig()`，注入既有 `__ZCODE_PRODUCT_CONFIG__`。HTML 初始标题使用同次读取的名称。构建期配置优先，非法配置阻断；修改配置后沿用原来的重新构建流程。
+
+独立 Share 入口的开发/生产构建同步注入名称及产品协议，页面标题读取同一名称；继续链接复用 `buildShareImportDeepLink`。其裁剪依赖闭包通过既有源码 alias 声明 product 子路径，站点托管、分享 API 与登录流程保持原边界。
 
 HTTP 入口将已校验的完整配置序列化为内部 `ZCODE_PRODUCT_CONFIG_JSON` 进程环境值，原 Agent spawn 环境继续自然继承它。未注入构建配置的 Agent/源码模式在共享解析入口校验该完整对象，并一次性派生名称和目录。该值只传递 Host 已读取的配置，不是新增人工配置源，不按字段合并，不保存第二份配置。
 

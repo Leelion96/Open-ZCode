@@ -51,6 +51,8 @@ fork 后一次性配置桌面产品，用一个名称、一个 appId 和三个�
 
 配置在开发和构建入口读取：`scripts/product-config.mjs` 使用 `packages/shared/src/product.ts` 的统一校验与派生规则。Desktop、Host、UI 和内嵌 Agent 消费同一配置；NSIS 由构建入口传值，不维护第二份人工配置。Web Vite 开发与生产构建复用该读取入口，注入完整 `__ZCODE_PRODUCT_CONFIG__`；初始 HTML 标题通过同一次读取注入的 `VITE_PRODUCT_DISPLAY_NAME` 生成。配置非法或读取失败时直接阻断启动/构建，不回退旧品牌。其他未注入的独立构建保留上游名称和命名空间；共用源码的固定通用文案允许同步变化。
 
+内置 stdio 插件的直接启动配置与缓存 manifest 重写均将已解析配置序列化为既有 `ZCODE_PRODUCT_CONFIG_JSON`，供独立模块通过同一 shared/product 解析器读取。编译常量与子进程模块不共享，不能只在插件源码或测试中接入产品常量；HTTP MCP 继续沿用原配置。
+
 产品 Web 配置由 Vite 启动/构建入口读取一次，页面消费 `@zcode/shared/product` 的公共常量和既有 `{productName}` 国际化入口，不新增状态、配置副本或文字替换层。修改配置后重新启动/构建生效。HTTP Server 将同一完整配置通过原进程环境传给原 Agent，保持上游启动与查找方式；规则见 [Web 产品配置一致性](web-product-configuration.md)。普通独立 CLI 保留上游默认；OAuth 回调方式、浏览器存储、分享协议和桌面系统入口继续遵守各平台边界。
 
 用户资料复用 `packages/services/src/paths.ts` 等既有解析入口，保持 HOME、dataBaseDir、workspacePath 的区别，以及参数、环境变量、setter 和显式 storage/config/log 路径的优先级。保留 v2、cli、skills、commands、subagents、hooks、plugins、workflows 等内部结构；不重写真实 HOME，不扩大原有 v2-only 复制范围。

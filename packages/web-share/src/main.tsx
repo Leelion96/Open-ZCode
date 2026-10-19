@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import "../../share-ui/src/styles.css";
 import { applyTheme, type Theme } from "../../ui/src/useTheme.js";
 import {
@@ -58,7 +59,7 @@ function renderCallback(): void {
 async function renderShare(): Promise<void> {
   const locale = resolveConversationShareRouteLocale(window.location.pathname);
   document.documentElement.lang = locale;
-  document.title = locale === "zh-CN" ? "ZCode 会话分享" : "ZCode Conversation Share";
+  document.title = locale === "zh-CN" ? `${PRODUCT_DISPLAY_NAME} 会话分享` : `${PRODUCT_DISPLAY_NAME} Conversation Share`;
 
   const shareCode = resolveConversationShareCodeFromPath(window.location.pathname);
   if (!shareCode) {

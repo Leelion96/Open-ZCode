@@ -6,6 +6,7 @@ import {
   type McpServerConfig,
 } from "@zcode/contracts";
 import { ZCODE_PLUGIN_ID_ENV_KEY } from "@zcode/shared";
+import { PRODUCT_CONFIG, PRODUCT_CONFIG_ENV_KEY } from "@zcode/shared/product";
 import {
   createOfficialPluginCacheRetryBudget,
   type OfficialPluginCacheRetryBudget,
@@ -34,6 +35,8 @@ export function createBundledMcpRuntimeConfig(input: {
     cwd: input.cwd,
     env: {
       ...input.env,
+      // 插件独立加载 shared，无法继承 Agent 的编译常量；沿用既有完整配置传递入口。
+      [PRODUCT_CONFIG_ENV_KEY]: JSON.stringify(PRODUCT_CONFIG),
       // 桌面打包态 process.execPath 是 ZCode Helper；缺少 Node 模式会误进 Electron main。
       ELECTRON_RUN_AS_NODE: "1",
     },
@@ -91,6 +94,7 @@ export function writeOfficialPluginRuntimeManifest(input: OfficialRuntimeManifes
     ];
     mcpServer.env = {
       ...mcpServerEnv,
+      [PRODUCT_CONFIG_ENV_KEY]: JSON.stringify(PRODUCT_CONFIG),
       // 桌面打包态的 process.execPath 是 ZCode Helper。
       // 官方插件 MCP server 缺少 Node 模式 env 时会误进 Electron main，触发 deep-link 注册等桌面副作用。
       ELECTRON_RUN_AS_NODE: "1",

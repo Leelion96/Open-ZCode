@@ -8,6 +8,18 @@ describe("web Vite config", () => {
     vi.unstubAllEnvs();
   });
 
+  it.each(["development", "production"])("injects the same product into the independent Share %s build", async (mode) => {
+    const repoRoot = resolve(import.meta.dirname, "../../..");
+    const product = JSON.parse(await readFile(resolve(repoRoot, "config/product.json"), "utf8"));
+    const shareRoot = resolve(repoRoot, "packages/web-share");
+    const result = await loadConfigFromFile(
+      { command: "build", mode, isPreview: false, isSsrBuild: false },
+      resolve(shareRoot, "vite.config.ts"), shareRoot, "silent",
+    );
+    expect(result?.config.define?.__ZCODE_PRODUCT_CONFIG__).toBe(JSON.stringify(product));
+    expect(result?.config.define?.["import.meta.env.VITE_PRODUCT_DISPLAY_NAME"]).toBe(JSON.stringify(product.name));
+  });
+
   it.each([undefined, "   ", " 3.12.9-beta.1 "])(
     "构建版本使用手动值或 package 默认值：%s",
     async (override) => {

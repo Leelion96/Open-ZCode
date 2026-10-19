@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { loadProductConfig } from "../../scripts/product-config.mjs";
 import {
   resolveBigModelApiOrigin,
   resolveRuntimeZCodeEndpointOrigin,
@@ -15,8 +16,9 @@ const HERE = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(HERE, "../..");
 const { version } = JSON.parse(readFileSync(resolve(REPO_ROOT, "package.json"), "utf8"));
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
   const env = { ...loadEnv(mode, REPO_ROOT, ""), ...process.env };
+  const productConfig = await loadProductConfig();
   const zcodeEnv = env.ZCODE_ENV?.trim().toLowerCase() === "production" ? "production" : "test";
   const endpointEnv = { ...env, ZCODE_ENV: zcodeEnv };
   const endpointOrigin = resolveRuntimeZCodeEndpointOrigin(endpointEnv);
@@ -40,6 +42,10 @@ export default defineConfig(({ mode }) => {
         {
           find: /^@zcode\/shared$/,
           replacement: resolve(REPO_ROOT, "packages/shared/src/index.ts"),
+        },
+        {
+          find: "@zcode/shared/product",
+          replacement: resolve(REPO_ROOT, "packages/shared/src/product.ts"),
         },
         // Share 镜像不安装 @zcode/ui（它会带入 services/rpc 闭包），子路径导入必须显式指向源码。
         {
@@ -69,6 +75,9 @@ export default defineConfig(({ mode }) => {
       ],
     },
     define: {
+      // Share 不经过完整 Web 入口，必须同样注入名称和协议，不能回退打开上游客户端。
+      __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig),
+      "import.meta.env.VITE_PRODUCT_DISPLAY_NAME": JSON.stringify(productConfig.name),
       __ZCODE_VERSION__: JSON.stringify(version),
       __ZCODE_COMMIT__: JSON.stringify(env.ZCODE_COMMIT || "unknown"),
       __ZCODE_ENV__: JSON.stringify(zcodeEnv),

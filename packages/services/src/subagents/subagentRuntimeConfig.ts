@@ -7,6 +7,7 @@ import {
   type SubagentRuntimeState,
 } from "@zcode/shared";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
+import { resolveWorkspaceSubagentRoot } from "#src/subagents/subagentStorage.js";
 import {
   createSubagentConfigScope,
   type SubagentFileChanges,
@@ -197,7 +198,8 @@ export function createSubagentRuntimeConfigCache(reader: ConfigReader) {
       if (workspace) {
         const workspaceKey = key(workspace);
         workspaces.get(workspaceKey)?.dispose();
-        const project = documentScope(join(workspace.workspacePath, ".zcode", "agents"), "project");
+        // 管理列表与运行时必须共用目录解析，避免隔离开启后读取另一命名空间的指令。
+        const project = documentScope(resolveWorkspaceSubagentRoot(workspace.workspacePath), "project");
         workspaces.set(workspaceKey, project);
         initializing.push(project);
       }

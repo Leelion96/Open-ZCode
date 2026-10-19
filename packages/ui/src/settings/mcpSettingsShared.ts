@@ -1,4 +1,5 @@
 import type { McpServerConfig, ZCodeMcpServer } from "@zcode/shared";
+import { PRODUCT_AGENT_DISPLAY_NAME } from "@zcode/shared/product";
 
 export const MCP_SECTIONS = ["zcodeagentmcp"] as const;
 
@@ -8,9 +9,10 @@ export const SOURCE_META: Record<
   ServerScope,
   { label: string; section: string; badgeClass: string }
 > = {
+  // source key 保持协议身份，展示名跟随同一产品配置。
   zcodeagentmcp: {
-    label: "ZCode Agent",
-    section: "ZCode Agent",
+    label: PRODUCT_AGENT_DISPLAY_NAME,
+    section: PRODUCT_AGENT_DISPLAY_NAME,
     badgeClass: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400",
   },
 };

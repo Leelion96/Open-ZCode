@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   parseSubagentMarkdown,
@@ -63,6 +63,8 @@ async function writeOfficialPluginFixture(
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
+  vi.resetModules();
   while (tempRoots.length > 0) {
     const root = tempRoots.pop();
     if (root) {
@@ -72,6 +74,42 @@ afterEach(async () => {
 });
 
 describe("subagent markdown helpers", () => {
+  it.each([true, false])("uses the same project profiles for management and runtime with isolation=%s", async (isolateProjectData) => {
+    vi.stubGlobal("__ZCODE_PRODUCT_CONFIG__", {
+      name: "Review Product", appId: "dev.review.product", customizeIdentity: true,
+      isolateUserData: true, isolateProjectData,
+    });
+    vi.resetModules();
+    const { createSubagentsService: createConfiguredService } = await import("../src/subagents/subagentsService.js");
+    const home = await makeTempHome();
+    const workspacePath = join(home, "workspace");
+    const selected = isolateProjectData ? ".review-product" : ".zcode";
+    for (const directory of [".review-product", ".zcode"]) {
+      const path = join(workspacePath, directory, "agents");
+      await mkdir(path, { recursive: true });
+      await writeFile(join(path, "review.md"), serializeSubagentMarkdown({
+        name: directory === selected ? "selected-review" : "other-review",
+        description: "Review fixture", systemPrompt: "Initial prompt",
+      }));
+    }
+    const service = createConfiguredService({ homeDir: home, isDesktopRuntime: true });
+    try {
+      const listed = await service.list({ workspacePath });
+      expect(listed.agents.filter((agent) => agent.scope === "workspace").map((agent) => agent.name)).toEqual(["selected-review"]);
+      await service.prepareRuntimeState({ workspacePath });
+      expect(await service.readRuntimeConfig({ workspacePath })).toMatchObject({
+        kind: "ready", profiles: [{ name: "selected-review", systemPrompt: "Initial prompt" }],
+      });
+      await writeFile(join(workspacePath, selected, "agents", "review.md"), serializeSubagentMarkdown({
+        name: "selected-review", description: "Review fixture", systemPrompt: "Updated prompt",
+      }));
+      await vi.waitFor(async () => {
+        expect(await service.readRuntimeConfig({ workspacePath })).toMatchObject({
+          profiles: [{ name: "selected-review", systemPrompt: "Updated prompt" }],
+        });
+      }, { timeout: 5000 });
+    } finally { service.disposeAll(); }
+  });
   it("lists only direct custom profiles while preserving recursive plugin discovery", async () => {
     const home = await makeTempHome();
     const workspacePath = join(home, "workspace");

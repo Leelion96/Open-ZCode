@@ -21,6 +21,27 @@ function LocaleProbe() {
   );
 }
 
+function ProductCopyProbe() {
+  const { intl } = useZCodeIntl();
+  return createElement("output", { "data-testid": "product-copy" }, [
+    "conversationShare.import.unsupportedVersion", "settings.source.connectionNameHint",
+    "chat.toolCall.workflow.saveRun.lead", "chat.toolCall.workflow.saveRun.lead.hint",
+    "chat.toolCall.workflow.saveRun.lead.sending", "settings.skills.agent.glm",
+    "settings.plugins.zcodeOnly",
+  ].map((id) => intl.formatMessage({ id }, { productName: "Review Product" })).join(" | "));
+}
+
+it.each(["zh-CN", "en-US"] as const)("renders product copy without stale branding or placeholders in %s", async (locale) => {
+  renderIntlProvider({
+    settings: { locale, localePreference: locale },
+    resolveSystemLocale: () => locale,
+    children: createElement(ProductCopyProbe),
+  });
+  await waitFor(() => expect(screen.getByTestId("product-copy").textContent).toContain("Review Product"));
+  expect(screen.getByTestId("product-copy").textContent).not.toContain("ZCode");
+  expect(screen.getByTestId("product-copy").textContent).not.toContain("{productName}");
+});
+
 function LocaleControls() {
   const { setLocalePreference } = useZCodeIntl();
   return createElement(

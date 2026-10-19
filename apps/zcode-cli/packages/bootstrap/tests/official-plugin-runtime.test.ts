@@ -1,8 +1,10 @@
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { setTimeout as delay } from "node:timers/promises";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeOfficialPluginRuntimeManifest } from "../src/app/official-plugin-runtime.js";
 
 describe("official plugin runtime manifest", () => {
@@ -11,7 +13,56 @@ describe("official plugin runtime manifest", () => {
 
   afterEach(async () => {
     process.argv[1] = originalEntrypoint;
+    vi.unstubAllGlobals();
+    vi.resetModules();
     await Promise.all(cleanups.splice(0).map((root) => rm(root, { force: true, recursive: true })));
+  });
+
+  it.each(["documents", "pdf", "presentations", "spreadsheets"])(
+    "passes the resolved product through the %s manifest to an independent process",
+    async (pluginName) => {
+      const product = {
+        name: "Review Product", appId: "dev.review.product", customizeIdentity: true,
+        isolateUserData: true, isolateProjectData: true,
+      };
+      vi.stubGlobal("__ZCODE_PRODUCT_CONFIG__", product);
+      vi.resetModules();
+      const runtime = await import("../src/app/official-plugin-runtime.js");
+      const root = await mkdtemp(join(tmpdir(), "zcode-plugin-product-"));
+      cleanups.push(root);
+      const manifestPath = join(root, ".zcode-plugin", "plugin.json");
+      await writeJson(manifestPath, {});
+      process.argv[1] = join(root, "zcode.cjs");
+      const sourceManifestContents = JSON.stringify({ mcpServers: { [pluginName]: {
+        command: "node", args: ["${ZCODE_PLUGIN_ROOT}/dist/server.mjs"],
+        env: { ZCODE_WORKSPACE_ROOT: root, ZCODE_PRODUCT_CONFIG_JSON: "untrusted override" },
+      } } });
+      runtime.writeOfficialPluginRuntimeManifest({ pluginName, rootPath: root, sourceManifestContents });
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+      const childEnv = manifest.mcpServers[pluginName].env;
+      expect(JSON.parse(childEnv.ZCODE_PRODUCT_CONFIG_JSON)).toEqual(product);
+      expect(childEnv.ZCODE_WORKSPACE_ROOT).toBe(root);
+      const inherited = { ...process.env };
+      delete inherited.ZCODE_PRODUCT_CONFIG_JSON;
+      const productModule = new URL("../../../../../packages/shared/src/product.ts", import.meta.url).href;
+      const script = `import { PRODUCT_PROJECT_DIRECTORY } from ${JSON.stringify(productModule)}; process.stdout.write(PRODUCT_PROJECT_DIRECTORY);`;
+      const { stdout } = await promisify(execFile)(process.execPath, ["--input-type=module", "-e", script], {
+        env: { ...inherited, ...childEnv },
+      });
+      expect(stdout).toBe(".review-product");
+    },
+  );
+
+  it("passes the same product through the direct bundled runtime configuration", async () => {
+    const product = {
+      name: "Review Product", appId: "dev.review.product", customizeIdentity: false,
+      isolateUserData: false, isolateProjectData: false,
+    };
+    vi.stubGlobal("__ZCODE_PRODUCT_CONFIG__", product);
+    vi.resetModules();
+    const runtime = await import("../src/app/official-plugin-runtime.js");
+    const config = runtime.createBundledMcpRuntimeConfig({ cwd: tmpdir(), rootPath: tmpdir() });
+    expect(config?.env?.ZCODE_PRODUCT_CONFIG_JSON).toBe(JSON.stringify(product));
   });
 
   it("does not rewrite an unchanged runtime manifest", async () => {
