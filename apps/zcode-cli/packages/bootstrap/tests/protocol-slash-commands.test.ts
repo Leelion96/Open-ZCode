@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ExecutionPort, ExecutionResult, SessionId } from "@zcode/contracts";
 import { resolveZCodeBuiltinPromptCommand } from "../src/builtin-prompt-command.js";
 import { resolveZCodeCustomCommandPrompt } from "../src/custom-command-prompt.js";
@@ -145,6 +145,47 @@ describe("protocol slash command surface", () => {
       await rm(tempRoot, { force: true, recursive: true });
     }
   });
+
+  it.each([
+    [true, true, ".review-product", ".review-product"],
+    [true, false, ".review-product", ".zcode"],
+    [false, true, ".zcode", ".review-product"],
+    [false, false, ".zcode", ".zcode"],
+  ] as const)(
+    "keeps /init paths consistent (user=%s, project=%s)",
+    async (isolateUserData, isolateProjectData, userDirectory, projectDirectory) => {
+      vi.stubGlobal("__ZCODE_PRODUCT_CONFIG__", {
+        name: "Review Product",
+        appId: "dev.review.product",
+        customizeIdentity: false,
+        isolateUserData,
+        isolateProjectData,
+      });
+      vi.resetModules();
+      try {
+        const { resolveZCodeBuiltinPromptCommand: resolvePrompt } =
+          await import("../src/builtin-prompt-command.js");
+        const { BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES } = await import("@zcode/shared");
+        const prompt = resolvePrompt("/init keep existing instructions", {
+          workingDirectory: "/repo",
+        })!;
+        expect(prompt).toContain(join("/repo", projectDirectory, "AGENTS.md"));
+        expect(prompt).toContain(
+          `1. First check whether ${projectDirectory}/AGENTS.md or .agents/AGENTS.md exists`,
+        );
+        expect(prompt).toContain(`Do not write ~/${userDirectory}/AGENTS.md.`);
+        expect(prompt).toContain(join("/repo", "AGENTS.md"));
+        expect(prompt).toContain("keep existing instructions");
+        const help = BUILTIN_ZCODE_SLASH_COMMAND_HELP_ENTRIES.find(
+          (entry) => entry.name === "init",
+        )!;
+        expect(help.details.join("\n")).toContain(`~/${userDirectory}/AGENTS.md`);
+      } finally {
+        vi.unstubAllGlobals();
+        vi.resetModules();
+      }
+    },
+  );
 
   it("expands builtin /init into the workspace AGENTS.md prompt", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "zcode-builtin-init-"));

@@ -15,6 +15,12 @@ import {
 import { testId } from "@zcode/shared/test-ids";
 
 vi.mock("@/logger.js", () => ({ logger: { debug: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
+// 使用不同的用户/项目目录，避免上游缺省值掩盖弹层预览遗漏。
+vi.mock("@zcode/shared/product", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@zcode/shared/product")>()),
+  PRODUCT_USER_DIRECTORY: ".workflow-user",
+  PRODUCT_PROJECT_DIRECTORY: ".workflow-project",
+}));
 const toastSpy = vi.hoisted(() => vi.fn());
 vi.mock("@/components/ui/toast.js", () => ({ toast: toastSpy }));
 vi.mock("@/ControlHintTooltip.js", () => ({
@@ -135,9 +141,17 @@ describe("WorkflowSavePopover", () => {
     expect(name.value).toBe("pr-review");
     expect(document.activeElement).toBe(name);
     expect(screen.getByTestId("workflow-save-consequence").textContent).toContain(
-      ".zcode/workflows/pr-review.dwf.ts",
+      ".workflow-project/workflows/pr-review.dwf.ts",
     );
     expect(screen.getByTestId("workflow-save-submit").textContent).toBe("直接保存");
+  });
+
+  it("远程项目保留远端目录预览与作用域限制", () => {
+    renderPopover(popoverHost({ scopeLocked: true }));
+    expect(screen.getByTestId("workflow-save-consequence").textContent).toContain(
+      ".zcode/workflows/pr-review.dwf.ts",
+    );
+    expect(screen.getByTestId<HTMLButtonElement>("workflow-save-scope").disabled).toBe(true);
   });
 
   it("ZCode 主路：把填好的字段交出去，然后关掉", async () => {

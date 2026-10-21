@@ -191,8 +191,8 @@ function WorkflowSaveForm({
   };
 
   const pathPreview = useMemo(
-    () => savedWorkflowPathPreview(scope, name.length > 0 ? name : "…"),
-    [name, scope],
+    () => savedWorkflowPathPreview(scope, name.length > 0 ? name : "…", scopeLocked),
+    [name, scope, scopeLocked],
   );
   const submitLabel = host.saving
     ? format("chat.toolCall.workflow.saveRun.submit.saving")

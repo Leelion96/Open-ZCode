@@ -832,6 +832,8 @@ exceptions:
       - packages/services/src/subagents/subagentRuntimeConfig.ts
       - packages/ui/src/v4/officeSuggestedPrompts.ts
       - packages/server/src/source-server/sourceServerProbe.ts
+      - packages/ui/src/components/workflow-timeline/workflowRunSave.ts
+      - packages/ui/src/components/workflow-timeline/WorkflowSavePopover.tsx
     reason: 既有上游文件仅复用原产品资料根、项目 Agent 目录解析器和名称常量；包含前次合并的远程目录适配，快照/数据库 owner、事件顺序、接口和依赖方向不变，不为定制补齐接管整个 host、session、subagents 或 UI 目录。后续逻辑修改须重新核对模块治理。
   - id: workflow-amend-provider-boundary-unmanaged-edit
     rule: unmanaged-new-file

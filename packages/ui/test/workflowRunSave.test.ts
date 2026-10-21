@@ -57,6 +57,34 @@ describe("名字规则的前置回声", () => {
     expect(savedWorkflowPathPreview("project", "x")).toBe(".zcode/workflows/x.dwf.ts");
     expect(savedWorkflowPathPreview("global", "x")).toBe("~/.zcode/workflows/x.dwf.ts");
   });
+
+  it.each([
+    [true, true, ".review-product", ".review-product"],
+    [true, false, ".review-product", ".zcode"],
+    [false, true, ".zcode", ".review-product"],
+    [false, false, ".zcode", ".zcode"],
+  ] as const)(
+    "预览分别遵守用户与项目隔离（user=%s, project=%s）",
+    async (isolateUserData, isolateProjectData, userDirectory, projectDirectory) => {
+      vi.stubGlobal("__ZCODE_PRODUCT_CONFIG__", {
+        name: "Review Product",
+        appId: "dev.review.product",
+        customizeIdentity: false,
+        isolateUserData,
+        isolateProjectData,
+      });
+      vi.resetModules();
+      try {
+        const { savedWorkflowPathPreview: preview } =
+          await import("@/components/workflow-timeline/workflowRunSave.js");
+        expect(preview("project", "review")).toBe(`${projectDirectory}/workflows/review.dwf.ts`);
+        expect(preview("global", "review")).toBe(`~/${userDirectory}/workflows/review.dwf.ts`);
+      } finally {
+        vi.unstubAllGlobals();
+        vi.resetModules();
+      }
+    },
+  );
 });
 
 describe("弹层起点", () => {
