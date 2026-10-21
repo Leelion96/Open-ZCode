@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
+import { mkdtemp } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { BashFileOutput } from "./bash-file-output.js";
 import { readCapturedCwd } from "./cwd-capture.js";
 import { defaultCwdDialect } from "./execution-command.js";
@@ -10,10 +13,12 @@ import {
   abortSignalReason,
   isBashMergedOutputRequest,
   isExpectedChildStdinClosureError,
+  resolveDefaultOutputRootDir,
 } from "./execution-utils.js";
 import type {
   ExitState,
   InternalExecutionRunOptions,
+  PreparedBashOutput,
   StopReason,
 } from "./execution-adapter-types.js";
 import type {
@@ -23,7 +28,108 @@ import type {
   ExecutionShellDialect,
 } from "@zcode/contracts";
 
+// 上游新增的临时输出也遵循用户资料隔离开关，避免留下另一产品命名空间的运行产物。
+const BASH_TEMP_DIRECTORY_PREFIX = `${PRODUCT_USER_DIRECTORY.slice(1)}-bash-`;
+const BASH_TEMP_UNAVAILABLE_CODES = new Set([
+  "EACCES",
+  "EPERM",
+  "EROFS",
+  "ENOENT",
+  "ENOTDIR",
+  "ENOSPC",
+  "EDQUOT",
+]);
+
 export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
+  private bashTempRoot?: Promise<string>;
+
+  protected usesBashTempOutput(request: ExecutionRequest): boolean {
+    return this.options.bashOutputTempDir !== undefined && isBashMergedOutputRequest(request);
+  }
+
+  private getBashTempRoot(): Promise<string> {
+    if (!this.bashTempRoot) {
+      const pending = mkdtemp(join(this.options.bashOutputTempDir!, BASH_TEMP_DIRECTORY_PREFIX));
+      this.bashTempRoot = pending;
+      void pending.catch(() => {
+        if (this.bashTempRoot === pending) this.bashTempRoot = undefined;
+      });
+    }
+    return this.bashTempRoot;
+  }
+
+  protected async prepareBashOutput(
+    request: ExecutionRequest,
+    options: ExecutionRunOptions,
+  ): Promise<{ prepared: PreparedBashOutput } | { result: ExecutionResult }> {
+    const startedAt = new Date();
+    let stopped = false;
+    const executionId = this.registerActiveExecution(() => {
+      stopped = true;
+    });
+    const releasePreparation = () => this.completeActiveExecution(executionId);
+    const isStopped = () => stopped || this.closePromise !== undefined || options.signal?.aborted;
+    let file: BashFileOutput | undefined;
+    const cancelled = async () => {
+      await file?.discard();
+      releasePreparation();
+      return {
+        result: this.createStoppedResult(
+          startedAt,
+          "cancelled",
+          "Execution cancelled before spawn",
+        ),
+      };
+    };
+    try {
+      if (isStopped()) return await cancelled();
+      const legacyOutputEncoding = resolveLegacyExecutionOutputEncoding({
+        platform: this.platform,
+        processEnv: this.processEnv,
+      });
+      const knownPath = this.outputPathForRequest(request, "stdout")!;
+      // 请求可能被复用；缓存保存的是实际路径，降级根必须始终来自原有配置。
+      const fallbackPath = join(
+        this.options.outputRootDir ?? resolveDefaultOutputRootDir(this.options.processEnv),
+        basename(dirname(knownPath)),
+        basename(knownPath),
+      );
+      try {
+        const root = await this.getBashTempRoot();
+        if (isStopped()) return await cancelled();
+        const path = join(root, basename(dirname(fallbackPath)), basename(fallbackPath));
+        file = new BashFileOutput(path, this.platform, legacyOutputEncoding);
+        await file.prepare();
+      } catch (error) {
+        if (isStopped()) return await cancelled();
+        if (!BASH_TEMP_UNAVAILABLE_CODES.has((error as NodeJS.ErrnoException).code ?? ""))
+          throw error;
+        await file?.discard();
+        // 搜索数据目录会把正在写入的输出再次读回；优先隔离到 tmp，失败后完整复用旧文件实现。
+        file = new BashFileOutput(fallbackPath, this.platform, legacyOutputEncoding);
+        await file.prepare();
+      }
+      if (isStopped()) return await cancelled();
+      // 路径必须在后台记录和文件入口发布之前确定，不能在 spawn 后再降级或重新打开。
+      this.outputPathsByRequest.set(request, {
+        outputPath: file.path,
+        stdoutPersistedOutputPath: file.path,
+      });
+      return { prepared: { file, legacyOutputEncoding, releasePreparation } };
+    } catch (error) {
+      await file?.discard();
+      releasePreparation();
+      if (isStopped()) return await cancelled();
+      return {
+        result: this.createStoppedResult(
+          startedAt,
+          "spawn_error",
+          this.toFailure("spawn_error", error).message,
+        ),
+      };
+    }
+  }
+
   async run(
     request: ExecutionRequest,
     options: ExecutionRunOptions = {},
@@ -33,6 +139,15 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
     let requestStop: (reason: StopReason) => void = () => undefined;
     let outputLimitExceeded = false;
     const internalOptions = options as InternalExecutionRunOptions;
+    let preparedOutput = internalOptions.preparedBashOutput;
+    if (!preparedOutput && this.usesBashTempOutput(request)) {
+      const preparation = await this.prepareBashOutput(request, options);
+      if ("result" in preparation) {
+        this.emitResult(options, preparation.result);
+        return preparation.result;
+      }
+      preparedOutput = preparation.prepared;
+    }
     const aggregatePersistedBudget = internalOptions.sharePersistedOutputLimitAcrossStreams
       ? {
           bytes: 0,
@@ -41,10 +156,14 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
       : undefined;
 
     if (this.closePromise) {
+      await preparedOutput?.file.discard();
+      preparedOutput?.releasePreparation();
       return this.createStoppedResult(startedAt, "cancelled", "Execution adapter is shutting down");
     }
 
     if (options.signal?.aborted) {
+      await preparedOutput?.file.discard();
+      preparedOutput?.releasePreparation();
       return this.createStoppedResult(startedAt, "cancelled", "Execution cancelled before spawn");
     }
 
@@ -65,19 +184,23 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
             }
           }
         : undefined;
-    const legacyOutputEncoding = resolveLegacyExecutionOutputEncoding({
-      platform: this.platform,
-      processEnv: this.processEnv,
-    });
+    const legacyOutputEncoding = preparedOutput
+      ? preparedOutput.legacyOutputEncoding
+      : resolveLegacyExecutionOutputEncoding({
+          platform: this.platform,
+          processEnv: this.processEnv,
+        });
     // 任务记录单独解析会重复同步执行 Windows chcp；复用执行时的编码值。
     internalOptions.onOutputEncodingResolved?.(legacyOutputEncoding);
-    const file = useBashMergedOutput
-      ? new BashFileOutput(
-          this.outputPathForRequest(request, "stdout")!,
-          this.platform,
-          legacyOutputEncoding,
-        )
-      : undefined;
+    const file =
+      preparedOutput?.file ??
+      (useBashMergedOutput
+        ? new BashFileOutput(
+            this.outputPathForRequest(request, "stdout")!,
+            this.platform,
+            legacyOutputEncoding,
+          )
+        : undefined);
     const stdout = file
       ? undefined
       : this.createOutputCollector(
@@ -167,6 +290,7 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
     };
 
     const executionId = this.registerActiveExecution(requestStop);
+    preparedOutput?.releasePreparation();
     const abortHandler = () => {
       const reason = abortSignalReason(options.signal);
       requestStop(reason === "output_limit" ? "output_limit" : "cancelled");
@@ -184,11 +308,12 @@ export class NodeExecutionAdapterRun extends NodeExecutionAdapterProcess {
 
       const stoppedAfterCommandPreparation = stoppedBeforeSpawn();
       if (stoppedAfterCommandPreparation) {
+        if (preparedOutput) await file?.discard();
         return stoppedAfterCommandPreparation;
       }
 
       if (file) {
-        await file.prepare();
+        if (!preparedOutput) await file.prepare();
         const stoppedAfterOutputPreparation = stoppedBeforeSpawn();
         if (stoppedAfterOutputPreparation) {
           await file.discard();

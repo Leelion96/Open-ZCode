@@ -20,6 +20,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuPortal,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
@@ -405,6 +406,7 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
           className="min-h-8 gap-2 pl-2 pr-8 text-ui-base"
           onSelect={(event) => {
             handleModelValueChange(item.value);
+            // 合并菜单选模型后还可继续调档，阻止菜单项默认关闭；外侧点击仍走原关闭链路。
             if (composerOptions) event.preventDefault();
             else handlePopoverOpenChange(false);
           }}
@@ -658,6 +660,16 @@ export const ModelConfigSelect = memo(function ModelConfigSelectComponent({
       ) : (
         modelTrigger
       )}
+      {open && composerOptions ? (
+        <DropdownMenuPortal>
+          {/* 插件 webview 显式接收指针，内部事件不冒泡到宿主；透明层让外侧点击走 Radix 关闭链路。
+              层级位于插件（10）之上、Composer（20）和浮窗（30）之下，保留同一工具栏的菜单切换。 */}
+          <div
+            aria-hidden="true"
+            className="fixed inset-0 z-[19] pointer-events-auto [app-region:no-drag]"
+          />
+        </DropdownMenuPortal>
+      ) : null}
       {open ? (
         <DropdownMenuContent
           className={cn(

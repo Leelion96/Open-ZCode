@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readV4ComposerDraft } from "@/v4/composer/composerDraftStore.js";
+import {
+  readV4ComposerDraft,
+  readComposerWorkspaceScope,
+  rememberComposerWorkspaceScope,
+  resolveComposerScope,
+} from "@/v4/composer/composerDraftStore.js";
+import { selectRemoteWorkspaceProjectFromDialog } from "@/root/useRemoteWorkspaceHistory.js";
 import type { CreateTaskOptions } from "@/app-shell/types.js";
 import { useRootWorkspaceActions } from "@/root/useRootWorkspaceActions.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
@@ -88,6 +94,76 @@ beforeEach(() => {
   usePaneLayoutStore.setState(INITIAL_PANE_LAYOUT);
   useWorkbenchGroupStore.getState().resetWorkbenchGroups();
 });
+it.each([null, "other-project", "retained-project"])(
+  "恢复原项目时显式初始化草稿归属，不沿用缓存 %s",
+  async (cachedProjectId) => {
+    const path = "/srv/project";
+    const identity = "remote:server:source-1:/srv/project";
+    const projectId = "retained-project";
+    if (cachedProjectId)
+      rememberComposerWorkspaceScope(
+        path,
+        identity,
+        resolveComposerScope(cachedProjectId, identity),
+      );
+    const { result } = fixture();
+    const activation = vi.fn(
+      (target: { workspacePath: string; workspaceIdentity: string; projectId?: string | null }) =>
+        result.current.startDraftInWorkspace(target.workspacePath, target.workspaceIdentity, {
+          projectId: target.projectId,
+        }),
+    );
+    await act(async () => {
+      await selectRemoteWorkspaceProjectFromDialog({
+        canUseRemoteWorkspace: true,
+        sessionId: "session-1",
+        path,
+        preparedWorkspaceIdentity: identity,
+        draftProjectId: projectId,
+        restoringWorkspaceTabId: "tab",
+        loadingMessage: "loading",
+        getRemoteWorkspaceSession: () =>
+          ({
+            sessionId: "session-1",
+            target: { kind: "ssh", host: "dev.example.com", username: "dev" },
+          }) as never,
+        getWorkspaceTabs: () => [
+          {
+            id: "tab",
+            kind: "workspace",
+            label: "project",
+            workspacePath: path,
+            workspaceIdentity: identity,
+            remoteSessionId: "session-1",
+          },
+        ],
+        resolveRemoteWorkspaceCanonicalPath: async () => path,
+        activateTabByPath: () => true,
+        handleCancelRemoteProject: vi.fn(),
+        bindRemoteWorkspaceScope: async () => ({
+          workspacePath: path,
+          workspaceIdentity: identity,
+        }),
+        commitRemoteWorkspaceSessionMutation: async (mutation) => mutation.entry,
+        getRemoteSessions: () => [],
+        bindRemoteWorkspacePath: vi.fn(),
+        bindRemoteWorkspaceIdentity: vi.fn(),
+        addTab: vi.fn(),
+        onWorkspaceActivated: activation,
+      });
+    });
+    expect(activation).toHaveBeenCalledOnce();
+    expect(activation).toHaveBeenCalledWith({
+      workspacePath: path,
+      workspaceIdentity: identity,
+      projectId,
+    });
+    expect(useZCodeSessionStore.getState().getWorkspaceState(path, identity).draftProjectId).toBe(
+      projectId,
+    );
+    expect(readComposerWorkspaceScope(path, identity)?.projectId).toBe(projectId);
+  },
+);
 describe("project-aware new task creation", () => {
   it("keeps new-task callbacks stable while using the latest committed remote opener", async () => {
     const previous = vi.fn(async () => {});

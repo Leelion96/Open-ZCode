@@ -39,6 +39,10 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_INCLUDED_TOP_LEVEL_PATHS = [
 ] as const;
 
 export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
+  // 工作流技能已迁出插件；远端复用仍必须检查这份 Agent 必需资产。
+  "bundled-skills/skills/dynamic-workflows/SKILL.md",
+  "bundled-skills/skills/dynamic-workflows/patterns.md",
+  "bundled-skills/skills/dynamic-workflows/examples.md",
   ...REMOTE_AGENT_OFFICIAL_PLUGIN_PACKAGE_NAMES.map(
     (packageName) => `${packageName}/.zcode-plugin/plugin.json`,
   ),
@@ -116,13 +120,8 @@ export const REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS = [
   "zcode-cua-plugin/skills/computer-use/SKILL.md",
 ] as const;
 
-export function buildRemoteAgentOfficialPluginDir(
-  remoteProviderDir: string,
-): string {
-  return posix.join(
-    remoteProviderDir,
-    REMOTE_AGENT_OFFICIAL_PLUGIN_DIR_NAME,
-  );
+export function buildRemoteAgentOfficialPluginDir(remoteProviderDir: string): string {
+  return posix.join(remoteProviderDir, REMOTE_AGENT_OFFICIAL_PLUGIN_DIR_NAME);
 }
 
 export function buildRemoteAgentOfficialPluginSourceRelativePath(params: {
@@ -136,12 +135,9 @@ export function buildRemoteAgentOfficialPluginSourceRelativePath(params: {
   );
 }
 
-export function buildRemoteAgentOfficialPluginRequiredPaths(
-  remoteProviderDir: string,
-): string[] {
-  const remoteOfficialPluginDir =
-    buildRemoteAgentOfficialPluginDir(remoteProviderDir);
-  return REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS.map(
-    (relativePath) => posix.join(remoteOfficialPluginDir, relativePath),
+export function buildRemoteAgentOfficialPluginRequiredPaths(remoteProviderDir: string): string[] {
+  const remoteOfficialPluginDir = buildRemoteAgentOfficialPluginDir(remoteProviderDir);
+  return REMOTE_AGENT_OFFICIAL_PLUGIN_REQUIRED_RELATIVE_PATHS.map((relativePath) =>
+    posix.join(remoteOfficialPluginDir, relativePath),
   );
 }

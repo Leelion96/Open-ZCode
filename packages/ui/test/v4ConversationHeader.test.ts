@@ -17,8 +17,6 @@ function renderHeader(overrides: Record<string, unknown> = {}): string {
       { initialLocale: "zh-CN" },
       createElement(ConversationHeader, {
         title: "这是个啥项目",
-        onSplitRight: vi.fn(),
-        onSplitDown: vi.fn(),
         onClosePane: vi.fn(),
         workspaceBadge: {
           label: "workspace",
@@ -31,8 +29,8 @@ function renderHeader(overrides: Record<string, unknown> = {}): string {
   );
 }
 
-describe("ConversationHeader split chrome", () => {
-  it("temporarily hides split controls while keeping the other floating pane actions", () => {
+describe("ConversationHeader pane chrome", () => {
+  it("renders no split controls while keeping the other floating pane actions", () => {
     const html = renderHeader();
 
     expect(html).toContain('data-v4-pane-actions="floating"');
@@ -42,7 +40,7 @@ describe("ConversationHeader split chrome", () => {
     expect(html).toContain(`data-testid="${TID_V4_PANE_WORKSPACE_BADGE}"`);
   });
 
-  it("does not render an empty floating action group when only split callbacks are provided", () => {
+  it("does not render an empty floating action group without pane actions", () => {
     const html = renderHeader({ workspaceBadge: undefined, onClosePane: undefined });
 
     expect(html).not.toContain('data-v4-pane-actions="floating"');

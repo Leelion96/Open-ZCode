@@ -94,9 +94,7 @@ export class WebAuthService {
       appReturnTo,
       returnToOptions,
     );
-    this.repo.savePendingNonce(nonce);
-    this.repo.savePendingProvider(provider);
-    this.repo.savePendingRedirectUri(nonce, redirectUri);
+    this.repo.savePendingLogin({ nonce, provider, redirectUri });
 
     const state = buildOAuthState({
       nonce,
@@ -151,29 +149,18 @@ export class WebAuthService {
       throw new Error("OAuth callback missing code");
     }
 
-    const pendingNonce = this.repo.loadPendingNonce();
-    if (statePayload.nonce !== pendingNonce) {
+    // provider 与回调地址必须取跳转前记下的那条：authorize 参数名和 token 响应里 access_token
+    // 的位置都是 provider 特定的，token 请求也要用授权时的完整回调地址。
+    const pendingLogin = this.repo.takePendingLogin(statePayload.nonce);
+    if (!pendingLogin) {
       throw new Error("OAuth CSRF 检测失败");
     }
-    // provider 必须取跳转前记下的那个：authorize 参数名和 token 响应里 access_token 的位置
-    // 都是 provider 特定的。缺失时按 zai 兜底，保持旧回调链接可用。
-    const provider = this.repo.loadPendingProvider() ?? ZAI_PROVIDER_ID;
-    const pendingRedirectUri = this.repo.loadPendingRedirectUri(statePayload.nonce);
-    this.repo.clearPendingNonce();
-    this.repo.clearPendingProvider();
-    this.repo.clearPendingRedirectUri();
-
-    // 旧页面发起的登录没有 pending 地址，沿用原配置；不能把本次 code/state 当作 redirect_uri。
-    const callbackRedirectUri =
-      pendingRedirectUri ??
-      (["/cn/share/callback", "/share/callback"].includes(new URL(url).pathname)
-        ? this.config.shareRedirectUri
-        : this.config.redirectUri);
+    const { provider, redirectUri } = pendingLogin;
     const exchange = await this.provider.exchangeToken({
       code: callback.code,
       state: callback.state,
       provider,
-      redirectUri: callbackRedirectUri,
+      redirectUri,
     });
 
     this.repo.saveTokenSet(exchange.tokenSet, provider);

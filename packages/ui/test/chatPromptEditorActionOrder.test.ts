@@ -62,4 +62,35 @@ describe("ChatPromptEditor action menu", () => {
     );
     expect(html).toContain('data-excluded="goal"');
   });
+
+  // Side Pane 完整视图浮窗：[+] 输入区 [控件][发送] 排成一行（docs/ui/side-pane-full-view.md）。
+  it("moves the action menu before the editor only in the inline layout", () => {
+    const render = (layout: "stacked" | "inline") =>
+      renderToStaticMarkup(
+        createElement(ChatPromptEditor, {
+          workspacePath: "/tmp/workspace",
+          taskId: null,
+          submitLabel: "Send",
+          showMentionButton: true,
+          layout,
+          onSubmit: vi.fn(),
+        }),
+      );
+    const order = (html: string) =>
+      ["composer-action-menu", "lexical-input", "data-composer-leading-content"].map((marker) =>
+        html.indexOf(marker),
+      );
+
+    const inline = render("inline");
+    expect(inline).toContain('data-composer-layout="inline"');
+    const [inlineMenu, inlineEditor, inlineToolbar] = order(inline);
+    expect(inlineMenu).toBeLessThan(inlineEditor);
+    expect(inlineEditor).toBeLessThan(inlineToolbar);
+
+    const stacked = render("stacked");
+    expect(stacked).toContain('data-composer-layout="stacked"');
+    const [stackedMenu, stackedEditor, stackedToolbar] = order(stacked);
+    expect(stackedEditor).toBeLessThan(stackedToolbar);
+    expect(stackedToolbar).toBeLessThan(stackedMenu);
+  });
 });

@@ -569,7 +569,7 @@ for (const [width, locale, theme] of [
           assert.equal(await items.nth(2).getByText(open, { exact: true }).count(), 1);
           assert.deepEqual(
             await items.evaluateAll((elements) => elements.map((element) => element.disabled)),
-            [true, true, true],
+            [0, 1, 2].map((candidate) => candidate === index),
           );
         };
         try {
@@ -612,5 +612,115 @@ for (const [width, locale, theme] of [
         }
       });
     }
+  }
+}
+
+for (const [width, locale, theme] of [
+  [1200, "en-US", "light"],
+  [390, "zh-CN", "dark"],
+]) {
+  for (const existing of [false, true]) {
+    test(`SPT-E2E-007 concurrent installs ${existing ? "new-tab" : "empty"}/${width}`, async () => {
+      const page = await browser.newPage({ viewport: { width, height: 800 } });
+      page.setDefaultTimeout(15000);
+      const gates = [Promise.withResolvers(), Promise.withResolvers()];
+      const entered = [Promise.withResolvers(), Promise.withResolvers()];
+      const calls = [];
+      const errors = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      let firstInstalled = false;
+      const selector = existing ? newTabItems : launcherItems;
+      const items = page.locator(selector);
+      try {
+        await page.route("**/client-config", (route) =>
+          route.fulfill({
+            json: {
+              code: 0,
+              data: {
+                configs: {
+                  uiPluginRecommendations: surfaces.map((surface) => ({
+                    pluginId: surface.pluginId,
+                    surfaceId: surface.id,
+                  })),
+                },
+              },
+            },
+          }),
+        );
+        await page.route("**/catalog", (route) =>
+          route.fulfill({
+            json: {
+              ...catalog(surfaces, false),
+              plugins: catalog([surfaces[2], ...(firstInstalled ? [surfaces[0]] : [])]).plugins,
+              availablePlugins: surfaces.map((surface, index) => ({
+                ...catalog([surface], index === 2 || (index === 0 && firstInstalled))
+                  .availablePlugins[0],
+              })),
+            },
+          }),
+        );
+        await page.route("**/surfaces", (route) => route.fulfill({ json: surfaces }));
+        await page.route("**/install", async (route) => {
+          const input = route.request().postDataJSON();
+          const index = surfaces.findIndex((surface) => surface.pluginName === input.pluginName);
+          calls.push(input.pluginName);
+          entered[index].resolve();
+          await gates[index].promise;
+          if (index === 1) return route.fulfill({ status: 503 });
+          firstInstalled = true;
+          return route.fulfill({ json: { diagnostics: [] } });
+        });
+        const query = `locale=${locale}&theme=${theme}${width < 500 ? "&mobile=1" : ""}${existing ? "&existing=1" : ""}`;
+        await page.goto(`${origin}fixture?${query}`, { waitUntil: "domcontentloaded" });
+        if (existing) await page.locator(add).click();
+        await items.first().waitFor();
+        await items.first().click();
+        await entered[0].promise;
+        assert.equal(await items.nth(1).isEnabled(), true);
+        assert.equal(await items.nth(2).isEnabled(), true);
+        await items.nth(1).click();
+        await entered[1].promise;
+        assert.deepEqual(calls, ["hello", "canvas"]);
+        assert.deepEqual(
+          await items.evaluateAll((elements) => elements.map((element) => element.disabled)),
+          [true, true, false],
+        );
+        assert.equal(await items.getByTestId("side-pane-plugin-progress").count(), 2);
+        // 安装中仍可打开其他已启用插件，真实 surface 查询到 tab owner 的链路继续工作。
+        await items.nth(2).click();
+        await page.waitForFunction(
+          () =>
+            JSON.parse(document.querySelector('[data-testid="request"]').textContent)?.pluginId ===
+            "development@example",
+        );
+        gates[1].resolve();
+        await page.waitForFunction(
+          (selector) => !document.querySelectorAll(selector)[1].disabled,
+          selector,
+        );
+        assert.equal(await items.first().isDisabled(), true);
+        assert.equal(await items.first().getByTestId("side-pane-plugin-progress").count(), 1);
+        const artifacts = join(tmpdir(), "zcode-side-pane-plugin-menu");
+        await mkdir(artifacts, { recursive: true });
+        await page.screenshot({
+          path: join(artifacts, `concurrent-${existing}-${width}-${theme}.png`),
+        });
+        gates[0].resolve();
+        await page.waitForFunction(
+          (selector) => !document.querySelectorAll(selector)[0].disabled,
+          selector,
+        );
+        assert.equal(await items.getByTestId("side-pane-plugin-progress").count(), 0);
+        assert.deepEqual(calls, ["hello", "canvas"]);
+      } catch (error) {
+        throw new Error(
+          `${String(error)}; pageErrors=${JSON.stringify(errors)}; body=${(await page.locator("body").innerText()).slice(0, 1500)}`,
+          { cause: error },
+        );
+      } finally {
+        gates.forEach((gate) => gate.resolve());
+        await page.close();
+      }
+    });
   }
 }

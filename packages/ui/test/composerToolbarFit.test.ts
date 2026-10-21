@@ -154,6 +154,60 @@ describe("composer toolbar fit", () => {
   });
 });
 
+// Side Pane 完整视图浮窗的单行输入框：工具栏宽度随内容变化，不能测量，直接收到最后一级。
+describe("icon-only composer toolbar", () => {
+  it("宽度足够时也按同一顺序收到只留图标", () => {
+    const f = fixture();
+    f.root.getBoundingClientRect = () => ({ width: 2_000 }) as DOMRect;
+    fitComposerToolbar(f.root, { iconOnly: true });
+    expect(f.compact()).toEqual(["true", "true", "true", "icon"]);
+    expect(f.root.dataset.composerProviderCompact).toBe("true");
+    expect(f.root.dataset.composerModelIcon).toBe("true");
+  });
+
+  it("hook 不克隆测量；切回普通布局后按实际宽度恢复完整显示", () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function () {
+      if (this.hasAttribute("data-composer-leading-content")) {
+        return { width: this.querySelector("[data-composer-compact]") ? 28 : 100 } as DOMRect;
+      }
+      return { width: 800 } as DOMRect;
+    });
+    const clone = vi.spyOn(Node.prototype, "cloneNode");
+    function Toolbar({ iconOnly }: { iconOnly: boolean }) {
+      const ref = useComposerToolbarFit({ iconOnly });
+      return createElement(
+        "div",
+        { ref, "data-testid": "toolbar" },
+        createElement(
+          "div",
+          { "data-composer-leading-actions": true },
+          createElement(
+            "div",
+            { "data-composer-leading-content": true },
+            createElement("button", { "data-composer-collapse-priority": "1" }, "Mode"),
+          ),
+        ),
+      );
+    }
+    const view = render(createElement(Toolbar, { iconOnly: true }));
+    const button = view.container.querySelector<HTMLElement>("button")!;
+    expect(button.dataset.composerCompact).toBe("true");
+    expect(view.getByTestId("toolbar").dataset.composerModelIcon).toBe("true");
+    expect(clone).not.toHaveBeenCalled();
+
+    view.rerender(createElement(Toolbar, { iconOnly: false }));
+    expect(button.dataset.composerCompact).toBeUndefined();
+    expect(view.getByTestId("toolbar").dataset.composerModelIcon).toBeUndefined();
+  });
+});
+
 // 合并入口只有完整、模型名＋绿条、图标＋绿条三态。
 describe("combined composer toolbar fit", () => {
   it("shrinks Computer, Mode, Plan, then thinking, then model; expands in reverse", () => {

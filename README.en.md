@@ -15,7 +15,7 @@ The changes implemented so far fall into three categories:
 2. **A self-hosted [Open-ZCode-Server](https://github.com/Leelion96/Open-ZCode-Server) to take over upstream service capabilities used by the project**: configuration delivery, the plugin marketplace, and ordinary announcements are implemented. Login, sharing, feedback, and update business capabilities are not yet implemented; their APIs remain placeholders.
 3. **Adjustments to official services and commercial entry points**: disable audit reporting, official account authorization, and commercial plan entry points.
 
-Upstream source: ZCode v3.16.1 (`0a1fc56`).
+Upstream source: ZCode v3.16.2 (`3c5b227`).
 
 ## Change Principles
 

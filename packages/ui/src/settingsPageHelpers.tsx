@@ -55,7 +55,10 @@ export { isSettingsSectionAvailable };
 const TASK_AUTO_ARCHIVE_DAY_OPTIONS = [3, 7, 14, 30] as const;
 const ZCODE_INTERACTION_BEHAVIOR_OPTIONS: readonly ZCodeInteractionBehavior[] = ["queue", "guide"];
 
-/** 归档偏好与归档列表集中展示，设置值和保存动作继续由 SettingsPage 持有。 */
+/**
+ * 归档偏好与归档列表集中展示，设置值和保存动作继续由 SettingsPage 持有。
+ * Bugfix：关闭时禁用时长会迫使用户先开启归档，旧阈值可能立即生效；允许先保存时长再开启。
+ */
 export function TaskAutoArchiveSettings({
   taskAutoArchiveEnabled,
   taskAutoArchiveOlderThanDays,
@@ -99,7 +102,6 @@ export function TaskAutoArchiveSettings({
             onValueChange={(value) => {
               void onTaskAutoArchiveOlderThanDaysChange(Number(value));
             }}
-            disabled={!taskAutoArchiveEnabled}
           >
             <SelectTrigger
               data-testid="archive-auto-archive-days"
@@ -769,7 +771,7 @@ export function GeneralSectionContent({
                   ? `${intl.formatMessage({ id: "settings.closeToTrayUnavailable" })} ${intl.formatMessage({ id: "settings.closeToTrayGnomeHint" })}`
                   : intl.formatMessage({ id: "settings.closeToTrayUnavailable" })
                 : intl.formatMessage({
-              id: "settings.closeToTrayOnWindowsDescription",
+                    id: "settings.closeToTrayOnWindowsDescription",
                   })
             }
             control={

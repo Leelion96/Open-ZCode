@@ -244,7 +244,9 @@ describe("composer combined model and thinking picker", () => {
     const thumb = shell.querySelector(".composer-thought-slider-thumb");
     fireEvent.click(screen.getByRole("menuitemradio", { name: "GLM-5.3", exact: true }));
     expect(screen.getByRole("slider")).toBe(slider);
-    expect(shell.querySelector(".composer-thought-slider-thumb")).not.toBe(thumb);
+    expect(
+      screen.getByRole("slider").parentElement!.querySelector(".composer-thought-slider-thumb"),
+    ).not.toBe(thumb);
   });
   it("shows a model selection label while open and restores selection text after closing", () => {
     render(createElement(Harness));
@@ -282,11 +284,25 @@ describe("composer combined model and thinking picker", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Manage models" }));
     expect(manage).toHaveBeenCalledOnce();
   });
-  it("keeps the menu open after choosing a model and maps slider indices to declared levels", () => {
+  it.each(["GLM-5.3", "GLM-5.3-Flash"])(
+    "stays open after choosing %s, including the current model",
+    (name) => {
+      render(createElement(Harness));
+      expect(screen.getByLabelText("Vision")).toBeTruthy();
+      const option = screen.getByTestId(
+        name === "GLM-5.3" ? "chat-model-select-item-a/glm" : "chat-model-select-item-a/flash",
+      );
+      fireEvent.click(option);
+      expect(screen.getByRole("menu")).toBeTruthy();
+      expect(option.getAttribute("aria-checked")).toBe("true");
+      expect(screen.getByTestId("chat-model-select-trigger").getAttribute("aria-label")).toContain(
+        name,
+      );
+    },
+  );
+
+  it("keeps the menu open while mapping slider indices to declared levels", () => {
     render(createElement(Harness));
-    expect(screen.getByLabelText("Vision")).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "GLM-5.3", exact: true }));
-    expect(screen.getByRole("menu")).toBeTruthy();
     const slider = screen.getByRole("slider", { name: "Effort" });
     expect(document.querySelectorAll("[data-composer-thought-stop]")).toHaveLength(3);
     expect(screen.getByTestId("composer-thought-track").getAttribute("data-progress")).toBe("100");

@@ -75,18 +75,14 @@ try {
                 (selectedProvider) => ({
                   provider: localStorage.getItem("oauth:active_provider"),
                   token: localStorage.getItem(`oauth:${selectedProvider}:access_token`),
-                  pendingNonce: sessionStorage.getItem("oauth_pending_nonce"),
-                  pendingProvider: sessionStorage.getItem("oauth_pending_provider"),
-                  pendingRedirectUri: sessionStorage.getItem("oauth_pending_redirect_uri"),
+                  pendingLogins: localStorage.getItem("oauth_pending_logins"),
                 }),
                 provider,
               ),
               {
                 provider,
                 token: "e2e-access",
-                pendingNonce: null,
-                pendingProvider: null,
-                pendingRedirectUri: null,
+                pendingLogins: null,
               },
             );
             assert.deepEqual(h.errors, []);

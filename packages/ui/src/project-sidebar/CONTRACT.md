@@ -2,6 +2,10 @@
 
 Host projectService 的 readTree 决定行集合、项目归属和 CLI 事实镜像；UI 只保存折叠、视图与表单草稿。实时 sessions-index 只附加 activity，不补行、不写回归属。读取以请求序号拒绝迟到结果；workspace/remote endpoint 变化立即取消旧结果资格。
 
+设置页复用公开的 `useOptionalProjectDirectory` 读取同一目录 owner；最近项目通过 `resolveRecentRemoteProjectPreference` 按 Source + 目录固定唯一入口 ID，继续既有项目恢复链路。缺失或歧义不生成创建意图，连接完成仍复验原入口。
+
+恢复时通过公开的 `resolveEntryProject` 从所属 Host 项目树解析有效项目，复用旧入口的唯一匹配规则。原项目 ID 显式传给 Root 草稿 owner，同时更新内存与持久化草稿范围，不从同目录缓存反推归属。
+
 创建经 Host prepareSession 固化 cwd，草稿持有 projectId，首发前由 Host 原子预留归属。选择其他项目会重建尚未提升的预热实例，已提交任务不受影响。拖动只发 moveTask，缺 root 经确认重试，失败保持原树。软删项目保留任务归属；时间线可见；恢复需用户显式选择同 roots 的已删项目。
 
 桌面和手机共用组件；沿用现有 task 行操作、shared-host attachment、continuous/replayable 传输。CLI 不接收项目 ID。

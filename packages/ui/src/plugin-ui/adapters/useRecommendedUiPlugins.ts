@@ -2,7 +2,11 @@ import { withPluginTelemetry } from "@zcode/services";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useServices } from "@/hooks/useServices.js";
 import { useScopedPluginManagementStore } from "@/store/pluginManagementStore.js";
-import { buildStoreItems, type StorePluginItem } from "@/settings/pluginStoreListing.js";
+import {
+  buildStoreItems,
+  isItemBusy,
+  type StorePluginItem,
+} from "@/settings/pluginStoreListing.js";
 import { useUiPluginRecommendations } from "@/plugin-ui/adapters/useUiPluginRecommendations.js";
 import { invalidateDeferredDraftSessionForSkillChange } from "@/lib/zcodeDraftSkillInvalidation.js";
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
@@ -35,9 +39,6 @@ export function useRecommendedUiPlugins(target: {
   const current = useRef<typeof context | null>(context);
   current.current = context;
   const [ready, setReady] = useState<typeof context>();
-  // 进度必须携带目标插件；共用布尔值会让列表中所有插件都显示加载中。
-  const [busyPluginId, setBusyPluginId] = useState<string | null>(null);
-  const running = useRef(false);
   const [failure, setFailure] = useState<{
     context: typeof context;
     message: string;
@@ -78,9 +79,8 @@ export function useRecommendedUiPlugins(target: {
   });
   const isCurrent = () => current.current === context;
   const prepare = async (item: StorePluginItem) => {
-    if (running.current || !isCurrent() || !service) return;
-    running.current = true;
-    setBusyPluginId(item.id);
+    // 读取 store 的即时状态，同插件重复点击被拦截，其他插件不受影响。
+    if (!isCurrent() || !service || isItemBusy(item, store.getState())) return;
     setFailure(undefined);
     try {
       const management = store.getState();
@@ -112,9 +112,6 @@ export function useRecommendedUiPlugins(target: {
         logger.warn("[plugin-ui] 推荐插件操作失败", { pluginId: item.id, message });
         setFailure({ context, message });
       }
-    } finally {
-      running.current = false;
-      setBusyPluginId(null);
     }
   };
   const resolveSurface = async (pluginId: string, surfaceId: string) => {
@@ -141,8 +138,7 @@ export function useRecommendedUiPlugins(target: {
       target.sessionId !== null && (configLoading || (Boolean(service) && ready !== context)),
     resolveSurface,
     prepare,
-    busy: busyPluginId !== null,
-    busyPluginId,
+    isBusy: (item: StorePluginItem) => isItemBusy(item, state),
     error: failure?.context === context ? failure.message : null,
   };
 }

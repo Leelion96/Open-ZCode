@@ -46,6 +46,7 @@ import type {
 import type { ComposerMentionPrefill } from "@/store/zcodeSessionStoreTypes.js";
 import type { TaskFindDialogProps } from "@/quickpick/TaskFindDialog.js";
 import type { AutomationsNavigationTab, OpenAutomationsMain } from "@/lib/taskNavigationHistory.js";
+import type { SidePaneFullViewController } from "@/side-pane-full-view/contract.js";
 
 export interface WorkspaceShellZCodeState {
   activeTaskId: WorkspaceZCodeUIState["activeTaskId"];
@@ -237,6 +238,8 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   goBackShortcutLabel: string;
   goForwardShortcutLabel: string;
   toggleSidePaneShortcutLabel: string;
+  /** 「进入 / 退出完整视图」快捷键标签（仅桌面）。 */
+  toggleSidePaneFullViewShortcutLabel?: string;
   canGoBack: boolean;
   canGoForward: boolean;
   canTaskNavBack: boolean;
@@ -247,6 +250,8 @@ export interface WorkspaceShellLayoutProps extends Omit<AppProps, "baseFeedbackS
   supportsEmbeddedBrowser: boolean;
   isGitOpen: boolean;
   isSidePaneOpen: boolean;
+  /** Side Pane 完整视图控制器（仅桌面；spec：docs/ui/side-pane-full-view.md）。 */
+  sidePaneFullView?: SidePaneFullViewController;
   summaryPanelVariantOverride: ChatViewSummaryPanelVariant | null;
   onSummaryPanelVariantOverrideChange: (variant: ChatViewSummaryPanelVariant | null) => void;
   sidePaneState: WorkspaceSidePaneState | null;

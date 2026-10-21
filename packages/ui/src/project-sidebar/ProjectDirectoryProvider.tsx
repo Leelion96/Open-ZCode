@@ -4,6 +4,7 @@ import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { countProjectTreeUnreadTasks } from "@/project-sidebar/view.js";
 import { useProjectTree } from "@/project-sidebar/useProjectTree.js";
 import { useProjectSidebarPreferences } from "@/project-sidebar/useProjectSidebarPreferences.js";
+import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { useTaskGroups } from "@/project-sidebar/useTaskGroups.js";
 import { selectSortedProjects } from "@/project-sidebar/view.js";
 
@@ -16,7 +17,11 @@ function useDirectoryState(isDesktop: boolean) {
     () => selectSortedProjects(result.factTree),
     [result.factTree.projects],
   );
-  const preferences = useProjectSidebarPreferences(sortedProjects, result.loading);
+  const preferences = useProjectSidebarPreferences(
+    sortedProjects,
+    result.loading,
+    result.availability,
+  );
   const projects = useMemo(() => {
     const sorted = preferences.sort(sortedProjects);
     return [...sorted.filter((p) => p.pinned), ...sorted.filter((p) => !p.pinned)];
@@ -45,13 +50,19 @@ function DirectoryOwner({ children, isDesktop }: { children: ReactNode; isDeskto
   // 挂在 Provider owner（Root 顶层，常驻不卸载）而不是 ProjectSidebar：侧栏卸载期间
   // 后台完成的未读变化也要同步到任务栏/托盘。嵌入 pane / 测试环境无 Provider 时跳过。
   const platform = useOptionalPlatform();
+  // 任务通知开关同时门控任务栏/托盘角标：关掉通知 = 连常驻提醒一起关闭
+  // （同步 0 清空角标），侧栏蓝点作为应用内状态不受影响。
+  const notificationEnabled = useZCodeStoreWithDefault(
+    (state) => state.notificationEnabled,
+    true,
+  );
   const unreadTaskCount = useMemo(
     () => countProjectTreeUnreadTasks(directory.tree),
     [directory.tree],
   );
   useEffect(() => {
-    platform?.syncWindowUnreadCount(unreadTaskCount);
-  }, [platform, unreadTaskCount]);
+    platform?.syncWindowUnreadCount(notificationEnabled ? unreadTaskCount : 0);
+  }, [platform, notificationEnabled, unreadTaskCount]);
   return <Context.Provider value={directory}>{children}</Context.Provider>;
 }
 export function useProjectDirectory() {

@@ -19,8 +19,11 @@ function toolbarOverflow(root: HTMLElement): number {
   );
 }
 
-/** 仅拥有 DOM 布局投影；权限、Plan 和 CUA 业务状态仍由原有 hooks 管理。 */
-export function fitComposerToolbar(root: HTMLElement) {
+/**
+ * 仅拥有 DOM 布局投影；权限、Plan 和 CUA 业务状态仍由原有 hooks 管理。
+ * iconOnly：单行输入框没有固定的工具栏宽度可测，直接按同一顺序收到最后一级（只留图标）。
+ */
+export function fitComposerToolbar(root: HTMLElement, { iconOnly = false } = {}) {
   const available = root.querySelector<HTMLElement>("[data-composer-leading-actions]");
   const content = root.querySelector<HTMLElement>("[data-composer-leading-content]");
   if (!available || !content) return;
@@ -29,7 +32,7 @@ export function fitComposerToolbar(root: HTMLElement) {
   delete root.dataset.composerModelIcon;
   delete root.dataset.composerProviderCompact;
   for (const control of controls) delete control.dataset.composerCompact;
-  const overflow = () => toolbarOverflow(root);
+  const overflow = iconOnly ? () => Number.POSITIVE_INFINITY : () => toolbarOverflow(root);
   // 前四档依次收起 Computer、mode、Plan、think 文字，不能合并裁决。
   for (const priority of ["0", "1", "2", "3"]) {
     if (overflow() <= 0) return;
@@ -56,12 +59,16 @@ export function fitComposerToolbar(root: HTMLElement) {
   root.dataset.composerModelIcon = "true";
 }
 
-export function useComposerToolbarFit() {
+export function useComposerToolbarFit({ iconOnly = false } = {}) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;
     const update = () => {
+      if (iconOnly) {
+        fitComposerToolbar(root, { iconOnly });
+        return;
+      }
       if (!root.parentElement || root.getBoundingClientRect().width <= 0) return;
       // 面板动画每次改宽都会通知 observer；完整布局已放得下时，克隆/插入副本只会徒增样式重算。
       // 已有压缩状态必须继续测量完整副本，才能在空间恢复、语言或模型变化时正确展开。
@@ -120,6 +127,6 @@ export function useComposerToolbarFit() {
       resize?.disconnect();
       mutations.disconnect();
     };
-  }, []);
+  }, [iconOnly]);
   return ref;
 }

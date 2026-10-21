@@ -7,6 +7,7 @@ import { WorkspaceFileTree } from "@/workspace-file-tree/WorkspaceFileTree.js";
 import { Button } from "@/components/ui/button.js";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useZCodeStore } from "@/store/StoreProvider.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { FileManagerTarget } from "@/lib/workspaceSidePane.js";
 
@@ -49,8 +50,22 @@ export function FileManagerPane({
     observer.observe(container);
     return () => observer.disconnect();
   }, []);
-  const [navigationOpen, setNavigationOpen] = useState(!mobileOverlay || !source);
-  // 每个 Tab 持有自己的导航 UI；隐藏导航而不卸载，保留搜索、目录展开和滚动位置。
+  const workspaceKey = target.workspaceIdentity?.trim() || target.workspacePath;
+  const storedNavigationPreferenceOpen = useZCodeStore(
+    (state) => state.fileManagerNavigationOpenByWorkspace[workspaceKey],
+  );
+  const setNavigationPreferenceOpen = useZCodeStore((state) => state.setFileManagerNavigationOpen);
+  const [compactNavigationOpenOverride, setCompactNavigationOpenOverride] = useState<
+    boolean | null
+  >(mobileOverlay ? !source : null);
+  const compactLayout = mobileOverlay || isNarrow;
+  // Bug 原因：显隐原本由每个 FileManagerPane 的 useState 持有，新文件 Tab 或 App 重启会再次默认展开。
+  // workspace store 现在独占用户偏好；紧凑布局选中文件后的自动收起只保留在当前面板。
+  const navigationOpen = compactLayout
+    ? (compactNavigationOpenOverride ??
+      storedNavigationPreferenceOpen ??
+      (!mobileOverlay || !source))
+    : (storedNavigationPreferenceOpen ?? true);
   const canNavigate = Boolean(target.workspacePath && (!source || source.path));
   const showNavigation = canNavigate && navigationOpen;
   const previewPanelRef = usePanelRef();
@@ -75,8 +90,13 @@ export function FileManagerPane({
       workspaceRemoteSessionId: target.workspaceRemoteSessionId,
     });
     if (mobileOverlay || isNarrow) {
-      setNavigationOpen(false);
+      setCompactNavigationOpenOverride(false);
     }
+  };
+  const toggleNavigation = () => {
+    const nextOpen = !navigationOpen;
+    setNavigationPreferenceOpen(workspaceKey, nextOpen);
+    setCompactNavigationOpenOverride(null);
   };
 
   return (
@@ -98,7 +118,7 @@ export function FileManagerPane({
             <Button
               variant="ghost"
               size="icon-sm"
-              onClick={() => setNavigationOpen((open) => !open)}
+              onClick={toggleNavigation}
               aria-label={navigationLabel}
               title={navigationLabel}
               aria-expanded={showNavigation}

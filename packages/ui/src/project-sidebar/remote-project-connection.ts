@@ -1,5 +1,8 @@
-import type { IRemoteProjectService } from "@/project-sidebar/contract.js";
-import { buildRemoteHostWorkspaceIdentity } from "@/project-sidebar/contract.js";
+import type { IRemoteProjectService, RemoteProjectDirectory } from "@/project-sidebar/contract.js";
+import {
+  buildRemoteHostWorkspaceIdentity,
+  buildServerRemoteWorkspaceIdentity,
+} from "@/project-sidebar/contract.js";
 import type { SourceServerManagementSnapshot } from "@zcode/shared";
 import type { RemoteConnectionOpenPreference } from "@/app-shell/types.js";
 import { getWorkspaceSourceServerId } from "@/conversation-workspace-target/sourceIdentity.js";
@@ -9,6 +12,32 @@ import {
 } from "@/lib/remoteConnectionWizard.js";
 import { resolveRemoteConnectionPresentation } from "@/lib/remoteConnectionPresentation.js";
 import { requestRemoteProjectConnection } from "@/remote-connection-flow/contract.js";
+
+/** 最近目录不是新建请求；连接前固定已有入口，避免连接完成后误入创建器。 */
+export function resolveRecentRemoteProjectPreference(
+  directory: RemoteProjectDirectory,
+  input: { sourceServerId: string; path: string; profileId?: string },
+): RemoteConnectionOpenPreference | null {
+  const identity = buildServerRemoteWorkspaceIdentity({
+    serverId: input.sourceServerId,
+    workspacePath: input.path,
+  });
+  const entries = directory.entries.filter(
+    (entry) =>
+      directory.hosts.some((host) => host.id === entry.hostId) &&
+      [...entry.roots.map((root) => root.rootPath), entry.legacyWorkspace?.workspacePath].some(
+        (path) => path && buildRemoteHostWorkspaceIdentity(entry.hostId, path) === identity,
+      ),
+  );
+  if (entries.length !== 1) return null;
+  return {
+    ...(input.profileId
+      ? { preferredProfileId: input.profileId }
+      : { preferredSourceServerId: input.sourceServerId }),
+    preferredDirectoryPath: input.path,
+    preferredProjectEntryId: entries[0]!.id,
+  };
+}
 
 /** F5 下项目成员不等于已打开 tab；连接成员仍交给 Host，需要交互才移交唯一向导。 */
 export async function requestRetainedRemoteProjectConnection(input: {

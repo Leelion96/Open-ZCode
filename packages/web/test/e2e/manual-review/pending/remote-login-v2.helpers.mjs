@@ -59,13 +59,14 @@ export async function setup(
     },
     { theme, signedIn, lastSid, provider: initialProvider },
   );
-  await page.route("**/api/v1/remote/device", async (route) => {
+  // 受控响应挂在 context 上，同一浏览器新开的标签页也能命中；用例在 page 上的路由仍优先。
+  await context.route("**/api/v1/remote/device", async (route) => {
     traffic.lists++;
     assert.equal(route.request().method(), "GET");
     assert.equal(route.request().headers().authorization, "Bearer e2e-jwt");
     await route.fulfill({ json: { code: 0, msg: "", data: devices } });
   });
-  await page.route("**/api/v1/remote/token", async (route) => {
+  await context.route("**/api/v1/remote/token", async (route) => {
     traffic.tokens++;
     assert.equal(route.request().headers().authorization, "Bearer e2e-jwt");
     assert.deepEqual(route.request().postDataJSON(), { role: "terminal" });
@@ -74,7 +75,7 @@ export async function setup(
       json: { code: 0, msg: "", data: { token: "AAAAAAAAAAAAAAAAAAAAAA", expires_in: 60 } },
     });
   });
-  await page.route("**/api/v1/oauth/token", async (route) => {
+  await context.route("**/api/v1/oauth/token", async (route) => {
     traffic.exchange = route.request().postDataJSON();
     assert.equal(traffic.exchange.provider, provider);
     await route.fulfill({
@@ -89,11 +90,11 @@ export async function setup(
       },
     });
   });
-  await page.route(/\/(?:api\/oauth\/authorize|login)\?/, async (route) => {
+  await context.route(/\/(?:api\/oauth\/authorize|login)\?/, async (route) => {
     traffic.authorize = new URL(route.request().url());
     await route.fulfill({ contentType: "text/html", body: "<p>E2E OAuth provider</p>" });
   });
-  await page.routeWebSocket(/\/api\/v1\/remote\/ws2(?:\?|$)/, (socket) => {
+  await context.routeWebSocket(/\/api\/v1\/remote\/ws2(?:\?|$)/, (socket) => {
     traffic.sockets++;
     const url = new URL(socket.url());
     assert.equal(url.searchParams.get("mid"), expectedDeviceMid);

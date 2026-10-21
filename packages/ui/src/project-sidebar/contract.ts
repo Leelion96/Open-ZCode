@@ -60,6 +60,8 @@ export type {
 } from "@zcode/services";
 export interface ProjectAvailability {
   entryId?: string;
+  /** 仅首次升级入口用于替换旧排序键，不改变项目身份。 */
+  upgradeEntryId?: string;
   online: boolean;
   unresolved?: boolean;
 }

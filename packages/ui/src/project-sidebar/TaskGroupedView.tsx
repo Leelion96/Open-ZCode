@@ -175,7 +175,6 @@ export function TaskGroupedView({
     authoritativeView,
     collapsedGroupIds: collapsed,
     onCollapsedGroupIdsChange: changeCollapsed,
-    getTaskRemoteSessionId,
     onMove: move,
   });
   const groups = useMemo(
@@ -411,12 +410,7 @@ export function TaskGroupedView({
         }
       />
       <DndContext {...drag.dnd}>
-        <div
-          ref={drag.root}
-          onPointerDownCapture={drag.onPointerDownCapture}
-          className="px-2 pb-4"
-          data-testid="task-grouped-view"
-        >
+        <div ref={drag.root} className="px-2 pb-4" data-testid="task-grouped-view">
           {draftGroupId === null && (
             <GroupedDraftTaskRow
               active={!activeTaskId}

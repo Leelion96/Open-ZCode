@@ -24,10 +24,10 @@ afterEach(async () => {
   if (root) await act(() => root.unmount());
   vi.clearAllMocks();
 });
-async function mount() {
+async function mount(isDesktop = true) {
   container = document.createElement("div");
   root = createRoot(container);
-  await act(() => root.render(createElement(ShortcutSettingsSection, { isDesktop: true })));
+  await act(() => root.render(createElement(ShortcutSettingsSection, { isDesktop })));
 }
 function button(id: string) {
   return container.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)!;
@@ -71,5 +71,15 @@ describe("shortcut settings save admission", () => {
     await act(() => button("settings-shortcut-clear-toggleSidebar").click());
     expect(mocks.update).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+  // 完整视图只在桌面端提供（docs/ui/side-pane-full-view.md），Web 设置页不展示该命令。
+  it("lists the side pane full view shortcut only on desktop", async () => {
+    await mount(true);
+    expect(button("settings-shortcut-clear-toggleSidePaneFullView")).toBeTruthy();
+    await act(() => root.unmount());
+    await mount(false);
+    expect(
+      container.querySelector('[data-testid="settings-shortcut-clear-toggleSidePaneFullView"]'),
+    ).toBeNull();
   });
 });

@@ -2453,7 +2453,7 @@ export function createLocalServices(options: {
     readPolicy: async () => {
       const settings = await settingService.get();
       if (!settings.taskAutoArchiveEnabled) return null;
-      const days = Math.max(1, Math.floor(settings.taskAutoArchiveOlderThanDays ?? 7));
+      const days = Math.max(1, Math.floor(settings.taskAutoArchiveOlderThanDays ?? 30));
       return {
         cutoff: Date.now() - days * 86_400_000,
         activeTasks: zcodeTaskIndexSyncer.activeTaskRefs(),

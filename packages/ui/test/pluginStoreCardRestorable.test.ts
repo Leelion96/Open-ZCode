@@ -204,6 +204,50 @@ describe("PluginStoreCard restorable built-ins", () => {
     expect(onResetConfig).toHaveBeenCalledWith(item.id);
   });
 
+  it("keeps project reset enabled while another plugin installs and disables it for its own reset", async () => {
+    const item = installedItemWithRuntimeInfo();
+    const resetButton = () =>
+      buttonProps.findLast((props) => props["data-testid"] === "plugin-store-reset-config");
+    await renderDetail(
+      item,
+      makeActions({
+        onResetConfig: () => {},
+        activeOperations: [{ id: "plugin:install:other@personal" }],
+      }),
+    );
+    expect(resetButton()?.disabled).toBe(false);
+    await renderDetail(
+      item,
+      makeActions({
+        onResetConfig: () => {},
+        activeOperations: [{ id: `plugin:reset-config:${item.id}` }],
+      }),
+    );
+    expect(resetButton()?.disabled).toBe(true);
+  });
+
+  it("disables project reset while the same plugin saves its config", async () => {
+    const item = installedItemWithRuntimeInfo();
+    const resetButton = () =>
+      buttonProps.findLast((props) => props["data-testid"] === "plugin-store-reset-config");
+    await renderDetail(
+      item,
+      makeActions({
+        onResetConfig: () => {},
+        activeOperations: [{ id: `plugin:configure:${item.id}` }],
+      }),
+    );
+    expect(resetButton()?.disabled).toBe(true);
+    await renderDetail(
+      item,
+      makeActions({
+        onResetConfig: () => {},
+        activeOperations: [{ id: "plugin:configure:other@personal" }],
+      }),
+    );
+    expect(resetButton()?.disabled).toBe(false);
+  });
+
   it("invokes onInstall with the restorable item when the install button is clicked", async () => {
     const onInstall = vi.fn();
     await renderCard(restorableItem(), makeActions({ onInstall }));

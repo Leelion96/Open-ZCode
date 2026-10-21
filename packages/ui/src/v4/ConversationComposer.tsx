@@ -5,6 +5,7 @@ import { useOptionalRemoteWorkspaceController } from "@/remote/useRemoteWorkspac
 import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
 import { useRemoteConversationAvailable } from "@/v4/RemoteConversationAvailability.js";
 import { getLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
+import { formatConversationWorkDuration } from "@/v4/conversationWorkDuration.js";
 /**
  * v4 会话 composer（composer parity）。
  *
@@ -422,6 +423,13 @@ export interface ConversationComposerProps {
   contextHeader?: ReactNode;
   /** 居中草稿布局（旧 shouldUseCenteredDraftChatLayout）：收窄 max-w-2xl、去 sticky。 */
   centered?: boolean;
+  /** 输入框布局，见 ChatPromptEditor；inline 是 Side Pane 完整视图浮窗的单行形态。 */
+  layout?: "stacked" | "inline";
+  /**
+   * 单行布局下对话运行中的工作时长（与流式消息「工作中 N 秒」同值），
+   * 占位文字改为「工作中 {时长}」；undefined 时沿用原占位。
+   */
+  workingDurationMs?: number;
   /**
    * v4 bottom dock 阻塞交互 id。存在时 composer 只隐藏不卸载，保留草稿、附件与编辑器实例。
    */
@@ -550,6 +558,8 @@ function ConversationComposerImpl({
   telemetryDraftConfig,
   contextHeader,
   centered = false,
+  layout = "stacked",
+  workingDurationMs,
   blockingRequestId = null,
   disabled: disabledProp = false,
   onRetryInitialization,
@@ -1858,14 +1868,22 @@ function ConversationComposerImpl({
   }, [listenAddToChatEvents, updateText, workspaceIdentity, workspacePath]);
 
   // 动态 placeholder（旧 chatViewPlaceholder 语义）：无历史 → newTask；
-  // 有历史空闲 → followUpAsk；有历史处理中 → followUpQueue。
-  const normalPlaceholder = intl.formatMessage({
-    id: resolveChatPlaceholderKey({
-      hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
-      isTaskProcessing: canStop,
-      compactNewTask: compactMobilePlaceholder,
-    }),
-  });
+  // 有历史空闲 → followUpAsk；有历史处理中 → followUpQueue；
+  // 完整视图浮窗（单行）运行中 → 「工作中 {时长}」，与流式消息同值同格式。
+  const workingDurationLabel =
+    layout === "inline" && canStop
+      ? formatConversationWorkDuration(workingDurationMs, intl, locale)
+      : null;
+  const normalPlaceholder = workingDurationLabel
+    ? intl.formatMessage({ id: "chat.history.workingFor" }, { duration: workingDurationLabel })
+    : intl.formatMessage({
+        id: resolveChatPlaceholderKey({
+          hasHistoryMessages: (snapshot?.rows.totalCount ?? 0) > 0,
+          isTaskProcessing: canStop,
+          // 单行输入框放不下完整的新任务提示，沿用手机远控的短文案。
+          compactNewTask: compactMobilePlaceholder || layout === "inline",
+        }),
+      });
   const sendTooltipTitle = intl.formatMessage({
     id: mode === "enqueue" ? "chat.queue.enqueue" : "chat.send",
   });
@@ -2662,6 +2680,7 @@ function ConversationComposerImpl({
           enableMentionPanel
           leadingActions={leadingActionsNode}
           submitControl={submitControlNode}
+          layout={layout}
           className="p-0"
           shellClassName={
             highspeedCard

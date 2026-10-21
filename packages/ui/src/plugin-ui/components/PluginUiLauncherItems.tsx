@@ -37,8 +37,14 @@ export function buildPluginUiLauncherItemId(pluginId: string, surfaceId: string)
 export function PluginUiLauncherItems(props: PluginUiLauncherItemsProps) {
   const { intl, locale } = useZCodeIntl();
   const platform = useOptionalPlatform();
-  const { entries, loading, prepare, resolveSurface, busy, busyPluginId, error } =
-    useRecommendedUiPlugins(props);
+  const {
+    entries,
+    loading,
+    prepare,
+    resolveSurface,
+    isBusy: isPluginBusy,
+    error,
+  } = useRecommendedUiPlugins(props);
   useEffect(() => {
     if (error) toast(error, { variant: "warning" });
   }, [error]);
@@ -98,7 +104,7 @@ export function PluginUiLauncherItems(props: PluginUiLauncherItemsProps) {
           : resolveItemDisplayName(item, locale);
         const itemId = buildPluginUiLauncherItemId(pluginId, surfaceId);
         // 原入口只替换加载文案，缺少持续可见的进度；图标与文案共用当前插件的忙碌态。
-        const isBusy = busyPluginId === pluginId;
+        const isBusy = isPluginBusy(item);
         const actionLabel = intl.formatMessage({
           id: isBusy
             ? "common.loading"
@@ -149,7 +155,7 @@ export function PluginUiLauncherItems(props: PluginUiLauncherItemsProps) {
                 if (!item.installed || !item.info?.enabled) event.preventDefault();
                 void open();
               }}
-              disabled={busy}
+              disabled={isBusy}
               aria-busy={isBusy || undefined}
             >
               <PuzzleIcon className="size-4 text-foreground-subtle" />
@@ -185,7 +191,7 @@ export function PluginUiLauncherItems(props: PluginUiLauncherItemsProps) {
             }
             actionLabel={actionLabel}
             loading={isBusy}
-            disabled={busy}
+            disabled={isBusy}
             onOpen={open}
           />
         );

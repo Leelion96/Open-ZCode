@@ -131,6 +131,31 @@ describe("plugin update badge and inline update entries", () => {
     expect(onUpdate).toHaveBeenCalledWith("demo@personal");
   });
 
+  it("keeps the inline update entry enabled while another plugin installs", async () => {
+    const updateButton = () =>
+      buttonProps.findLast((props) => props["data-testid"] === "plugin-store-card-update");
+    await renderCard(
+      storeItem(),
+      makeActions({ activeOperations: [{ id: "plugin:install:other@personal" }] }),
+    );
+    expect(updateButton()?.disabled).toBe(false);
+    await renderCard(
+      storeItem(),
+      makeActions({ activeOperations: [{ id: "plugin:update:demo@personal" }] }),
+    );
+    expect(updateButton()?.disabled).toBe(true);
+  });
+
+  it("disables the inline update entry while the same plugin saves its config", async () => {
+    const updateButton = () =>
+      buttonProps.findLast((props) => props["data-testid"] === "plugin-store-card-update");
+    await renderCard(
+      storeItem(),
+      makeActions({ activeOperations: [{ id: "plugin:configure:demo@personal" }] }),
+    );
+    expect(updateButton()?.disabled).toBe(true);
+  });
+
   it("keeps the inline update entry on the installed card after removing the strip", async () => {
     const pendingHtml = await renderListView(storeItem(), makeActions());
     expect(pendingHtml).toContain('data-testid="plugin-store-card-update"');

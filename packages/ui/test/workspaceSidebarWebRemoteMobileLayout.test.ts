@@ -84,6 +84,7 @@ vi.mock("@/store/zcodeSessionStore.js", () => ({
   ),
 }));
 vi.mock("@/store/StoreProvider.js", () => ({
+  useZCodeStoreWithDefault: () => true,
   useZCodeStore: (selector: (state: unknown) => unknown) => selector({ setTheme: vi.fn() }),
 }));
 vi.mock("@/v4/useWorkspaceSessionsIndexItems.js", () => ({

@@ -145,3 +145,98 @@ it("切换会话后迟到面板不能打开新目标", async () => {
   await act(async () => pending.resolve([]));
   expect(await request).toBeUndefined();
 });
+
+it.each(["success", "failure"])(
+  "不同插件可并发安装，后一次 %s 不清理前一次进度",
+  async (outcome) => {
+    const service = setup();
+    const first = Promise.withResolvers<{ diagnostics: [] }>();
+    const second = Promise.withResolvers<{ diagnostics: [] }>();
+    service.installPlugin.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result } = renderHook(() =>
+      useRecommendedUiPlugins({ workspacePath: "/workspace/a", sessionId: "s" }),
+    );
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
+    const a = result.current.entries[0]!.item;
+    const b = { ...a, id: "second@zcode-plugins-official", name: "second" };
+    let installA!: Promise<void>;
+    let installB!: Promise<void>;
+    act(() => {
+      installA = result.current.prepare(a);
+      installB = result.current.prepare(b);
+      void result.current.prepare(a);
+    });
+    expect(service.installPlugin).toHaveBeenCalledTimes(2);
+    expect(result.current.isBusy(a)).toBe(true);
+    expect(result.current.isBusy(b)).toBe(true);
+    await act(async () => {
+      if (outcome === "failure") second.reject(new Error("second failed"));
+      else second.resolve({ diagnostics: [] });
+      await installB;
+    });
+    expect(result.current.isBusy(a)).toBe(true);
+    expect(result.current.isBusy(b)).toBe(false);
+    await act(async () => {
+      first.resolve({ diagnostics: [] });
+      await installA;
+    });
+    expect(result.current.isBusy(a)).toBe(false);
+  },
+);
+
+it("新服务可安装同名插件，旧服务完成不清理新操作", async () => {
+  const old = setup();
+  const oldPending = Promise.withResolvers<{ diagnostics: [] }>();
+  old.installPlugin.mockReturnValueOnce(oldPending.promise);
+  const { result, rerender } = renderHook(() =>
+    useRecommendedUiPlugins({ workspacePath: "/workspace/a", sessionId: "s" }),
+  );
+  await waitFor(() => expect(result.current.entries).toHaveLength(1));
+  let oldOperation!: Promise<void>;
+  act(() => {
+    oldOperation = result.current.prepare(result.current.entries[0]!.item);
+  });
+  const next = setup();
+  const nextPending = Promise.withResolvers<{ diagnostics: [] }>();
+  next.installPlugin.mockReturnValueOnce(nextPending.promise);
+  rerender();
+  await waitFor(() => expect(result.current.entries).toHaveLength(1));
+  const item = result.current.entries[0]!.item;
+  let nextOperation!: Promise<void>;
+  act(() => {
+    nextOperation = result.current.prepare(item);
+  });
+  expect(next.installPlugin).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    oldPending.resolve({ diagnostics: [] });
+    await oldOperation;
+  });
+  expect(result.current.isBusy(item)).toBe(true);
+  await act(async () => {
+    nextPending.resolve({ diagnostics: [] });
+    await nextOperation;
+  });
+  expect(result.current.isBusy(item)).toBe(false);
+});
+
+it("安装态刷新后释放按钮，技能刷新不另加推荐区操作锁", async () => {
+  setup();
+  const refresh = Promise.withResolvers<void>();
+  context.refresh.mockReturnValueOnce(refresh.promise);
+  const { result } = renderHook(() =>
+    useRecommendedUiPlugins({ workspacePath: "/workspace/a", sessionId: "s" }),
+  );
+  await waitFor(() => expect(result.current.entries).toHaveLength(1));
+  const item = result.current.entries[0]!.item;
+  let operation!: Promise<void>;
+  act(() => {
+    operation = result.current.prepare(item);
+  });
+  await waitFor(() => expect(context.refresh).toHaveBeenCalledTimes(1));
+  expect(result.current.entries[0]!.item.installed).toBe(true);
+  expect(result.current.isBusy(item)).toBe(false);
+  await act(async () => {
+    refresh.resolve();
+    await operation;
+  });
+});
