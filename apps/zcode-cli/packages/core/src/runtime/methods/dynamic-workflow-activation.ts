@@ -38,8 +38,9 @@ export interface DynamicWorkflowActivationEntryData {
 /**
  * 内置 `/workflow` 命令名（bootstrap/src/builtin-workflow-command.ts 的 BUILTIN_WORKFLOW_COMMAND_NAME）。
  * core 不依赖 bootstrap，这里按保留字表里的字面量写；用户消息持久化的是 `displayInput`——命令原文。
+ * 会话能力标签（session-features）的历史推导复用同一判据。
  */
-const WORKFLOW_COMMAND_TEXT_PATTERN = /^\/workflow(?:\s|$)/i;
+export const WORKFLOW_COMMAND_TEXT_PATTERN = /^\/workflow(?:\s|$)/i;
 
 /** 出生即激活的会话：非 onDemand（alwaysOn、TUI / headless / 子代理未设该字段）。 */
 export function resolveInitialDynamicWorkflowToolsActivated(config: AgentRuntimeConfig): boolean {

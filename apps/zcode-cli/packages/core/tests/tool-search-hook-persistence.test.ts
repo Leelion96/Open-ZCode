@@ -24,7 +24,7 @@ it.each([
   { streaming: "off" as const, large: true },
   { streaming: "on" as const, large: true },
 ])(
-  "saves final Hook-augmented ToolSearch blocks atomically and cold resumes (streaming=$streaming, large=$large)",
+  "saves final ToolSearch blocks atomically with the Hook context as a batch attachment and cold resumes (streaming=$streaming, large=$large)",
   async ({ streaming, large }) => {
     const names = large
       ? Array.from({ length: 2_000 }, (_, i) =>
@@ -129,10 +129,9 @@ it.each([
         },
       );
     };
-    const finalContent = [
-      ...discoveredNames.map((toolName) => ({ type: "tool_reference", toolName })),
-      { type: "text", text: "[Hook additional context]\n#1\nToolSearch hook context" },
-    ];
+    // Hook 文本不进 tool result：引用块就是最终内容，Hook 上下文是这批结果之后的附件。
+    const finalContent = discoveredNames.map((toolName) => ({ type: "tool_reference", toolName }));
+    const hookText = "PostToolUse:ToolSearch hook additional context: ToolSearch hook context";
     let runtime: ReturnType<typeof makeRuntime> | undefined;
     try {
       await store.createSession({
@@ -158,6 +157,12 @@ it.each([
             content: finalContent,
           }),
         ]);
+        const toolIndex = request.messages.findIndex((message) => message.role === "tool");
+        const hookIndexes = request.messages.flatMap((message, index) =>
+          JSON.stringify(message.content).includes(hookText) ? [index] : [],
+        );
+        expect(hookIndexes).toHaveLength(1);
+        expect(hookIndexes[0]).toBeGreaterThan(toolIndex);
         expect(request.messages.flatMap((message) => message.toolCalls ?? [])).toContainEqual({
           id: "search-hook-real",
           name: "ToolSearch",

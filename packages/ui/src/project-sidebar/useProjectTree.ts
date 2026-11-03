@@ -21,6 +21,14 @@ import { useProjectUnreadSignals } from "@/project-sidebar/useProjectUnreadSigna
 import { areStabilizedValuesEquivalent } from "@/v4/taskListItemStabilization.js";
 
 const subscribeToNothing = () => () => {};
+const sameReadErrors = (left: ReadonlyMap<string, string>, right: ReadonlyMap<string, string>) =>
+  left.size === right.size && [...left].every(([hostId, message]) => right.get(hostId) === message);
+const sameAvailability = (
+  left: ReadonlyMap<string, ProjectAvailability>,
+  right: ReadonlyMap<string, ProjectAvailability>,
+) =>
+  left.size === right.size &&
+  [...right].every(([key, value]) => areStabilizedValuesEquivalent(left.get(key), value));
 const zeroRevision = () => 0;
 const EMPTY: ProjectTree = { projects: [], tasks: [] };
 export function useProjectTree(isDesktop = false) {
@@ -51,6 +59,8 @@ export function useProjectTree(isDesktop = false) {
     new Map(),
   );
   const [directory, setDirectory] = useState<RemoteProjectDirectory>({ hosts: [], entries: [] });
+  // 按 Host 的最近一次项目读取失败；只作展示投影，不落盘，下一次成功读取即清除。
+  const [hostReadErrors, setHostReadErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const serial = useRef(0);
@@ -71,6 +81,7 @@ export function useProjectTree(isDesktop = false) {
     service: typeof service;
     remote: typeof remoteService;
     tree: ProjectTree;
+    errors: ReadonlyMap<string, string>;
   } | null>(null);
   const readOnce = useCallback(async () => {
     const request = serial.current;
@@ -97,7 +108,16 @@ export function useProjectTree(isDesktop = false) {
             }
           }
         }
-        accepted.current = { service, remote: remoteService, tree: result.tree };
+        // 读取由事件触发，失败可能持续；只在错误变化时记录，避免同一故障反复刷日志。
+        for (const [hostId, message] of result.errors)
+          if (previous?.errors.get(hostId) !== message)
+            logger.warn("[project-sidebar] 读取远端项目失败", { hostId, error: message });
+        accepted.current = {
+          service,
+          remote: remoteService,
+          tree: result.tree,
+          errors: result.errors,
+        };
         // Bugfix: 自动归档只改 Host archived，未执行手动归档的 UI 清理，导致列表消失而详情残留。
         // 只处理已接受快照中的明确状态转换；首次已归档、离线缺行与迟到响应都不是归档事件。
         if (previous?.service === service && previous.remote === remoteService) {
@@ -140,15 +160,13 @@ export function useProjectTree(isDesktop = false) {
           // 树已复用等价引用，但连接/入口每次 RPC 都是新对象，仍会广播整棵目录。
           // 在接收边界比较完整内容；连接变化与入口移除仍发布，不在组件 memo 中忽略字段。
           setAvailability((previous) =>
-            previous.size === result.availability.size &&
-            [...result.availability].every(([key, value]) =>
-              areStabilizedValuesEquivalent(previous.get(key), value),
-            )
-              ? previous
-              : result.availability,
+            sameAvailability(previous, result.availability) ? previous : result.availability,
           );
           setDirectory((previous) =>
             areStabilizedValuesEquivalent(previous, result.directory) ? previous : result.directory,
+          );
+          setHostReadErrors((previous) =>
+            sameReadErrors(previous, result.errors) ? previous : result.errors,
           );
           setError(null);
           for (const pending of ready) {
@@ -172,6 +190,23 @@ export function useProjectTree(isDesktop = false) {
         setError(String(cause));
         for (const pending of pendingCommits.current) pending.finish(cause);
         logger.error("[project-sidebar] 读取项目树失败", cause);
+      }
+      // Bug 原因：读取先等远端入口目录；它在冷启动时持续失败（如 Source Directory 初始化失败），
+      // 侧栏没有任何快照，本地项目也一起为空。没有成功快照时只补读本地树；已有快照时
+      // 保持上一次完整树，避免远程项目一轮消失后取消进行中的远程导航、编辑和首发提交。
+      if (service && request === serial.current && accepted.current?.service !== service) {
+        const local = await readProjectSidebarTree({ projectService: service }).catch(() => null);
+        if (local && request === serial.current) {
+          // Bug 原因：只读本地树每次返回新的 availability/directory 对象；目录持续失败时每次刷新
+          // 都会重新广播整个侧栏。与成功路径用同一等价判断，内容不变就保留原引用。
+          setTree((previous) => stabilizeProjectTree(previous, local.tree));
+          setAvailability((previous) =>
+            sameAvailability(previous, local.availability) ? previous : local.availability,
+          );
+          setDirectory((previous) =>
+            areStabilizedValuesEquivalent(previous, local.directory) ? previous : local.directory,
+          );
+        }
       }
     } finally {
       if (request === serial.current) setLoading(false);
@@ -350,6 +385,7 @@ export function useProjectTree(isDesktop = false) {
       factTree: tree,
       directory,
       availability,
+      hostReadErrors,
       service,
       remoteService,
       refresh: refreshDirectory,
@@ -362,6 +398,7 @@ export function useProjectTree(isDesktop = false) {
       tree,
       directory,
       availability,
+      hostReadErrors,
       service,
       remoteService,
       refreshDirectory,

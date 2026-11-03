@@ -47,6 +47,8 @@ export interface PluginUiToolFeed {
 
 export interface PluginUiHostControllerDeps extends PluginUiInteractionCallbacks {
   onBusyChange?(): void;
+  /** 模型发起的页面工具和 sampling；不包括页面自主轮询。 */
+  onActivity?(): void;
   onInstanceClosed?(): void;
   createTransport(port: PluginSandboxTransportPort): Transport;
   bridge: Pick<
@@ -91,6 +93,8 @@ export interface PluginUiHostControllerDeps extends PluginUiInteractionCallbacks
   /** 端口到达创建 AppBridge 时读取，按当时真实可用的交互生成能力声明。 */
   getHostCapabilities(): McpUiHostCapabilities;
   initialHostContext: McpUiHostContext;
+  /** 读取当前呈现选择；侧栏和工具行共享页面，不因展示位置变化重建 controller。 */
+  getPreferredDisplayMode?: () => PluginUiPresentation["preferredDisplayMode"];
   hostVersion: string;
   onPhase(
     phase: PluginUiHostPhase,

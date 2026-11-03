@@ -96,18 +96,13 @@ export type ToolCallMatcher =
 export function expandAssistantHistoriesWithContent(): Promise<void> {
   return browser.execute((historyTriggerPrefix) => {
     const triggers = Array.from(
-      document.querySelectorAll<HTMLElement>(
-        `[data-testid^="${historyTriggerPrefix}-"]`,
-      ),
+      document.querySelectorAll<HTMLElement>(`[data-testid^="${historyTriggerPrefix}-"]`),
     );
     for (const trigger of triggers) {
       const expanded =
         trigger.getAttribute("aria-expanded") === "true" ||
         trigger.getAttribute("data-history-open") === "true";
-      if (
-        trigger.getAttribute("data-history-has-content") !== "false" &&
-        !expanded
-      ) {
+      if (trigger.getAttribute("data-history-has-content") !== "false" && !expanded) {
         trigger.click();
       }
     }
@@ -128,9 +123,7 @@ export function expandVisibleToolCallGroups(): Promise<void> {
       document.querySelectorAll<HTMLElement>("[data-tool-call-id][data-tool-name]"),
     ).filter((group) => groupNames.has(group.dataset.toolName ?? ""));
     for (const group of groups) {
-      const trigger = group.querySelector<HTMLElement>(
-        `[data-testid^="${summaryTriggerPrefix}-"]`,
-      );
+      const trigger = group.querySelector<HTMLElement>(`[data-testid^="${summaryTriggerPrefix}-"]`);
       if (trigger?.getAttribute("aria-expanded") !== "true") {
         trigger?.click();
       }
@@ -153,19 +146,17 @@ export function getToolCallDiagnostics(
       v4PaneTestId,
       expectedMatcher,
     ) => {
-      const normalizeText = (value: string) =>
-        value.replace(/\u00a0/g, " ").trim();
+      const normalizeText = (value: string) => value.replace(/\u00a0/g, " ").trim();
       const blocks = Array.from(
-        document.querySelectorAll<HTMLElement>(
-          `[data-testid^="${toolBlockPrefix}-"]`,
-        ),
+        document.querySelectorAll<HTMLElement>(`[data-testid^="${toolBlockPrefix}-"]`),
       ).map((block) => ({
         exists: true,
         hasEditAction: Boolean(
-          block.querySelector(`[data-testid^="${editButtonPrefix}-"]`),
+          // V4 消息操作已换前缀；负向断言必须检查现行入口，不能仅检查退役节点。
+          block.querySelector(`[data-testid^="${editButtonPrefix}-"], [data-testid^="v4-edit-"]`),
         ),
         hasForkAction: Boolean(
-          block.querySelector(`[data-testid^="${forkButtonPrefix}-"]`),
+          block.querySelector(`[data-testid^="${forkButtonPrefix}-"], [data-testid^="v4-fork-"]`),
         ),
         status: block.getAttribute("data-status"),
         testId: block.getAttribute("data-testid") ?? "",
@@ -193,23 +184,18 @@ export function getToolCallDiagnostics(
               }
               return (
                 block.toolName === expectedMatcher.value ||
-                (expectedMatcher.value === "Bash" &&
-                  block.toolName === "ExecuteGroup")
+                (expectedMatcher.value === "Bash" && block.toolName === "ExecuteGroup")
               );
             }) ?? null);
 
       const assistantMessages = Array.from(
-        document.querySelectorAll<HTMLElement>(
-          `[data-testid^="${assistantMessagePrefix}-"]`,
-        ),
+        document.querySelectorAll<HTMLElement>(`[data-testid^="${assistantMessagePrefix}-"]`),
       ).map((message) => ({
         messageId: message.getAttribute("data-message-id"),
         text: normalizeText(message.innerText),
       }));
       const assistantHistory = Array.from(
-        document.querySelectorAll<HTMLElement>(
-          `[data-testid^="${historyTriggerPrefix}-"]`,
-        ),
+        document.querySelectorAll<HTMLElement>(`[data-testid^="${historyTriggerPrefix}-"]`),
       ).map((trigger) => {
         const triggerTestId = trigger.getAttribute("data-testid") ?? "";
         // Bug 根因：V4 history 只把 unit.key 编入 test id，不再写
@@ -221,15 +207,12 @@ export function getToolCallDiagnostics(
             : null);
         const content =
           stateKey !== null
-            ? Array.from(
-                document.querySelectorAll<HTMLElement>(
-                  `[data-testid^="${historyContentPrefix}-"]`,
-                ),
+            ? (Array.from(
+                document.querySelectorAll<HTMLElement>(`[data-testid^="${historyContentPrefix}-"]`),
               ).find(
                 (candidate) =>
-                  candidate.getAttribute("data-testid") ===
-                  `${historyContentPrefix}-${stateKey}`,
-              ) ?? null
+                  candidate.getAttribute("data-testid") === `${historyContentPrefix}-${stateKey}`,
+              ) ?? null)
             : null;
         return {
           contentExists: Boolean(content),
@@ -242,9 +225,7 @@ export function getToolCallDiagnostics(
         };
       });
 
-      const chatView = document.querySelector<HTMLElement>(
-        `[data-testid="${chatViewTestId}"]`,
-      );
+      const chatView = document.querySelector<HTMLElement>(`[data-testid="${chatViewTestId}"]`);
       const chatState = chatView
         ? {
             activeInputId: chatView.getAttribute("data-active-input-id"),
@@ -268,10 +249,7 @@ export function getToolCallDiagnostics(
             workspaces?: Record<
               string,
               {
-                taskMessagesByTaskId?: Record<
-                  string,
-                  RendererStoreRawMessage[]
-                >;
+                taskMessagesByTaskId?: Record<string, RendererStoreRawMessage[]>;
               }
             >;
           };
@@ -306,30 +284,27 @@ export function getToolCallDiagnostics(
         };
         const messages = Object.entries(state.workspaces ?? {}).flatMap(
           ([workspaceKey, workspace]) =>
-            Object.entries(workspace.taskMessagesByTaskId ?? {}).flatMap(
-              ([taskId, taskMessages]) =>
-                taskMessages.map((message) => ({
-                  content: message.content ?? "",
-                  id: message.id ?? null,
-                  partTypes: (message.parts ?? []).map(
-                    (part) => part.type ?? "",
-                  ),
-                  role: message.role ?? null,
-                  taskId,
-                  toolCalls: (message.toolCalls ?? []).map((toolCall) => {
-                    const rawError = readRawToolError(toolCall);
-                    return {
-                      error: toolCall.error ?? null,
-                      output: toolCall.output ?? null,
-                      rawErrorDetail: rawError.rawErrorDetail,
-                      rawErrorMessage: rawError.rawErrorMessage,
-                      status: toolCall.status ?? null,
-                      toolId: toolCall.toolId ?? null,
-                      toolName: toolCall.toolName ?? null,
-                    };
-                  }),
-                  workspaceKey,
-                })),
+            Object.entries(workspace.taskMessagesByTaskId ?? {}).flatMap(([taskId, taskMessages]) =>
+              taskMessages.map((message) => ({
+                content: message.content ?? "",
+                id: message.id ?? null,
+                partTypes: (message.parts ?? []).map((part) => part.type ?? ""),
+                role: message.role ?? null,
+                taskId,
+                toolCalls: (message.toolCalls ?? []).map((toolCall) => {
+                  const rawError = readRawToolError(toolCall);
+                  return {
+                    error: toolCall.error ?? null,
+                    output: toolCall.output ?? null,
+                    rawErrorDetail: rawError.rawErrorDetail,
+                    rawErrorMessage: rawError.rawErrorMessage,
+                    status: toolCall.status ?? null,
+                    toolId: toolCall.toolId ?? null,
+                    toolName: toolCall.toolName ?? null,
+                  };
+                }),
+                workspaceKey,
+              })),
             ),
         );
         return {

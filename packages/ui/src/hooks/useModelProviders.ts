@@ -20,12 +20,12 @@ export function useModelProviders(target: {
   workspaceIdentity?: string;
   /** 本地 Provider Settings 的连通性测试使用的本地 cwd；不复用远程激活路径。 */
   connectivityWorkspacePath?: string;
-  /** 远程激活时没有本地 cwd 必须 fail-closed，不能回退到远程 workspacePath。 */
+  /** 远程激活时不能回退到远程 workspacePath；没有本地 cwd 时改用本机 Host 的对话目录。 */
   connectivityWorkspaceRequired?: boolean;
-  /** 没有本地 workspace 时展示给用户的本地化错误文案。 */
+  /** 本机 Host 也无法提供对话目录时展示给用户的本地化错误文案。 */
   connectivityUnavailableMessage?: string;
 }) {
-  const { providerSettingsService } = useServices();
+  const { providerSettingsService, fileService } = useServices();
   const providerSettingsRead = useProviderSettingsServiceView(providerSettingsService);
   const providerSettingsView =
     providerSettingsRead.state.status === "ready" ? providerSettingsRead.state.view : null;
@@ -181,27 +181,39 @@ export function useModelProviders(target: {
 
   const testModelConnectivity = useCallback(
     async (providerId: string, modelId: string): Promise<ModelConnectivityResult> => {
-      const connectivityWorkspacePath = target.connectivityWorkspacePath?.trim();
-      if (
-        !connectivityWorkspacePath &&
-        (target.connectivityWorkspaceRequired || target.workspaceIdentity?.trim())
-      ) {
-        return {
-          success: false,
-          error: {
-            message:
-              target.connectivityUnavailableMessage ??
-              "A local workspace is unavailable for connectivity testing.",
-          },
-        };
+      // 远程激活时 target.workspacePath 是远端路径，不能作为本机 Agent cwd。
+      const remoteActive = Boolean(
+        target.connectivityWorkspaceRequired || target.workspaceIdentity?.trim(),
+      );
+      let workspacePath =
+        target.connectivityWorkspacePath?.trim() || (remoteActive ? "" : target.workspacePath);
+      if (!workspacePath.trim()) {
+        // Bug 根因（ZCT-2112556538453495808）：旧逻辑只认已打开的本地 tab，只开远程项目时
+        // 直接报“本地工作区不可用”。Provider 配置是本机全局配置，测试不依赖项目；本机 Host
+        // 始终有自己的对话目录（远程恢复启动时 Host 也用它准备会话库），所以由 Host 解析并创建，
+        // UI 不拼路径，也不把远端路径交给本机。
+        try {
+          workspacePath = (await fileService.ensureConversationWorkspace()).path;
+        } catch (err) {
+          logger.warn("[useModelProviders] 解析本机对话目录失败，无法测试模型连通性", err);
+          return {
+            success: false,
+            error: {
+              message:
+                target.connectivityUnavailableMessage ??
+                "A local workspace is unavailable for connectivity testing.",
+            },
+          };
+        }
       }
       return providerSettingsService.testModelConnectivity({
-        workspacePath: connectivityWorkspacePath || target.workspacePath,
+        workspacePath,
         providerId,
         modelId,
       });
     },
     [
+      fileService,
       providerSettingsService,
       target.connectivityUnavailableMessage,
       target.connectivityWorkspacePath,

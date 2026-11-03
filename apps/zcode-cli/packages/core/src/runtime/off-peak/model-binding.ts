@@ -1,9 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type {
-  Model,
-  ModelRequestAuth,
-  ModelRequestAuthSource,
-  ModelRequestDependencies,
+import { isOffPeakTicketExpiredCode } from "@zcode/shared";
+import {
+  modelDescriptorOf,
+  type Model,
+  type ModelRequestAuth,
+  type ModelRequestAuthSource,
+  type ModelRequestDependencies,
 } from "@zcode/contracts";
 import { projectExecutionErrorPayload } from "../helpers/turn-errors.js";
 import type { OffPeakLifecycle } from "./lifecycle.js";
@@ -76,7 +78,8 @@ export class OffPeakTicketAuthority {
       const attribution = projectExecutionErrorPayload(error).attribution;
       if (
         attribution?.providerId !== this.initial.providerId ||
-        attribution.providerErrorCode !== this.initial.providerErrorCode
+        (attribution.providerErrorCode !== this.initial.providerErrorCode &&
+          !isOffPeakTicketExpiredCode(attribution.providerErrorCode))
       )
         return false;
       // 旧请求晚于换票失败时直接用当前票重试，不再次申请或释放新票。
@@ -87,12 +90,7 @@ export class OffPeakTicketAuthority {
     const { lifecycle, attempts } = this;
     const wrap = (model: Model): Model =>
       Object.freeze<Model>({
-        providerId: model.providerId,
-        modelId: model.modelId,
-        displayName: model.displayName,
-        properties: model.properties,
-        optionSpecs: model.optionSpecs,
-        options: model.options,
+        ...modelDescriptorOf(model),
         bind: (options) => wrap(model.bind(options)),
         async generateText(request) {
           while (true) {

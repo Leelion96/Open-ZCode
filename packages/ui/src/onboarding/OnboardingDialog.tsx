@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- onboarding 弹窗集中编排欢迎页、会话迁移、外部导入和最终执行状态，拆开会增加跨步骤状态传递复杂度 */
+/* eslint-disable max-lines -- onboarding 弹窗集中编排会话迁移、外部导入和最终执行状态，拆开会增加跨步骤状态传递复杂度 */
 import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog.js";
@@ -13,14 +13,12 @@ import {
   OnboardingWizardSidebar,
   OnboardingWizardFooter,
   OnboardingWizardHeader,
-  type OnboardingView,
   type OnboardingWizardStep,
 } from "@/onboarding/OnboardingDialogParts.js";
 import {
   OnboardingExternalAgentImportStep,
   OnboardingMigrationStep,
   OnboardingSessionsStep,
-  OnboardingWelcomeView,
   OnboardingFinishStep,
   type OnboardingWorkspaceCandidate,
 } from "@/onboarding/OnboardingFlowParts.js";
@@ -65,7 +63,6 @@ export function OnboardingDialog(props: {
   });
   const onboardingDialogRequested = useZCodeStore((state) => state.onboardingDialogRequested);
   const clearOnboardingDialogRequest = useZCodeStore((state) => state.clearOnboardingDialogRequest);
-  const [view, setView] = useState<OnboardingView>("welcome");
   const [wizardStep, setWizardStep] = useState<OnboardingWizardStep>("session");
   const [selectedWorkspacePaths, setSelectedWorkspacePaths] = useState<string[]>([]);
   const initializedWorkspaceSelectionRef = useRef(false);
@@ -76,14 +73,14 @@ export function OnboardingDialog(props: {
 
   const skillsImportState = useExternalAgentImportCategoryState({
     category: "skills",
-    enabled: view === "wizard" && wizardStep === "skills-import",
+    enabled: wizardStep === "skills-import",
     settingsSyncService,
     workspacePath: props.workspacePath,
     workspaceIdentity: props.workspaceIdentity,
   });
   const mcpImportState = useExternalAgentImportCategoryState({
     category: "mcpServers",
-    enabled: view === "wizard" && wizardStep === "mcp-import",
+    enabled: wizardStep === "mcp-import",
     settingsSyncService,
     workspacePath: props.workspacePath,
     workspaceIdentity: props.workspaceIdentity,
@@ -92,7 +89,7 @@ export function OnboardingDialog(props: {
    * 插件导入步骤未启用。
    * const pluginsImportState = useExternalAgentImportCategoryState({
    *   category: "plugins",
-   *   enabled: view === "wizard" && wizardStep === "plugins-import",
+   *   enabled: wizardStep === "plugins-import",
    *   settingsSyncService,
    *   workspacePath: props.workspacePath,
    *   workspaceIdentity: props.workspaceIdentity,
@@ -100,13 +97,13 @@ export function OnboardingDialog(props: {
    */
   const commandsImportState = useExternalAgentImportCategoryState({
     category: "commands",
-    enabled: view === "wizard" && wizardStep === "commands-import",
+    enabled: wizardStep === "commands-import",
     settingsSyncService,
     workspacePath: props.workspacePath,
     workspaceIdentity: props.workspaceIdentity,
   });
   const agentsFileMigration = useOnboardingAgentsFileMigration({
-    enabled: view === "wizard" && wizardStep === "agents-file",
+    enabled: wizardStep === "agents-file",
     workspacePath: props.workspacePath,
     workspaceIdentity: props.workspaceIdentity,
   });
@@ -144,7 +141,6 @@ export function OnboardingDialog(props: {
     mcpImportState.selectedCount +
     commandsImportState.selectedCount;
   const { finishExecution, resetFinishExecution } = useOnboardingMigration(
-    view,
     wizardStep,
     selectedWorkspacePaths,
     externalImportSelections,
@@ -157,7 +153,6 @@ export function OnboardingDialog(props: {
 
   useEffect(() => {
     if (!settingsSync.state.open) {
-      setView("welcome");
       setWizardStep("session");
       setSelectedWorkspacePaths([]);
       resetFinishExecution();
@@ -172,7 +167,6 @@ export function OnboardingDialog(props: {
       return;
     }
 
-    setView(onboardingDialogRequested === "migration" ? "wizard" : "welcome");
     setWizardStep("session");
     resetFinishExecution();
     settingsSync.actions.reopen();
@@ -185,15 +179,18 @@ export function OnboardingDialog(props: {
   ]);
 
   useEffect(() => {
-    if (view !== "wizard" || wizardStep !== "session") {
+    if (wizardStep !== "session") {
       autoScannedSessionStepRef.current = false;
     }
-  }, [view, wizardStep]);
+  }, [wizardStep]);
 
   useEffect(() => {
+    // 修复原因：删除欢迎页时一并删掉了 `view === "wizard"` 门禁，而 wizardStep 初始就是 session、
+    // 组件常驻挂载，弹窗关闭时每次启动也会扫描 Claude 历史。修法：只在弹窗打开时自动扫描；
+    // 关闭时上面的 effect 会重置标记，下次打开再扫一次。
     if (
+      !settingsSync.state.open ||
       !shouldAutoScanOnboardingSessions({
-        view,
         wizardStep,
         supported: sessionMigration.supportState.supported,
         isScanning: sessionMigration.isScanning,
@@ -213,7 +210,7 @@ export function OnboardingDialog(props: {
     sessionMigration.scan,
     sessionMigration.scanError,
     sessionMigration.supportState.supported,
-    view,
+    settingsSync.state.open,
     wizardStep,
   ]);
 
@@ -269,16 +266,11 @@ export function OnboardingDialog(props: {
         : 0;
 
   const stepMessageKey = getOnboardingStepMessageKey(wizardStep);
-  const dialogTitle =
-    view === "welcome"
-      ? intl.formatMessage({ id: "onboarding.dialog.title" })
-      : intl.formatMessage({ id: `onboarding.step.${stepMessageKey}` });
+  const dialogTitle = intl.formatMessage({ id: `onboarding.step.${stepMessageKey}` });
   const dialogDescription =
-    view === "welcome"
-      ? intl.formatMessage({ id: "onboarding.dialog.description" })
-      : wizardStep === "agents-file"
-        ? ""
-        : intl.formatMessage({ id: `onboarding.stepDescription.${stepMessageKey}` });
+    wizardStep === "agents-file"
+      ? ""
+      : intl.formatMessage({ id: `onboarding.stepDescription.${stepMessageKey}` });
 
   const toggleWorkspaceSelection = (workspacePath: string) => {
     setSelectedWorkspacePaths((previous) =>
@@ -299,7 +291,6 @@ export function OnboardingDialog(props: {
   const goToPreviousWizardStep = useCallback(() => {
     const currentIndex = ONBOARDING_STEP_ORDER.indexOf(wizardStep);
     if (currentIndex <= 0) {
-      setView("welcome");
       return;
     }
     setWizardStep(ONBOARDING_STEP_ORDER[currentIndex - 1] ?? "session");
@@ -450,6 +441,7 @@ export function OnboardingDialog(props: {
             settingsImportedCount={settingsSync.state.result?.successCount ?? 0}
             settingsSkippedCount={settingsSync.state.result?.skippedCount ?? 0}
             settingsFailedCount={settingsSync.state.result?.failedCount ?? 0}
+            settingsWorkspaceRequiredCount={settingsSync.state.workspaceRequiredCount}
           />
         ) : (
           <OnboardingMigrationStep
@@ -474,46 +466,38 @@ export function OnboardingDialog(props: {
       <DialogContent
         className="h-[calc(100vh-6rem)] max-w-4xl max-h-168 overflow-hidden rounded-2xl p-0"
         showCloseButton
+        data-testid="onboarding-migration-dialog"
+        data-wizard-step={wizardStep}
       >
         <DialogTitle className="sr-only">{dialogTitle}</DialogTitle>
         <DialogDescription className="sr-only">{dialogDescription}</DialogDescription>
 
-        {view === "welcome" ? (
-          <OnboardingWelcomeView
-            onStart={settingsSync.actions.close}
-            onOpenMigration={() => {
-              setView("wizard");
-              setWizardStep("session");
-            }}
-          />
-        ) : (
-          <div className="flex h-full min-h-0 min-w-0">
-            <OnboardingWizardSidebar currentStep={wizardStep} />
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden p-6">
-              <OnboardingWizardHeader title={dialogTitle} description={dialogDescription} />
-              <div className="min-h-0 flex-1">{renderWizardBody()}</div>
-              <OnboardingWizardFooter
-                currentStep={wizardStep}
-                selectedWorkspaceCount={selectedWorkspaceCount}
-                settingsTaskCount={settingsTaskCount}
-                finishRunning={finishExecution.running}
-                finishReady={finishExecution.finished}
-                onBackToWelcome={() => setView("welcome")}
-                onBackStep={goToPreviousWizardStep}
-                onNextStep={goToNextWizardStep}
-                onBeginMigration={() => void handleBeginMigration()}
-                onFinish={settingsSync.actions.finish}
-                beginMigrationDisabled={beginMigrationDisabled}
-              />
-              {/*
-                暂时隐藏数据迁移向导里的代理设置步骤，批量选择按钮随步骤一起隐藏。
-                onAgentSettingsBulkToggle={toggleAgentSettingsBulk}
-                agentSettingsBulkToggleDisabled={agentSettingsBulkToggleDisabled}
-                agentSettingsBulkIsClear={agentSettingsFullySelected}
-              */}
-            </div>
+        <div className="flex h-full min-h-0 min-w-0">
+          <OnboardingWizardSidebar currentStep={wizardStep} />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-hidden p-6">
+            <OnboardingWizardHeader title={dialogTitle} description={dialogDescription} />
+            <div className="min-h-0 flex-1">{renderWizardBody()}</div>
+            <OnboardingWizardFooter
+              currentStep={wizardStep}
+              selectedWorkspaceCount={selectedWorkspaceCount}
+              settingsTaskCount={settingsTaskCount}
+              finishRunning={finishExecution.running}
+              finishReady={finishExecution.finished}
+              onCancelFirstStep={settingsSync.actions.close}
+              onBackStep={goToPreviousWizardStep}
+              onNextStep={goToNextWizardStep}
+              onBeginMigration={() => void handleBeginMigration()}
+              onFinish={settingsSync.actions.finish}
+              beginMigrationDisabled={beginMigrationDisabled}
+            />
+            {/*
+              暂时隐藏数据迁移向导里的代理设置步骤，批量选择按钮随步骤一起隐藏。
+              onAgentSettingsBulkToggle={toggleAgentSettingsBulk}
+              agentSettingsBulkToggleDisabled={agentSettingsBulkToggleDisabled}
+              agentSettingsBulkIsClear={agentSettingsFullySelected}
+            */}
           </div>
-        )}
+        </div>
       </DialogContent>
     </Dialog>
   );

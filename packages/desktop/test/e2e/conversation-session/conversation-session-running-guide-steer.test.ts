@@ -107,6 +107,7 @@ describe("会话区 Running Guide / Steer E2E", () => {
       const firstWire = await assertIncomingMessage(firstEvidence[0]!.requestJson, {
         presentation: "user_steer",
         marker: guideOneMarker,
+        // guide 是中途消息：MCS 下并入 run 的 system，MCS 关时为 user reminder。
         role: mcs ? "system" : "user",
         evidenceLabel: label,
         body: `${guideOneMarker}: apply the first guide after the Read result batch.`,
@@ -141,7 +142,9 @@ describe("会话区 Running Guide / Steer E2E", () => {
         presentation: "user_steer",
         marker: guideTwoMarker,
         evidenceLabel: label,
+        // text-only 回复之后没有 user/tool 锚点，MCS 下降级为 user reminder。
         role: "user",
+        mcsFallback: mcs,
         body: `${guideTwoMarker}: apply the second guide after the text-only response.`,
       });
       expect(secondWire.messages[secondWire.index - 1]?.role).toBe("assistant");
@@ -225,38 +228,131 @@ Message from coordinator:
       const restored = (
         await getUpstreamRequestEvidence({ lastUserMessageIncludes: [restoredMarker] })
       )[0]!;
+      // Bug 原因：切换模型后，模型说明作为本轮输入附件排在用户输入之后；切到 MCS 时它是独立的
+      // system 消息，at(-1) 取到的是它而不是本轮输入。这里跳过末尾的 system 消息。
       const lastInput = (
         restored.requestJson as { messages: Array<{ role: string; content: unknown }> }
-      ).messages.at(-1)!;
+      ).messages.findLast((message) => message.role !== "system")!;
       expect(lastInput.role).toBe("user");
       expect(wireText(lastInput.content)).toContain(restoredBody);
       expect(wireText(lastInput.content)).not.toContain(
         "The coordinator sent a message while you were working:",
       );
       expect(wireText(lastInput.content)).not.toContain("Another ZCode session sent a message:");
-      for (const [marker, body, role] of [
-        [
-          guideOneMarker,
-          `${guideOneMarker}: apply the first guide after the Read result batch.`,
-          !mcs ? "system" : "user",
-        ],
-        [
-          guideTwoMarker,
-          `${guideTwoMarker}: apply the second guide after the text-only response.`,
-          "user",
-        ],
+      for (const [marker, body] of [
+        [guideOneMarker, `${guideOneMarker}: apply the first guide after the Read result batch.`],
+        [guideTwoMarker, `${guideTwoMarker}: apply the second guide after the text-only response.`],
       ] as const) {
+        // 冷恢复后按切换后的能力投影：工具后的 guide 在 MCS 下为 system，text-only 之后的降级为 user。
+        const afterTool = marker === guideOneMarker;
         await assertIncomingMessage(restored.requestJson, {
           presentation: "user_steer",
           marker,
           body,
-          role,
+          role: !mcs && afterTool ? "system" : "user",
+          mcsFallback: !mcs && !afterTool,
           evidenceLabel: `${label}-cold-switched`,
         });
       }
       await waitForV4AssistantMessageContaining("guide-timeline-restored-ok");
     });
   }
+
+  it("M06f MCS：同一 tool batch 期间发送的两条 guide 一起 drain，并共用一个工作段", async function () {
+    this.timeout(150000);
+
+    await prepareIncomingMessageCapability(true);
+    expect((await readSettings()).zcodeInteractionBehavior).toBe("guide");
+
+    const runId = Date.now();
+    const baseMarker = `E2E_GUIDE_BATCH_BASE_${runId}`;
+    const guideOneMarker = `E2E_GUIDE_BATCH_GUIDE_ONE_${runId}`;
+    const guideTwoMarker = `E2E_GUIDE_BATCH_GUIDE_TWO_${runId}`;
+    const finalAssistantMarker = "guide-batch-final-assistant-ok";
+    const lastRequestIndexBefore = (await getUpstreamRequestRecordCount()) - 1;
+
+    await sendV4Prompt(
+      `${baseMarker}: Read the readonly fixture, then follow both guide messages.`,
+    );
+    await waitForUpstreamRequest(
+      { lastUserMessageIncludes: [baseMarker] },
+      "M06f 首轮 provider request 没有发出",
+      30000,
+      { afterIndex: lastRequestIndexBefore },
+    );
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.state === "streaming",
+      "M06f 首轮请求没有保持 guide 可 admission 的 running 窗口",
+      15000,
+    );
+
+    // 两条 guide 都在 Read 的 tool batch 完成前进入等待。
+    await sendV4Prompt(`${guideOneMarker}: first guide during the Read batch.`);
+    await waitForGuidedPromptProjection(guideOneMarker);
+    await sendV4Prompt(`${guideTwoMarker}: second guide during the Read batch.`);
+    await waitForGuidedPromptProjection(guideTwoMarker);
+
+    await waitForUpstreamRequest(
+      { includes: [guideOneMarker, guideTwoMarker, E2E_READONLY_TOOL_FILE_CONTENT] },
+      "M06f 两条 guide 没有在同一 Read result batch 后一起进入请求",
+      30000,
+      { afterIndex: lastRequestIndexBefore },
+    );
+    // 同一边界一次取出：带 guide-1 的主请求都同时带 guide-2，且按 admission 顺序排列。
+    const guideRequests = (
+      await getUpstreamRequestEvidence(
+        { includes: [guideOneMarker] },
+        { afterIndex: lastRequestIndexBefore },
+      )
+    ).filter(({ requestJson }) => (requestJson as { stream?: boolean }).stream === true);
+    expect(guideRequests.length).toBeGreaterThan(0);
+    for (const { requestJson } of guideRequests) {
+      const body = JSON.stringify(requestJson);
+      expect(body).toContain(guideTwoMarker);
+      expect(body.indexOf(guideOneMarker)).toBeLessThan(body.indexOf(guideTwoMarker));
+    }
+    await waitForV4AssistantMessageContaining(finalAssistantMarker);
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.state !== "streaming" && snapshot.runtimeStatus !== "streaming",
+      "M06f 两条 guide drain 后会话没有完成",
+      30000,
+    );
+    expect(await getQueueItems()).toHaveLength(0);
+
+    const markers = {
+      baseMarker,
+      finalAssistantMarker,
+      guideOneMarker,
+      guideTwoMarker,
+      middleAssistantMarker: `guide-batch-no-middle-${runId}`,
+    };
+    // 相邻 guide 共用第一条开启的工作段，中间不出现空的“已工作”。
+    const expectedSequence = [
+      "base-user",
+      "work-segment",
+      "guide-one",
+      "guide-two",
+      "work-segment",
+      "final-assistant",
+    ];
+    expect((await waitForGuideTimelineDomOrder(markers, expectedSequence)).sequence).toEqual(
+      expectedSequence,
+    );
+
+    // 冷恢复为每条 guide 各合成一个 drained 事件，工作段必须与 live 相同。
+    const sessionId = (await getV4ConversationState()).taskId!;
+    await browser.reloadSession();
+    await waitForDefaultWorkspaceReady(60_000);
+    await selectV4TaskById(sessionId);
+    await waitForV4ConversationState(
+      (state) => state.taskId === sessionId,
+      "M06f 冷恢复未回到原会话",
+      30_000,
+    );
+    expect((await waitForGuideTimelineDomOrder(markers, expectedSequence)).sequence).toEqual(
+      expectedSequence,
+    );
+  });
 
   it("guide 模式下 running 中发送引导消息，不得从 steer 队列和历史中消失", async function () {
     this.timeout(150000);

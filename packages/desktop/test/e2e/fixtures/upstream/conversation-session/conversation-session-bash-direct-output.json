@@ -18,12 +18,11 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "bdo-title",
-          "text": "{\"title\":\"Bash output regression\"}",
-          "inputTokens": 96,
-          "outputTokens": 16
-        }
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"bdo-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Bash output regression\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":32,\"output_tokens\":8}}"
       }
     },
     {

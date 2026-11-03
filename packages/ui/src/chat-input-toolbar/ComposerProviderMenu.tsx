@@ -101,6 +101,7 @@ export function ComposerProviderMenu({
                 setOpen(false);
               }}
             >
+              <ProviderLogo logo={candidate.logo} className="size-4 rounded-sm" />
               {/* 名称不占满剩余空间，避免把接入标签推到行尾。 */}
               <span className="min-w-0 whitespace-normal break-words">{candidate.label}</span>
               <ProviderAccessBadge group={candidate} />
@@ -118,7 +119,7 @@ export function ComposerProviderMenu({
   );
   const title = (
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
-      {group ? <ProviderLogo logo={group.logo} className="size-4" /> : null}
+      {group ? <ProviderLogo logo={group.logo} className="size-4 rounded-sm" /> : null}
       <span className="truncate">{group?.label ?? "—"}</span>
       {group ? <ProviderAccessBadge group={group} /> : null}
     </span>

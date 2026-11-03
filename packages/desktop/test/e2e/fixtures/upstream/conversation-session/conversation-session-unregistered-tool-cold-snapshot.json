@@ -52,7 +52,7 @@
         ],
         "bodyExcludes": [
           "Generate a concise title",
-          "Tool not found: Grep"
+          "No such tool available: Grep"
         ]
       },
       "response": {
@@ -629,7 +629,7 @@
           "E2E_UNREGISTERED_TOOL_COLD_SNAPSHOT",
           "toolu_e2e_unregistered_grep_01",
           "toolu_e2e_unregistered_grep_61",
-          "Tool not found: Grep"
+          "No such tool available: Grep"
         ],
         "bodyExcludes": [
           "Generate a concise title"

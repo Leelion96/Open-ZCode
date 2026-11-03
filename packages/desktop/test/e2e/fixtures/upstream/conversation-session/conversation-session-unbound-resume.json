@@ -19,9 +19,9 @@
       "response": {
         "statusCode": 200,
         "headers": {
-          "content-type": "text/event-stream"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"unbound\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Unbound resume\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"unbound\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10,\"total_tokens\":110}}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"unbound\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Unbound resume\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10,\"total_tokens\":110}}"
       }
     },
     {

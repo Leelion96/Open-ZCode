@@ -18,6 +18,7 @@ Task title can come from several places during a session lifecycle. Renderer cod
 - A raw snapshot title must not overwrite a title whose existing meta has `titleOverridden=true`.
 - `New session` must not overwrite a non-placeholder title, even when the snapshot has a newer `updatedAt`.
 - Generated titles may replace the first query title when there is no user override.
+- While the active task's Host metadata is pending, the header leaves its title empty. An ordinary task with no title also stays empty; the renderer must not insert the localized `taskList.newThread` action label as a task title. Keep the existing untitled-fork label once fork metadata is known. Preserve the header layout and render the authoritative title when it arrives, without retaining another task's title or adding a timer/cache.
 
 ## Compatibility
 

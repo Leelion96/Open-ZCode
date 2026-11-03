@@ -21,6 +21,7 @@ import {
   ReadOutputSchema,
   createCoreError,
   getReadPdfPagesValidationFailure,
+  isCoreError,
   isFileSystemPortError,
   type ReadInput,
   type ReadImageOutput,
@@ -28,16 +29,28 @@ import {
   type ModelMessageContent,
   type ReadOutput,
   type ReadTextOutput,
+  type FileSystemPort,
   type FileSystemStatResult,
   type TraceContext,
 } from "@zcode/contracts";
 import { resolveWorkspacePath } from "../path-policy.js";
-import { createReadFileStateKey, normalizeReadFileStateMtimeMs } from "../read-file-state.js";
+import {
+  findLatestReadFileState,
+  normalizeReadFileStateMtimeMs,
+  requestedPathField,
+  setReadFileStateEntry,
+} from "../read-file-state.js";
 import { createReadFileStateMetadata } from "../read-file-state-metadata.js";
 import { inferImageMimeFromPath, readImageFile } from "./read-image.js";
 import { inferVideoMimeFromPath } from "../../runtime/helpers/attachment-video.js";
 import { readVideoFile } from "./read-video.js";
-import { formatReadTextOutput, readTextFileForModel } from "./read-text.js";
+import {
+  READ_FILE_UNCHANGED_STUB,
+  READ_OUTPUT_TOO_MANY_TOKENS_CODE,
+  formatReadBatchNotice,
+  formatReadTextOutput,
+  readTextFileForModel,
+} from "./read-text.js";
 import {
   formatReadPdfOutput,
   formatReadPdfPagesOutput,
@@ -52,14 +65,12 @@ import {
 
 export { addReadLineNumbers } from "./read-text.js";
 
-const FILE_UNCHANGED_STUB =
-  "Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.";
 const READ_PROVIDER_DESCRIPTION = [
   "Reads a file from the local filesystem.",
   "",
   "- `file_path` must be an absolute path.",
   `- Reads up to ${READ_DEFAULT_MAX_LINES} lines by default.`,
-  "- You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters",
+  "- When you already know which part of the file you need, only read that part. This can be important for larger files.",
   "- Results are returned using cat -n format, with line numbers starting at 1",
   "- Reads images (PNG, JPG, …) and presents them visually.",
   "- Reads videos (MP4, MOV, WEBM, …) and presents them as video input (subject to the video input limit).",
@@ -81,9 +92,9 @@ function formatReadModelContent(output: unknown): ModelMessageContent {
 function formatReadOutput(output: ReadOutput): ModelMessageContent {
   switch (output.type) {
     case "text":
-      return formatReadTextOutput(output);
+      return formatReadTextToolResult(output);
     case "file_unchanged":
-      return FILE_UNCHANGED_STUB;
+      return READ_FILE_UNCHANGED_STUB;
     case "image":
       return formatReadImageOutput(output);
     case "video":
@@ -95,6 +106,13 @@ function formatReadOutput(output: ReadOutput): ModelMessageContent {
     case "notebook":
       return stringifyReadOutputFallback(output);
   }
+}
+
+/** 文本 Read 的 tool_result 正文；compaction 补回文件用同一格式。 */
+export function formatReadTextToolResult(output: ReadTextOutput): string {
+  // 部分视图提示由工具批次之后的附件发送，tool_result 只含带行号的正文。
+  const { partialViewNotice: _notice, ...textOutput } = output;
+  return formatReadTextOutput(textOutput);
 }
 
 function formatReadImageOutput(output: ReadImageOutput): ModelMessageContent {
@@ -185,16 +203,11 @@ export const readHandler: ToolHandler = async (input, context) => {
     );
     const readFileState = getReadFileState(context);
     const cacheOffset = normalizeCacheOffset(offset);
-    const cacheKey = createReadFileStateKey(filePath, cacheOffset, limit);
-    const cached = readFileState.get(cacheKey);
-    if (cached && isCachedReadFresh(cached, stat)) {
-      const output = { type: "file_unchanged", filePath } satisfies ReadOutput;
-      recordReadFileStateMetadata(context, {
-        output,
-        readFileState,
-        toolInput: input,
-      });
-      return output;
+    const cached = findLatestReadFileState(readFileState, filePath);
+    if (cached && isSameReadView(cached, cacheOffset, limit) && isCachedReadFresh(cached, stat)) {
+      // 修复原因：这里的快照只是当时最新记录的副本，冷恢复按它重放会恢复出已不在 active history
+      // 里的视图（例如那次真实读取已被 compact 摘要）。不写 live 状态，也不记录快照。
+      return { type: "file_unchanged", filePath } satisfies ReadOutput;
     }
 
     let rangeReadRevision: FileSystemStatResult["revision"] | undefined;
@@ -209,9 +222,10 @@ export const readHandler: ToolHandler = async (input, context) => {
       offset,
       trace,
     });
-    updateReadFileState(readFileState, cacheKey, {
+    updateReadFileState(readFileState, {
       output,
       path: filePath,
+      requestedPath: file_path,
       stat,
       rangeReadRevision,
       offset,
@@ -332,6 +346,21 @@ function normalizeCacheOffset(offset: number | undefined): number {
   return offset === undefined ? 1 : offset;
 }
 
+// 只按该文件最近一次视图去重，且这个视图必须来自 Read。
+// 修复原因：Edit/Write 写入后用完整视图的键记录状态，Read 按键命中时返回 Wasted call 存根，
+// 但模型没看过写入后的内容；中间读过别的范围后再读完整文件，也会命中更早的完整视图。
+function isSameReadView(
+  entry: ReadFileStateEntry,
+  offset: number,
+  limit: number | undefined,
+): boolean {
+  return (
+    (entry.sourceTool === undefined || entry.sourceTool === "Read") &&
+    normalizeCacheOffset(entry.offset) === offset &&
+    entry.limit === limit
+  );
+}
+
 function isCachedReadFresh(entry: ReadFileStateEntry, stat: FileSystemStatResult): boolean {
   if (entry.isPartialView) return false;
 
@@ -350,21 +379,25 @@ function isCachedReadFresh(entry: ReadFileStateEntry, stat: FileSystemStatResult
   return entry.sizeBytes !== undefined && entry.sizeBytes === stat.sizeBytes;
 }
 
-function updateReadFileState(
-  state: ReadFileStateMap,
-  key: string,
-  input: {
-    output: ReadTextOutput;
-    path: string;
-    stat: FileSystemStatResult;
-    rangeReadRevision?: FileSystemStatResult["revision"];
-    offset?: number;
-    limit?: number;
-  },
-): void {
+interface ReadTextFileStateInput {
+  output: ReadTextOutput;
+  path: string;
+  requestedPath?: string;
+  stat: FileSystemStatResult;
+  rangeReadRevision?: FileSystemStatResult["revision"];
+  offset?: number;
+  limit?: number;
+}
+
+function updateReadFileState(state: ReadFileStateMap, input: ReadTextFileStateInput): void {
+  setReadFileStateEntry(state, createReadTextFileStateEntry(input));
+}
+
+function createReadTextFileStateEntry(input: ReadTextFileStateInput): ReadFileStateEntry {
   const revision = input.stat.revision ?? input.rangeReadRevision;
-  state.set(key, {
+  return {
     path: input.path,
+    ...requestedPathField(input.requestedPath, input.path),
     content: input.output.content,
     offset: input.offset,
     limit: input.limit,
@@ -376,13 +409,81 @@ function updateReadFileState(
     revisionId: revision?.id,
     mtimeMs: normalizeReadFileStateMtimeMs(revision?.mtimeMs ?? input.stat.mtimeMs),
     sizeBytes: input.stat.sizeBytes,
+  };
+}
+
+/** compaction 补回文件时一次整文件读取的结果。 */
+export type PostCompactFileRead =
+  | {
+      type: "text";
+      output: ReadTextOutput;
+      /** 这次读取对应的读取状态记录；由调用方在 compaction 持久化成功后写入。 */
+      readFileStateEntry: ReadFileStateEntry;
+    }
+  /** 超过 Read 的文件大小或 token 上限，只能放引用提示。 */
+  | { type: "too_large" }
+  /** 不补回的路径：Read 预检不通过的二进制、设备文件，以及图片、视频、PDF。 */
+  | { type: "skipped" };
+
+/**
+ * compaction 补回文件：按 Read 的整文件语义（不带 offset / limit）读取磁盘上的当前内容。
+ * 不经过执行器，不写读取状态。权限由调用方判定；其余读取错误原样抛出。
+ */
+export async function readFileForCompactRestore(input: {
+  abortSignal?: AbortSignal;
+  filePath: string;
+  fileSystemPort: FileSystemPort;
+  trace?: TraceContext;
+  workingDirectory: string;
+  workspaceRoot: string;
+}): Promise<PostCompactFileRead> {
+  if (!ReadInputSchema.safeParse({ file_path: input.filePath }).success) return { type: "skipped" };
+  const filePath = resolveWorkspacePath({
+    inputPath: input.filePath,
+    operation: "read",
+    workingDirectory: input.workingDirectory,
+    workspaceRoot: input.workspaceRoot,
   });
+  if (inferImageMimeFromPath(filePath) || inferVideoMimeFromPath(filePath) || isPdfPath(filePath)) {
+    return { type: "skipped" };
+  }
+
+  const { abortSignal, fileSystemPort, trace } = input;
+  try {
+    const stat = await fileSystemPort.stat({ path: filePath, trace }, { signal: abortSignal });
+    let rangeReadRevision: FileSystemStatResult["revision"] | undefined;
+    const output = await readTextFileForModel({
+      abortSignal,
+      filePath,
+      fileSystemPort,
+      onRead: (read) => {
+        rangeReadRevision = read.revision;
+      },
+      trace,
+    });
+    return {
+      type: "text",
+      output,
+      readFileStateEntry: createReadTextFileStateEntry({
+        output,
+        path: filePath,
+        rangeReadRevision,
+        stat,
+      }),
+    };
+  } catch (error) {
+    if (isFileSystemPortError(error) && error.code === "too_large") return { type: "too_large" };
+    if (isCoreError(error) && error.context?.code === READ_OUTPUT_TOO_MANY_TOKENS_CODE) {
+      return { type: "too_large" };
+    }
+    throw error;
+  }
 }
 
 function recordReadFileStateMetadata(
   context: ToolExecutionContext,
   input: {
-    output: ReadOutput;
+    output: ReadTextOutput;
     readFileState: ReadFileStateMap;
     toolInput: unknown;
   },
@@ -484,6 +585,7 @@ export const readToolEntry: ToolEntry = {
   }),
   resolveTimeoutBudgetMs: resolveReadTimeoutBudgetMs,
   formatModelContent: formatReadModelContent,
+  formatBatchNotice: formatReadBatchNotice,
   inputSchema: ReadInputJsonSchema,
   outputSchema: ReadOutputJsonSchema,
   runtimeInputSchema: ReadInputSchema,

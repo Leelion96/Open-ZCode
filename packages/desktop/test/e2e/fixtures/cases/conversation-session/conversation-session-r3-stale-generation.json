@@ -30,7 +30,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "观察请求体 model 字段"
+      "syntheticReason": "验证新代际仍能完成携带原任务历史的模型请求"
     },
     {
       "id": "r3-stale-main",
@@ -38,7 +38,7 @@
       "kind": "main",
       "timingPolicy": "fast-text",
       "source": "synthetic",
-      "syntheticReason": "首发/fork/edit"
+      "syntheticReason": "为旧代际恢复保留确定性任务历史"
     }
   ]
 }

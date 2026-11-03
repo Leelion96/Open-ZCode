@@ -3,7 +3,7 @@
 // gateway READY hydration 路径。从 v4-gateway 拆出（单一职责 + max-lines）。
 //
 // 语义要点：
-// - 这里只保留既有 runtime activation 单飞；完整 READY 水位由 gateway 负责；
+// - runtime activation 单飞归宿主生命周期 owner；完整 READY 水位由 gateway 负责；
 // - 错误分型（项目规范：不靠错误文本分流）：
 //   fault.subscribe.sessionNotFound（store 里也没有 / 宿主不支持恢复）
 //   vs fault.subscribe.resumeFailed（恢复中途失败，保留原始 cause）。
@@ -46,10 +46,17 @@ export class V4SubscribeSessionUnavailableError extends Error {
   }
 }
 
-export class ColdSessionResumeCoordinator {
-  /** sessionId → 进行中的 runtime activation；settle 后立即释放。 */
-  private readonly flights = new Map<string, Promise<MessageWithParts[] | undefined>>();
+/** rowsRange `residency: "resident-only"` 命中冷会话：只读热会话的调用方（手机预加载）据此跳过。 */
+export class V4SessionNotResidentError extends Error {
+  readonly reasonCode = "proto.sessionNotResident";
 
+  constructor(readonly sessionId: string) {
+    super(`session is not resident: ${sessionId} (proto.sessionNotResident)`);
+    this.name = "V4SessionNotResidentError";
+  }
+}
+
+export class ColdSessionResumeCoordinator {
   constructor(private readonly host: ColdSessionResumeHost) {}
 
   ensureResumed(
@@ -60,29 +67,14 @@ export class ColdSessionResumeCoordinator {
     persistedMessages?: MessageWithParts[],
     onActivated?: (outcome: Extract<ColdSessionResumeOutcome, { status: "resumed" }>) => void,
   ): Promise<MessageWithParts[] | undefined> {
-    const inFlight = this.flights.get(sessionId);
-    if (inFlight) {
-      this.host.onDebug?.(`cold resume joined existing flight session=${sessionId}`);
-      return inFlight;
-    }
-    this.host.onDebug?.(`cold resume flight created session=${sessionId}`);
-    const flight = this.resume(
+    return this.resume(
       sessionId,
       resumeThoughtLevel,
       workspace,
       additionalDirectories,
       persistedMessages,
       onActivated,
-    ).finally(() => {
-      this.flights.delete(sessionId);
-      this.host.onDebug?.(`cold resume flight cleared session=${sessionId}`);
-    });
-    this.flights.set(sessionId, flight);
-    return flight;
-  }
-
-  clear(): void {
-    this.flights.clear();
+    );
   }
 
   private async resume(

@@ -33,6 +33,8 @@ export * from "./coalesce.js";
 export * from "./profiles.js";
 export * from "./apply.js";
 export * from "./transport.js";
+export * from "./input-prediction/contract.js";
+export * from "./session-data/index.js";
 export * from "./wire.js";
 export * from "./wire-codec.js";
 export * from "./wire-reassembly.js";
@@ -61,4 +63,4 @@ export {
 export { bashOutputDisplaySchema } from "../bash-output-display.js";
 export { modelSelectionSchema, type ModelSelection } from "../model-selection.js";
 
-export * from "../localTtft.js";
+export * from "../local-ttft/contract.js";

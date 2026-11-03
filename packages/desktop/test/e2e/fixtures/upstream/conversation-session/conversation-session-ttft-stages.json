@@ -4,6 +4,28 @@
   "spec": "./test/e2e/conversation-session/conversation-session-ttft-stages.test.ts",
   "fixtures": [
     {
+      "id": "ttft-stages-title-sidecar",
+      "description": "本例标题旁路响应，防止 strict replay 依赖 legacy fixture。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示 session_title 旁路缺少 fixture；固定标题响应隔离标题生成，主用例不验证标题内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_ttft-stages-title-sidecar\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"E2E regression task\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"output_tokens\":8}}"
+      }
+    },
+    {
       "id": "ttft-text",
       "metadata": {
         "kind": "main",

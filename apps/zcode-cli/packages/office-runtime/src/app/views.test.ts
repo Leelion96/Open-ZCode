@@ -8,7 +8,7 @@ it("keeps view reports separate and never picks the last writer when ambiguous",
     parse: async () => {
       throw new Error("not needed");
     },
-  });
+  }).session();
   await owner.report({ viewId: "first", path: "paper.pdf", at: "page:1" });
   await owner.report({ viewId: "second", path: "report.docx", at: "p:1" });
   expect(owner.views()).toHaveLength(2);
@@ -38,7 +38,7 @@ it("a report finishing after release cannot resurrect a closed viewer", async ()
     parse: async () => {
       throw new Error("not needed");
     },
-  });
+  }).session();
   const pending = owner.report({ viewId: "closed", path: "paper.pdf" });
   owner.releaseView("closed");
   release();

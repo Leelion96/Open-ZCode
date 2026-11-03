@@ -33,6 +33,8 @@ When asked what to test:
 
 Do not claim coverage from a path that merely passes through a state; each covered case needs setup, action, and assertion.
 
+A matrix row may say `covered` only when it cites the artifact of a run in which that case passed, for example `packages/desktop/.e2e-artifacts/desktop-e2e-<run-id>`. A new assertion that never ran does not count: if an earlier step or a known baseline failure stops the case first, keep the row `partial` or `failing`, write `blocked by <baseline id or symptom>`, and list the assertions that did not run. Update the row again when a passing run exists.
+
 ## Manual Review Case
 
 For a new candidate case:

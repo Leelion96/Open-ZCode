@@ -16,7 +16,8 @@ applies these rules to a request-local copy, in order:
 1. When the source and target model IDs differ, or their providers are not replay-compatible,
    remove reasoning with a non-empty Anthropic `signature` and reasoning carrying Anthropic
    `redactedData`. Provider compatibility follows the bounded identity rules below.
-2. Remove an assistant message that contains only reasoning and has no tool calls.
+2. Remove an assistant message that contains only reasoning and has no tool calls, and merge
+   ordinary user messages that become adjacent (same merge as step 4).
 3. If the final message is an assistant message, remove its consecutive trailing reasoning blocks.
 4. Remove whitespace-only assistant messages and merge ordinary user messages that become adjacent;
    tool-result carriers retain their message boundary.
@@ -139,8 +140,11 @@ Recording must not fall back to the canonical input request after request-local 
   again.
 - Text, tool calls, tool results, and cache metadata remain unchanged except for the explicit blank
   assistant cleanup above. Message order remains unchanged except for explicit orphan or
-  whitespace-only assistant removal. When whitespace cleanup makes ordinary user messages
-  adjacent, they are merged to preserve a valid request shape.
+  whitespace-only assistant removal. When orphan or whitespace cleanup makes ordinary user
+  messages adjacent, they are merged to preserve a valid request shape; when both sides meet as
+  text blocks, the earlier text gets a trailing `\n`. Both removals merge only the pair that the
+  removal made adjacent; user messages that were already adjacent stay as they are, because the
+  request layer has already joined them.
 - Anthropic unsigned reasoning that survives normalization remains in the serializer input using
   the required empty-signature representation, except for an exact-empty block with no provider
   options. Whitespace-only reasoning and any block carrying opaque provider options remain intact.

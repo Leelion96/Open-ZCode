@@ -55,6 +55,7 @@ describe("AgentRuntime reasoning-only stream recovery", () => {
       const sessionId = createSessionId(`reasoning-only-recovery-${failureKind}`);
       const eventStore = createTestSessionEventStore();
       let modelCallCount = 0;
+      let failedRequest: any;
       let recoveryRequest: any;
       let recoveryObservation: TestModelExecutionObservation | undefined;
 
@@ -64,6 +65,7 @@ describe("AgentRuntime reasoning-only stream recovery", () => {
           mode: "yolo",
           modelSelection: createTestModelSelection("test/reasoning-recovery"),
           modelStreaming: "on",
+          outputStyle: { name: "Learning", prompt: "Explain tradeoffs while solving the task." },
         },
         {
           eventStore,
@@ -74,6 +76,7 @@ describe("AgentRuntime reasoning-only stream recovery", () => {
             async *streamText(request: any, observation) {
               modelCallCount += 1;
               if (modelCallCount === 1) {
+                failedRequest = request;
                 await publishModelNetworkStatus(observation, {
                   requestId: `reasoning-${failureKind}-1`,
                   type: "model_request_started",
@@ -147,6 +150,11 @@ describe("AgentRuntime reasoning-only stream recovery", () => {
         discardedToolCallIds: [],
       });
       expect(new Set(reasoningAssistantIds).size).toBe(2);
+      // 重试发送同一份输入：恢复请求与失败请求相同，不多出 output_style。
+      expect(recoveryRequest.messages).toEqual(failedRequest.messages);
+      expect(
+        JSON.stringify(recoveryRequest.messages).match(/Learning output style is active/g),
+      ).toHaveLength(1);
     },
   );
 });

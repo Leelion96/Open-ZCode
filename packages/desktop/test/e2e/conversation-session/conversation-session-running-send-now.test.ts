@@ -1,10 +1,27 @@
-import { TID_CHAT_QUEUE_SEND_NOW_BUTTON, TID_V4_QUEUE_ITEM_SEND_NOW } from "@zcode/shared/test-ids";
-import { clearAppData } from "../helpers/desktop-app.js";
+import {
+  TID_CHAT_ASSISTANT_HISTORY_TRIGGER,
+  TID_CHAT_QUEUE_SEND_NOW_BUTTON,
+  TID_V4_QUEUE_ITEM_SEND_NOW,
+  TID_V4_TIMELINE,
+} from "@zcode/shared/test-ids";
+import {
+  clearAppData,
+  readSettings,
+  waitForDefaultWorkspaceReady,
+} from "../helpers/desktop-app.js";
+import {
+  E2E_READONLY_TOOL_FILE_CONTENT,
+  ensureReadonlyToolFixtureFile,
+} from "../helpers/conversation-session-readonly-tool.js";
 import {
   INCOMING_MESSAGE_MODES,
   prepareIncomingMessageCapability,
 } from "../helpers/incoming-message-capability.js";
-import { assertIncomingMessage, wireText } from "../helpers/incoming-message-evidence.js";
+import {
+  assertAppendOnly,
+  assertPlainUserInput,
+  wireText,
+} from "../helpers/incoming-message-evidence.js";
 import {
   UPSTREAM_MODEL,
   UPSTREAM_THOUGHT_LEVEL,
@@ -15,6 +32,7 @@ import {
   countUpstreamRequestsContaining,
   getUpstreamRequestEvidence,
   expectNoUpstreamRequestForTextWithin,
+  waitForUpstreamRequest,
   waitForUpstreamRequestContaining,
 } from "../helpers/conversation-session-network.js";
 import {
@@ -31,6 +49,7 @@ import {
   getV4GoalProjection,
   getV4Messages,
   prepareV4ConversationE2E,
+  selectV4TaskById,
   sendV4Prompt,
   startNewV4Draft,
   waitForV4ComposerText,
@@ -66,7 +85,7 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
   });
 
   for (const { label, mcs } of INCOMING_MESSAGE_MODES) {
-    it(`M07a ${label}：running 中点击队首立即引导，消费原文并以 user reminder 降级`, async function () {
+    it(`M07a ${label}：running 中点击队首立即引导，原文作为普通用户消息开新一轮`, async function () {
       this.timeout(RUNNING_SEND_NOW_TIMEOUT_MS);
 
       await prepareIncomingMessageCapability(mcs, "queue");
@@ -100,12 +119,9 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
         includes: [queuedMarker],
         excludes: ["Generate a concise title"],
       });
-      const wire = await assertIncomingMessage(evidence.at(-1)!.requestJson, {
-        presentation: "user_steer",
-        marker: queuedMarker,
+      // 立即发送是用户的新指令：MCS 开关下都是普通用户文本，不带中途提示。
+      const wire = await assertPlainUserInput(evidence.at(-1)!.requestJson, {
         body: buildQueuedPrompt(queuedMarker),
-        // 保留当前轮的 text-only assistant 后，MCS 开启也必须降级。
-        role: "user",
         evidenceLabel: `send-now-head-${label}`,
       });
       expect(wire.messages[wire.index - 1]?.role).toBe("assistant");
@@ -271,7 +287,158 @@ describe("会话区 Running Queue 立即引导 E2E", () => {
     );
     expect(remainingUserMessages).toHaveLength(0);
   });
+
+  // 放在最后：冷恢复会重启窗口，不影响前面的 case。
+  it("M07m：Read 后点 queue 项立即发送，被点消息开新一轮，工作段不并入原轮", async function () {
+    this.timeout(RUNNING_SEND_NOW_TIMEOUT_MS);
+
+    // 工作段布局与来源提示能力无关，沿用默认 queue 交互，不切能力（切能力会重启窗口）。
+    // 全局新建的 draft 在独立 cwd；冷恢复按默认项目找会话，所以先回到默认项目的 draft。
+    await prepareV4ConversationE2E();
+    expect((await readSettings()).zcodeInteractionBehavior).toBe("queue");
+    await ensureReadonlyToolFixtureFile();
+    const runId = Date.now();
+    const markers: SendNowTimelineMarkers = {
+      baseMarker: `E2E_RUNNING_SEND_NOW_SEGMENT_BASE_${runId}`,
+      queuedMarker: `E2E_RUNNING_SEND_NOW_SEGMENT_ITEM_${runId}`,
+      replyMarker: "send-now-segment-reply-ok",
+    };
+    await sendV4Prompt(`${markers.baseMarker}: Read the readonly fixture and keep working.`);
+    await waitForUpstreamRequest(
+      { includes: [markers.baseMarker, E2E_READONLY_TOOL_FILE_CONTENT] },
+      "M07m 立即发送前没有完整 Read 结果",
+      30000,
+    );
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.state === "streaming",
+      "M07m Read 后没有保持 running",
+      15000,
+    );
+
+    await enqueueTextPrompt(markers.queuedMarker);
+    const queuedBeforeSendNow = await waitForQueueOrderContaining(
+      [markers.queuedMarker],
+      "M07m 点立即前没有形成 text queue",
+    );
+    const sentNowItem = await clickFirstQueueSendNow();
+    expect(sentNowItem.id).toBe(queuedBeforeSendNow[0]?.id);
+
+    // 等待必须短于 hold 响应的 60 s 延迟：实现若等原请求自然结束再开新轮，这里会超时。
+    await waitForV4AssistantMessageContaining(markers.replyMarker, 30_000);
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.state !== "streaming" && snapshot.queueCount === 0,
+      "M07m 被点项回复后会话没有完成",
+      45000,
+    );
+    // 原请求被停止：它的回复既不进入新一轮请求，也不出现在时间线（布局里的 interrupted-reply）。
+    const selectedRequests = await getUpstreamRequestEvidence({
+      includes: [markers.queuedMarker],
+      excludes: ["Generate a concise title"],
+    });
+    expect(selectedRequests).toHaveLength(1);
+    expect(JSON.stringify(selectedRequests[0]!.requestJson)).not.toContain(
+      SEND_NOW_SEGMENT_INTERRUPTED_REPLY,
+    );
+    // 被点消息是 tool_result 之后的独立用户文本：被停止的那次请求已发出的内容原样保留，
+    // 新请求只在末尾追加，已写入的缓存仍可读到。
+    const [heldRequest] = await getUpstreamRequestEvidence({
+      includes: [markers.baseMarker, E2E_READONLY_TOOL_FILE_CONTENT],
+      excludes: [markers.queuedMarker, "Generate a concise title"],
+    });
+    expect(heldRequest).toBeDefined();
+    assertAppendOnly(heldRequest!.requestJson, selectedRequests[0]!.requestJson);
+    await assertPlainUserInput(selectedRequests[0]!.requestJson, {
+      body: buildQueuedPrompt(markers.queuedMarker),
+      evidenceLabel: "send-now-segment",
+    });
+    // 立即发送等于先停止原轮再开新一轮：被点消息有自己的轮次和工作段，
+    // 不像 guide 那样在原轮里开新段。
+    const expectedTurns = [
+      ["base-user", "work-segment"],
+      ["queued-user", "work-segment", "reply"],
+    ];
+    expect(await waitForSendNowTurnLayout(markers, expectedTurns)).toEqual(expectedTurns);
+
+    const sessionId = (await getV4ConversationState()).taskId!;
+    await browser.reloadSession();
+    await waitForDefaultWorkspaceReady(60_000);
+    await selectV4TaskById(sessionId);
+    await waitForV4ConversationState(
+      (state) => state.taskId === sessionId,
+      "M07m 冷恢复未回到原会话",
+      30_000,
+    );
+    expect(await waitForSendNowTurnLayout(markers, expectedTurns)).toEqual(expectedTurns);
+  });
 });
+
+/** M07m 被停请求的 hold 回复（fixture `upstream-running-send-now-segment-hold`）。 */
+const SEND_NOW_SEGMENT_INTERRUPTED_REPLY = "send-now-segment-should-be-interrupted";
+
+interface SendNowTimelineMarkers {
+  baseMarker: string;
+  queuedMarker: string;
+  replyMarker: string;
+}
+
+async function waitForSendNowTurnLayout(
+  markers: SendNowTimelineMarkers,
+  expectedTurns: string[][],
+): Promise<string[][]> {
+  let latest: string[][] = [];
+  try {
+    await browser.waitUntil(
+      async () => {
+        latest = await getSendNowTurnLayout(markers);
+        return JSON.stringify(latest) === JSON.stringify(expectedTurns);
+      },
+      { timeout: 30000, timeoutMsg: "M07m 轮次与工作段没有按预期渲染" },
+    );
+  } catch (error) {
+    throw new Error(
+      `M07m 轮次布局错误; expected=${JSON.stringify(expectedTurns)}; latest=${JSON.stringify(latest)}`,
+      { cause: error },
+    );
+  }
+  return latest;
+}
+
+// 按顶层轮次分组，返回每一轮里 user 行、工作段和回复的顺序。
+function getSendNowTurnLayout(markers: SendNowTimelineMarkers): Promise<string[][]> {
+  return browser.execute(
+    (timelineTestId, historyTriggerPrefix, expectedMarkers) => {
+      const normalizeText = (value: string) => value.replace(/\u00a0/g, " ").trim();
+      const timeline = document.querySelector<HTMLElement>(`[data-testid="${timelineTestId}"]`);
+      const turns = Array.from(
+        timeline?.querySelectorAll<HTMLElement>("[data-turn-id]") ?? [],
+      ).filter((turn) => !turn.parentElement?.closest("[data-turn-id]"));
+      return turns
+        .map((turn) =>
+          Array.from(
+            turn.querySelectorAll<HTMLElement>(
+              `[data-row-id],[data-testid^="${historyTriggerPrefix}-"]`,
+            ),
+          )
+            .map((element) => {
+              const testIdValue = element.getAttribute("data-testid") ?? "";
+              if (testIdValue.startsWith(`${historyTriggerPrefix}-`)) return "work-segment";
+              const text = normalizeText(element.innerText);
+              if (text.includes(expectedMarkers.baseMarker)) return "base-user";
+              if (text.includes(expectedMarkers.queuedMarker)) return "queued-user";
+              if (text.includes(expectedMarkers.replyMarker)) return "reply";
+              // 被停请求的回复单独识别：它一旦渲染，布局必须不相等。其他不认识的行不计入布局。
+              if (text.includes(expectedMarkers.interruptedReply)) return "interrupted-reply";
+              return null;
+            })
+            .filter((item) => item !== null),
+        )
+        .filter((sequence) => sequence.length > 0);
+    },
+    TID_V4_TIMELINE,
+    TID_CHAT_ASSISTANT_HISTORY_TRIGGER,
+    { ...markers, interruptedReply: SEND_NOW_SEGMENT_INTERRUPTED_REPLY },
+  );
+}
 
 function buildRunningPrompt(marker: string) {
   return `E2E_HOLD_STREAM ${marker}: Reply with exactly "${E2E_REPLY_TOKEN}" and no other text.`;
@@ -297,15 +464,9 @@ async function startSlowRunningTurn(marker: string) {
   );
 }
 
-async function enqueueTextPrompt(
-  marker: string,
-  options: { slow?: boolean } = {},
-) {
+async function enqueueTextPrompt(marker: string, options: { slow?: boolean } = {}) {
   await sendV4Prompt(buildQueuedPrompt(marker, options));
-  await waitForV4ComposerText(
-    "",
-    `running send-now queued text 没有清空: ${marker}`,
-  );
+  await waitForV4ComposerText("", `running send-now queued text 没有清空: ${marker}`);
 }
 
 async function doubleClickQueueSendNow(promptId: string) {
@@ -313,9 +474,7 @@ async function doubleClickQueueSendNow(promptId: string) {
     (buttonTestIds) => {
       const button = buttonTestIds
         .map((buttonTestId) =>
-          document.querySelector<HTMLButtonElement>(
-            `[data-testid="${buttonTestId}"]`,
-          ),
+          document.querySelector<HTMLButtonElement>(`[data-testid="${buttonTestId}"]`),
         )
         .find((candidate) => candidate !== null);
       if (!button || button.disabled) {
@@ -327,10 +486,7 @@ async function doubleClickQueueSendNow(promptId: string) {
       button.click();
       return true;
     },
-    [
-      `${TID_V4_QUEUE_ITEM_SEND_NOW}-${promptId}`,
-      `${TID_CHAT_QUEUE_SEND_NOW_BUTTON}-${promptId}`,
-    ],
+    [`${TID_V4_QUEUE_ITEM_SEND_NOW}-${promptId}`, `${TID_CHAT_QUEUE_SEND_NOW_BUTTON}-${promptId}`],
   );
   expect(clicked).toBe(true);
 }

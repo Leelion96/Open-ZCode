@@ -1,0 +1,5 @@
+lane actor#1 name-head="v-" @14:35 families=loop#1
+region seq#1 seq
+region loop#1 loop parent=seq#1 @9:1 label="walkTree"
+step ask#1 ask "ask" label-head="v-" @14:56 lane=actor#1 region=loop#1 always serial
+edge ask#1 -> ask#1 carry always

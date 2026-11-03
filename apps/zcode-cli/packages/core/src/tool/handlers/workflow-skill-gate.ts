@@ -9,8 +9,8 @@
 //
 // 「读过」的判据是**模型此刻还看得见的历史**（runtime 的 messageHistory），不是一个会话级标志：
 // compaction 把技能正文挤出上下文之后，历史里那次调用也不在了，门重新关上，模型得再读一遍——
-// 这正是 Edit 要求 Read 的同一种语义（compact 后 readFileState 也清空）。探针缺席（没有 Skill
-// 工具的会话、单元测试直接造的 context）时门不生效：不能把一个无法满足的前提摆在模型面前。
+// 这正是 Edit 要求 Read 的同一种语义（compact 后 readFileState 只留下补回给模型的文件）。探针缺席
+// （没有 Skill 工具的会话、单元测试直接造的 context）时门不生效：不能把一个无法满足的前提摆在模型面前。
 
 import { DYNAMIC_WORKFLOW_SKILL_NAME } from "@zcode/contracts";
 import type { ToolHandlerFailure, ToolInputResolutionContext } from "../types.js";

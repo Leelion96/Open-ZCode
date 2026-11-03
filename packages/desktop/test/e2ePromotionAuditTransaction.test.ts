@@ -27,6 +27,7 @@ describe("conversation E2E promotion audit transaction", () => {
       [
         'import "../../../helpers/session.js";',
         'import "../../../pages/conversation.js";',
+        'import "../../../bots/helpers/bots-service-harness.js";',
         'import fixture from "../../../fixtures/conversation-session/sample.json";',
         'import alreadyFormal from "../fixtures/unchanged.json";',
         "",
@@ -39,6 +40,7 @@ describe("conversation E2E promotion audit transaction", () => {
       [
         'import "../helpers/session.js";',
         'import "../pages/conversation.js";',
+        'import "../bots/helpers/bots-service-harness.js";',
         'import fixture from "../fixtures/conversation-session/sample.json";',
         'import alreadyFormal from "../fixtures/unchanged.json";',
         "",

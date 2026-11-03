@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-command-authority-race",
+  "spec": "./test/e2e/conversation-session/conversation-session-remote-command-authority-race.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-command-authority-race.json"
+  ],
+  "fileFixtures": [],
+  "requests": [],
+  "noProviderRequests": true,
+  "providerRequestPolicy": "none",
+  "notes": "Only real SSH, filesystem FIFO, settings reads and writes; no model request is part of this case."
+}

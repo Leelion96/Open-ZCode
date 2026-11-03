@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-compact-actions",
+  "spec": "./test/e2e/conversation-session/conversation-session-compact-actions.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-compact-actions.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/shared/readonly-tool.txt",
+      "source": "created-by-helper",
+      "description": "真实 Read 工具前置文件。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "title-E2E_COMPACTING_ACTIONS",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "reply-E2E_COMPACTING_ACTIONS_PREP",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    },
+    {
+      "id": "upstream-compact-actions-slow",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "压缩流在摘要输出前等待显式释放，真实队列及重复命令操作完成后才结束，不用固定延时掩盖竞态。"
+    },
+    {
+      "id": "reply-E2E_COMPACTING_ACTIONS_TEXT",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    },
+    {
+      "id": "upstream-manual-actions-queued-goal-continuation",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "upstream-manual-actions-queued-goal-verifier-passed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "upstream-conversation-readonly-tool-call",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只读工具首段用于构造稳定 tool_use/tool_result 历史；工具业务由本地文件 fixture 决定，不依赖真实模型选择。"
+    }
+  ]
+}

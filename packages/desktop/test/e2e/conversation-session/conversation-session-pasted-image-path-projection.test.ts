@@ -20,7 +20,6 @@ import { getTaskStoreSnapshot } from "../helpers/conversation-session-store.js";
 import { startConversationModelProviderReplayServer } from "../helpers/model-provider-replay.js";
 import {
   clickV4Send,
-  getV4PaneSnapshot,
   pasteV4ComposerImageAttachment,
   prepareV4ConversationE2E,
   selectV4TaskById,
@@ -28,6 +27,7 @@ import {
   setV4ComposerText,
   getV4ModelConfig,
   waitForV4AssistantMessageContaining,
+  waitForV4ComposerSelectionReady,
   waitForV4Pane,
   waitForV4RowAttachments,
 } from "../helpers/v4-conversation.js";
@@ -92,6 +92,8 @@ describe("粘贴图片 provider path 投影 E2E", () => {
       throw new Error("T12-T14 没有完成隔离 provider seed");
     }
     await prepareV4ConversationE2E({ skipProvider: true });
+    // Recent 按项目隔离；首轮与 parking 必须从同一个项目创建，不能混用未选项目的启动草稿。
+    await openWorkspaceDraftFromSidebar(paths.workspace);
     await selectProviderModel(visionProvider.id, VISION_PROVIDER_NAME, VISION_MODEL);
 
     const runId = Date.now();
@@ -148,9 +150,11 @@ describe("粘贴图片 provider path 投影 E2E", () => {
     // 冷恢复必须从另一个已持久会话进入；仅切到 deferred draft 后立即重启会中断
     // task-index 回源，无法证明目标 session 的真实 cold resume。
     await openWorkspaceDraftFromSidebar(paths.workspace);
-    const inheritedDraftConfig = await getV4PaneSnapshot();
-    expect(inheritedDraftConfig.initialDraftProvider).toBe(visionProvider.id);
-    expect(inheritedDraftConfig.initialDraftModel).toBe(VISION_MODEL);
+    await waitForV4ComposerSelectionReady();
+    // initialDraft* 是 legacy 初始化诊断；发送选择的权威是当前 Composer。
+    const inheritedDraftConfig = await getV4ModelConfig();
+    expect(inheritedDraftConfig.provider).toBe(visionProvider.id);
+    expect(inheritedDraftConfig.model).toBe(VISION_MODEL);
     const parkingMarker = `E2E_PASTED_IMAGE_PATH_PARKING_${runId}`;
     await sendV4Prompt(`${parkingMarker}: park before cold resume.`);
     await waitForV4AssistantMessageContaining(PARKING_REPLY, 60_000);

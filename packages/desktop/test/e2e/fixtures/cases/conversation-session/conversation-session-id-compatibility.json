@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-id-compatibility",
+  "spec": "./test/e2e/conversation-session/conversation-session-id-compatibility.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-id-compatibility.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "sid-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-lite-0",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-tool-0",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-reference-0",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-follow-0",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-lite-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-tool-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-reference-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-follow-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-new",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-mobile-0",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-mobile-1",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证原会话 ID 的持久化、完整重启与引用读取，模型只产生固定响应和精确工具调用。"
+    },
+    {
+      "id": "sid-retry",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "旧客户端重复、并发、重启重放及 admission 后退出、横幅确认重发使用真实 Host/CLI/SQLite，仅模型响应固定。"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+diff --git a/dist/aiden0z-pptx-renderer.browser.es.js b/dist/aiden0z-pptx-renderer.browser.es.js
+index ab371d1411b2bd5ccf95e15447e456b408b79d4b..b64c7470aa24857e720abc308b6a16151d7fbae7 100644
+--- a/dist/aiden0z-pptx-renderer.browser.es.js
++++ b/dist/aiden0z-pptx-renderer.browser.es.js
+@@ -39268,7 +39268,9 @@ function wG(e, t, r, n) {
+       trigger: "item",
+       formatter: (T) => {
+         const k = T;
+-        return `${k.seriesName}<br/>x: ${k.value[0]}, y: ${k.value[1]}, size: ${k.value[2]}`;
++        // OOXML 系列名不可信；ECharts 将 formatter 结果当 HTML，所有动态字段必须按文本转义。
++        const text = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
++        return `${text(k.seriesName)}<br/>x: ${text(k.value[0])}, y: ${text(k.value[1])}, size: ${text(k.value[2])}`;
+       }
+     },
+     legend: eo(

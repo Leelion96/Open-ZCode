@@ -283,7 +283,8 @@ describe("Desktop Memory continuous 链路 WDIO", () => {
       expect(extractMainMemoryIndexContext(request.requestJson)).toBe(
         fixture.index === "initial" ? expectedMainMemoryIndex : expectedUpdatedMainMemoryIndex,
       );
-      expect(countCaptureOccurrences(request.requestJson, "# agentsMd")).toBe(1);
+      // 指令段不再带 `# agentsMd` 标题；以共享说明开头，见 meta-user-context.md。
+      expect(countCaptureOccurrences(request.requestJson, "# agentsMd")).toBe(0);
       expect(countCaptureOccurrences(request.requestJson, "# claudeMd")).toBe(0);
       expect(countCaptureOccurrences(request.requestJson, MAIN_MEMORY_INDEX_POINTER)).toBe(1);
     }
@@ -782,8 +783,9 @@ function extractMainMemorySection(requestJson: unknown): string {
   if (!dynamicBlock) throw new Error("provider request is missing the Main Memory section");
 
   const start = dynamicBlock.indexOf("# Memory\n\n");
-  const end = dynamicBlock.indexOf("\n\n# Environment", start);
-  if (end < 0) throw new Error("provider request is missing the Environment boundary");
+  // 环境段已移到 user 公告；system 里 Memory 后面紧接 Context management。
+  const end = dynamicBlock.indexOf("\n\n# Context management", start);
+  if (end < 0) throw new Error("provider request is missing the Context management boundary");
   return dynamicBlock.slice(start, end);
 }
 
@@ -797,18 +799,19 @@ function extractMainMemoryIndexContext(requestJson: unknown): string {
   );
   if (!contextBlock) throw new Error("provider request is missing the Main MEMORY.md source");
 
-  const contextStart = contextBlock.indexOf("# agentsMd");
+  const contextStart = contextBlock.indexOf("Codebase and user instructions are shown below.");
   const firstSourceStart = contextBlock.indexOf("\n\nContents of ", contextStart);
   const memorySourceStart = contextBlock.indexOf(
     `Contents of ${PROJECT_MEMORY_INDEX} (${MAIN_MEMORY_INDEX_SOURCE}):`,
     firstSourceStart,
   );
-  const contextEnd = contextBlock.indexOf("\n\n# currentDate", memorySourceStart);
+  // 日期是单独的公告块，指令段在本块的 reminder 结束处收尾。
+  const contextEnd = contextBlock.indexOf("\n</system-reminder>", memorySourceStart);
   if (contextStart < 0 || firstSourceStart < 0 || memorySourceStart < 0 || contextEnd < 0) {
     throw new Error("provider request has an invalid Main MEMORY.md context boundary");
   }
   // 修复原因：Request User Context 可同时承载 AGENTS.md 与 AutoMem；Memory fixture
-  // 保留聚合标题和共享说明，跳过可选的 AGENTS.md source，再逐字校验 AutoMem source。
+  // 保留共享说明，跳过可选的 AGENTS.md source，再逐字校验 AutoMem source。
   return `${contextBlock.slice(contextStart, firstSourceStart)}\n\n${contextBlock.slice(
     memorySourceStart,
     contextEnd,

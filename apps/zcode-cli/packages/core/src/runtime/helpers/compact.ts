@@ -16,7 +16,10 @@ import {
 } from "../../agent/message-history.js";
 import { buildProviderRequestMessages } from "./provider-request-messages.js";
 
-export { buildPostCompactReadStateReminderEntries } from "./compact-post-reminders.js";
+export {
+  replaceReadFileStateAfterCompact,
+  restorePostCompactFiles,
+} from "./compact-post-reminders.js";
 export type { CompactEntrySelection } from "./compact-selection.js";
 export { countCompactPreservedRuntimeMessages } from "./compact-preservation.js";
 export {
@@ -73,6 +76,7 @@ export function buildPostCompactRuntimeEntries(
   activeEntries: readonly RuntimeMessageEntry[],
   summaryEntry: RuntimeMessageEntry,
   options: {
+    leadingReminderEntries?: readonly RuntimeMessageEntry[];
     postCompactReminderEntries?: readonly RuntimeMessageEntry[];
     preservedEntries?: readonly RuntimeMessageEntry[];
   } = {},
@@ -81,6 +85,7 @@ export function buildPostCompactRuntimeEntries(
   const prefixCount = countContextPrefixMessages(activeEntries);
   return [
     ...activeEntries.slice(0, prefixCount).map(cloneRuntimeEntry),
+    ...(options.leadingReminderEntries ?? []).map(cloneRuntimeEntry),
     cloneRuntimeEntry(summaryEntry),
     ...(options.preservedEntries ?? []).map(cloneCompactPreservedRuntimeEntry),
     ...(options.postCompactReminderEntries ?? []).map(cloneRuntimeEntry),

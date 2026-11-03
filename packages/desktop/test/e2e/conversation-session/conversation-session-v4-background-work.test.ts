@@ -7,6 +7,7 @@ import { clearAppData } from "../helpers/desktop-app.js";
 import {
   approveV4Permission,
   clickV4BackgroundWorkCancel,
+  describeV4BackgroundFailureState,
   getV4ComposerBackgroundWorkCounts,
   getLatestV4CommandAck,
   getV4BackgroundWorks,
@@ -39,19 +40,26 @@ describe("v4 M4 门禁：cancelBackgroundWork", () => {
     }
 
     // Composer 入口先暴露当前 session 的 typed running count。
-    await browser.waitUntil(
-      async () => {
-        const counts = await getV4ComposerBackgroundWorkCounts();
-        return (
-          counts?.bashCount === 1 &&
-          counts.subagentCount === 0 &&
-          counts.totalCount === 1 &&
-          counts.typedVisible &&
-          !counts.compactVisible
-        );
-      },
-      { timeout: 60000, timeoutMsg: "Composer 没有显示 running Bash typed count" },
-    );
+    try {
+      await browser.waitUntil(
+        async () => {
+          const counts = await getV4ComposerBackgroundWorkCounts();
+          return (
+            counts?.bashCount === 1 &&
+            counts.subagentCount === 0 &&
+            counts.totalCount === 1 &&
+            counts.typedVisible &&
+            !counts.compactVisible
+          );
+        },
+        { timeout: 60000, timeoutMsg: "Composer 没有显示 running Bash typed count" },
+      );
+    } catch (error) {
+      throw new Error(
+        `Composer 没有显示 running Bash typed count: ${await describeV4BackgroundFailureState()}`,
+        { cause: error },
+      );
+    }
 
     // 窄 Composer 合并为 Activity 总数；点击后 panel 使用 overlay 并直达 Running。
     await setV4ElectronWindowSize(480, 800);

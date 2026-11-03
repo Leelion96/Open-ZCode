@@ -33,8 +33,8 @@ import type {
   ToolHandlerFailure,
 } from "../types.js";
 
-const READ_PROVIDER_PDF_DESCRIPTION_LINE =
-  '- Reads PDFs via the `pages` parameter (e.g. "1-5", max 20 pages/request; required for PDFs over 10 pages).';
+const READ_PROVIDER_PDF_DESCRIPTION_SENTENCE =
+  'Reads PDFs via the `pages` parameter (e.g. "1-5", max 20 pages/request; required for PDFs over 10 pages).';
 const READ_ERROR_CODE_BY_PDF_DOCUMENT_ERROR = {
   cancelled: undefined,
   corrupted: ReadErrorCode.PDF_INVALID,
@@ -73,8 +73,9 @@ export function resolveReadProviderDescription(
   if (!supportsPdfForExecution(context)) return baseDescription;
   const lines = baseDescription.split("\n");
   const imageLineIndex = lines.findIndex((line) => line.startsWith("- Reads images"));
-  if (imageLineIndex < 0) return `${baseDescription}\n${READ_PROVIDER_PDF_DESCRIPTION_LINE}`;
-  lines.splice(imageLineIndex + 1, 0, READ_PROVIDER_PDF_DESCRIPTION_LINE);
+  if (imageLineIndex < 0) return `${baseDescription}\n- ${READ_PROVIDER_PDF_DESCRIPTION_SENTENCE}`;
+  // PDF 句接在图片行末尾，同一行。
+  lines[imageLineIndex] = `${lines[imageLineIndex]} ${READ_PROVIDER_PDF_DESCRIPTION_SENTENCE}`;
   return lines.join("\n");
 }
 

@@ -272,6 +272,7 @@ function AssistantPreviewCardRow({
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
   compactForRemoteControl?: boolean;
 }) {
+  const { intl } = useZCodeIntl();
   const filePath = getAssistantPreviewCardFilePath(card);
   const renderAsFile = shouldRenderAssistantPreviewCardAsFile(card, {
     workspaceIdentity,
@@ -292,9 +293,9 @@ function AssistantPreviewCardRow({
       : null;
   return (
     <OpenSplitButton
-      renderCard={(button) => (
+      renderCard={(button, { handlePreview, canPreview }) => (
         <div
-          className="flex w-full items-center gap-3 rounded-xl border border-card-border bg-card p-3 pr-4 text-foreground"
+          className="relative flex w-full items-center gap-3 rounded-xl border border-card-border bg-card p-3 pr-4 text-foreground"
           data-preview-card-title={card.title}
           data-zcode-stream-animate="true"
           style={
@@ -303,6 +304,19 @@ function AssistantPreviewCardRow({
             } as CSSProperties
           }
         >
+          {/* 卡片主体（空白、图标、文件名）与"打开"主按钮执行同一应用内预览动作：
+              铺满卡片的透明按钮承载整卡点击，右侧打开/下拉控件 relative z-10 置于其上层，
+              一次点击只会命中其中一个目标，不会触发两次预览。 */}
+          <button
+            type="button"
+            className="absolute inset-0 cursor-pointer rounded-xl disabled:pointer-events-none disabled:cursor-default"
+            aria-label={intl.formatMessage(
+              { id: "chat.previewCards.openCard" },
+              { title: card.title },
+            )}
+            disabled={!canPreview}
+            onClick={handlePreview}
+          />
           <div className="flex size-11 shrink-0 items-center justify-center rounded-md bg-background text-foreground-subtle">
             {!renderAsFile && card.type === "website" ? (
               <GlobeIcon className="size-6" />
@@ -318,7 +332,7 @@ function AssistantPreviewCardRow({
               {subtitle}
             </div>
           </div>
-          {button}
+          <div className="relative z-10 shrink-0">{button}</div>
         </div>
       )}
       target={

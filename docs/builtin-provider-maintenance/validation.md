@@ -1,5 +1,7 @@
 # 配置验证与人工协作
 
+模型自动回归见[自动回归设计](./regression-testing.md)：维护测试 Provider 配置、测试清单和用例库，根据模型的 property、option 自动选择用例，执行后生成报告。执行方式与首轮真实验证范围见该文档；以下是完整维护验证规范。
+
 ## 验证分层
 
 | 层                | 能证明什么                           | 不能证明什么                         |
@@ -21,11 +23,11 @@
 
 测试环境不会自动提供免费 Key：当前测试 JSON 的普通模板仍用正式供应商地址。API Key、Coding Plan/Token Plan Key、网页登录权益不可混用；同品牌也要分别确认。权限不足、余额不足、地区不支持、限流、服务故障和参数错误分别记录，不能统一归因为模型不兼容。
 
-本轮文档整理没有请求或取得这些 Key；每个新观察项仍需这一交接。未来无法取得 Key 时，可以准备带明确阻塞的 MR；不得编造通过记录、扩大已有验证范围或自行动态上线。
+具体入口的凭据状态与实测结果记录在[回归规范](./regression-testing.md)，不从已有某品牌 Key 推定其他产品入口已验证；每个新观察项仍需这一交接。无法取得 Key 时，单列真实 API 待验证项；符合范围和现有接入能力的模型仍可按默认启用原则准备配置 MR，无须为缺 Key 额外申请例外。不得编造通过记录、扩大已有验证范围或自行动态上线。
 
 ## 真实请求最小矩阵
 
-按变更范围裁剪。新增/变更成员逐个确认 ID 可调用；参数和协议差异逐个覆盖，不能用一个旗舰型号代表整个品牌。
+取得凭据后按变更范围裁剪以下真实请求矩阵。新增/变更成员逐个确认 ID 可调用；参数和协议差异逐个覆盖，不能用一个旗舰型号代表整个品牌。未取得凭据时如实标记未执行；这不自动要求模型默认关闭。
 
 | 场景         | 核验内容                                                                         |
 | ------------ | -------------------------------------------------------------------------------- |
@@ -44,32 +46,30 @@
 
 ## 仓库检查入口
 
-以下命令从仓库根目录执行。根据本项变更选文件，不运行未经授权的全量单测：
+App 业务单测已退役，Provider 配置和下载器也在此范围内；不恢复原 `packages/provider*/test/`、services 或 UI 业务测试。历史通过记录只证明当时版本，不表示当前仍有该覆盖。CLI 回归工具、桌面 E2E 和工程检查继续维护。
+
+以下命令从仓库根目录执行，按变更选择验证范围：
 
 ```bash
 pnpm provider:config:check-test
-pnpm exec vitest run packages/provider-node/test/zcode-builtin-integrity.test.ts
-pnpm exec vitest run packages/provider/test/model-config-rules.test.ts packages/provider/test/provider-template.test.ts
-pnpm exec vitest run packages/provider-node/test/zcode-builtin-reasoning-map.test.ts
+pnpm typecheck
+pnpm lint
+pnpm architecture:check --changed
 ```
 
-参考测试还有 `packages/provider-node/test/new-model-catalog*.test.ts`、`opencode-go.test.ts`、`openrouter-reasoning-contract.test.ts`、`zhipu-api-templates.test.ts`；按本项新增边界补充，不只修改快照以让失败消失。
+通过现有产品 Decoder/Resolver 和自动回归工具加载正式、测试两份 Release，检查完整执行配置、参数映射及用户显式覆盖。模型回归使用本目录的测试清单，桌面继承与选择使用已有 E2E；不把生成同步检查当作模型能力验证，也不另造产品实现。
 
-最终文件完整性测试支持 `ZCODE_BUILTIN_RELEASE_TEST_FILE` 指定实际文件；分别验证正式和生成的测试配置。POSIX shell 示例：
-
-```bash
-ZCODE_BUILTIN_RELEASE_TEST_FILE="$PWD/config/provider/zcode-builtin.test.json" pnpm exec vitest run packages/provider-node/test/zcode-builtin-integrity.test.ts
-```
-
-其他 shell 使用相应环境变量设置方式，变量值仍为实际绝对路径。此测试包含当前目录业务断言，不是任意旧 Release 的通用兼容测试；不应为了验收历史文件而放松断言。
-
-普通代码变更执行 `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed` 和 `pnpm test:unit:affected --base <起点commit>`。CLI 代码另执行 `pnpm --dir apps/zcode-cli typecheck`、`pnpm --dir apps/zcode-cli lint`，并使用其包脚本/Turbo 选择受影响包及调用方的测试；根 affected 单测不能代替 CLI 测试。CLI 范围无法可靠确定或改动公共测试基础设施时，执行 `pnpm --dir apps/zcode-cli test`。
+普通代码变更执行 `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed` 和 `pnpm test:engineering:affected --base <起点commit>`。CLI 代码另执行 `pnpm --dir apps/zcode-cli typecheck`、`pnpm --dir apps/zcode-cli lint`，并使用其包脚本/Turbo 选择受影响包及调用方的测试；根工程检查不能代替 CLI 测试。CLI 范围无法可靠确定或改动公共测试基础设施时，执行 `pnpm --dir apps/zcode-cli test`。
 
 APP 交互变化先补桌面 E2E 场景，再实现；覆盖新增实例、已有实例继承、显式覆盖保留、模型选择及真实执行链，按影响补手机路径。场景、spec 和测试 case 保持一致；验证使用 `pnpm test:e2e` 并按实际受影响 spec 选择范围，不把一次本地 HTTP fixture 的通过当作供应商公网验证。视觉变化还需桌面/手机、深浅主题及相关语言检查。缺环境时列出未验证组合，不写成全部通过。
 
-双环境构建或生成策略变化还应覆盖 `packages/provider-node/test/builtin-provider-build.test.ts`、`builtin-provider-test-config-sync.test.ts` 及 `scripts/test/` 下对应脚本测试。用不同内容的临时 Release 验证环境优先级、缺失/坏文件、同环境内容更新、已有 JS 时刷新资源、SEA 和最终嵌入内容。两份真实 JSON 分别解码，不要求为构建验证调用计费模型。
+双环境构建或生成策略变化还应执行 `scripts/test/` 下对应构建与生成脚本的工程测试。用不同内容的临时 Release 验证环境优先级、缺失/坏文件、同环境内容更新、已有 JS 时刷新资源、SEA 和最终嵌入内容。两份真实 JSON 分别解码，不要求为构建验证调用计费模型。
 
-纯文档只检查链接、命令、引用和一致性。必要检查失败或环境阻塞时保留改动及证据，不自动提交；通过后自检 diff 并提交本次内容。Push 保留 `pnpm verify:pre-push` 门禁，不绕过 hook；未经明确要求不运行根全量单测。
+纯文档只检查链接、命令、引用和一致性。供应商模板与模型的纯配置改动以两环境配置、规则解析、请求参数、个人覆盖和旧配置保护为核心验收，不默认要求整套桌面 E2E。APP 交互有变化时仍执行上面的对应 E2E。
+
+提交判断区分本次引入的问题与集成基线已有的问题。本次改动引入的失败须修复；已在同一 staging 基线独立复现、确认与本次无关且已反馈的失败，记录范围、证据和跟进状态后继续提交/MR，不因这些失败扩大任务或阻塞交付。无法归因的失败继续调查，不能直接写成无关；不得把失败或未执行写成通过。
+
+Push 保留 `pnpm verify:pre-push` 门禁，不绕过 hook。门禁检查工作区、Lint、schema、架构与受影响工程测试；使用实际推送基线，不恢复已退役的 App 单测入口。未经明确要求不运行全量工程或 CLI 测试。
 
 ## 证据留存
 

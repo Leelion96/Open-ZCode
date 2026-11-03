@@ -1,0 +1,35 @@
+{
+  "name": "@zcode/provider-regression",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#regression/*": "./src/*.ts",
+    "#contract": "./contract.ts",
+    "#module": "./module.ts",
+    "#public": "./index.ts",
+    "#test/*": "./tests/*.ts"
+  },
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "oxlint --no-ignore src tests *.ts"
+  },
+  "dependencies": {
+    "@zcode/adapters": "workspace:*",
+    "@zcode/bootstrap": "workspace:*",
+    "@zcode/contracts": "workspace:*",
+    "@zcode/core": "workspace:*",
+    "@zcode/model-option-map": "workspace:*",
+    "@zcode/provider": "workspace:*",
+    "@zcode/provider-node": "workspace:*",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.5"
+  }
+}

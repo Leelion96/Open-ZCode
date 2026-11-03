@@ -1,3 +1,4 @@
+import { formatMemoryIndexContent } from "../src/memory/index-content.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -27,22 +28,8 @@ const contextTestModel = createTestRuntimeModel({
 const DEFAULT_COMMUNICATION_PROMPT =
   "Write code that reads like the surrounding code: match its comment density, naming, and idiom.";
 
-const EXPECTED_COMMUNICATION_PROMPT = [
-  "# Communicating with the user",
-  "",
-  "Your text output is what the user reads; they usually can't see your thinking or the raw tool results. Write it for a teammate who stepped away and is catching up, not for a log file: they don't know the codenames or shorthand you created along the way, and they didn't watch your process unfold. Before your first tool call, say in a sentence what you're about to do; while working, give brief updates when you find something load-bearing or change direction.",
-  "",
-  "Text you write between tool calls may not be shown to the user. Everything the user needs from this turn \u2014 answers, summaries, findings, conclusions, deliverables \u2014 must be in the final text message of your turn, with no tool calls after it. Keep text between tool calls to brief status notes. If something important appeared only mid-turn or in your thinking, restate it in that final message.",
-  "",
-  'Lead with the outcome. Your first sentence after finishing should answer "what happened" or "what did you find" \u2014 the thing the user would ask for if they said "just give me the TLDR." Supporting detail and reasoning come after, for readers who want them.',
-  "",
-  "Being readable and being concise are different things, and readable matters more. If the user has to reread your summary or ask you to explain, any time saved by brevity is gone. The way to keep output short is to be selective about what you include (drop details that don't change what the reader would do next), not to compress the writing into fragments, abbreviations, arrow chains like `A \u2192 B \u2192 fails`, or jargon. What you do include, write in complete sentences with the technical terms spelled out. Don't make the reader cross-reference labels or numbering you invented earlier; say what you mean in place.",
-  "",
-  "Match the response to the question: a simple question gets a direct answer in prose, not headers and sections. Use tables only for short enumerable facts, with explanations in the surrounding prose rather than the cells. Calibrate to the user \u2014 a bit tighter for an expert, more explanatory for someone newer.",
-  "",
-  DEFAULT_COMMUNICATION_PROMPT,
-  "Only write a code comment to state a constraint the code itself can't show \u2014 never to say where it came from, what the next line does, or why your change is correct; that's you talking to the reviewer, not the next reader, and it's noise the moment the PR merges.",
-].join("\n");
+const EXPECTED_PRONOUNS_PROMPT =
+  "When you use a pronoun for someone — the user or anyone else you mention — and their pronouns haven't been stated, use they/them. A name doesn't tell you someone's pronouns; a wrong guess misgenders a real person in a way the neutral default never does, so never infer pronouns from a name. This applies to all user-visible text, including visible thinking.";
 
 const DEFAULT_CONTEXT_MANAGEMENT_PROMPT = [
   "# Context management",
@@ -52,17 +39,32 @@ const DEFAULT_CONTEXT_MANAGEMENT_PROMPT = [
 const ADDITIONAL_ACT_DONT_REDERIVE_PROMPT =
   "When you have enough information to act, act. Do not re-derive facts already established in the conversation, re-litigate a decision the user has already made, or narrate options you will not pursue. If you are weighing a choice, give a recommendation, not an exhaustive survey";
 
-const AUTONOMY_APPENDIX_PROMPT = [
-  "You are operating autonomously. The user is not watching in real time and cannot answer questions mid-task, so asking 'Want me to\u2026?' or 'Shall I\u2026?' will block the work. For reversible actions that follow from the original request, proceed without asking. Stop only for destructive actions or genuine scope changes the user must decide. Offering follow-ups after the task is done is fine; asking permission before doing the work is not.",
-  "Exception: when the user is describing a problem, asking a question, or thinking out loud rather than requesting a change, the deliverable is your assessment. Report your findings and stop. Don't apply a fix until they ask for one.",
-  "Before ending your turn, check your last paragraph. If it is a plan, an analysis, a question, a list of next steps, or a promise about work you have not done ('I'll\u2026', 'let me know when\u2026'), do that work now with tool calls. That includes retrying after errors and gathering missing information yourself. Do not stop because the context or session is long. End your turn only when the task is complete or you are blocked on input only the user can provide.",
-  "Before running a command that changes system state \u2014 restarts, deletes, config edits \u2014 check that the evidence actually supports that specific action. A signal that pattern-matches to a known failure may have a different cause.",
-].join("\n\n");
+const REMOVED_AUTONOMY_PARAGRAPHS = [
+  "You are operating autonomously.",
+  "Exception: when the user is describing a problem",
+  "Before ending your turn, check your last paragraph.",
+  "Before running a command that changes system state",
+];
+
+const EXPECTED_ACTION_CAUTION_PROMPT =
+  "For actions that are hard to reverse or outward-facing, confirm first unless durably authorized or explicitly told to proceed without asking; approval in one context doesn't extend to the next. Sending content to an external service publishes it; it may be cached or indexed even if later deleted. Before deleting or overwriting, look at the target. Report outcomes faithfully: if tests fail, say so with the output; if a step was skipped, say that; when something is done and verified, state it plainly without hedging.";
+
+// 环境、模型、日期只产出 section，由运行时宣告；其余来源读 meta user carrier。
+const RUNTIME_ANNOUNCED_SECTIONS = {
+  environment: "env_info",
+  model: "model",
+  date: "current_date",
+} as const;
 
 function metaAttachment(
   result: ContextBuildResult,
-  source: ContextMetaUserAttachmentSource,
+  source: ContextMetaUserAttachmentSource | keyof typeof RUNTIME_ANNOUNCED_SECTIONS,
 ): string {
+  if (source in RUNTIME_ANNOUNCED_SECTIONS) {
+    const sectionSource =
+      RUNTIME_ANNOUNCED_SECTIONS[source as keyof typeof RUNTIME_ANNOUNCED_SECTIONS];
+    return result.sections.find((section) => section.source === sectionSource)?.content ?? "";
+  }
   return (
     result.metaUserAttachments.find((attachment) => attachment.source === source)?.content ?? ""
   );
@@ -99,13 +101,17 @@ describe("ContextBuilder meta user context", () => {
       false,
       false,
     ]);
-    expect(result.systemMessages[0]?.content).toBe("You are ZCode, an interactive coding agent");
+    expect(result.systemMessages[0]?.content).toBe("You are ZCode, an interactive agent");
 
     const stableBody = String(result.systemMessages[1]?.content ?? "");
-    expect(stableBody).toMatch(/^\n?You are an interactive ZCode agent/);
+    expect(stableBody).toMatch(/^\n?You are an agent working with the user toward their goals/);
     expect(stableBody).not.toContain("# Agent Identity");
-    expect(stableBody).not.toContain("You are ZCode, an interactive coding agent");
+    expect(stableBody).not.toContain("You are ZCode, an interactive agent");
     expect(stableBody).toContain("# Harness");
+    const harnessBullets = stableBody.split("# Harness\n")[1]?.split("\n") ?? [];
+    expect(harnessBullets).toHaveLength(5);
+    expect(harnessBullets.every((line) => line.startsWith(" - "))).toBe(true);
+    expect(stableBody).not.toContain(EXPECTED_PRONOUNS_PROMPT);
     expect(stableBody).not.toContain("# Session-specific guidance");
     expect(stableBody).not.toContain("# Environment");
     expect(stableBody).not.toContain("# Context management");
@@ -117,17 +123,25 @@ describe("ContextBuilder meta user context", () => {
     expect(stableBody).not.toContain("## Current Environment");
 
     const dynamicSystem = String(result.systemMessages[2]?.content ?? "");
-    expect(dynamicSystem.startsWith(`\n\n${EXPECTED_COMMUNICATION_PROMPT}`)).toBe(true);
+    expect(dynamicSystem.startsWith(`\n\n${DEFAULT_COMMUNICATION_PROMPT}`)).toBe(true);
     expect(dynamicSystem).toContain(
-      `${EXPECTED_COMMUNICATION_PROMPT}\n\nFor actions that are hard to reverse or outward-facing`,
+      `${DEFAULT_COMMUNICATION_PROMPT}\n\n${EXPECTED_PRONOUNS_PROMPT}\n\nFor actions that are hard to reverse or outward-facing`,
     );
     expect(dynamicSystem.split(DEFAULT_COMMUNICATION_PROMPT)).toHaveLength(2);
+    expect(dynamicSystem.split(EXPECTED_PRONOUNS_PROMPT)).toHaveLength(2);
+    const behavior = result.sections.find((section) => section.source === "dynamic_behavior");
+    expect(behavior?.content).toBe(
+      `${DEFAULT_COMMUNICATION_PROMPT}\n\n${EXPECTED_PRONOUNS_PROMPT}\n\n${EXPECTED_ACTION_CAUTION_PROMPT}`,
+    );
+    expect(dynamicSystem).not.toContain("# Communicating with the user");
+    expect(dynamicSystem).not.toContain("Only write a code comment");
+    expect(dynamicSystem).not.toContain("if what you find contradicts how it was described");
     expect(result.systemMessages[2]?.content).toContain(
       "For actions that are hard to reverse or outward-facing",
     );
     expect(
       result.systemMessages[2]?.content.indexOf("For actions that are hard to reverse"),
-    ).toBeLessThan(result.systemMessages[2]?.content.indexOf("# Environment") ?? -1);
+    ).toBeLessThan(result.systemMessages[2]?.content.indexOf("# Context management") ?? -1);
     expect(result.systemMessages[2]?.content).not.toContain("# Session-specific guidance");
     expect(result.systemMessages[2]?.content).not.toContain("`! <command>`");
     expect(result.systemMessages[2]?.content).not.toContain(
@@ -136,7 +150,7 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).not.toContain(
       "spawn Agent with subagent_type=Explore",
     );
-    expect(result.systemMessages[2]?.content).toContain("# Environment");
+    expect(result.systemMessages[2]?.content).not.toContain("# Environment");
     expect(result.systemMessages[2]?.content).toContain("# Context management");
     expect(result.systemMessages[2]?.content).not.toContain("# Language");
     expect(result.systemMessages[2]?.content).not.toContain("# Function Result Clearing");
@@ -145,7 +159,7 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).not.toContain("# Agent Identity");
   });
 
-  it("appends the exact act and autonomy prompts after context management", () => {
+  it("keeps act guidance after context management without autonomy appendices", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       envInfo: {
@@ -163,11 +177,13 @@ describe("ContextBuilder meta user context", () => {
     const dynamicSystem = String(result.systemMessages[2]?.content ?? "");
 
     expect(contextManagement?.content).toBe(
-      `${DEFAULT_CONTEXT_MANAGEMENT_PROMPT}\n\n${ADDITIONAL_ACT_DONT_REDERIVE_PROMPT}\n\n${AUTONOMY_APPENDIX_PROMPT}`,
+      `${DEFAULT_CONTEXT_MANAGEMENT_PROMPT}\n\n${ADDITIONAL_ACT_DONT_REDERIVE_PROMPT}`,
     );
-    expect(dynamicSystem.endsWith(AUTONOMY_APPENDIX_PROMPT)).toBe(true);
+    expect(dynamicSystem.endsWith(ADDITIONAL_ACT_DONT_REDERIVE_PROMPT)).toBe(true);
     expect(dynamicSystem.split(ADDITIONAL_ACT_DONT_REDERIVE_PROMPT)).toHaveLength(2);
-    expect(dynamicSystem.split(AUTONOMY_APPENDIX_PROMPT)).toHaveLength(2);
+    for (const paragraph of REMOVED_AUTONOMY_PARAGRAPHS) {
+      expect(dynamicSystem).not.toContain(paragraph);
+    }
   });
 
   it("injects the stable ZCode Desktop Context before dynamic behavior", () => {
@@ -262,7 +278,7 @@ describe("ContextBuilder meta user context", () => {
       cliPrefixPrompt: "legacy override",
     } as any).build();
 
-    expect(result.systemMessages[0]?.content).toBe("You are ZCode, an interactive coding agent");
+    expect(result.systemMessages[0]?.content).toBe("You are ZCode, an interactive agent");
   });
 
   it("covers default body safety, runtime, and tool-guidance semantic anchors", () => {
@@ -281,7 +297,10 @@ describe("ContextBuilder meta user context", () => {
     const stableBody = String(result.systemMessages[1]?.content ?? "");
     const dynamicSystem = String(result.systemMessages[2]?.content ?? "");
 
-    expect(stableBody).toContain("software engineering tasks");
+    expect(stableBody).toContain(
+      "working with the user toward their goals, using your own judgment along the way.",
+    );
+    expect(stableBody).not.toContain("software engineering tasks");
     expect(stableBody).toContain("mid-conversation system turns");
     expect(stableBody).toContain("Hooks may intercept tool calls");
     expect(stableBody).toContain("Prefer the dedicated file/search tools");
@@ -298,14 +317,14 @@ describe("ContextBuilder meta user context", () => {
     expect(stableBody).not.toContain("# Risky Actions");
     expect(stableBody).not.toContain("# Communication Style");
 
-    expect(dynamicSystem).toMatch(/^\n\n# Communicating with the user/);
+    expect(dynamicSystem).toMatch(/^\n\nWrite code that reads like the surrounding code/);
     expect(dynamicSystem).toContain("match its comment density, naming, and idiom");
     expect(dynamicSystem).toContain("For actions that are hard to reverse or outward-facing");
     expect(dynamicSystem).toContain("Sending content to an external service publishes it");
     expect(dynamicSystem).toContain("Before deleting or overwriting, look at the target");
     expect(dynamicSystem).toContain("Report outcomes faithfully");
     expect(dynamicSystem.indexOf("For actions that are hard to reverse")).toBeLessThan(
-      dynamicSystem.indexOf("# Environment"),
+      dynamicSystem.indexOf("# Context management"),
     );
     expect(dynamicSystem).not.toContain("# Session-specific guidance");
     expect(dynamicSystem).not.toContain("`! <command>`");
@@ -318,7 +337,7 @@ describe("ContextBuilder meta user context", () => {
     expect(dynamicSystem).not.toContain("Prefer dedicated edit/write tools");
     expect(dynamicSystem).not.toContain("Use Bash");
     expect(dynamicSystem).not.toContain("Call independent tools in parallel in a single response");
-    expect(dynamicSystem).toContain("# Environment");
+    expect(dynamicSystem).not.toContain("# Environment");
     expect(dynamicSystem).toContain("# Context management");
     expect(dynamicSystem).not.toContain("not a git repository");
     expect(dynamicSystem).not.toContain("- **Git**:");
@@ -382,19 +401,21 @@ describe("ContextBuilder meta user context", () => {
     expect(result.metaUserAttachments.map((attachment) => attachment.source)).toEqual([
       "context_prefix",
     ]);
-    expect(result.systemMessages[0]?.content).toBe("You are ZCode, an interactive coding agent");
+    expect(result.systemMessages[0]?.content).toBe("You are ZCode, an interactive agent");
     expect(result.systemMessages[1]?.content).toBe("\nYou are concise for this task.");
+    expect(result.sections.some((section) => section.source === "env_info")).toBe(true);
     const meta = metaAttachment(result, "context_prefix");
     expect(meta).not.toContain("<system-reminder>");
     expect(meta).toContain("Project instruction should stay as userContext.");
     expect(meta).toContain("Codebase and user instructions are shown below.");
-    expect(meta).toContain("# agentsMd");
     expect(meta).not.toContain("# claudeMd");
-    expect(meta).toContain("Contents of /workspace/AGENTS.md (workspace instructions):");
+    expect(meta).toContain(
+      "Contents of /workspace/AGENTS.md (project instructions, checked into the codebase):",
+    );
     expect(meta).not.toContain("Project context:");
     expect(meta).not.toContain("- Package manager: pnpm");
     expect(meta).not.toContain("- `test`: vitest");
-    expect(meta).toContain("# currentDate");
+    expect(metaAttachment(result, "date")).toMatch(/^Today's date is /);
     const providerText = [
       ...result.systemMessages.map((message) => message.content),
       ...result.metaUserAttachments.map((attachment) => attachment.content),
@@ -450,25 +471,19 @@ describe("ContextBuilder meta user context", () => {
     expect(stable).not.toContain("# Context management");
     expect(stable).not.toContain("Write code that reads like the surrounding code");
     expect(stable).not.toContain("For actions that are hard to reverse");
-    expect(dynamic).toMatch(/^\n\n# Communicating with the user/);
+    expect(dynamic).toMatch(/^\n\nWrite code that reads like the surrounding code/);
     expect(dynamic.indexOf("For actions that are hard to reverse")).toBeLessThan(
       dynamic.indexOf("# Memory"),
     );
     expect(dynamic).not.toContain("# Session-specific guidance");
     expect(dynamic).not.toContain("`! <command>`");
     expect(dynamic).not.toContain("spawn Agent with subagent_type=Explore");
-    expect(dynamic.indexOf("# Memory")).toBeLessThan(dynamic.indexOf("# Environment"));
-    expect(dynamic.indexOf("# Environment")).toBeLessThan(
-      dynamic.indexOf("# Output Style: Learning"),
-    );
+    expect(dynamic).not.toContain("# Environment");
+    expect(dynamic.indexOf("# Memory")).toBeLessThan(dynamic.indexOf("# Context management"));
     expect(dynamic).not.toContain("# Session Guidance");
-    expect(dynamic.indexOf("# Output Style: Learning")).toBeLessThan(
-      dynamic.indexOf("# Context management"),
-    );
-    expect(dynamic).toContain(
-      "# Output Style: Learning\nExplain tradeoffs while solving the task.",
-    );
-    expect(dynamic).not.toContain("# Output Style: Learning\n\n");
+    // output style 指令改由输入附件 output_style_instructions 宣告，system 不再携带。
+    expect(dynamic).not.toContain("# Output Style");
+    expect(dynamic).not.toContain("Explain tradeoffs while solving the task.");
     expect(dynamic).not.toContain("# Language");
     expect(dynamic).not.toContain("# Function Result Clearing");
     expect(dynamic).not.toContain("# Summarize Tool Results");
@@ -539,10 +554,12 @@ describe("ContextBuilder meta user context", () => {
     );
     const contextPrefix = metaAttachment(result, "context_prefix");
     expect(contextPrefix).toContain(expected);
-    expect(contextPrefix.match(/# agentsMd/gu)).toHaveLength(1);
     expect(contextPrefix).not.toContain("# claudeMd");
-    expect(contextPrefix.indexOf("# agentsMd")).toBeLessThan(contextPrefix.indexOf("Contents of "));
-    expect(contextPrefix.indexOf(expected)).toBeLessThan(contextPrefix.indexOf("# currentDate"));
+    expect(contextPrefix.indexOf("Codebase and user instructions")).toBeLessThan(
+      contextPrefix.indexOf("Contents of "),
+    );
+    expect(contextPrefix).not.toContain("Today's date");
+    expect(metaAttachment(result, "date")).toBe("Today's date is 2026-07-22.");
     expect(contextPrefix.match(/user's auto-memory, persists across conversations/g)).toHaveLength(
       1,
     );
@@ -588,7 +605,7 @@ describe("ContextBuilder meta user context", () => {
     expect(contextPrefix).toContain("```markdown\n<!-- fenced comment remains -->\n```");
   });
 
-  it("renders git snapshot inside the dynamic org-cache system block after context management", () => {
+  it("renders Git in session_context while retaining the initial system behavior", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       model: contextTestModel,
@@ -625,31 +642,29 @@ describe("ContextBuilder meta user context", () => {
     expect(stableBody).not.toContain("Write code that reads like the surrounding code");
     expect(stableBody).not.toContain("For actions that are hard to reverse");
     expect(dynamicSystem).not.toContain("## Current Environment");
-    expect(dynamicSystem).toMatch(/^\n\n# Communicating with the user/);
+    expect(dynamicSystem).toMatch(/^\n\nWrite code that reads like the surrounding code/);
     expect(dynamicSystem).toContain("For actions that are hard to reverse or outward-facing");
-    expect(dynamicSystem).toContain("# Environment");
-    expect(dynamicSystem).toContain("- You are powered by the model named openai/gpt-5.");
-    expect(dynamicSystem).toContain("- Is a git repository: yes");
+    expect(dynamicSystem).not.toContain("# Environment");
+    expect(metaAttachment(result, "model")).toBe(
+      "You are powered by the model named openai/gpt-5.",
+    );
+    expect(metaAttachment(result, "environment")).toContain(" - Is a git repository: true");
     expect(dynamicSystem).toContain("# Context management");
     expect(dynamicSystem).not.toContain("# Language");
     expect(dynamicSystem).not.toContain("# Function Result Clearing");
     expect(dynamicSystem).not.toContain("# Summarize Tool Results");
-    expect(dynamicSystem).toContain("gitStatus:");
+    const sessionContext = metaAttachment(result, "session_context");
+    expect(dynamicSystem).not.toContain("# gitStatus");
+    expect(sessionContext).toContain("# gitStatus");
     expect(dynamicSystem.indexOf("# Context management")).toBeLessThan(
       dynamicSystem.indexOf(ADDITIONAL_ACT_DONT_REDERIVE_PROMPT),
     );
-    expect(dynamicSystem.indexOf(ADDITIONAL_ACT_DONT_REDERIVE_PROMPT)).toBeLessThan(
-      dynamicSystem.indexOf(AUTONOMY_APPENDIX_PROMPT),
-    );
-    expect(dynamicSystem.indexOf(AUTONOMY_APPENDIX_PROMPT)).toBeLessThan(
-      dynamicSystem.indexOf("gitStatus:"),
-    );
-    expect(dynamicSystem).toContain("This is the git status at the start of the conversation");
-    expect(dynamicSystem).toContain("Current branch: feature/alignment");
-    expect(dynamicSystem).toContain("Main branch (you will usually use this for PRs): main");
-    expect(dynamicSystem).toContain("Git user: ZCode Tester <tester@example.com>");
-    expect(dynamicSystem).toContain("Status:\n M package.json");
-    expect(dynamicSystem).toContain("Recent commits:\nabc123 test commit");
+    expect(sessionContext).toContain("This is the git status at the start of the conversation");
+    expect(sessionContext).toContain("Current branch: feature/alignment");
+    expect(sessionContext).toContain("Main branch (you will usually use this for PRs): main");
+    expect(sessionContext).toContain("Git user: ZCode Tester <tester@example.com>");
+    expect(sessionContext).toContain("Status:\n M package.json");
+    expect(sessionContext).toContain("Recent commits:\nabc123 test commit");
   });
 
   it("changes stable intro framing when an output style is active", () => {
@@ -670,8 +685,10 @@ describe("ContextBuilder meta user context", () => {
     }).build();
 
     const stableBody = String(result.systemMessages[1]?.content ?? "");
-    expect(stableBody).toContain("according to the active Output Style below");
-    expect(stableBody).not.toContain("You help the user with software engineering work");
+    expect(stableBody).toContain(
+      'You are an interactive agent that helps users according to your "Output Style", which describes how you should respond to user queries.',
+    );
+    expect(stableBody).not.toContain("You are an agent working with the user toward their goals");
     expect(stableBody).toContain("# Harness");
     expect(stableBody).not.toContain("# Session-specific guidance");
     expect(stableBody).not.toContain("# Environment");
@@ -679,10 +696,10 @@ describe("ContextBuilder meta user context", () => {
     expect(stableBody).not.toContain("Write code that reads like the surrounding code");
     expect(stableBody).not.toContain("For actions that are hard to reverse");
     const dynamicSystem = String(result.systemMessages[2]?.content ?? "");
-    expect(dynamicSystem).toMatch(/^\n\n# Communicating with the user/);
+    expect(dynamicSystem).toMatch(/^\n\nWrite code that reads like the surrounding code/);
     expect(dynamicSystem).toContain("For actions that are hard to reverse or outward-facing");
     expect(dynamicSystem).not.toContain("# Session-specific guidance");
-    expect(dynamicSystem).toContain("# Environment");
+    expect(dynamicSystem).not.toContain("# Environment");
     expect(dynamicSystem).toContain("# Context management");
   });
 
@@ -708,13 +725,10 @@ describe("ContextBuilder meta user context", () => {
 
     expect(stableBody).toContain("# Harness");
     expect(stableBody).toContain("Tools run behind a user-selected permission mode");
-    expect(dynamicSystem.startsWith(`\n\n${EXPECTED_COMMUNICATION_PROMPT}`)).toBe(true);
+    expect(dynamicSystem.startsWith(`\n\n${DEFAULT_COMMUNICATION_PROMPT}`)).toBe(true);
     expect(dynamicSystem).toContain("For actions that are hard to reverse or outward-facing");
-    expect(dynamicSystem).toContain("# Output Style: Custom\nUse the custom response style.");
-    expect(dynamicSystem).not.toContain("# Output Style: Custom\n\n");
-    expect(dynamicSystem.indexOf(EXPECTED_COMMUNICATION_PROMPT)).toBeLessThan(
-      dynamicSystem.indexOf("# Output Style: Custom"),
-    );
+    expect(dynamicSystem).toContain(EXPECTED_PRONOUNS_PROMPT);
+    expect(dynamicSystem).not.toContain("# Output Style");
   });
 
   it("does not render legacy language guidance in the default dynamic block", () => {
@@ -817,10 +831,10 @@ describe("ContextBuilder meta user context", () => {
     const stableBody = result.systemMessages[1]?.content ?? "";
     const dynamicSystem = result.systemMessages[2]?.content ?? "";
     const meta = metaAttachment(result, "context_prefix");
-    expect(cliPrefix).toBe("You are ZCode, an interactive coding agent");
+    expect(cliPrefix).toBe("You are ZCode, an interactive agent");
     expect(stableBody).not.toContain("# Agent Identity");
-    expect(stableBody).toMatch(/^\n?You are an interactive ZCode agent/);
-    expect(stableBody).not.toContain("You are ZCode, an interactive coding agent");
+    expect(stableBody).toMatch(/^\n?You are an agent working with the user toward their goals/);
+    expect(stableBody).not.toContain("You are ZCode, an interactive agent");
     expect(stableBody).toContain("# Harness");
     expect(stableBody).not.toContain("# Session-specific guidance");
     expect(stableBody).not.toContain("# Environment");
@@ -830,15 +844,14 @@ describe("ContextBuilder meta user context", () => {
     expect(stableBody).not.toContain("# Communication Style");
     expect(stableBody).not.toContain("## Current Environment");
     expect(dynamicSystem).not.toContain("## Current Environment");
-    expect(dynamicSystem).toMatch(/^\n\n# Communicating with the user/);
+    expect(dynamicSystem).toMatch(/^\n\nWrite code that reads like the surrounding code/);
     expect(dynamicSystem).toContain("For actions that are hard to reverse or outward-facing");
     expect(dynamicSystem).not.toContain("# Session-specific guidance");
-    expect(dynamicSystem).toContain("# Environment");
+    expect(dynamicSystem).not.toContain("# Environment");
     expect(dynamicSystem).toContain("# Context management");
     expect(stableBody).not.toContain("local AGENTS payload");
     expect(meta).not.toContain("<system-reminder>");
     expect(meta).toContain("Codebase and user instructions are shown below.");
-    expect(meta).toContain("# agentsMd");
     expect(meta).not.toContain("# claudeMd");
     expect(meta).not.toContain("# user_instructions");
     expect(meta).toContain("local AGENTS payload");
@@ -847,12 +860,9 @@ describe("ContextBuilder meta user context", () => {
     expect(meta).not.toContain("Package manager: pnpm");
     expect(meta).not.toContain("`test`: vitest");
     expect(meta).not.toContain("## 项目信息");
-    expect(meta).toContain("# currentDate");
-    expect(meta).toContain("Today's date is 2026-05-04.");
+    expect(metaAttachment(result, "date")).toBe("Today's date is 2026-05-04.");
     expect(meta).not.toContain("</system-reminder>");
-    expect(meta.indexOf("Codebase and user instructions")).toBeLessThan(
-      meta.indexOf("# currentDate"),
-    );
+    expect(meta).not.toContain("Today's date");
 
     const sectionTargets = result.sections.map((section) => ({
       name: section.name,
@@ -863,11 +873,11 @@ describe("ContextBuilder meta user context", () => {
       { name: "CLI Prefix", injectionTarget: "system", cacheHint: "stable" },
       { name: "Agent Identity", injectionTarget: "system", cacheHint: "stable" },
       { name: "Dynamic Behavior", injectionTarget: "system", cacheHint: "dynamic" },
-      { name: "Environment Info", injectionTarget: "system", cacheHint: "dynamic" },
+      { name: "Context Management", injectionTarget: "system", cacheHint: "dynamic" },
     ]);
     expect(sectionTargets).toEqual(
       expect.arrayContaining([
-        { name: "Environment Info", injectionTarget: "system", cacheHint: "dynamic" },
+        { name: "Environment Info", injectionTarget: "meta_user", cacheHint: "dynamic" },
         { name: "Context Management", injectionTarget: "system", cacheHint: "dynamic" },
         { name: "Request User Context", injectionTarget: "meta_user", cacheHint: "dynamic" },
         { name: "Current Date", injectionTarget: "meta_user", cacheHint: "dynamic" },
@@ -918,20 +928,23 @@ describe("ContextBuilder meta user context", () => {
 
     const meta = metaAttachment(result, "context_prefix");
     expect(meta).toContain("Codebase and user instructions are shown below.");
-    expect(meta.match(/# agentsMd/gu)).toHaveLength(1);
     expect(meta).not.toContain("# claudeMd");
-    expect(meta).toContain("Contents of /Users/test/.zcode/AGENTS.md (user default instructions):");
-    expect(meta).toContain("Contents of /workspace/AGENTS.md (workspace instructions):");
+    expect(meta).toContain(
+      "Contents of /Users/test/.zcode/AGENTS.md (user's private global instructions for all projects):",
+    );
+    expect(meta).toContain(
+      "Contents of /workspace/AGENTS.md (project instructions, checked into the codebase):",
+    );
     expect(meta.indexOf("default instructions")).toBeLessThan(
       meta.indexOf("workspace instructions"),
     );
-    expect(meta.indexOf("# agentsMd")).toBeLessThan(meta.indexOf("default instructions"));
     expect(meta.indexOf("Codebase and user instructions")).toBeLessThan(
-      meta.indexOf("# currentDate"),
+      meta.indexOf("default instructions"),
     );
+    expect(meta).not.toContain("Today's date");
   });
 
-  it("renders only currentDate when request user context has no content", () => {
+  it("keeps date separate when request user context has no content", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       currentDate: "2026-05-04",
@@ -949,18 +962,11 @@ describe("ContextBuilder meta user context", () => {
       "system",
       "system",
     ]);
-    expect(result.metaUserAttachments.map((attachment) => attachment.source)).toEqual([
-      "context_prefix",
-    ]);
+    expect(result.metaUserAttachments).toEqual([]);
     const meta = metaAttachment(result, "context_prefix");
-    expect(meta).toContain("# currentDate");
-    expect(meta).toContain("Today's date is 2026-05-04.");
-    expect(meta).toContain(
-      "\n\n      IMPORTANT: this context may or may not be relevant to your tasks.",
-    );
-    expect(meta).not.toContain(
-      "\n\nIMPORTANT: this context may or may not be relevant to your tasks.",
-    );
+    expect(metaAttachment(result, "date")).toBe("Today's date is 2026-05-04.");
+    expect(meta).toBe("");
+    expect(meta).not.toContain("IMPORTANT: this context may or may not be relevant");
     expect(meta).not.toContain("# agentsMd");
     expect(meta).not.toContain("# claudeMd");
     expect(meta).not.toContain("# user_instructions");
@@ -997,10 +1003,10 @@ describe("ContextBuilder meta user context", () => {
     expect(meta).not.toContain("Contents of ");
     expect(meta).not.toContain("# user_instructions");
     expect(meta).not.toContain("## 项目信息");
-    expect(meta).toContain("# currentDate");
+    expect(metaAttachment(result, "date")).toMatch(/^Today's date is /);
   });
 
-  it("renders a resolved instruction source under agentsMd", () => {
+  it("renders a resolved instruction source under the instruction preamble", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       currentDate: "2026-05-04",
@@ -1023,14 +1029,13 @@ describe("ContextBuilder meta user context", () => {
 
     const meta = metaAttachment(result, "context_prefix");
     expect(meta).toContain("Codebase and user instructions are shown below.");
-    expect(meta).toContain("# agentsMd");
     expect(meta).not.toContain("# claudeMd");
-    expect(meta).toContain("Contents of /workspace/CLAUDE.md (workspace instructions):");
+    expect(meta).toContain(
+      "Contents of /workspace/CLAUDE.md (project instructions, checked into the codebase):",
+    );
     expect(meta).toContain("Workspace resolved instruction payload");
     expect(meta).not.toContain("# user_instructions");
-    expect(meta.indexOf("Codebase and user instructions")).toBeLessThan(
-      meta.indexOf("# currentDate"),
-    );
+    expect(meta).not.toContain("Today's date");
   });
 
   it("does not emit an empty meta user message", () => {
@@ -1051,9 +1056,11 @@ describe("ContextBuilder meta user context", () => {
       "system",
     ]);
     expect(result.metaUserAttachments).toEqual([]);
-    expect(result.systemMessages[0]?.content).toBe("You are ZCode, an interactive coding agent");
+    expect(result.systemMessages[0]?.content).toBe("You are ZCode, an interactive agent");
     expect(result.systemMessages[1]?.content).not.toContain("# Agent Identity");
-    expect(result.systemMessages[1]?.content).toMatch(/^\n?You are an interactive ZCode agent/);
+    expect(result.systemMessages[1]?.content).toMatch(
+      /^\n?You are an agent working with the user toward their goals/,
+    );
     expect(result.systemMessages[1]?.content).toContain("# Harness");
     expect(result.systemMessages[1]?.content).not.toContain("# Session-specific guidance");
     expect(result.systemMessages[1]?.content).not.toContain("# Environment");
@@ -1063,7 +1070,9 @@ describe("ContextBuilder meta user context", () => {
       "Write code that reads like the surrounding code",
     );
     expect(result.systemMessages[1]?.content).not.toContain("For actions that are hard to reverse");
-    expect(result.systemMessages[2]?.content).toMatch(/^\n\n# Communicating with the user/);
+    expect(result.systemMessages[2]?.content).toMatch(
+      /^\n\nWrite code that reads like the surrounding code/,
+    );
     expect(result.systemMessages[2]?.content).toContain(
       "For actions that are hard to reverse or outward-facing",
     );
@@ -1072,7 +1081,7 @@ describe("ContextBuilder meta user context", () => {
     expect(result.systemMessages[2]?.content).not.toContain("# Function Result Clearing");
     expect(result.systemMessages[2]?.content).not.toContain("# Summarize Tool Results");
     expect(result.systemMessages[2]?.content).not.toContain("## Current Environment");
-    expect(result.systemMessages[2]?.content).toContain("# Environment");
+    expect(result.systemMessages[2]?.content).not.toContain("# Environment");
     expect(result.systemMessages[2]?.content).toContain("# Context management");
   });
 
@@ -1143,11 +1152,12 @@ describe("ContextBuilder meta user context", () => {
     ]);
     expect(result.metaUserAttachments.map((attachment) => attachment.source)).toEqual([
       "skills_listing",
-      "context_prefix",
     ]);
     expect(result.systemMessages[0]?.content).not.toContain("demo-skill");
     expect(result.systemMessages[2]?.content).toContain("# Session-specific guidance");
-    expect(result.systemMessages[2]?.content).toContain("When the user types `/<skill-name>`");
+    expect(result.systemMessages[2]?.content).toContain(
+      "# Session-specific guidance\n - When the user types `/<skill-name>`",
+    );
     expect(result.systemMessages[2]?.content).not.toContain("`! <command>`");
     expect(result.systemMessages[2]?.content).not.toContain(
       "spawn Agent with subagent_type=Explore",
@@ -1160,7 +1170,8 @@ describe("ContextBuilder meta user context", () => {
       "The following skills are available",
     );
     expect(metaAttachment(result, "skills_listing")).toContain("demo-skill");
-    expect(metaAttachment(result, "context_prefix")).toContain("# currentDate");
+    expect(metaAttachment(result, "context_prefix")).toBe("");
+    expect(metaAttachment(result, "date")).toMatch(/^Today's date is /);
   });
 
   it("does not mirror available subagents into meta user context", () => {
@@ -1196,7 +1207,7 @@ describe("ContextBuilder meta user context", () => {
     expect(providerContextText).not.toContain("zcode-reviewer");
   });
 
-  it("lists additional directory paths immediately after the primary working directory", () => {
+  it("lists additional working directories after the repository bullet", () => {
     const result = createContextBuilder({
       workingDirectory: "/workspace",
       additionalDirectories: ["/work/backend", "C:\\work\\shared folder"],
@@ -1211,13 +1222,14 @@ describe("ContextBuilder meta user context", () => {
 
     const environment = result.sections.find((section) => section.source === "env_info");
     expect(environment?.content).toContain(
-      "- Primary working directory: /workspace\n- Additional directories:\n  - /work/backend\n  - C:\\work\\shared folder\n- Is a git repository:",
+      " - Primary working directory: /workspace\n - Is a git repository: false\n - Additional working directories:\n  - /work/backend\n  - C:\\work\\shared folder\n - Platform: linux",
     );
+    // 环境由运行时公告下发（见 runtime-context-announcements），builder 不再放进 system。
     expect(
       result.systemMessages.some((message) =>
         String(message.content).includes(environment!.content),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("keeps the environment prompt unchanged for an absent or empty additional directory list", () => {
@@ -1237,33 +1249,30 @@ describe("ContextBuilder meta user context", () => {
     expect(empty).toEqual(original);
     expect(
       original.sections.find((section) => section.source === "env_info")?.content,
-    ).not.toContain("Additional directories");
+    ).not.toContain("Additional working directories");
   });
 
   it("renders environment info copy in English", () => {
-    const section = buildEnvInfoSection(
-      {
-        cwd: "/workspace",
-        platform: "darwin",
-        shell: "zsh",
-        osVersion: "Darwin 25.4.0",
-        nodeVersion: "v24.14.0",
-        isGitRepository: true,
-        gitBranch: "main",
-        gitMainBranch: "main",
-        gitUser: "ZCode Tester <tester@example.com>",
-        gitStatus: "clean",
-        gitStatusLines: [],
-        recentCommits: ["abc123 test commit"],
-      },
-      contextTestModel,
-    );
+    const section = buildEnvInfoSection({
+      cwd: "/workspace",
+      platform: "darwin",
+      shell: "zsh",
+      osVersion: "Darwin 25.4.0",
+      nodeVersion: "v24.14.0",
+      isGitRepository: true,
+      gitBranch: "main",
+      gitMainBranch: "main",
+      gitUser: "ZCode Tester <tester@example.com>",
+      gitStatus: "clean",
+      gitStatusLines: [],
+      recentCommits: ["abc123 test commit"],
+    });
 
     expect(section.content).toContain("# Environment");
     expect(section.content).toContain("- Primary working directory: /workspace");
     expect(section.content).not.toContain("Node version");
-    expect(section.content).toContain("- You are powered by the model named openai/gpt-5.");
-    expect(section.content).toContain("- Is a git repository: yes");
+    expect(section.content).not.toContain("You are powered by");
+    expect(section.content).toContain(" - Is a git repository: true");
     expect(section.content).not.toContain("**Git status snapshot**");
     expect(section.content).not.toContain("**Main branch**: main");
     expect(section.content).not.toContain("**Git user**");
@@ -1279,12 +1288,12 @@ describe("ContextBuilder meta user context", () => {
       nodeVersion: "v24.14.0",
       isGitRepository: false,
     });
-    expect(nonGitSection.content).toContain("- Is a git repository: no");
+    expect(nonGitSection.content).toContain(" - Is a git repository: false");
     expect(nonGitSection.content).not.toContain("not a git repository");
     expect(nonGitSection.content).not.toContain("- **Git**:");
   });
 
-  it("renders git snapshot copy as systemContext", () => {
+  it("renders git snapshot text as session_context", () => {
     const section = buildGitSystemContextSection({
       cwd: "/workspace",
       platform: "darwin",
@@ -1303,14 +1312,16 @@ describe("ContextBuilder meta user context", () => {
         "?? docs/plan/tool-prompt-plan.md",
       ],
       recentCommits: [
-        "ed2cac59d Merge branch 'feat/trajectory' of https://git.example.invalid/codegeex/z-code into feat/trajectory",
+        "ed2cac59d Merge branch 'feat/trajectory' of https://example.com/team/project into feat/trajectory",
         "07957b58c chore: update doc",
       ],
     });
 
     expect(section?.content).toBe(
       [
-        "gitStatus: This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.",
+        "As you answer the user's questions, you can use the following context:",
+        "# gitStatus",
+        "This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.",
         "",
         "Current branch: feat/trajectory",
         "",
@@ -1320,7 +1331,9 @@ describe("ContextBuilder meta user context", () => {
         "",
         "Status:\nM docs/notes/prompt-assembly-notes.md\n M docs/notes/tool-descriptions-notes.md\n M packages/contracts/src/tools/ask-user-question.ts\n?? docs/plan/tool-prompt-plan.md",
         "",
-        "Recent commits:\ned2cac59d Merge branch 'feat/trajectory' of https://git.example.invalid/codegeex/z-code into feat/trajectory\n07957b58c chore: update doc",
+        "Recent commits:\ned2cac59d Merge branch 'feat/trajectory' of https://example.com/team/project into feat/trajectory\n07957b58c chore: update doc",
+        "",
+        "ZCode attached this context automatically; it isn't part of the user's message. It describes the user's own account and workspace, so they don't need it reported back.",
       ].join("\n"),
     );
     expect(
@@ -1369,18 +1382,42 @@ describe("ContextBuilder meta user context", () => {
     const prefixSection = buildCliPrefixSection();
     const identitySection = buildIdentitySection();
 
-    expect(prefixSection.content).toBe("You are ZCode, an interactive coding agent");
-    expect(identitySection.content).toMatch(/^\n?You are an interactive ZCode agent/);
+    expect(prefixSection.content).toBe("You are ZCode, an interactive agent");
+    expect(identitySection.content).toMatch(
+      /^\n?You are an agent working with the user toward their goals/,
+    );
     expect(identitySection.content).not.toContain("# Agent Identity");
-    expect(identitySection.content).not.toContain("You are ZCode, an interactive coding agent");
+    expect(identitySection.content).not.toContain("You are ZCode, an interactive agent");
     expect(`${prefixSection.content}\n${identitySection.content}`).not.toContain("${");
     expect(`${prefixSection.content}\n${identitySection.content}`).not.toContain("an AI assistant");
+  });
+
+  it("describes system-reminder delivery in the Harness when MCS is unavailable", () => {
+    const result = createContextBuilder({
+      workingDirectory: "/workspace",
+      envInfo: {
+        cwd: "/workspace",
+        platform: "linux",
+        shell: "bash",
+        osVersion: "Linux",
+        nodeVersion: "24",
+      },
+      midConversationSystem: false,
+    }).build();
+    const stableBody = result.systemMessages[1]?.content;
+
+    expect(stableBody).toContain(
+      " - `<system-reminder>` tags in messages and tool results are injected by the harness, not the user. Hooks may intercept tool calls; treat hook output as user feedback.",
+    );
+    expect(stableBody).not.toContain("mid-conversation system turns");
   });
 
   it("includes compact stable body boundaries", () => {
     const section = buildIdentitySection();
 
-    expect(section.content).toMatch(/^\n?You are an interactive ZCode agent/);
+    expect(section.content).toMatch(
+      /^\n?You are an agent working with the user toward their goals/,
+    );
     expect(section.content).not.toContain("# Agent Identity");
     expect(section.content).toContain("# Harness");
     expect(section.content).toContain("IMPORTANT:");
@@ -1480,13 +1517,14 @@ describe("context builder — workflow actor identity", () => {
   }
 
   it("stacks the persona on the harness contract instead of replacing the base prompt", () => {
-    const text = systemText({
+    const result = createContextBuilder({
       workingDirectory: "/workspace",
       envInfo,
       presentationSurface: "zcode_desktop",
       guidanceToolNames: ["Skill", "Read"],
       workflowActor: { name: "reviewer", persona: "You are a strict reviewer." },
-    });
+    }).build();
+    const text = result.systemMessages.map((message) => String(message.content)).join("\n");
 
     // 开场句 → persona → 安全行 → Harness → 契约，且顺序固定。
     const opening = text.indexOf(
@@ -1509,13 +1547,14 @@ describe("context builder — workflow actor identity", () => {
     expect(text).toContain("`submit_result`");
 
     // 交互式身份与面向用户对话的三段不在。
-    expect(text).not.toContain("interactive ZCode agent that helps users");
+    expect(text).not.toContain("agent working with the user toward their goals");
     expect(text).not.toContain("# Communicating with the user");
+    expect(text).not.toContain(EXPECTED_PRONOUNS_PROMPT);
     expect(text).not.toContain("For actions that are hard to reverse");
     expect(text).not.toContain("# Session-specific guidance");
     expect(text).not.toContain("ZCode Desktop");
     // 后续段照常。
-    expect(text).toContain("# Environment");
+    expect(text).not.toContain("# Environment");
   });
 
   it("omits the named clause and the persona block when the actor has neither", () => {
@@ -1529,7 +1568,7 @@ describe("context builder — workflow actor identity", () => {
     );
     expect(text).not.toContain('named "');
     expect(text).toContain("# Working inside a workflow");
-    expect(text).not.toContain("interactive ZCode agent");
+    expect(text).not.toContain("agent working with the user toward their goals");
   });
 
   // 产物（docs/dynamic-workflow/authoring.md「The system prompt」）：子代理仍然没有任何产物工具
@@ -1563,7 +1602,7 @@ describe("context builder — workflow actor identity", () => {
     ).toBe(true);
     expect(result.sections.map((section) => section.source)).not.toContain("cli_prefix");
     expect(result.systemMessages.map((m) => String(m.content)).join("\n")).not.toContain(
-      "You are ZCode, an interactive coding agent",
+      "You are ZCode, an interactive agent",
     );
   });
 
@@ -1620,6 +1659,23 @@ describe("context builder — workflow actor identity", () => {
     expect(sources(undefined)).toContain("skills_listing");
   });
 
+  it("sends the custom system prompt as given without trimming", () => {
+    const custom = createContextBuilder({
+      workingDirectory: "/workspace",
+      envInfo,
+      customSystemPrompt: "  Keep it short.\n",
+    }).build();
+    // 自定义 prompt 原样发送；开头的 \n 是本块左边界（OpenAI 兼容拼接）。
+    expect(custom.systemMessages[1]?.content).toBe("\n  Keep it short.\n");
+
+    const blank = createContextBuilder({
+      workingDirectory: "/workspace",
+      envInfo,
+      customSystemPrompt: " \n",
+    }).build();
+    expect(blank.sections.some((section) => section.source === "custom_system_prompt")).toBe(false);
+  });
+
   it("refuses workflowActor together with customSystemPrompt", () => {
     expect(() =>
       createContextBuilder({
@@ -1631,11 +1687,100 @@ describe("context builder — workflow actor identity", () => {
     ).toThrow(/mutually exclusive/);
   });
 
-  it("leaves the interactive identity byte-identical after the shared-helper refactor", () => {
+  it("keeps the general-purpose main identity before the security and harness sections", () => {
     const text = systemText({ workingDirectory: "/workspace", envInfo });
     expect(text).toContain(
-      "\nYou are an interactive ZCode agent that helps users with software engineering tasks.\n\nIMPORTANT: Assist with authorized security testing",
+      "\nYou are an agent working with the user toward their goals, using your own judgment along the way.\n\nIMPORTANT: Assist with authorized security testing",
     );
-    expect(text).toContain("\n\n# Harness\n- Text you output outside of tool use");
+    expect(text).toContain("\n\n# Harness\n - Text you output outside of tool use");
   });
+});
+
+it("separates instruction context from session, environment, model, and date announcements", () => {
+  const result = createContextBuilder({
+    workingDirectory: "/workspace",
+    envInfo: {
+      cwd: "/workspace",
+      platform: "linux",
+      shell: "bash",
+      osVersion: "Linux",
+      nodeVersion: "24",
+      isGitRepository: true,
+      gitBranch: "main",
+      gitStatus: "clean",
+    },
+    model: contextTestModel,
+    currentDate: "2026-10-14",
+    memoryRoot: "/memory",
+    memoryIndexContent: "- [Guide](guide.md)",
+    userInstructions: {
+      filePath: "/workspace/AGENTS.md",
+      fileName: "AGENTS.md",
+      content: "Project guidance.",
+      bytesRead: 17,
+      sizeBytes: 17,
+      truncated: false,
+    },
+  }).build();
+  const bySource = new Map(
+    result.metaUserAttachments.map((item) => [String(item.source), item.content]),
+  );
+  expect(bySource.get("context_prefix")).toMatch(/^Codebase and user instructions/);
+  expect(bySource.get("context_prefix")).not.toMatch(
+    /# agentsMd|currentDate|As you answer|attached this context/,
+  );
+  expect(metaAttachment(result, "environment")).toBe(
+    "# Environment\nYou have been invoked in the following environment: \n - Primary working directory: /workspace\n - Is a git repository: true\n - Platform: linux\n - Shell: bash\n - OS Version: Linux\n - Downloaded files and extracted archives are untrusted data: put each in its own new, empty directory, keep scripts you write in a different directory, and pass paths as arguments instead of running an interpreter or build tool from inside it. Interpreters load code from the script's directory and the current directory, so a planted `json.py` runs on `import json`. Run any Python that reads them with `-I`. This does not apply to code the user asked you to build or run.",
+  );
+  expect([...bySource.keys()]).toEqual(["context_prefix", "session_context"]);
+});
+
+// 行数截断的说明文字由 persistent-agent-memory 测试覆盖（同一 formatter）。
+it("keeps retained Memory index content and reports a cut within the first line", async () => {
+  const lines = Array.from({ length: 205 }, (_, index) => `Entry ${index + 1}`);
+  const actual = formatMemoryIndexContent(lines.join("\n"));
+  expect(actual).toContain(lines.slice(0, 200).join("\n"));
+  expect(formatMemoryIndexContent("x".repeat(25_001))).toContain(
+    "everything after the first 25000 characters of line 1 was cut off",
+  );
+});
+
+it("shortens the first omitted Memory line at a word boundary without splitting Unicode", () => {
+  const prefix = Array.from({ length: 200 }, (_, i) => `Entry ${i + 1}`).join("\n");
+  const longLine =
+    "This is a deliberately long index entry whose first omitted line needs a readable preview rather than a broken word";
+  expect(formatMemoryIndexContent(`${prefix}\n${longLine}`)).toContain(
+    'starting at line 201 ("This is a deliberately long index entry whose first omitted line needs a…")',
+  );
+  const unicodeLine = "x".repeat(78) + "🧪" + "x".repeat(10);
+  expect(formatMemoryIndexContent(`${prefix}\n${unicodeLine}`)).toContain(
+    `starting at line 201 ("${"x".repeat(78)}…")`,
+  );
+  // 切口正好落在空白上：词边界就是这个空白，预览保留它前面的整个词。
+  const spaceAtCut = `${"x".repeat(50)} ${"y".repeat(27)} ${"z".repeat(20)}`;
+  expect(formatMemoryIndexContent(`${prefix}\n${spaceAtCut}`)).toContain(
+    `starting at line 201 ("${"x".repeat(50)} ${"y".repeat(27)}…")`,
+  );
+});
+
+it("preserves custom meta sections in the instruction carrier", () => {
+  const result = createContextBuilder({
+    workingDirectory: "/workspace",
+    envInfo: {
+      cwd: "/workspace",
+      platform: "linux",
+      shell: "bash",
+      osVersion: "test",
+      nodeVersion: "24",
+    },
+  })
+    .addSection({
+      name: "Custom guidance",
+      source: "tools",
+      injectionTarget: "meta_user",
+      content: "custom context",
+      preview: "custom",
+    })
+    .build();
+  expect(metaAttachment(result, "context_prefix")).toBe("custom context");
 });

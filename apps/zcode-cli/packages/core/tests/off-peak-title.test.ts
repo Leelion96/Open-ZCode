@@ -176,3 +176,40 @@ describe("闲时默认标题请求", () => {
     },
   );
 });
+
+it("session shutdown aborts a running title request and drains its final writes", async () => {
+  const started = Promise.withResolvers<AbortSignal>();
+  const runtime = createTestAgentRuntime(
+    createSessionId("shutdown-title"),
+    { mode: "yolo", compact: { enabled: false }, titleGeneration: {} },
+    {
+      sessionStore: createRecordingSubagentSessionStore(),
+      eventStore: createTestSessionEventStore(),
+      modelFactory: createTestModelFactory({
+        async generateText(request, observation) {
+          if (observation.invocationContext?.metadata?.querySource === "session_title") {
+            started.resolve(request.abortSignal!);
+            await new Promise((_, reject) =>
+              request.abortSignal!.addEventListener(
+                "abort",
+                () => reject(request.abortSignal!.reason),
+                { once: true },
+              ),
+            );
+          }
+          return {
+            text: "done",
+            finishReason: "stop",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      }),
+    },
+  );
+  await runtime.executeTurn("Please explain the runtime shutdown mechanism carefully");
+  const signal = await started.promise;
+  runtime.beginShutdown();
+  expect(signal.aborted).toBe(true);
+  await runtime.closeOwnedWork();
+  expect(runtime.hasResidencyBlockingWork()).toBe(false);
+});

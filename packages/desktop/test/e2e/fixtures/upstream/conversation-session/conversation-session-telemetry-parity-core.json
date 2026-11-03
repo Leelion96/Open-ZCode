@@ -118,7 +118,7 @@
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "旧版 compact 使用非流式 generateText；返回 Anthropic JSON，保持与 V4 流式响应相同的 summary 语义。"
+        "syntheticReason": "旧版 compact 使用非流式 generateText；返回 Messages 协议非流式 JSON，保持与 V4 流式响应相同的 summary 语义。"
       },
       "maxMatches": 1,
       "match": {
@@ -178,7 +178,7 @@
         "kind": "main",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "真实模型是否输出 thought 不稳定，使用确定性 Anthropic SSE。"
+        "syntheticReason": "真实模型是否输出 thought 不稳定，使用确定性 Messages 协议 SSE。"
       },
       "maxMatches": 1,
       "match": {

@@ -16,6 +16,7 @@ before(async () => {
   server = await createServer({
     root,
     configFile: false,
+    cacheDir: join(root, "node_modules/.vite-permission-full-access"),
     plugins: [
       react(),
       tailwindcss(),
@@ -87,7 +88,11 @@ for (const width of [390, 1200])
         await page.screenshot({ path: join(artifacts, `${width}-${theme}.png`), fullPage: true });
         await options.first().focus();
         await page.keyboard.press("3");
-        await page.keyboard.press("Enter");
+        await page.getByTestId("yolo-confirmation-dialog").waitFor();
+        assert.equal(await page.getByTestId("response").textContent(), "");
+        assert.equal(await page.getByTestId("yolo-confirmation-confirm").isDisabled(), true);
+        await page.getByTestId("yolo-confirmation-dialog").getByRole("checkbox").check();
+        await page.getByTestId("yolo-confirmation-confirm").click();
         await page.waitForFunction(
           () => document.querySelector('[data-testid="response"]')?.textContent === "fullAccess",
         );

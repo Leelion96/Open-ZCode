@@ -13,7 +13,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createProtocolBrowserControlBroker } from "../src/zcode-protocol/browser-control-broker.js";
 import { createSqliteSessionStore } from "@zcode/adapters/storage";
 import type {
   MessageId,
@@ -45,6 +46,7 @@ import {
 import {
   acquireSessionResidencyFinalization,
   deactivateSessionRecord,
+  getSessionLifecycle,
   runWithSessionResidencyFinalization,
 } from "../src/zcode-protocol/session-residency.js";
 import type {
@@ -547,6 +549,7 @@ function makeExecutorHarness(sessionId: string): ExecutorHarness {
     updatedAt: 0,
   } as unknown as ZCodeProtocolSessionRecord;
   const context = {
+    notify: () => {},
     sessions: new Map([[sessionId, record]]),
     v4Gateway: {
       assertSessionRuntimeDeactivatable: () => {},
@@ -559,6 +562,50 @@ function makeExecutorHarness(sessionId: string): ExecutorHarness {
 }
 
 describe("deactivateSessionRecord（执行面）", () => {
+  it.each([true, false])(
+    "自动回收摘除 record 后执行浏览器释放，结果 ok=%s 决定最终生命周期",
+    async (ok) => {
+      const sessionId = "sess-browser-idle";
+      const harness = makeExecutorHarness(sessionId);
+      harness.record.workspace = { workspacePath: "/repo", workspaceKey: "/repo" };
+      const requestClient = vi.fn(async () => ({ ok: true, elapsedMs: 0 }));
+      harness.context.requestClient = requestClient as typeof harness.context.requestClient;
+      harness.context.deps = {
+        sessionStore: { getSession: async () => ({ time: {} }) },
+      } as unknown as typeof harness.context.deps;
+      const broker = createProtocolBrowserControlBroker(harness.context);
+      await broker.execute({
+        sessionId,
+        browserId: "browser-idle",
+        browserGeneration: 1,
+        command: { method: "getState" },
+      });
+      requestClient.mockResolvedValue({ ok, elapsedMs: 0 });
+      harness.record.app.close = async () => {
+        expect(harness.context.sessions.has(sessionId)).toBe(false);
+        expect((await getSessionLifecycle(harness.context).getState(sessionId)).state).toBe(
+          "stopping",
+        );
+        await broker.closeSession!({ sessionId });
+      };
+      const deactivation = deactivateSessionRecord(harness.context, sessionId);
+      if (ok) await deactivation;
+      else await expect(deactivation).rejects.toThrow();
+      expect(requestClient).toHaveBeenLastCalledWith(
+        zcodeProtocolMethods.interactionBrowserExecute,
+        expect.objectContaining({
+          sessionId,
+          workspaceKey: "/repo",
+          command: { method: "closeSession" },
+        }),
+        expect.anything(),
+      );
+      expect((await getSessionLifecycle(harness.context).getState(sessionId)).state).toBe(
+        ok ? "unloaded" : "faulted",
+      );
+    },
+  );
+
   it("内存摘除在同一同步片完成，app.close 后置异步等待", async () => {
     const harness = makeExecutorHarness("sess-exec");
     const promise = deactivateSessionRecord(harness.context, "sess-exec");
@@ -729,6 +776,7 @@ async function bootServer(
   dbPath: string,
   options: {
     appOverrides?: Partial<ZCodeApp>;
+    onApp?: (app: ZCodeApp) => void;
     poolOptions?: SessionResidentPoolOptions;
   } = {},
 ): Promise<IntegrationHarness> {
@@ -738,6 +786,7 @@ async function bootServer(
     createZCodeApp: (appOptions) => {
       const app = createFakeApp(appOptions, options.appOverrides ?? {});
       createdApps.push(app);
+      options.onApp?.(app);
       return app;
     },
     cwd: WORKSPACE_PATH,
@@ -995,5 +1044,166 @@ describe("SessionResidentPool 配置回退", () => {
   it("只覆盖 targetCount 且高于默认 high-water 时不让 server 构造失败", () => {
     // 装配层应解析出有效 high-water；测试只约束 CLI 可启动，不锁死具体推导策略。
     expect(() => makeServer({ sessionResidentPoolOptions: { targetCount: 20 } })).not.toThrow();
+  });
+});
+
+// 生命周期协议使用真实 store/server，验证查询和变更并非仅有一个独立状态机。
+describe("session lifecycle protocol", () => {
+  let root: string;
+  let harness: IntegrationHarness;
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "session-lifecycle-"));
+    const dbPath = join(root, "sessions.sqlite");
+    await seedPersistedSession(dbPath);
+    harness = await bootServer(dbPath, { poolOptions: { highWaterCount: 16, targetCount: 8 } });
+  });
+  afterEach(async () => {
+    await Promise.allSettled((harness?.createdApps ?? []).map((app) => app.close?.()));
+    harness?.store.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  const call = (h: IntegrationHarness, method: string) =>
+    requestResult(h.server, {
+      id: Math.random().toString(),
+      method: method as never,
+      params: { sessionId: SESSION_ID },
+    });
+
+  it("queries unloaded without activation, then ensures/restarts/stops while preserving history", async () => {
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "unloaded" });
+    expect(harness.createdApps).toHaveLength(0);
+    await Promise.all([
+      call(harness, "session/lifecycle/ensureReady"),
+      call(harness, "session/lifecycle/ensureReady"),
+    ]);
+    expect(harness.createdApps).toHaveLength(1);
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "ready" });
+    await call(harness, "session/lifecycle/restart");
+    expect(harness.createdApps).toHaveLength(2);
+    await call(harness, "session/lifecycle/stop");
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "unloaded" });
+    expect(await harness.store.getSession(SESSION_ID)).toBeTruthy();
+    expect(await harness.store.messages({ sessionID: SESSION_ID })).toHaveLength(2);
+  });
+
+  it("restarts an actively subscribed session and rebuilds its publisher", async () => {
+    await subscribeConversation(harness.server, "subscribe", "desktop");
+    const response = await harness.server.handleMessage({
+      id: "restart",
+      method: "session/lifecycle/restart" as never,
+      params: { sessionId: SESSION_ID },
+    });
+    expect(response).toMatchObject({ result: { completed: true } });
+    expect(harness.createdApps).toHaveLength(2);
+    await subscribeConversation(harness.server, "resubscribe", "desktop");
+    expect(harness.sessions.has(SESSION_ID)).toBe(true);
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "ready" });
+  });
+  it("reports partial initialization and joins legacy resume with lifecycle activation", async () => {
+    harness.store.close();
+    const entered = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<void>();
+    harness = await bootServer(join(root, "sessions.sqlite"), {
+      poolOptions: { highWaterCount: 16, targetCount: 8 },
+      onApp: (app) => {
+        const resume = app.resume.bind(app);
+        app.resume = async (...args) => {
+          entered.resolve();
+          await gate.promise;
+          return resume(...args);
+        };
+      },
+    });
+    const first = call(harness, "session/lifecycle/ensureReady");
+    await entered.promise;
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "starting" });
+    const legacy = call(harness, "session/resume");
+    const stop = await harness.server.handleMessage({
+      id: "conflict",
+      method: "session/lifecycle/stop",
+      params: { sessionId: SESSION_ID },
+    });
+    expect(stop).toMatchObject({ error: { data: { code: "conflict" } } });
+    gate.resolve();
+    await Promise.all([first, legacy]);
+    expect(harness.createdApps).toHaveLength(1);
+  });
+
+  it("does not recreate an instance after a close failure, including the legacy resume path", async () => {
+    harness.store.close();
+    harness = await bootServer(join(root, "sessions.sqlite"), {
+      poolOptions: { highWaterCount: 16, targetCount: 8 },
+      appOverrides: {
+        close: async () => {
+          throw new Error("resource still owned");
+        },
+      },
+    });
+    await call(harness, "session/lifecycle/ensureReady");
+    await expect(call(harness, "session/lifecycle/stop")).rejects.toThrow();
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "faulted" });
+    for (const method of [
+      "session/resume",
+      "session/lifecycle/ensureReady",
+      "session/lifecycle/restart",
+      "session/lifecycle/stop",
+    ]) {
+      const response = await harness.server.handleMessage({
+        id: method,
+        method: method as never,
+        params: { sessionId: SESSION_ID },
+      });
+      expect(response).toMatchObject({ error: { data: { code: "recoveryRequired" } } });
+    }
+    expect(harness.createdApps).toHaveLength(1);
+  });
+
+  it("ignores callbacks queued by the previous instance after it is released", async () => {
+    harness.store.close();
+    let emit: ((event: never) => void) | undefined;
+    harness = await bootServer(join(root, "sessions.sqlite"), {
+      poolOptions: { highWaterCount: 16, targetCount: 8 },
+      onApp: (app) => {
+        app.runtime.subscribeEvents = (handlers) => {
+          emit = (event) => {
+            handlers.onSessionEvent?.(event);
+          };
+          return () => {};
+        };
+      },
+    });
+    await call(harness, "session/lifecycle/ensureReady");
+    const emitOld = emit!;
+    await call(harness, "session/lifecycle/restart");
+    // 未消费的旧 callback 不能解析事件，更不能写入新 publisher。
+    expect(() =>
+      emitOld({
+        get type() {
+          throw new Error("stale event consumed");
+        },
+      } as never),
+    ).not.toThrow();
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "ready" });
+  });
+  it("owns a materialized app even when event subscription fails before initialization finishes", async () => {
+    harness.store.close();
+    let closed = 0;
+    harness = await bootServer(join(root, "sessions.sqlite"), {
+      poolOptions: { highWaterCount: 16, targetCount: 8 },
+      onApp: (app) => {
+        app.runtime.subscribeEvents = () => {
+          throw new Error("subscribe failed");
+        };
+      },
+      appOverrides: {
+        close: async () => {
+          closed += 1;
+          throw new Error("resource still owned");
+        },
+      },
+    });
+    await expect(call(harness, "session/lifecycle/ensureReady")).rejects.toThrow();
+    expect(closed).toBe(1);
+    expect(await call(harness, "session/lifecycle/getState")).toMatchObject({ state: "faulted" });
   });
 });

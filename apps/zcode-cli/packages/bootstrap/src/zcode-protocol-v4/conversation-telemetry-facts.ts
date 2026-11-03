@@ -339,6 +339,13 @@ export class ConversationTelemetryFactNormalizer {
         return conversationTelemetryFactSchema.parse({
           ...base,
           kind: "turn.started",
+          ...((payload.intent?.inputOrigin ?? payload.inputOrigin)
+            ? { inputOrigin: payload.intent?.inputOrigin ?? payload.inputOrigin }
+            : {}),
+          ...(runtimeMetadata?.modelName ? { modelName: runtimeMetadata.modelName } : {}),
+          ...(runtimeMetadata?.modelProvider
+            ? { modelProvider: runtimeMetadata.modelProvider }
+            : {}),
           ...(inputId ? { sourceCommandId: inputId } : {}),
           ...automationAdmission(inputId, optionalString(payload.automationId)),
           ...(optionalString(payload.offPeakTaskId)

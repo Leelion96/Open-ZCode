@@ -277,8 +277,55 @@ describe("AgentRuntime Dream handler", () => {
     expect((runtime as any).pendingMemoryUpdate).toBeUndefined();
 
     await runtime.executeTurn("again");
-    expect(mainRequestTexts[2]).not.toContain("Background memory consolidation updated");
+    // memory_update 是输入附件，写入历史后留在前缀里，不再重复产出。
+    expect(mainRequestTexts[2]?.match(/Background memory consolidation updated/g)).toHaveLength(1);
     expect(dreamTurn).toBe(2);
+  });
+
+  it("keeps a memory update for the next request when persisting it fails", async () => {
+    const sessionStore = createMemorySessionStore([]);
+    const savePart = sessionStore.savePart!.bind(sessionStore);
+    let failMemoryUpdateWrite = true;
+    sessionStore.savePart = async (part) => {
+      const isMemoryUpdate = JSON.stringify(part.metadata ?? {}).includes('"memory_update"');
+      if (failMemoryUpdateWrite && isMemoryUpdate) {
+        failMemoryUpdateWrite = false;
+        throw new Error("injected memory_update write failure");
+      }
+      await savePart(part);
+    };
+    const requestTexts: string[] = [];
+    const runtime = createTestAgentRuntime(
+      createSessionId("memory-update-persist-failure"),
+      { mode: "yolo", workingDirectory: WORKSPACE_PATH },
+      {
+        eventStore: createTestSessionEventStore(),
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            requestTexts.push(providerMessagesToText(request.messages));
+            return textResult(observation.model, "ok");
+          },
+        }),
+        now: () => new Date(NOW),
+        sessionStore,
+        toolRegistry: createToolRegistry(),
+      },
+    );
+    (runtime as any).pendingMemoryUpdate = {
+      inContextPaths: [],
+      paths: ["/memory/fact.md"],
+      source: "dream",
+      summary: "Updated fact",
+    };
+
+    await runtime.executeTurn("first").catch(() => undefined);
+    // 写库失败的轮次不发请求；这条一次性更新留到下一次收集。
+    expect(requestTexts).toHaveLength(0);
+    await runtime.executeTurn("second");
+    expect(requestTexts.at(-1)).toContain(
+      "Background memory consolidation updated your memory directory: Updated fact",
+    );
+    expect((runtime as any).pendingMemoryUpdate).toBeUndefined();
   });
 
   it("requires five transcript files newer than the last consolidation", async () => {

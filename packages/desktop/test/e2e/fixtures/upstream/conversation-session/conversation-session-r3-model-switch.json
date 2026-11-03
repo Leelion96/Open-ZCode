@@ -20,12 +20,10 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "r3-switch-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"R3 model switch\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"r3-switch-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"R3 model switch\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {

@@ -22,16 +22,13 @@ Workspace instructions appear later so they can narrow or override broad user de
 
 ## Prompt Shape
 
-Each loaded source is rendered as its own labeled block under the request-level `# agentsMd` section:
+Each loaded source renders as its own block inside the `context_prefix` announcement, in merge order:
 
-- `Contents of <path> (user default instructions):`
-- `Contents of <path> (workspace instructions):`
+- `Contents of <path> (user's private global instructions for all projects):`
+- `Contents of <path> (project instructions, checked into the codebase):`
 
-The combined block is still request-level meta user context and continues to precede `# currentDate`.
-`# agentsMd` names the aggregated request-user-context
-field rather than a specific source file. It is rendered exactly once whenever that field contains
-at least one non-empty source. A non-empty Project Memory index therefore also renders the title,
-even when no AGENTS.md source is loaded.
+The full shape (fixed preamble, Project Memory index, order against other announcements) is defined in
+`docs/design/v2/loop/meta-user-context.md`. This document only owns source resolution and merge order.
 
 ## Compatibility
 

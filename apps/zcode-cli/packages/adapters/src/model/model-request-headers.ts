@@ -1,13 +1,20 @@
 const MODEL_AUTH_HEADER_NAMES = new Set(["authorization", "x-api-key"]);
 export const MODEL_QUERY_SOURCE_HEADER = "x-zcode-query-source";
+/** 会话能力标签（docs/design/v2/model/session-features-header.md）。 */
+export const MODEL_SESSION_FEATURES_HEADER = "x-zcode-session-features";
+/** 只能由调用上下文生成的归因头：provider 静态值和 SDK 默认值一律剔除，缺失时也不回退。 */
+const MODEL_CONTEXT_OWNED_HEADER_NAMES = new Set([
+  MODEL_QUERY_SOURCE_HEADER,
+  MODEL_SESSION_FEATURES_HEADER,
+]);
 
-/** 请求用途由调用上下文拥有，不能从 Provider 静态配置或 SDK 默认 header 继承。 */
-export function withoutModelQuerySourceHeader(
+/** 请求用途和会话能力由调用上下文拥有，不能从 Provider 静态配置或 SDK 默认 header 继承。 */
+export function withoutContextOwnedModelHeaders(
   headers: Readonly<Record<string, string>> | undefined,
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(headers ?? {}).filter(
-      ([name]) => name.toLowerCase() !== MODEL_QUERY_SOURCE_HEADER,
+      ([name]) => !MODEL_CONTEXT_OWNED_HEADER_NAMES.has(name.toLowerCase()),
     ),
   );
 }

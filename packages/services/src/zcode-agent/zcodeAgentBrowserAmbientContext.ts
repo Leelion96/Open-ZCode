@@ -23,6 +23,7 @@ export interface BrowserAmbientContextExecutor {
     requestId: string;
     browserId?: string;
     browserGeneration?: number;
+    controlScopeId?: string;
     sessionId: string;
     turnId?: string;
     workspaceKey: string;

@@ -1,3 +1,5 @@
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+
 export interface ComputerUseRuntimeContext {
   sessionId: string;
   runtimeScope: "main" | "subagent";
@@ -19,7 +21,8 @@ export interface ComputerUseRuntimeExecuteInput {
 }
 
 export interface ComputerUseRuntime {
-  execute(input: ComputerUseRuntimeExecuteInput): Promise<unknown>;
+  // 公共 broker 读取 MCP 元数据；占位返回同一结果类型，避免导出后丢失契约。
+  execute(input: ComputerUseRuntimeExecuteInput): Promise<CallToolResult>;
   closeSession(context: ComputerUseRuntimeContext): Promise<void>;
   dispose(): Promise<void>;
 }

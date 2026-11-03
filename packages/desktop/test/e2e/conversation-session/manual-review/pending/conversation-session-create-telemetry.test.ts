@@ -1,4 +1,9 @@
-import { clearAppData, waitForDefaultWorkspaceReady } from "../../../helpers/desktop-app.js";
+import {
+  clearAppData,
+  DEFAULT_WORKSPACE,
+  waitForDefaultWorkspaceReady,
+} from "#e2e/helpers/desktop-app";
+import { startDraftFromProject } from "#e2e/helpers/project-sidebar";
 import {
   prepareV4ConversationE2E,
   selectV4TaskById,
@@ -19,6 +24,8 @@ describe("TEL11 session_create", () => {
     this.timeout(360_000);
     await waitForDefaultWorkspaceReady(90_000);
     await prepareV4ConversationE2E();
+    // 原因：准备 helper 可复用启动空态；只有真实点击项目新建才产生 project 来源。
+    await startDraftFromProject(DEFAULT_WORKSPACE);
     const telemetryFetch = await browser.electron.mock("net", "fetch");
     await telemetryFetch.mockResolvedValue({ ok: true, status: 204 });
     const reports = async (elementName = "session_create") => {

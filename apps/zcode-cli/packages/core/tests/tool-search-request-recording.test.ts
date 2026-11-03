@@ -200,9 +200,14 @@ it.each(
       expect(records.every((record) => countContinuePrompts(record.messages) === 0)).toBe(true);
       const compactRecords = records.filter((record) => record.querySource === "compact");
       expect(compactRecords).toHaveLength(1);
+      // 摘要指令紧跟 Continue 时，按相邻 user 规则在 Continue 末尾补换行；比较时忽略这个分隔。
       expect(withoutCacheControl(compactRecords[0]!.messages)).toEqual(
         withoutCacheControl(
-          actual.messages.filter((message) => message.content !== OUTPUT_TOKEN_CONTINUE_PROMPT),
+          actual.messages.filter(
+            (message) =>
+              typeof message.content !== "string" ||
+              message.content.replace(/\n$/u, "") !== OUTPUT_TOKEN_CONTINUE_PROMPT,
+          ),
         ),
       );
     } finally {

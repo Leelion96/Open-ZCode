@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("harness", {
   v4: (method: string, params: unknown) => ipcRenderer.invoke("fixture-v4", method, params),
   event: (value: unknown) => ipcRenderer.invoke("fixture-event", value),
   owner: () => ipcRenderer.invoke(PlatformChannels.PluginSandboxOwnerWebContentsId),
+  copyImage: (request: unknown) =>
+    ipcRenderer.invoke(PlatformChannels.PluginSandboxCopyImage, request),
   dispose: (id: string, generation: number) =>
     ipcRenderer.invoke(PlatformChannels.PluginSandboxDispose, id, generation),
 });

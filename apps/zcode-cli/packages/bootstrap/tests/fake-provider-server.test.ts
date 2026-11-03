@@ -244,7 +244,9 @@ describe.each(FORMATS)("fake provider server — %s", (apiFormat) => {
         event.type === "model_retry_scheduled",
     );
     expect(scheduled).toHaveLength(1);
-    expect(scheduled[0]?.delayMs).toBe(20);
+    // 默认开 jitter：retry-after 之上最多往后加 20%（docs/bigmodel-business-error-retry.md），绝不提前。
+    expect(scheduled[0]?.delayMs).toBeGreaterThanOrEqual(20);
+    expect(scheduled[0]?.delayMs).toBeLessThanOrEqual(24);
     expect(scheduled[0]?.reason).toBe("rate_limited");
     expect(server.requests.map((entry) => entry.servedStatus)).toEqual([429, 200]);
   });

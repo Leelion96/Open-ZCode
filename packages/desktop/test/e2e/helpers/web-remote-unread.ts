@@ -106,7 +106,9 @@ export async function showMobileTaskHome(page: Page) {
 }
 
 /** 配对凭据只经内存 loopback receiver，不进入 WebDriver 返回值与日志。 */
-export async function obtainUnreadPairingUrl(): Promise<string> {
+export async function obtainUnreadPairingUrl(
+  expectedOrigin = "http://127.0.0.1:5173",
+): Promise<string> {
   let receive!: (url: string) => void;
   const pairing = new Promise<string>((resolveUrl) => {
     receive = resolveUrl;
@@ -156,7 +158,7 @@ export async function obtainUnreadPairingUrl(): Promise<string> {
       { timeout: 60_000, timeoutMsg: "MRO03 pairing link unavailable" },
     );
     const url = await pairing;
-    if (new URL(url).origin !== "http://127.0.0.1:5173")
+    if (new URL(url).origin !== expectedOrigin)
       throw new Error("MRO03 requires loopback Web frontend");
     await browser.keys("Escape");
     return url;

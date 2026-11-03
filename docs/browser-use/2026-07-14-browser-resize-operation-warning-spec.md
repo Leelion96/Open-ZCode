@@ -6,7 +6,7 @@
 | --------------------- | ----------------------------------------------------------------------------------------------- |
 | Change                | Browser Use 操作进行时，若用户或外部布局导致对应可见 tab 的浏览器区域实际尺寸变化，网页内容短暂变暗并在面板顶部显示一次非阻塞 warning 提示；模型主动打开 Browser 或 set/reset viewport 不提示 |
 | User-visible surfaces | Desktop browser-use side-pane tab                                                               |
-| Existing docs         | `2026-07-10-browser-use-codex-parity-spec.md`、`browser-use-codex-parity-coverage-matrix.md`    |
+| Existing docs         | `2026-07-10-browser-use-spec.md`、`browser-use-coverage-matrix.md`    |
 | Existing code owners  | `browserUseOperationUntil`（side-pane tab）、`UnifiedBrowserView`（浏览器区域）                 |
 | Out of scope          | 中断工具、自动重做 snapshot、CUA 坐标修正、main/host/agent 协议变化、手机端独立 browser runtime |
 

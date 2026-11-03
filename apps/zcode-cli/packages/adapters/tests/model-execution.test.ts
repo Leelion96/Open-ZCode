@@ -6,10 +6,89 @@ import { createAnthropicCompatFetch } from "../src/model/anthropic-stream-compat
 import {
   ProviderBusinessError,
   createProviderBusinessErrorFetch,
+  observeProviderFetch,
 } from "../src/model/model-execution.js";
 import { TestProviderConfigFixture } from "./test-provider-config.js";
 
 describe("AI SDK Provider execution", () => {
+  it("旁路观测包装实际网络出口，不替换响应内容", async () => {
+    const requests: string[] = [];
+    const server = http.createServer((request, response) => {
+      request.resume();
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          id: "m",
+          type: "message",
+          role: "assistant",
+          model: "test",
+          content: [{ type: "text", text: "observed" }],
+          stop_reason: "end_turn",
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+      );
+    });
+    try {
+      const baseURL = await listenServer(server);
+      const fixture = new TestProviderConfigFixture(
+        { env: {}, providers: { example: { kind: "anthropic", baseURL, apiKey: "test" } } },
+        {
+          observeTransport: (network) => async (url, init) => {
+            requests.push(String(url));
+            const response = await network(url, init);
+            expect(response.bodyUsed).toBe(false);
+            return response;
+          },
+        },
+      );
+      const result = await generateText({
+        model: fixture.resolve("example/test").model,
+        prompt: "hello",
+      });
+      expect(result.text).toBe("observed");
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toContain(baseURL);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("本地 fetch 诊断关联 requestId，只记录响应头边界且不消费正文", async () => {
+    const info = vi.fn();
+    const response = new Response("private response");
+    const network = vi.fn(async () => response);
+    const fetch = observeProviderFetch(
+      network,
+      {
+        info,
+        debug: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        child: vi.fn(),
+      },
+      "provider",
+    );
+    const headers = {
+      "x-request-id": "attempt-1",
+      "x-query-id": "command",
+      "x-zcode-query-source": "main_turn",
+      authorization: "secret",
+    };
+    expect(await fetch("https://example.com/messages", { headers })).toBe(response);
+    expect(response.bodyUsed).toBe(false);
+    expect(info.mock.calls.map((call) => call[1]?.event)).toEqual([
+      "ttft.model.fetch_started",
+      "ttft.model.response_headers",
+    ]);
+    expect(info.mock.calls[1]?.[1]).toMatchObject({
+      requestId: "attempt-1",
+      queryId: "command",
+      statusCode: 200,
+    });
+    expect(JSON.stringify(info.mock.calls)).not.toContain("secret");
+    expect(JSON.stringify(info.mock.calls)).not.toContain("private response");
+  });
   it("adds Authorization alongside x-api-key for Anthropic provider requests", async () => {
     const receivedHeaders: http.IncomingHttpHeaders[] = [];
     const endpointRoutingPort = {
@@ -555,7 +634,7 @@ describe("AI SDK Provider execution", () => {
 });
 
 describe("createAnthropicCompatFetch", () => {
-  it("filters assistant-side bare tool_result content blocks from Anthropic SSE", async () => {
+  it("rewrites provider built-in server tools into provider-executed MCP blocks", async () => {
     const fetch = createAnthropicCompatFetch(async () =>
       sseResponse([
         sseFrame("message_start", {
@@ -619,11 +698,194 @@ describe("createAnthropicCompatFetch", () => {
     const response = await fetch("https://example.test/v1/messages");
     const text = await response.text();
 
-    expect(text).toContain('"type":"server_tool_use"');
+    // AI SDK 只解析固定名单的 server_tool_use，也不接受裸 tool_result；改写成 mcp 块后
+    // 才能作为 provider 执行的调用和结果进入历史与界面。
+    expect(text).not.toContain('"type":"server_tool_use"');
+    expect(text).toContain(
+      '{"type":"mcp_tool_use","id":"call_image","name":"analyze_image","input":{},"server_name":"zcode-provider-builtin"}',
+    );
+    expect(text).toContain(
+      '{"type":"mcp_tool_result","tool_use_id":"call_image","is_error":false,"content":[{"type":"text","text":"[\\"您尚未登录\\"]"}]}',
+    );
+    expect(text).not.toContain('"type":"tool_result"');
     expect(text).toContain("Output already summarized");
     expect(text).toContain("The image says");
+  });
+
+  it("drops server-rendered markdown copies around provider built-in tools", async () => {
+    const block = (index: number, text: string) => [
+      sseFrame("content_block_start", {
+        type: "content_block_start",
+        index,
+        content_block: { type: "text", text: "" },
+      }),
+      // 前缀被拆在多个 delta 里，缓冲需要跨 delta 判断。
+      sseFrame("content_block_delta", {
+        type: "content_block_delta",
+        index,
+        delta: { type: "text_delta", text: text.slice(0, 2) },
+      }),
+      sseFrame("ping", { type: "ping" }),
+      sseFrame("content_block_delta", {
+        type: "content_block_delta",
+        index,
+        delta: { type: "text_delta", text: text.slice(2) },
+      }),
+      sseFrame("content_block_stop", { type: "content_block_stop", index }),
+    ];
+    const fetch = createAnthropicCompatFetch(async () =>
+      sseResponse([
+        ...block(0, "先看图。"),
+        ...block(1, "**🌐 Built-in Tool: analyze_image** *Executing on server...*"),
+        sseFrame("content_block_start", {
+          type: "content_block_start",
+          index: 2,
+          content_block: {
+            type: "server_tool_use",
+            id: "call_x",
+            name: "analyze_image",
+            input: {},
+          },
+        }),
+        sseFrame("content_block_stop", { type: "content_block_stop", index: 2 }),
+        ...block(3, "**Output:** rendered result"),
+        sseFrame("content_block_start", {
+          type: "content_block_start",
+          index: 4,
+          content_block: { type: "tool_result", tool_use_id: "call_x", content: "result" },
+        }),
+        sseFrame("content_block_stop", { type: "content_block_stop", index: 4 }),
+        ...block(5, "**结论**：看完了。"),
+        // 没有配对调用的裸 tool_result 仍按旧规则丢弃。
+        sseFrame("content_block_start", {
+          type: "content_block_start",
+          index: 6,
+          content_block: { type: "tool_result", tool_use_id: "call_unknown", content: "orphan" },
+        }),
+        sseFrame("content_block_stop", { type: "content_block_stop", index: 6 }),
+      ]),
+    );
+
+    const text = await (await fetch("https://example.test/v1/messages")).text();
+
+    expect(text).toContain('"text":"先看"');
+    expect(text).not.toContain("Built-in Tool");
+    expect(text).not.toContain("rendered result");
+    expect(text).not.toContain('"index":1');
+    expect(text).not.toContain('"index":3');
+    // 结果之后的加粗正文是模型自己的回答，必须保留。
+    expect(text).toContain("看完了");
+    expect(text).toContain('"type":"mcp_tool_result"');
+    expect(text).not.toContain("orphan");
+  });
+
+  it("keeps bold text that is not followed by a provider built-in tool", async () => {
+    const fetch = createAnthropicCompatFetch(async () =>
+      sseResponse([
+        sseFrame("content_block_start", {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "text", text: "" },
+        }),
+        sseFrame("content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "**🌐 not a tool header**" },
+        }),
+        sseFrame("content_block_stop", { type: "content_block_stop", index: 0 }),
+        sseFrame("message_delta", {
+          type: "message_delta",
+          delta: { stop_reason: "end_turn", stop_sequence: null },
+          usage: { output_tokens: 1 },
+        }),
+      ]),
+    );
+
+    const text = await (await fetch("https://example.test/v1/messages")).text();
+
+    expect(text).toContain("not a tool header");
+    expect(text.indexOf("not a tool header")).toBeLessThan(text.indexOf("message_delta"));
+  });
+
+  it("rewrites provider built-in tools in non-streaming JSON responses", async () => {
+    const fetch = createAnthropicCompatFetch(async () =>
+      Response.json({
+        id: "msg_json",
+        type: "message",
+        role: "assistant",
+        model: "glm-5.3",
+        content: [
+          { type: "text", text: "先看图。" },
+          { type: "text", text: "**🌐 Built-in Tool: analyze_image**" },
+          { type: "server_tool_use", id: "call_j", name: "analyze_image", input: { prompt: "p" } },
+          { type: "text", text: "**Output:** rendered" },
+          { type: "tool_result", tool_use_id: "call_j", content: "result" },
+          { type: "text", text: "答案" },
+        ],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }),
+    );
+
+    const body = await (await fetch("https://example.test/v1/messages")).json();
+
+    expect(body.content).toEqual([
+      { type: "text", text: "先看图。" },
+      {
+        type: "mcp_tool_use",
+        id: "call_j",
+        name: "analyze_image",
+        input: { prompt: "p" },
+        server_name: "zcode-provider-builtin",
+      },
+      {
+        type: "mcp_tool_result",
+        tool_use_id: "call_j",
+        is_error: false,
+        content: [{ type: "text", text: "result" }],
+      },
+      { type: "text", text: "答案" },
+    ]);
+  });
+
+  it("drops a bare tool_result that no server tool call paired", async () => {
+    const fetch = createAnthropicCompatFetch(async () =>
+      sseResponse([
+        sseFrame("content_block_start", {
+          type: "content_block_start",
+          index: 2,
+          content_block: { type: "tool_result", tool_use_id: "call_orphan", content: "orphan" },
+        }),
+        sseFrame("content_block_delta", {
+          type: "content_block_delta",
+          index: 2,
+          delta: { type: "text_delta", text: "orphan delta" },
+        }),
+        sseFrame("content_block_stop", { type: "content_block_stop", index: 2 }),
+        sseFrame("content_block_start", {
+          type: "content_block_start",
+          index: 3,
+          content_block: { type: "text", text: "" },
+        }),
+        sseFrame("content_block_delta", {
+          type: "content_block_delta",
+          index: 3,
+          delta: { type: "text_delta", text: "answer" },
+        }),
+        sseFrame("content_block_stop", { type: "content_block_stop", index: 3 }),
+      ]),
+    );
+
+    const response = await fetch("https://example.test/v1/messages");
+    const text = await response.text();
+
+    // 没有对应服务端调用的裸 tool_result 仍是非标块：start、delta、stop 一并丢弃，不改写成 MCP 结果。
     expect(text).not.toContain('"type":"tool_result"');
-    expect(text).not.toContain('"index":4');
+    expect(text).not.toContain("mcp_tool_result");
+    expect(text).not.toContain("orphan");
+    expect(text).not.toContain('"index":2');
+    expect(text).toContain("answer");
   });
 
   it("keeps typed Anthropic tool result blocks", async () => {

@@ -26,6 +26,20 @@ export const HookOutcome = {
 
 export type HookOutcome = (typeof HookOutcome)[keyof typeof HookOutcome];
 
+/**
+ * hook 自身出错（非 0 且非 2 退出、超时、输出 JSON 不合 schema）时怎么办。缺省 `allow`：
+ * 放行，与引入本字段之前相同。`deny`：只对 PreToolUse 生效，这次出错等同于 hook 以退出码 2
+ * 拦截了工具调用。用户中断、未受信任而未运行的工作区 hook、async hook 不受它影响。
+ */
+export const HookOnError = {
+  Allow: "allow",
+  Deny: "deny",
+} as const;
+
+export type HookOnError = (typeof HookOnError)[keyof typeof HookOnError];
+
+export const HookOnErrorSchema = z.enum([HookOnError.Allow, HookOnError.Deny]);
+
 export const HookSourceKind = {
   User: "user",
   Plugin: "plugin",
@@ -304,6 +318,7 @@ export interface HookCommandConfig {
   async?: boolean;
   command: string;
   enabled?: boolean;
+  onError?: HookOnError;
   plugin?: HookPluginContext;
   shell?: true | string;
   /** Runtime-only provenance; the public config schema deliberately strips this field. */
@@ -318,6 +333,7 @@ export interface HookProcessConfig {
   args?: string[];
   command: string;
   enabled?: boolean;
+  onError?: HookOnError;
   plugin?: HookPluginContext;
   /** Runtime-only provenance; the public config schema deliberately strips this field. */
   source?: HookConfigSource;
@@ -381,6 +397,7 @@ export const HookProcessConfigSchema = z.object({
   args: z.array(z.string()).optional(),
   timeoutMs: z.number().int().positive().optional(),
   statusMessage: z.string().optional(),
+  onError: HookOnErrorSchema.optional(),
 });
 
 export const HookCommandConfigSchema = z.object({
@@ -392,6 +409,7 @@ export const HookCommandConfigSchema = z.object({
   timeout: z.number().positive().optional(),
   timeoutMs: z.number().int().positive().optional(),
   statusMessage: z.string().optional(),
+  onError: HookOnErrorSchema.optional(),
 });
 
 export const HookConfigSchema = z.discriminatedUnion("type", [

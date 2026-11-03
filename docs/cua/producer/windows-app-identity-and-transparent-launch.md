@@ -269,6 +269,8 @@ resolveTarget(appRef)
 
 `settleFreshlyLaunchedTree` 必须移植。macOS 那次的根因（`nativeAxSource.ts:1731`）在 Windows 同样成立：刚拉起的应用 AX 树还在长，模型在第一个 cell 记下的元素索引，到下一个 cell 就指向别的节点。实测画图窗口在激活后约 3.5s 内出现。
 
+拉起后等窗的预算是 **10 秒**（500ms × 20 次）。原值 3 秒（沿用 macOS 节奏）不够：2026-10-26 真机实测 PowerPoint（KMS 重装当日冷启动）从 `launchApplicationAsync` 返回 pid 到第一个可见窗口出现要 **7.8 秒**，3 秒预算让一次已经成功的拉起被报成解析失败，模型被错误文案带去改名字。超时也必须是**专属文案**，不得落进通用的 "could not be resolved"：报错要如实说明「已按名字拉起 <name>（pid X），窗口 N 秒内未出现，应用可能仍在启动」，并建议按同一引用（名字或 pid X）稍后重试绑定 —— 此刻进程已在启动路上，窗口出现后重试通常即可绑上。措辞不点具体方法名（对齐 mac 2026-09-16 纪律）：调用面可能是 SDK 的 `getApp` 也可能是 broker 方法，只给两边都真能走的参数级指引。这条口径对齐 macOS 侧「拉起完成的 pid 即身份，窗口慢不算解析失败」的设计（`nativeAxSource.ts` 的 LaunchServices pid 直取）。
+
 拉起器 pid ≠ GUI pid 的情况沿用既有机制：`processExecutablePath(launcherPid)` 拿 canonical 路径后在活进程里重解（`electronNativeBackend.ts:1683-1700` 已有这套逻辑，搬到 win.ts）。
 
 `AppsFolder` 枚举结果在 Helper 生命周期内缓存；**名字 miss 时重枚举一次再判失败**，这样新装的应用不需要重启 Helper。

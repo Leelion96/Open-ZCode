@@ -188,7 +188,8 @@ describe("会话区 BG25/O18/O19 coordinator 与 TaskOutput 专属卡片 E2E", (
         marker: "E2E_SUBAGENT_COORDINATOR_QUESTION_PAYLOAD",
         role: mcs ? "system" : "user",
         evidenceLabel: label,
-        body: "E2E_SUBAGENT_COORDINATOR_QUESTION\n\nE2E_SUBAGENT_COORDINATOR_QUESTION_PAYLOAD",
+        // summary 只用于 UI 预览，child 只收到 message。
+        body: "E2E_SUBAGENT_COORDINATOR_QUESTION_PAYLOAD",
       });
       const peerEvidence = await getUpstreamRequestEvidence(
         { includes: ["<subagent-message>"] },
@@ -250,6 +251,11 @@ describe("会话区 BG25/O18/O19 coordinator 与 TaskOutput 专属卡片 E2E", (
   it("组合渲染 TaskOutput 未知 ID 与 child RespondToCoordinator 输入错误", async function () {
     this.timeout(E2E_TIMEOUT_MS);
 
+    // Bug 原因：beforeEach 的全局新建会按当前导航决定 cwd。单独运行时它分配独立目录，
+    // child Bash 按相对路径等待 release 文件，而测试写在 ZCodeProject 下，child 永远等不到；
+    // 排在 O18 之后才因上一个用例留在夹具项目而通过。这里显式回到夹具项目草稿。
+    await prepareV4ConversationE2E();
+    await selectCurrentV4FullAccessMode();
     const requestCountBefore = await getUpstreamRequestRecordCount();
     await sendV4Prompt(
       "E2E_TOOL_RENDERER_ERROR_CARDS: Launch the controlled background child and wait for E2E_ERROR_AGENT_COMPLETED.",

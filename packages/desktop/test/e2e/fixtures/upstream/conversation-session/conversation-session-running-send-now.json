@@ -81,14 +81,12 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": [
-          "E2E_RUNNING_SEND_NOW_HEAD",
-          "The user sent a new message while you were working:",
-          "<system-reminder>",
-          "Address the message above as you continue this turn."
+          "E2E_RUNNING_SEND_NOW_HEAD"
         ],
         "bodyExcludes": [
           "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
+          "CRITICAL: Respond with TEXT ONLY",
+          "The user sent a new message while you were working:"
         ],
         "lastUserMessageIncludes": [
           "E2E_RUNNING_SEND_NOW_HEAD"
@@ -324,6 +322,105 @@
           "inputTokens": 140,
           "outputTokens": 12,
           "text": "upstream-e2e-ok"
+        }
+      }
+    },
+    {
+      "id": "upstream-running-send-now-segment-read",
+      "description": "M07m 当前轮先完成一次 Read，形成工作段。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "当前轮必须先有工具工作，才能观察立即发送后工作段归属哪一轮。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_RUNNING_SEND_NOW_SEGMENT_BASE_"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_READONLY_TOOL_FILE_CONTENT",
+          "E2E_RUNNING_SEND_NOW_SEGMENT_ITEM_"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_running_send_now_segment_read",
+          "messageId": "msg_running_send_now_segment_read",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-running-send-now-segment-hold",
+      "description": "M07m Read 结果后的下一次请求保持运行，等待用户点立即。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "固定 Read 结果后的 running 窗口，让普通 queue 项在同一轮内入队并被立即发送抢占。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_RUNNING_SEND_NOW_SEGMENT_BASE_", "E2E_READONLY_TOOL_FILE_CONTENT"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_RUNNING_SEND_NOW_SEGMENT_ITEM_"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 60000,
+        "text": {
+          "id": "upstream-e2e-running-send-now-segment-hold",
+          "inputTokens": 120,
+          "outputTokens": 8,
+          "text": "send-now-segment-should-be-interrupted"
+        }
+      }
+    },
+    {
+      "id": "upstream-running-send-now-segment-selected",
+      "description": "M07m 被点的 queue 项带着原轮 Read 结果开始下一轮。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "只在请求同时带原轮 Read 结果和被点项时返回回复，证明抢占后才消费被点项。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_RUNNING_SEND_NOW_SEGMENT_BASE_",
+          "E2E_READONLY_TOOL_FILE_CONTENT",
+          "E2E_RUNNING_SEND_NOW_SEGMENT_ITEM_"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "send-now-segment-should-be-interrupted",
+          "The user sent a new message while you were working:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-running-send-now-segment-selected",
+          "inputTokens": 160,
+          "outputTokens": 8,
+          "text": "send-now-segment-reply-ok"
         }
       }
     }

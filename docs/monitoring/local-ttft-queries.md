@@ -54,14 +54,15 @@ Trace service.name 为 `zcode-local-ttft`。以 `observation_id` 精确过滤得
 
 ## 本地复现
 
-先运行 `node packages/desktop/scripts/ttft-otlp-receiver.mjs`，接收器仅监听 localhost:14318，最多保留 512 批。随后运行：
+TTFT E2E 的 worker 在启动 Electron 前自动启动隔离 OTLP 接收器，监听 loopback 随机端口，最多保留 512 批；当前 worker 的 App/Host/CLI 继承该出口与本地诊断开关，退出时关闭接收器并恢复环境。用例读取同一地址，不依赖预先运行的固定端口服务。执行命令：
 
 ```sh
-ZCODE_E2E_MANUAL_REVIEW=1 ZCODE_LOCAL_TTFT_ENABLED=1 \
-OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318 \
+ZCODE_E2E_MANUAL_REVIEW=1 \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-ttft-stages.json \
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-ttft-stages.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-ttft-stages.test.ts'
 ```
+
+手工诊断仍可单独运行 `node packages/desktop/scripts/ttft-otlp-receiver.mjs`，默认监听 localhost:14318，再给手动启动的应用设置 `ZCODE_LOCAL_TTFT_ENABLED=1` 与 `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:14318`。
 
 该候选用例操作真实 Composer，断言最后收到的 protobuf Trace/Metric。第二场景在唯一的公开 transport seam 注入 250ms 命令延迟与 7s ACK 延迟；模型 fixture 在 250ms 首思考、8s 首正文，检查 root 在 ACK/terminal 之前到达且已知延迟归因正确。fault seam 只在 E2E build 生效，不生成伪造事实。
 

@@ -16,11 +16,19 @@ interface UseCommandsOptions {
   commandsService: ICommandsService;
   workspacePath?: string;
   workspaceIdentity?: string;
+  /** 远端「用户」的 authority；同 home 的两台设备只靠它区分。 */
+  cacheAuthorityKey?: string;
   enabled?: boolean;
 }
 
 export function useCommands(options: UseCommandsOptions) {
-  const { commandsService, workspacePath, workspaceIdentity, enabled = true } = options;
+  const {
+    commandsService,
+    workspacePath,
+    workspaceIdentity,
+    cacheAuthorityKey,
+    enabled = true,
+  } = options;
 
   const commands = useCommandsStore((state) => state.commands);
   const userCommands = useCommandsStore((state) => state.userCommands);
@@ -31,12 +39,15 @@ export function useCommands(options: UseCommandsOptions) {
   const operatingCommandId = useCommandsStore((state) => state.operatingCommandId);
   const loadedWorkspacePath = useCommandsStore((state) => state.loadedWorkspacePath);
   const loadedWorkspaceIdentity = useCommandsStore((state) => state.loadedWorkspaceIdentity);
+  const loadedAuthorityKey = useCommandsStore((state) => state.loadedAuthorityKey);
   // commandsStore 是单例，Scope 可在同一页面切 target。投影尚未对齐当前 target 时
   // 不能把上一个 host 的命令交给调用方渲染——那些行的 filePath 属于别的主机，一旦被
-  // delete/toggle 就会拿着旧路径在当前 target 的 host 上执行。
+  // delete/toggle 就会拿着旧路径在当前 target 的 host 上执行。同 home 的两台远端「用户」
+  // 路径相同、都没有 identity，必须再比对 authority。
   const projectionMatchesTarget =
+    (loadedAuthorityKey ?? "") === (cacheAuthorityKey?.trim() || "") &&
     (loadedWorkspaceIdentity?.trim() || loadedWorkspacePath || "") ===
-    (workspaceIdentity?.trim() || workspacePath || "");
+      (workspaceIdentity?.trim() || workspacePath || "");
   const initialize = useCommandsStore((state) => state.initialize);
   const refreshStore = useCommandsStore((state) => state.refresh);
   const createStore = useCommandsStore((state) => state.createCommand);
@@ -48,8 +59,8 @@ export function useCommands(options: UseCommandsOptions) {
     if (!enabled) {
       return;
     }
-    void initialize(workspacePath, commandsService, workspaceIdentity);
-  }, [enabled, workspacePath, workspaceIdentity, commandsService, initialize]);
+    void initialize(workspacePath, commandsService, workspaceIdentity, cacheAuthorityKey);
+  }, [enabled, workspacePath, workspaceIdentity, cacheAuthorityKey, commandsService, initialize]);
 
   const refresh = useCallback(() => refreshStore(commandsService), [commandsService, refreshStore]);
 

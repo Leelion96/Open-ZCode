@@ -14,6 +14,9 @@ XLSX、DOCX 相同的通用“在外部编辑器打开”按钮；该操作离�
 
 ## 产品边界
 
+- 气泡图 tooltip 中的系列名与数值作为文本转义，禁止把 OOXML 字段直接拼成可执行 HTML。
+  预览与 PDF 打印共用已修补的 browser 渲染入口；回归场景见 [Office 预览安全边界](./office-file-preview.md#内置预览的已知注入与外链绕过修复)。
+
 - 仅支持 `.pptx`；`.ppt`、`.pptm`、加密或损坏文件不在第一期范围内。
 - 内置 PPTX 预览保持只读，不展示 DOM 编辑、PPTX 保存或协作入口。Desktop 在平台同时提供
   `printPageToPdf` 与 `saveFile` 时展示“导出为 PDF”；Web 和手机 `/remote` 不展示 Electron-only 入口。

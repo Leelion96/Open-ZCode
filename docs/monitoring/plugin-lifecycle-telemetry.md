@@ -28,7 +28,7 @@ sequenceDiagram
 
 ## 范围
 
-- `plugin_lifecycle`：install、uninstall、update、restore、configure、reset_config、enable、disable、source_add、source_remove、source_refresh。远端同步使用目标导入完成结果，不能以导出代替成功。
+- `plugin_lifecycle`：install、uninstall、update、restore、configure、reset_config、enable、disable、source_add、source_remove、source_refresh。远端同步使用目标导入完成结果，不能以导出代替成功；触发点是数据同步弹窗的插件分类（[数据同步](../remote/data-sync.md)），每个插件一条，inline 插件按批导入时耗时为批次耗时。
 - `plugin_discovery`：商店与详情实际可见；搜索在提交时上报，不能上传搜索原文。卡片曝光阈值尚未定稿，不实施。
 - `plugin_usage`：插件自身界面的打开、就绪、关闭、工具调用，与商店详情和模型工具执行分开。
 - 已有 `agent_step`：Skill 保留旧字段并补通用 plugin_id/plugin_component；MCP 从执行时 ToolEntry 的真实归属传递，禁止从工具名猜测。

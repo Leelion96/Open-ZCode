@@ -39,7 +39,8 @@ export function projectWorkspaceSettings(
   const seen = new Set<string>();
   for (const entry of directory.entries) {
     const host = hosts.get(entry.hostId);
-    if (!host?.target) continue;
+    // 与本地已删项目一致，远端已删除的入口不导出给旧版本。
+    if (!host?.target || entry.deleted) continue;
     const paths = entry.roots.length
       ? entry.roots.map((root) => root.rootPath)
       : entry.legacyWorkspace

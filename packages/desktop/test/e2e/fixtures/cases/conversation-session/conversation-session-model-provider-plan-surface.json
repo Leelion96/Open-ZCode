@@ -2,7 +2,10 @@
   "version": 1,
   "caseName": "conversation-session-model-provider-plan-surface",
   "spec": "./test/e2e/conversation-session/conversation-session-model-provider-plan-surface.test.ts",
-  "providerFixtures": [],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-plan-surface.json"
+  ],
   "fileFixtures": [],
   "providerRequestPolicy": "none",
   "requests": []

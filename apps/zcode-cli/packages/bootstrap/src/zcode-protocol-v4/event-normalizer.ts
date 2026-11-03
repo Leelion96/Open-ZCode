@@ -1,3 +1,4 @@
+import { normalizeGenUiInput } from "@zcode/core";
 import type {
   BackgroundResultOriginMeta,
   HighspeedMessageMetadata,
@@ -89,6 +90,7 @@ export interface CanonicalUserIntentFact extends CanonicalConversationFactBase {
   admittedAt?: number;
   requestedDelivery?: "auto" | "startNow" | "queue" | "guide";
   admittedDelivery?: "startNow" | "queue" | "guide";
+  genUiContext?: import("@zcode/contracts").TurnInputIntentMetadata["genUiContext"];
   sharedContextRefs?: readonly { kind: "shared_context_import"; context_id: string }[];
   fallbackReasonCode?: string;
   modelSelection?: TurnInputIntentMetadata["modelSelection"];
@@ -220,6 +222,11 @@ function normalizeTurnStarted(
   payload: TurnStartedPayload,
   ids: { runtimeTurnId: string; productTurnId: string },
 ): CanonicalUserIntentFact {
+  const input = normalizeGenUiInput(payload.input, payload.intent?.genUiContext);
+  const intentInput = normalizeGenUiInput(
+    payload.intent?.text ?? payload.input,
+    payload.intent?.genUiContext,
+  );
   const transcriptMessageId = payload.messageId ? String(payload.messageId) : null;
   const origin = userInputOrigin(payload.inputSource);
   // live 使用 runtime turnId、cold 使用 hydrate-turn-N；即使二者指向
@@ -250,8 +257,8 @@ function normalizeTurnStarted(
     origin,
     placement: { lane: "trigger", relation: "withinProductTurn" },
     diagnostics,
-    input: payload.input,
-    intentText: payload.intent?.text ?? payload.input,
+    input: input.text,
+    intentText: intentInput.text,
     intentKind: payload.intent?.kind === "sendGoalCommand" ? "sendGoalCommand" : "sendText",
     turnNumber: payload.turnNumber,
     executionKind: payload.executionKind ?? "agent",
@@ -278,6 +285,7 @@ function normalizeTurnStarted(
     ...(payload.intent?.admittedDelivery
       ? { admittedDelivery: payload.intent.admittedDelivery }
       : {}),
+    ...(intentInput.genUiContext !== undefined ? { genUiContext: intentInput.genUiContext } : {}),
     ...(payload.intent?.sharedContextRefs
       ? { sharedContextRefs: payload.intent.sharedContextRefs }
       : {}),

@@ -149,14 +149,15 @@ it("rebuilds the full continuation catalog before manual compact returns", async
     removedNames: [],
     readdedNames: [],
   });
-  expect(requests.find(isCompact)?.toolSearchEnabled).toBe(false);
+  // 摘要请求与主循环同一份工具暴露。
+  expect(requests.find(isCompact)?.toolSearchEnabled).toBe(true);
   await runtime.executeTurn("next");
   expect(announcements(internal)).toHaveLength(1);
   expect(announcementCount(requests.at(-1)!)).toBe(1);
 });
 
-it("uses compact continuation scope without changing the summary tool policy", async () => {
-  const { runtime, internal } = fixture((request) =>
+it("uses the continuation scope for the summary request and the announcement", async () => {
+  const { runtime, internal, requests } = fixture((request) =>
     isCompact(request)
       ? { ...done(), text: "<summary>Continue with the scoped tools.</summary>" }
       : done(),
@@ -169,7 +170,9 @@ it("uses compact continuation scope without changing the summary tool policy", a
   await internal.compactActiveConversation(undefined, createRootTraceContext(), [], {
     getContinuationTools,
   });
-  expect(getContinuationTools).toHaveBeenCalledOnce();
+  // 摘要请求前取一次；摘要返回后重新取一次，公告使用最新作用域。
+  expect(getContinuationTools).toHaveBeenCalledTimes(2);
+  expect(requests.find(isCompact)?.tools?.map((tool) => tool.name)).not.toContain("ToolSearch");
   expect(announcements(internal)).toHaveLength(0);
 });
 
@@ -189,6 +192,43 @@ it("retains an announcement in the kept tail without appending another", async (
   });
   expect(result.outcome).toBe("compacted");
   expect(result.entries.filter((e) => e.metadata?.toolSearchAnnouncement)).toEqual([retained]);
+});
+
+it("derives summary request tools from the summarized history, not the kept tail", async () => {
+  const { runtime, internal, requests } = fixture((request) =>
+    isCompact(request)
+      ? { ...done(), text: "<summary>Keep the latest context.</summary>" }
+      : done(),
+  );
+  await runtime.executeTurn("setup one");
+  await runtime.executeTurn("setup two");
+  // WebFetch 只在最后一组（保留段）里被发现，摘要请求的消息不含这次搜索。
+  internal.messageHistory.addEntries([
+    {
+      message: {
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "search-kept", name: "ToolSearch", input: { query: "select:WebFetch" } }],
+      },
+    },
+    {
+      message: {
+        role: "tool",
+        toolName: "ToolSearch",
+        toolCallId: "search-kept",
+        content: [{ type: "tool_reference", toolName: "WebFetch" }],
+      },
+    },
+  ]);
+  const result = await internal.compactActiveConversation(undefined, createRootTraceContext(), [], {
+    trigger: CompactTrigger.Reactive,
+  });
+  expect(result.outcome).toBe("compacted");
+  const summaryRequest = requests.find(isCompact)!;
+  expect(requestText(summaryRequest.messages)).not.toContain("select:WebFetch");
+  // 已发现工具只按本次请求的消息计算：保留段里发现的工具不进入摘要请求。
+  expect(summaryRequest.tools?.map((tool) => tool.name)).not.toContain("WebFetch");
+  expect(summaryRequest.tools?.map((tool) => tool.name)).toContain("ToolSearch");
 });
 
 it.each(["auto", "reactive"] as const)(
@@ -368,7 +408,7 @@ it.each(["off", "on"] as const)(
     );
     await runtime.executeTurn("start");
     expect(announcements(internal)).toHaveLength(1);
-    const notice = "The following deferred tools are available via ToolSearch.";
+    const notice = "The following deferred tools are available via LocalToolSearch.";
     expect(
       requests.map((request) => requestText(request.messages).split(notice).length - 1),
     ).toEqual([1, 1, 1, 1]);

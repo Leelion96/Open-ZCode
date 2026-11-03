@@ -1,7 +1,7 @@
 // 生产 renderer 的独立 CDP E2E；使用 node:test，不能放入 WDIO/Docker preset。
 // 前置：隔离 HOME 中播种 8 个 sess_probe_retention_0..7 已完成会话，启动未开启 E2E bridge 的 App。
 // ZCODE_RETENTION_CDP_URL=http://127.0.0.1:9326 ZCODE_RETENTION_ARTIFACT_DIR=<dir>
-// pnpm exec tsx --test packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-snapshot-retention.test.ts
+// pnpm --filter @zcode/desktop test:e2e:retention
 import assert from "node:assert/strict";
 import { createWriteStream } from "node:fs";
 import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
@@ -103,98 +103,110 @@ test(
     const output = resolve(artifactDir);
     await mkdir(output, { recursive: true });
     const browser = await chromium.connectOverCDP(endpoint);
-    const page = browser
-      .contexts()
-      .flatMap((context) => context.pages())
-      .find((candidate) => candidate.url().includes("/renderer/index.html"));
-    assert(page, "缺少真实生产 renderer");
-    const cdp = await page.context().newCDPSession(page);
-    const measurements: Array<
-      { name: string; switches: number; heapMiB: number } & Awaited<
-        ReturnType<typeof countRetainedHistory>
-      >
-    > = [];
-    let switches = 0;
-    await cdp.send("HeapProfiler.enable");
+    // 前置 bridge 断言也可能失败；连接从建立起就归 finally 清理，避免失败后进程挂起。
     try {
-      // 基线从 session 0 开始；随后固定按 1..7,0 循环。
-      await page.getByTestId(`task-item-${prefix}7`).waitFor({ state: "visible" });
-      const more = page.locator("[data-task-list-show-more]");
-      for (const button of await more.all()) {
-        if (await button.isVisible()) await button.click();
-      }
-      const select = async (index: number) => {
-        await page.locator(`[data-testid="task-item-${prefix}${index}"]`).click();
-        await page.waitForFunction(
-          ({ prefix, index }) => {
-            const pane = document.querySelector('[data-testid="v4-session-pane-workspace-main"]');
-            return (
-              pane?.getAttribute("data-session-id") === `${prefix}${index}` &&
-              pane.textContent?.includes(`RETENTION_REPLY_${index}`)
-            );
-          },
-          { prefix, index },
-          { timeout: 20_000 },
-        );
-        await pause(150);
-      };
-      await select(0);
-      for (const [name, target] of [
-        ["warmup-008", 8],
-        ["switch-040", 40],
-        ["switch-072", 72],
-        ["switch-136", 136],
-        ["idle-control", 136],
-      ] as const) {
-        while (switches < target) {
-          await select((switches + 1) % 8);
-          switches++;
-          await appendFile(
-            join(output, "switches.jsonl"),
-            JSON.stringify({ switches, loaded: true }) + "\n",
+      const page = browser
+        .contexts()
+        .flatMap((context) => context.pages())
+        .find((candidate) => candidate.url().includes("/renderer/index.html"));
+      assert(page, "缺少真实生产 renderer");
+      // 测试 bridge 会额外持有 store；误连普通 E2E 构建会污染生产回收证据，必须先拒绝。
+      assert.deepEqual(
+        await page.evaluate(() =>
+          Object.keys(window).filter((key) => /^__zcode.*StoreE2E$/u.test(key)),
+        ),
+        [],
+        "SPR01 必须使用未暴露 E2E store bridge 的生产 renderer",
+      );
+      const cdp = await page.context().newCDPSession(page);
+      const measurements: Array<
+        { name: string; switches: number; heapMiB: number } & Awaited<
+          ReturnType<typeof countRetainedHistory>
+        >
+      > = [];
+      let switches = 0;
+      await cdp.send("HeapProfiler.enable");
+      try {
+        // 基线从 session 0 开始；随后固定按 1..7,0 循环。
+        await page.getByTestId(`task-item-${prefix}7`).waitFor({ state: "visible" });
+        const more = page.locator("[data-task-list-show-more]");
+        for (const button of await more.all()) {
+          if (await button.isVisible()) await button.click();
+        }
+        const select = async (index: number) => {
+          await page.locator(`[data-testid="task-item-${prefix}${index}"]`).click();
+          await page.waitForFunction(
+            ({ prefix, index }) => {
+              const pane = document.querySelector('[data-testid="v4-session-pane-workspace-main"]');
+              return (
+                pane?.getAttribute("data-session-id") === `${prefix}${index}` &&
+                pane.textContent?.includes(`RETENTION_REPLY_${index}`)
+              );
+            },
+            { prefix, index },
+            { timeout: 20_000 },
           );
-        }
-        // 只在测试等待既有 30s keep-warm 到期；不改变产品回收策略。
-        await pause(35_000);
-        await cdp.send("Runtime.discardConsoleEntries");
-        await cdp.send("HeapProfiler.collectGarbage");
-        await pause(300);
-        await cdp.send("HeapProfiler.collectGarbage");
-        const usage = await cdp.send("Runtime.getHeapUsage");
-        const path = join(output, `${name}.heapsnapshot`);
-        const stream = createWriteStream(path);
-        const chunk = ({ chunk }: { chunk: string }) => {
-          stream.write(chunk);
+          await pause(150);
         };
-        cdp.on("HeapProfiler.addHeapSnapshotChunk", chunk);
-        try {
-          await cdp.send("HeapProfiler.takeHeapSnapshot", {
-            reportProgress: false,
-            captureNumericValue: true,
-          });
-        } finally {
-          cdp.off("HeapProfiler.addHeapSnapshotChunk", chunk);
-          await new Promise<void>((resolve, reject) => {
-            stream.on("error", reject);
-            stream.end(resolve);
-          });
+        await select(0);
+        for (const [name, target] of [
+          ["warmup-008", 8],
+          ["switch-040", 40],
+          ["switch-072", 72],
+          ["switch-136", 136],
+          ["idle-control", 136],
+        ] as const) {
+          while (switches < target) {
+            await select((switches + 1) % 8);
+            switches++;
+            await appendFile(
+              join(output, "switches.jsonl"),
+              JSON.stringify({ switches, loaded: true }) + "\n",
+            );
+          }
+          // 只在测试等待既有 30s keep-warm 到期；不改变产品回收策略。
+          await pause(35_000);
+          await cdp.send("Runtime.discardConsoleEntries");
+          await cdp.send("HeapProfiler.collectGarbage");
+          await pause(300);
+          await cdp.send("HeapProfiler.collectGarbage");
+          const usage = await cdp.send("Runtime.getHeapUsage");
+          const path = join(output, `${name}.heapsnapshot`);
+          const stream = createWriteStream(path);
+          const chunk = ({ chunk }: { chunk: string }) => {
+            stream.write(chunk);
+          };
+          cdp.on("HeapProfiler.addHeapSnapshotChunk", chunk);
+          try {
+            await cdp.send("HeapProfiler.takeHeapSnapshot", {
+              reportProgress: false,
+              captureNumericValue: true,
+            });
+          } finally {
+            cdp.off("HeapProfiler.addHeapSnapshotChunk", chunk);
+            await new Promise<void>((resolve, reject) => {
+              stream.on("error", reject);
+              stream.end(resolve);
+            });
+          }
+          const counts = await countRetainedHistory(path, `${prefix}0`);
+          const sample = { name, switches, heapMiB: usage.usedSize / 1048576, ...counts };
+          measurements.push(sample);
+          await writeFile(join(output, "measurements.json"), JSON.stringify(measurements, null, 2));
+          await page.screenshot({ path: join(output, `${name}.png`) });
+          console.log(JSON.stringify(sample));
         }
-        const counts = await countRetainedHistory(path, `${prefix}0`);
-        const sample = { name, switches, heapMiB: usage.usedSize / 1048576, ...counts };
-        measurements.push(sample);
-        await writeFile(join(output, "measurements.json"), JSON.stringify(measurements, null, 2));
-        await page.screenshot({ path: join(output, `${name}.png`) });
-        console.log(JSON.stringify(sample));
-      }
-      // 先收齐 136 次及闲置对照，红灯时也保留完整曲线和堆快照。
-      for (const sample of measurements) {
-        assert.equal(sample.inactiveSnapshots, 0, `${sample.name}: 非当前会话 snapshot 未释放`);
-        assert.equal(sample.closedStores, 0, `${sample.name}: 已关闭 store 未释放`);
-        assert.equal(sample.liveStores, 1, `${sample.name}: 活跃会话 store 应只有一个`);
+        // 先收齐 136 次及闲置对照，红灯时也保留完整曲线和堆快照。
+        for (const sample of measurements) {
+          assert.equal(sample.inactiveSnapshots, 0, `${sample.name}: 非当前会话 snapshot 未释放`);
+          assert.equal(sample.closedStores, 0, `${sample.name}: 已关闭 store 未释放`);
+          assert.equal(sample.liveStores, 1, `${sample.name}: 活跃会话 store 应只有一个`);
+        }
+      } finally {
+        await cdp.send("HeapProfiler.disable");
+        await cdp.detach();
       }
     } finally {
-      await cdp.send("HeapProfiler.disable");
-      await cdp.detach();
       await browser.close();
     }
   },

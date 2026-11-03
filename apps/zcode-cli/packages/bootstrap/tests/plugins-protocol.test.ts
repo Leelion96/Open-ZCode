@@ -267,7 +267,7 @@ describe("plugins protocol contracts", () => {
     ).toBe(normalizePluginRootForComparison("c:/repo/plugin", "win32"));
   });
 
-  it("projects an inline plugin declared by the current Workspace into Workspace scope", async () => {
+  it("does not discover an inline plugin from Workspace plugin directories", async () => {
     const root = await mkdtemp(join(tmpdir(), "zcode-workspace-plugin-root-source-"));
     const pluginRoot = join(root, "plugins", "workspace-demo");
     try {
@@ -288,11 +288,12 @@ describe("plugins protocol contracts", () => {
       });
 
       expect(result.plugins.find((plugin) => plugin.id === "workspace-demo@inline")).toMatchObject({
-        rootPath: pluginRoot,
-        rootSource: "workspace",
+        rootPath: "",
+        packageStatus: "missing",
         enabled: false,
-        uiSurfaces: [{ pluginId: "workspace-demo@inline", pluginName: "workspace-demo", id: "panel", title: "Panel", server: "plugin:workspace-demo:panel", resourceUri: "ui://demo/panel", availability: "session" }],
+        mcpServerNames: [],
       });
+      expect(result.plugins.find((plugin) => plugin.id === "workspace-demo@inline")?.uiSurfaces).toBeUndefined();
       expect(() => zcodePluginsListResultSchema.parse(result)).not.toThrow();
     } finally {
       await rm(root, { force: true, recursive: true });

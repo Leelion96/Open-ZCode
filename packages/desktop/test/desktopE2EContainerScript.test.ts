@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -69,26 +70,43 @@ describe("desktop E2E container presets", () => {
     expect(missingPaths).toEqual([]);
   });
 
-  it("keeps the empty Docker plan table writable by the admission command", () => {
-    // Bugfix：仓库只对 *.mjs / *.sh 声明了 `eol=lf`，Markdown 在 `core.autocrlf=true`
-    // 的 Windows 检出里是 CRLF。下面断言的表格骨架是跨行片段，`\n` 匹配不到 `\r\n`，
-    // 用例在 Windows 上必然失败；这里要断言的是文档结构，与换行字节无关，故归一成 LF。
-    const dockerPlan = readFileSync(
-      resolve(repoRoot, "docs/testing/conversation-session-docker-automation-plan.md"),
-      "utf-8",
-    ).replaceAll("\r\n", "\n");
+  it.each(["\n", "\r\n"])(
+    "keeps the formatted Docker plan table writable with %j line endings",
+    async (newline) => {
+      const dockerPlan = (
+        await readFile(
+          resolve(repoRoot, "docs/testing/conversation-session-docker-automation-plan.md"),
+          "utf-8",
+        )
+      )
+        .replaceAll("\r\n", "\n")
+        .replaceAll("\n", newline);
+      const marker = "<!-- conversation-session-verified-table-end -->";
+      const tablePrefix = dockerPlan.slice(0, dockerPlan.indexOf(marker)).trimEnd();
 
-    expect(dockerPlan).toContain(
-      "| Spec | 迁移状态 |\n| --- | --- |\n<!-- conversation-session-verified-table-end -->",
-    );
+      // 格式化会调整横线宽度和标记前空行；检查表结构，并验证新增行没有被空行隔到表外。
+      expect(tablePrefix).toMatch(
+        /\|\s*Spec\s*\|\s*迁移状态\s*\|\r?\n\|[ \t]*:?-{3,}:?[ \t]*\|[ \t]*:?-{3,}:?[ \t]*\|$/u,
+      );
 
-    const spec = "./test/e2e/conversation-session/example.test.ts";
-    const updated = insertVerifiedDockerSpecRow(dockerPlan, spec);
-    expect(updated.inserted).toBe(true);
-    expect(updated.text).toContain(
-      `| \`${spec}\` | verified |\n<!-- conversation-session-verified-table-end -->`,
-    );
-  });
+      const spec = "./test/e2e/conversation-session/example.test.ts";
+      const row = `| \`${spec}\` | verified |`;
+      const updated = insertVerifiedDockerSpecRow(dockerPlan, spec);
+      expect(updated.inserted).toBe(true);
+      expect(updated.text).toContain(`${tablePrefix}${newline}${row}${newline}${marker}`);
+      expect(insertVerifiedDockerSpecRow(updated.text, spec)).toEqual({
+        inserted: false,
+        text: updated.text,
+      });
+
+      const nextSpec = "./test/e2e/conversation-session/another.test.ts";
+      const next = insertVerifiedDockerSpecRow(updated.text, nextSpec);
+      expect(next.inserted).toBe(true);
+      expect(next.text).toContain(
+        `${row}${newline}| \`${nextSpec}\` | verified |${newline}${marker}`,
+      );
+    },
+  );
 });
 
 // 用假的 docker 记录参数，验证容器脚本透传给容器的上游供应商配置；取最后一次 docker run（前面一次是驱动预取）。
@@ -102,7 +120,7 @@ function runContainerScriptWithFakeDocker(env: Record<string, string>) {
     // 会与之交错（曾出现 "-e E2inspect ..."）；两次 docker run 本身串行，只记 run 就没有并发写。
     writeFileSync(
       join(binDir, "docker"),
-      `#!/usr/bin/env bash\nif [ "$1" = run ]; then printf '%s\\n' "$*" >> "${logPath}"; fi\n`,
+      `#!/usr/bin/env bash\nif [ "$1" = run ]; then printf '%s\\n' "$*" >> "${logPath}"; if [[ "$*" == *"chromedriver-preflight.mjs path"* ]]; then printf '%s\\n' '/cache/chromedriver-fixture'; fi; fi\n`,
       {
         mode: 0o755,
       },
@@ -142,6 +160,7 @@ describe.skipIf(process.platform === "win32")("desktop E2E container upstream pr
     });
 
     expect(result.status).toBe(0);
+    expect(result.runArgs).toContain("CHROMEDRIVER_PATH=/cache/chromedriver-fixture");
     expect(result.runArgs).toContain("E2E_PROVIDER_HTTP_MODE=capture");
     expect(result.runArgs).toContain("E2E_PROVIDER_BASE_URL=https://upstream.example/v1");
     expect(result.runArgs).toContain("E2E_PROVIDER_MODEL=model-a");

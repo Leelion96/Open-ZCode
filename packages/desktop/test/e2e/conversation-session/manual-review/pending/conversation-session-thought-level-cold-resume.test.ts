@@ -1,11 +1,11 @@
-import { clearAppData, waitForDefaultWorkspaceReady } from "../../../helpers/desktop-app.js";
+import { clearAppData, readModelProviders, readSettings } from "../../../helpers/desktop-app.js";
 import {
   assertUpstreamRequestCapture,
   waitForUpstreamNetworkCapture,
 } from "../../../helpers/upstream-capture.js";
 import {
   restartIntoWorkspace,
-  seedPersistedModelSelection,
+  restartIntoWorkspacePreservingProfile,
   seedReplayProvider,
 } from "../../../helpers/model-provider-restart.js";
 import { startConversationModelProviderReplayServer } from "../../../helpers/model-provider-replay.js";
@@ -15,6 +15,7 @@ import {
   prepareV4ConversationE2E,
   selectV4TaskById,
   sendV4Prompt,
+  switchV4Model,
   waitForV4Pane,
   waitForV4TimelineContaining,
 } from "../../../helpers/v4-conversation.js";
@@ -44,16 +45,43 @@ describe("历史 session 思考深度冷恢复 E2E", () => {
     await prepareV4ConversationE2E({ skipProvider: true });
     await seedReplayProvider({
       id: PROVIDER_ID,
-      models: [MODEL_ID],
+      // 个人 Provider 不能依赖旧内建 GLM metadata 补齐；明确声明被验证的合法档位和 wire map。
+      models: [
+        {
+          id: MODEL_ID,
+          reasoningLevel: {
+            values: ["high", "max"],
+            map: '{"chat_template_kwargs":{"reasoning_effort":reasoningLevel}}',
+          },
+        },
+      ],
       name: "GLM-5.2 Cold Resume E2E",
     });
-    await seedPersistedModelSelection({
-      modelId: MODEL_ID,
-      providerId: PROVIDER_ID,
-      reasoningLevel: THOUGHT_LEVEL,
-    });
-    await restartIntoWorkspace();
+    try {
+      await restartIntoWorkspace();
+    } catch (cause) {
+      // 正式回放曾在准备阶段重启后进入欢迎页；先保留脱敏配置事实，区分 seed 丢失与启动门禁问题。
+      const [providers, settings] = await Promise.all([readModelProviders(), readSettings()]);
+      throw new Error(
+        `I63 准备阶段重启失败: ${JSON.stringify({
+          providerFamilyDomain: settings.providerFamilyDomain,
+          providers: providers.map((provider) => ({
+            id: provider.id,
+            enabled: provider.enabled,
+            apiKeyPresent: Boolean(provider.apiKey),
+            systemDisabledReason: provider.systemDisabledReason,
+            models: provider.models.map((model) => ({
+              id: model.id,
+              disabledReason: model.disabledReason,
+            })),
+          })),
+        })}`,
+        { cause },
+      );
+    }
     await prepareV4ConversationE2E({ skipProvider: true });
+    // Recent 偏好不会覆盖已初始化草稿；首轮必须通过真实模型选择器建立会话配置。
+    await switchV4Model(PROVIDER_ID, MODEL_ID, THOUGHT_LEVEL);
     await waitForModelConfig();
 
     const runId = Date.now();
@@ -74,9 +102,8 @@ describe("历史 session 思考深度冷恢复 E2E", () => {
     if (!sessionId || sessionId === "draft") throw new Error("completed sessionId missing");
 
     // browser.reloadSession 会完整重启 Electron、Host 与 CLI；renderer reload 不能代替这条边界。
-    await browser.reloadSession();
-    await waitForRendererAfterReloadSession();
-    await waitForDefaultWorkspaceReady(60000);
+    // 原因：直接 reloadSession 会换临时 userData；冷恢复必须保留并 flush 当前用户配置。
+    await restartIntoWorkspacePreservingProfile();
     await selectV4TaskById(sessionId);
     await waitForModelConfig();
 
@@ -125,36 +152,4 @@ function readNested(value: unknown, path: string[]) {
     current = (current as Record<string, unknown>)[key];
   }
   return current;
-}
-
-async function waitForRendererAfterReloadSession() {
-  await browser.waitUntil(
-    async () => {
-      try {
-        const puppeteer = await browser.getPuppeteer();
-        const target = puppeteer
-          .targets()
-          .filter((candidate) => isRendererUrl(candidate.url()))
-          .at(-1) as ({ _targetId?: string } & object) | undefined;
-        if (!target?._targetId) return false;
-        await browser.switchToWindow(target._targetId);
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    {
-      timeout: 30000,
-      interval: 250,
-      timeoutMsg: "CLI cold restart 后没有找到 renderer target",
-    },
-  );
-}
-
-function isRendererUrl(url: string) {
-  try {
-    return new URL(url).pathname.endsWith("/renderer/index.html");
-  } catch {
-    return false;
-  }
 }

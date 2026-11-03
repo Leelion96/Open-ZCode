@@ -225,7 +225,8 @@ function findGlmDevEntry(): GlmDevEntry | null {
   const anchorDirs = [repoRoot, process.cwd()].filter((anchor): anchor is string =>
     Boolean(anchor),
   );
-  const candidates = ["zcode-cli", "glm", "cc-refactor"];
+  // 历史研发目录会意外抢占发行入口；自定义目录统一由 ZCODE_AGENT_WORKDIR 显式指定。
+  const candidates = ["zcode-cli", "glm"];
   const seen = new Set<string>();
   for (const anchorDir of anchorDirs) {
     for (const name of candidates) {

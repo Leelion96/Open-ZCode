@@ -439,7 +439,7 @@ edit、compact、fork 不应改写 queue 内容；fork 新 session 不复制父 
 
 `editQueueItem` 原地修改权威 item，保留 ID、位置、attachments、client 和来源 command。`sendQueuedNow` 采用 `reserve -> stop barrier -> start/promote -> remove`：只有启动成功才移除；timeout 或失败释放 reservation，原 item 原位保留；连续点击或跨端竞争只能有一个 reservation owner。
 
-queue 只保证当前 CLI 进程内可靠。CLI runtime restart 后，上一进程已 admitted 但尚未进入 transcript 的输入进入 discarded ledger，`commands/query` 返回 `fault.command.inputDiscardedOnRestart` 及持久 `delivery`。UI 的 24 小时 pending-command registry 只覆盖投递未知窗口（敏感 interaction 只存 digest）：queue/guided projection 一到即清账；restart query 的 `queue/guide` 与无权威结论的 `unknown` 静默清账且不显示 UI 错误；只有未进入 transcript 的 `startNow` 提示用户确认重发，禁止自动恢复或自动重放。
+queue 只保证当前 CLI 进程内可靠。CLI runtime restart 后，上一进程已 admitted 但尚未进入 transcript 的输入进入 discarded ledger，`commands/query` 返回 `fault.command.inputDiscardedOnRestart` 及持久 `delivery`。UI 的 24 小时 pending-command registry 只覆盖投递未知窗口（敏感 interaction 只存 digest）：queue/guided projection 一到即清账；restart query 的 `queue/guide` 静默清账；无权威结论的 `unknown` 保留待确认线索直到明确结果、权威投影或既有 TTL，且不显示 UI 错误；只有未进入 transcript 的 `startNow` 提示用户确认重发，禁止自动恢复或自动重放。
 
 background result 如果在 foreground busy、compact、goal verifier 或 held queue 阶段返回，必须先进入 `continuation-inbox` 或等价的 deferred queue item。它可以在后续 provider 请求中以 `role=user` 出现，但 queue/event 必须保留 `origin=backgroundResult`，避免被误当作用户手写 query、误开放 edit，或被 fork child 复制为 pending future input。
 
@@ -458,7 +458,7 @@ background result 真正触发 model-only wake 时，无论 live 还是 cold 都
 
 `guide` 模式不表示可以改写已经发给 provider 的 in-flight 请求。它只允许把完整 input intent 提交给运行时的 turn-steer 机制，等待运行时确认注入、拒绝或回退。guide 不适用、带 attachments、compact/verifier busy 或 runtime 拒绝 steer 时，必须以原字段回退 CLI queue。empty、超限或 admission/runtime reject 必须返回显式 `rejected/failed`，让 UI 保留文本与附件。无论是 `queue` 还是 `guide`，用户输入都必须保留：不能从 composer 或临时状态消失后，既不在 queue/guided row/transcript 中，也没有显式 `rejected/failed/discarded` 结果。
 
-运行时确认注入一条 guide 后，产品轮次不变，但 CLI 必须在 `turnHeader.workSegments` 中关闭上一 visual work segment，并以 guided user 的稳定实体 ID 开启新 segment。UI 为每个 segment 独立展示和折叠“已工作/工作中”；这只是工作区边界，不改变最终 assistant 的 fork/retry/action 归属。
+运行时确认注入一条 guide 后，产品轮次不变，但 CLI 必须在 `turnHeader.workSegments` 中关闭上一 visual work segment，并以 guided user 的稳定实体 ID 开启新 segment。同一次取出的多条 guide（两条之间没有主模型 step）只由第一条开启一个 segment，后续 guide 并入该段；两条 guide 之间有模型 step 时，即使这一步没有可见行，后一条也开启新 segment。CLI 按模型 step 判定边界：live 由主模型流事件与主轮 `ModelComplete` 关闭当前取出，cold hydration 为每条 assistant 消息合成同样的流起始事件，两边得到同一份 segment。UI 只按 `workSegments[].triggerEntityId` 切分视觉工作段，不自行判断是否同一次取出；缺少 turn header 或 `workSegments` 的旧快照才回退为“上一行已是 guided user 时并入”。UI 为每个 segment 独立展示和折叠“已工作/工作中”；这只是工作区边界，不改变最终 assistant 的 fork/retry/action 归属。
 
 `followupInput.mode` 只决定普通 assistant 运行态中普通文本是排队还是尝试 guide。对于 `activeWork.kind=compact`、`activeWork.kind=goalVerifier` 等 `sessionEnded=false` 但不可 steer 的上下文，guide 不生效，普通文本和 `/goal` 都按 deferred input 进入 queue。
 
@@ -721,7 +721,7 @@ fork 目标只定义在 assistant message/turn 上。edit 目标只定义在 use
 | `acceptedInputHasSingleAuthority` | 所有端已提交 busy/running 输入按 CLI admission 顺序进入同一 FIFO；host/runtime/UI 不保留第二份权威队列 | accepted |
 | `acceptedInputAlwaysAccountedFor` | 每条已提交输入必须且只能处于 queue、guided row、transcript、explicit rejected/failed/discarded 之一 | accepted |
 | `sourceCommandIdEndToEnd` | queue item、drain/guided event、user row、message anchor、marker、fork child metadata 保留原始 sourceCommandId | accepted |
-| `restartDiscardRespectsDeliveryLifetime` | CLI restart 后未完成 admitted input 明确 discarded；旧 runtime 的 `queue/guide` 与无权威结论的 `unknown` 静默结算且不显示 UI 错误，只有未进入 transcript 的 `startNow` 提示确认重发，禁止自动重放 | accepted |
+| `restartDiscardRespectsDeliveryLifetime` | CLI restart 后未完成 admitted input 明确 discarded；旧 runtime 的 `queue/guide` 静默结算；无权威结论的 `unknown` 保留待确认线索且不显示 UI 错误，只有未进入 transcript 的 `startNow` 提示确认重发，禁止自动重放 | accepted |
 | `stopButtonStableAcrossActiveWork` | assistant、compact、goal verifier、goal continuation、foreground subagent 等 active work 交接时，只要 session 仍可 stop，UI 停止按钮必须保持稳定，不因内部阶段切换而闪烁 | accepted |
 | `stopPausesActiveGoalTarget` | goal target 为 active 时，用户 stop 不管作用于 assistant、compact、goal verifier 还是 goal continuation，都必须把 target 置为非 active 的暂停态 | accepted |
 | `cancelledTurnColdHydrationParity` | 用户 stop 产生的 typed/legacy ZCode cancellation 在 live 与 cold hydration 后都必须归约为 `TurnComplete(cancelled)`；不得产生 `TurnError`、`phase=error` 或 `control.lastError` | accepted |

@@ -17,9 +17,10 @@ import { runMemoryAgentLoop } from "../../memory/memory-agent-loop.js";
 import { findLatestReadFileState } from "../../tool/read-file-state.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import {
-  prepareProjectMemoryAgentRequest,
   captureProjectMemoryAgentContext,
-  createProjectMemoryAgentToolExecutor,
+  createProjectMemoryAgentToolRunner,
+  projectMemoryAgentEntries,
+  renderProjectMemoryAgentRequest,
   type ProjectMemoryAgentContext,
 } from "./project-memory-agent.js";
 import { invalidateProjectMemoryRecallPaths } from "./project-memory-recall.js";
@@ -140,25 +141,25 @@ async function executeProjectMemoryDream(
         sessionIds: transcriptSessionIds,
         transcriptRoot: runtime.modelIoDir!,
       });
-      const request = prepareProjectMemoryAgentRequest(context, prompt);
-      const executor = createProjectMemoryAgentToolExecutor(runtime, context);
+      const runTools = createProjectMemoryAgentToolRunner(runtime, context);
       const touchedPaths = new Set<string>();
 
       await runMemoryAgentLoop({
-        executeTool: (toolCall, options) => {
-          collectDreamTouchedPaths(touchedPaths, {
-            rootDir: context.memoryRoot,
-            toolCall,
-            workingDirectory: context.workingDirectory,
-            workspaceRoot: context.workspaceRoot,
-          });
-          return executor.execute(toolCall, {
-            signal: options.abortSignal,
-            traceContext: context.traceContext,
-          });
+        entries: projectMemoryAgentEntries(context, prompt),
+        executeToolCalls: (toolCalls, options) => {
+          for (const toolCall of toolCalls) {
+            collectDreamTouchedPaths(touchedPaths, {
+              rootDir: context.memoryRoot,
+              toolCall,
+              workingDirectory: context.workingDirectory,
+              workspaceRoot: context.workspaceRoot,
+            });
+          }
+          return runTools(toolCalls, options);
         },
         maxTurns: DREAM_MAX_TURNS,
-        request,
+        registry: runtime.registry,
+        renderRequest: (entries) => renderProjectMemoryAgentRequest(context, entries),
         model: context.model,
         rootDir: context.memoryRoot,
         workingDirectory: context.workingDirectory,

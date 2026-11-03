@@ -206,3 +206,105 @@ for (const mobile of [false, true])
       }
     });
   }
+
+for (const mobile of [false, true])
+  for (const theme of ["light", "dark"])
+    for (const reading of [false, true])
+      test(`SSV03 hydrate ${mobile ? "mobile" : "desktop"}/${theme}/${reading ? "reading" : "following"}`, async () => {
+        const page = await browser.newPage({
+          viewport: { width: mobile ? 430 : 1250, height: 800 },
+        });
+        const samples = [];
+        try {
+          await page.goto(`${origin}fixture?mobile=${mobile}&theme=${theme}&hydrate=true`);
+          await page.getByTestId("v4-timeline").waitFor();
+          await page.waitForFunction(
+            () => document.querySelectorAll("[data-v4-turn-unit]").length >= 2,
+          );
+          if (reading) {
+            await page.getByTestId("v4-timeline").evaluate((e) => {
+              e.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -100 }));
+              e.scrollTop -= 100;
+              e.dispatchEvent(new Event("scroll"));
+            });
+            await page.waitForFunction(
+              () =>
+                document.querySelector('[data-testid="v4-timeline"]').dataset.following === "false",
+            );
+          }
+          const anchor = page.locator('[data-v4-turn-unit][data-turn-id="turn-1"]');
+          const beforeTop = reading
+            ? await anchor.evaluate((e) => e.getBoundingClientRect().top)
+            : null;
+          await page.evaluate(() => {
+            window.__hydrationFrames = [];
+            window.__hydrationStop = false;
+            const sample = () => {
+              if (window.__hydrationStop) return;
+              const units = [...document.querySelectorAll("[data-v4-turn-unit]")];
+              const pairs = units.slice(1).map((node, index) => ({
+                from: units[index].dataset.turnId,
+                to: node.dataset.turnId,
+                overlap:
+                  units[index].getBoundingClientRect().bottom - node.getBoundingClientRect().top,
+              }));
+              window.__hydrationFrames.push({
+                count: document.querySelector('[data-testid="v4-timeline"]').dataset.windowRowCount,
+                top: document.querySelector('[data-testid="v4-timeline"]').scrollTop,
+                gap: (() => {
+                  const e = document.querySelector('[data-testid="v4-timeline"]');
+                  return e.scrollHeight - e.clientHeight - e.scrollTop;
+                })(),
+                following: document.querySelector('[data-testid="v4-timeline"]').dataset.following,
+                anchorTop: document
+                  .querySelector('[data-v4-turn-unit][data-turn-id="turn-1"]')
+                  ?.getBoundingClientRect().top,
+                pairs,
+              });
+              requestAnimationFrame(sample);
+            };
+            requestAnimationFrame(sample);
+          });
+          await page.getByRole("button", { name: "Hydrate", exact: true }).click();
+          await page.waitForFunction(
+            () => window.__hydrationFrames.filter((f) => f.count === "140").length >= 8,
+          );
+          samples.push(
+            ...(await page.evaluate(() => {
+              window.__hydrationStop = true;
+              return window.__hydrationFrames;
+            })),
+          );
+          assert.ok(
+            samples.some((frame) => frame.count === "60"),
+            "缺少局部历史前置帧",
+          );
+          assert.ok(
+            samples.some((frame) => frame.count === "140"),
+            "没有补齐历史",
+          );
+          const overlapping = samples.filter((frame) =>
+            frame.pairs.some((pair) => pair.overlap > 1),
+          );
+          assert.deepEqual(overlapping, [], "补齐历史出现重叠帧");
+          assert.equal(
+            await page.getByTestId("v4-timeline").getAttribute("data-following"),
+            reading ? "false" : "true",
+          );
+          if (reading)
+            assert.ok(
+              Math.abs((await anchor.evaluate((e) => e.getBoundingClientRect().top)) - beforeTop) <=
+                1,
+              "历史补齐改变阅读锚点",
+            );
+        } finally {
+          await writeFile(
+            join(artifacts, `hydrate-${mobile}-${theme}-${reading}.json`),
+            JSON.stringify(samples, null, 2),
+          );
+          await page.screenshot({
+            path: join(artifacts, `hydrate-${mobile}-${theme}-${reading}.png`),
+          });
+          await page.close();
+        }
+      });

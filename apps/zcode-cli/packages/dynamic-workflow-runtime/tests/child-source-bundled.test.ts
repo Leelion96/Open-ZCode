@@ -63,7 +63,12 @@ async function runChild(
 ): Promise<unknown[]> {
   const root = await tempRoot("dwf-child-entry-");
   const entryPath = join(root, "run.mjs");
-  await writeFile(entryPath, render({ ...payload, maxOldSpaceSizeMb: 256 }, { runId: "run" }), "utf8");
+  // run 身份是 payload 的必备字段（沙箱据它构造冻结的 `run` 全局）。
+  await writeFile(
+    entryPath,
+    render({ ...payload, run: { id: "run" }, maxOldSpaceSizeMb: 256 }, { runId: "run" }),
+    "utf8",
+  );
   const result = spawnSync(process.execPath, ["--max-old-space-size=256", entryPath], {
     encoding: "utf8",
     input: "",
@@ -129,6 +134,8 @@ describe.each([
             "log",
             "publishArtifact",
             "report",
+            // run 身份（facade 的 `run`）：与 args 一样是值，不是可调用物。
+            "run",
             "worldRead",
           ],
         },

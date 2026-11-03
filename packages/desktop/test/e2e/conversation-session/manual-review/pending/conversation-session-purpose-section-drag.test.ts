@@ -1,9 +1,14 @@
 import { join } from "node:path";
-import { DEFAULT_WORKSPACE, waitForWorkspaceApp } from "../../../helpers/desktop-app.js";
+import {
+  DEFAULT_WORKSPACE,
+  readModelProviders,
+  readSettings,
+  waitForWorkspaceApp,
+} from "../../../helpers/desktop-app.js";
 
 const project = '[data-testid="project-section"]';
 const tasks = '[data-testid="conversation-section"]';
-const trigger = 'button[data-slot="collapsible-trigger"]';
+const trigger = "button[data-purpose-section-drag-trigger]";
 const indicator = '[data-testid="purpose-section-drop-indicator"]';
 const preferenceKey = "zcode-sidebar-purpose-section-preferences";
 
@@ -43,7 +48,28 @@ describe("CWP02 分区标题拖拽", () => {
     await expect($(project).$(trigger)).toHaveAttribute("aria-expanded", "false");
     await expect($(tasks).$(trigger)).toHaveAttribute("aria-expanded", "true");
     await browser.refresh();
-    await $(project).waitForDisplayed();
+    try {
+      await $(project).waitForDisplayed();
+    } catch (cause) {
+      // 正式回放曾在此刷新后进入欢迎页；保留配置事实，不能用重载或重试掩盖启动异常。
+      const [providers, settings] = await Promise.all([readModelProviders(), readSettings()]);
+      throw new Error(
+        `CWP02 持久化验证刷新失败: ${JSON.stringify({
+          providerFamilyDomain: settings.providerFamilyDomain,
+          providers: providers.map((provider) => ({
+            id: provider.id,
+            enabled: provider.enabled,
+            apiKeyPresent: Boolean(provider.apiKey),
+            systemDisabledReason: provider.systemDisabledReason,
+            models: provider.models.map((model) => ({
+              id: model.id,
+              disabledReason: model.disabledReason,
+            })),
+          })),
+        })}`,
+        { cause },
+      );
+    }
     expect(await order()).toEqual(["conversations", "projects"]);
     await expect($(project).$(trigger)).toHaveAttribute("aria-expanded", "false");
   });
@@ -143,14 +169,37 @@ async function order() {
 }
 
 async function beginDrag(source: string, target: string) {
+  // Escape 后取消动画仍可能移动分区；等待实际 transform 复位再量取下一次拖拽坐标。
+  await browser.waitUntil(
+    () =>
+      browser.execute(
+        (selectors) =>
+          selectors.every((selector) => {
+            const element = document.querySelector(selector)!;
+            const matrix = new DOMMatrix(getComputedStyle(element).transform);
+            return Math.abs(matrix.m41) < 0.5 && Math.abs(matrix.m42) < 0.5;
+          }),
+        [source, target],
+      ),
+    { timeout: 5000, timeoutMsg: "上一轮拖拽取消后分区位置未复位" },
+  );
   const coords = await browser.execute(
     (source, target, trigger) => {
       const from = document.querySelector(`${source} ${trigger}`)!.getBoundingClientRect();
+      const sourceSection = document.querySelector(source)!.getBoundingClientRect();
       const to = document.querySelector(target)!.getBoundingClientRect();
       return {
         x: Math.round(from.left + 28),
         y: Math.round(from.top + from.height / 2),
-        targetY: Math.round(to.top + to.height / 2),
+        // closestCenter 比较整个分区，标题只是抓取点；直接把标题移到目标中心会多算内容高度。
+        targetY: Math.round(
+          from.top +
+            from.height / 2 +
+            to.top +
+            to.height / 2 -
+            sourceSection.top -
+            sourceSection.height / 2,
+        ),
         right: Math.min(innerWidth - 5, Math.round(from.right + 120)),
       };
     },

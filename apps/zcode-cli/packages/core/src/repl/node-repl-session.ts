@@ -78,7 +78,20 @@ function browserScreenshotIndexResult(
   images: readonly NodeReplImage[],
   browserScreenshots: readonly NodeReplImage[],
 ): Pick<NodeReplRunResult, "browserScreenshotImageIndices"> {
-  if (images.length === 0 || browserScreenshots.length === 0) return {};
+  const browserScreenshotImageIndices = matchBrowserScreenshotImageIndices(images, browserScreenshots);
+  return browserScreenshotImageIndices.length > 0 ? { browserScreenshotImageIndices } : {};
+}
+
+/**
+ * images 中哪些下标是真实浏览器截图：按 mimeType + 字节逐个匹配，同一张截图只能认领一次。
+ * node-repl-host 主线程用它把账本里记下的截图对应到 cell 输出的图片上
+ * （apps/zcode-cli/docs/design/v2/tool/20-node-repl-call-ledger.md「结果组装」）。
+ */
+export function matchBrowserScreenshotImageIndices(
+  images: readonly NodeReplImage[],
+  browserScreenshots: readonly NodeReplImage[],
+): number[] {
+  if (images.length === 0 || browserScreenshots.length === 0) return [];
 
   const remainingByPayload = new Map<string, number>();
   for (const screenshot of browserScreenshots) {
@@ -94,7 +107,7 @@ function browserScreenshotIndexResult(
     browserScreenshotImageIndices.push(index);
     remainingByPayload.set(key, remaining - 1);
   });
-  return browserScreenshotImageIndices.length > 0 ? { browserScreenshotImageIndices } : {};
+  return browserScreenshotImageIndices;
 }
 
 /**

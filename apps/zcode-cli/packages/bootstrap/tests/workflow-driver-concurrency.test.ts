@@ -59,6 +59,7 @@ function stubRuntime(executeTurn: () => Promise<unknown>) {
       };
     },
     getModelRef: () => MODEL,
+    close: async () => {},
     closeBrowserSession: async () => {},
     /** 执行器在 handler 之前发的 ToolCallStarted（带解析后的副作用能力）。 */
     emitToolStarted(flags: Record<string, unknown>, sessionId = sessionIdOfRuntime) {

@@ -734,7 +734,10 @@ describe("ToolExecutor trace propagation", () => {
       { traceContext },
     );
 
-    expect(result.modelContent).toContain("[Hook additional context]");
+    expect(JSON.stringify(result.modelContent)).not.toContain("extra post context");
+    expect(result.hookAdditionalContexts).toEqual([
+      "PostToolUse:TaskStop hook additional context: extra post context",
+    ]);
     const resultEvent = events.find((event) => event.type === SessionEventType.ToolCallResult);
     if (resultEvent?.type !== SessionEventType.ToolCallResult) {
       throw new Error("Expected TaskStop ToolCallResult event");
@@ -752,7 +755,8 @@ describe("ToolExecutor trace propagation", () => {
     expect(resultEvent.payload.result.content).toContain(
       "Successfully stopped task: task_alpha (pnpm test)",
     );
-    expect(resultEvent.payload.result.content).toContain("[Hook additional context]");
+    // Hook 文本只进工具批次后的附件，不进 tool_call_result 事件和工具卡。
+    expect(resultEvent.payload.result.content).not.toContain("extra post context");
     expect(JSON.stringify(resultEvent.payload.result.display)).not.toContain("extra post context");
   });
 
@@ -1030,7 +1034,10 @@ describe("ToolExecutor trace propagation", () => {
     expect(result.success).toBe(false);
     expect(result.error?.type).toBe("permission_denied");
     expect(result.error?.message).toContain("blocked in test");
-    expect(result.modelContent).toContain("explain the hook denial");
+    expect(JSON.stringify(result.modelContent ?? "")).not.toContain("explain the hook denial");
+    expect(result.hookAdditionalContexts).toEqual([
+      "PreToolUse:HookedTool hook additional context: explain the hook denial",
+    ]);
     expect(handlerRan).toBe(false);
     expect(events.map((event) => event.type)).toEqual([
       // D20：block 决策只产生一个终态事件（runner.ts:143 为 blocked ? Blocked : Completed）。
@@ -1653,7 +1660,7 @@ describe("ToolExecutor trace propagation", () => {
     expect((resolved?.payload as any).decision).toBe("allow");
   });
 
-  it("appends PostToolUse hook additional context to model content", async () => {
+  it("carries PostToolUse hook additional context beside an unchanged tool result", async () => {
     const sessionId = createSessionId("tool-hook-post-context");
     const turnId = createTurnId("tool-turn");
     const traceContext = createRootTraceContext({ sessionId, turnId });
@@ -1701,11 +1708,13 @@ describe("ToolExecutor trace propagation", () => {
     );
 
     expect(result.success).toBe(true);
-    expect(result.modelContent).toContain("tool-output");
-    expect(result.modelContent).toContain("extra post context");
+    expect(result.modelContent).toBe("tool-output");
+    expect(result.hookAdditionalContexts).toEqual([
+      "PostToolUse:PostTool hook additional context: extra post context",
+    ]);
   });
 
-  it("adds PostToolUseFailure hook context to failed model content", async () => {
+  it("carries PostToolUseFailure hook context beside the raw failed tool result", async () => {
     const sessionId = createSessionId("tool-hook-failure-context");
     const turnId = createTurnId("tool-turn");
     const traceContext = createRootTraceContext({ sessionId, turnId });
@@ -1755,8 +1764,11 @@ describe("ToolExecutor trace propagation", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.modelContent).toContain("boom");
-    expect(result.modelContent).toContain("try the recovery path");
+    expect(JSON.stringify(result.modelContent ?? result.error?.message)).toContain("boom");
+    expect(JSON.stringify(result.modelContent ?? "")).not.toContain("try the recovery path");
+    expect(result.hookAdditionalContexts).toEqual([
+      "PostToolUseFailure:FailTool hook additional context: try the recovery path",
+    ]);
   });
 
   it("persists project permission updates and uses them on later calls", async () => {
@@ -2522,7 +2534,7 @@ describe("ToolExecutor trace propagation", () => {
     expect(payload.result.content).toBe(result.modelContent);
   });
 
-  it("keeps hook-augmented structured tool model content within resultBudget", async () => {
+  it("does not let hook context change the structured tool result budget", async () => {
     const sessionId = createSessionId("tool-structured-hook-budget");
     const turnId = createTurnId("tool-turn");
     const traceContext = createRootTraceContext({ sessionId, turnId });
@@ -2588,14 +2600,16 @@ describe("ToolExecutor trace propagation", () => {
     );
 
     expect(result.success).toBe(true);
-    expect(result.modelContent).not.toContain(rawStructuredText);
-    expect(result.serialization?.content).toBe(result.modelContent);
-    expect(result.serialization?.modelContent).toBe(result.modelContent);
-    expect(result.serialization?.truncated).toBe(true);
-    expect(Buffer.byteLength(result.modelContent ?? "", "utf8")).toBeLessThanOrEqual(160);
+    // Hook 文本不占 tool result 预算：结果与没有 Hook 时相同。
+    expect(result.modelContent).toEqual([{ type: "text", text: rawStructuredText }]);
+    expect(result.serialization?.truncated).toBe(false);
+    expect(result.hookAdditionalContexts).toHaveLength(1);
+    expect(result.hookAdditionalContexts?.[0]).toMatch(
+      /^PostToolUse:StructuredHookBudgetTool hook additional context: extra post context /,
+    );
   });
 
-  it("appends hook context to an official CUA receipt through generic serialization", async () => {
+  it("keeps hook context out of an official CUA receipt", async () => {
     const sessionId = createSessionId("tool-trusted-cua-receipt");
     const turnId = createTurnId("tool-turn");
     const traceContext = createRootTraceContext({ sessionId, turnId });
@@ -2665,9 +2679,11 @@ describe("ToolExecutor trace propagation", () => {
 
     expect(result.success).toBe(true);
     expect(result.serialization?.content).toContain("zcode-cua-action-receipt-v1");
-    expect(result.serialization?.content).toContain("hook-context");
-    expect(result.serialization?.content).not.toContain("Tool output truncated by resultBudget");
+    expect(result.serialization?.content).not.toContain("hook-context");
     expect(result.serialization?.truncated).toBe(false);
+    expect(result.hookAdditionalContexts).toEqual([
+      "PostToolUse:TrustedCuaReceiptTool hook additional context: hook-context",
+    ]);
   });
 
   it("applies the generic result budget to large official CUA receipt text", async () => {
@@ -2915,7 +2931,7 @@ describe("ToolExecutor trace propagation", () => {
     expect(payload.result.artifactPath).toBe("/artifacts/artifact-1.json");
   });
 
-  it("keeps persisted artifact preview budget independent when hook context is appended", async () => {
+  it("keeps hook context out of a persisted artifact preview", async () => {
     const sessionId = createSessionId("tool-artifact-budget-with-hook");
     const turnId = createTurnId("tool-turn");
     const traceContext = createRootTraceContext({ sessionId, turnId });
@@ -2988,11 +3004,13 @@ describe("ToolExecutor trace propagation", () => {
     expect(result.success).toBe(true);
     expect(result.modelContent).toContain("<persisted-output>");
     expect(result.modelContent).toContain("artifact-output".repeat(20));
-    expect(result.modelContent).toContain("artifact hook context");
-    expect(Buffer.byteLength(result.modelContent ?? "", "utf8")).toBeGreaterThan(160);
+    expect(result.modelContent).not.toContain("artifact hook context");
+    expect(result.hookAdditionalContexts).toEqual([
+      "PostToolUse:ArtifactHookTool hook additional context: artifact hook context",
+    ]);
   });
 
-  it("does not treat literal persisted-output text as an artifact preview when hook context is appended", async () => {
+  it("keeps literal persisted-output text unchanged when a hook adds context", async () => {
     const sessionId = createSessionId("tool-literal-persisted-output-hook");
     const turnId = createTurnId("tool-turn");
     const traceContext = createRootTraceContext({ sessionId, turnId });
@@ -3051,11 +3069,14 @@ describe("ToolExecutor trace propagation", () => {
     expect(result.success).toBe(true);
     expect(result.serialization?.budgetStrategy).toBe("truncate");
     expect(result.serialization?.artifactPath).toBeUndefined();
-    expect(result.modelContent).toContain("literal hook context");
-    expect(Buffer.byteLength(result.modelContent ?? "", "utf8")).toBeLessThanOrEqual(120);
+    expect(result.modelContent).toBe(rawOutput);
+    expect(result.hookAdditionalContexts).toHaveLength(1);
+    expect(result.hookAdditionalContexts?.[0]).toMatch(
+      /^PostToolUse:LiteralPersistedOutputTool hook additional context: literal hook context /,
+    );
   });
 
-  it("preserves non-text structured model content when hook context exceeds text budget", async () => {
+  it("keeps structured media results unchanged when a hook adds context", async () => {
     const sessionId = createSessionId("tool-media-hook-budget");
     const turnId = createTurnId("tool-turn");
     const traceContext = createRootTraceContext({ sessionId, turnId });
@@ -3136,9 +3157,9 @@ describe("ToolExecutor trace propagation", () => {
         expect.objectContaining({ type: "image", dataUrl: imageBlock.dataUrl }),
       ]),
     );
-    expect(result.serialization?.content).toContain("[Hook additional context]");
-    expect(Buffer.byteLength(result.serialization?.content ?? "", "utf8")).toBeLessThanOrEqual(120);
-    expect(result.serialization?.truncated).toBe(true);
+    expect(result.serialization?.content).not.toContain("extra post context");
+    expect(result.serialization?.truncated).toBe(false);
+    expect(result.hookAdditionalContexts).toHaveLength(1);
   });
 
   it("maps empty tool output to a model-visible completion message", async () => {

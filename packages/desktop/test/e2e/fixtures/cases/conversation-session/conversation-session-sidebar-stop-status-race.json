@@ -18,11 +18,11 @@
     },
     {
       "id": "sidebar-stop-status-race-controlled-stream",
-      "description": "稳定制造 running spinner 与 Stop 窗口，membership 回包延迟由 renderer E2E gate 控制。",
+      "description": "稳定制造 running spinner 与 Stop 窗口；测试侧暂挂真实 project.readTree 回包。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "TSL18 必须在 tasks-index membership refresh 在途时触发 Stop；真实 provider 可能过快完成。"
+      "syntheticReason": "TSL18 必须在项目目录读取在途时触发 Stop；用受控响应维持 running，Stop 取消流，不依赖固定延时。"
     }
   ]
 }

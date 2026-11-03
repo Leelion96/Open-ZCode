@@ -77,7 +77,7 @@ JavaScript、文件、Shell、包检查或数据处理工具，也不得提示�
 ### 已删除的两个工具（2026-09-18）
 
 `js_reset` 与 `js_add_node_module_dir` 从 `tools/list`、handler 和执行链中整体移除，`node_repl`
-只保留 `js`。调用它们返回 `Tool not found`。两者实测调用量均为 0（310 个本地会话、17134 次真实
+只保留 `js`。调用它们返回工具不存在的错误（`<tool_use_error>Error: No such tool available: …</tool_use_error>`）。两者实测调用量均为 0（310 个本地会话、17134 次真实
 `js` 调用）。
 
 `js_reset`：fresh-kernel 改造后已无可执行语义——下一次 `js` 本来就是新 kernel，它唯一的残余行为是
@@ -97,6 +97,39 @@ runtime 时注入，不要再给模型开配置工具。
 删除只作用于可执行路径。历史 transcript 的渲染继续依赖 `packages/shared/src/tool-identity.ts`
 和 `packages/ui/src/lib/nodeReplToolDisplay.ts` 的名称映射，必须保留：它们只读取历史记录里的
 toolName，与当前 `tools/list` 无关，删掉会让旧会话的调用块退化成 unknown fallback renderer。
+
+### 无进展提示（2026-10-26）
+
+`js` 永不因「没有进展」而失败，弱模型会在一个 turn 内反复调用直到额度耗尽。工单
+ZCT-2114629172776046592（3.16.3，GLM-5.3，automation 定时任务）：单个 turn 443 次模型请求、
+439 次 `js`，66 分钟后由用户手动取消。模型已在 title 和正文反复写「本轮结束」「结束。」，
+core 的重复调用提醒一次也没有触发——它按完整 input 计签名，模型每次改动 code 即重置。
+模型缺的不是做法，而是「可以结束」的许可。
+
+node_repl 宿主在 `tools/call` 内按 `session_id + turn_id` 维护一份计数，同一 session 的调用已串行，
+状态只在串行区内读写。缺少 `turn_id` 的请求不计数。turn 变化时全部清零。
+
+| 信号 | 判据 | 提示档位 |
+| --- | --- | --- |
+| 同码 | `code` 与上一次完全相同 | 连续 5、15、45 …（×3） |
+| 无进展 | 模型可见结果（content 与 isError）与上一次完全相同 | 连续 10、30、90 …（×3） |
+| 调用量 | 本 turn 累计 `js` 次数 | 30、80、200，之后每 200 |
+
+命中时在结果 content 末尾追加一个 text block，同一次调用最多一条，优先级同码 > 无进展 > 调用量：
+
+```text
+[node_repl] Same call ×5. You may end this turn.
+[node_repl] No progress ×10. You may end this turn.
+[node_repl] 30 calls this turn. You may end this turn.
+```
+
+- 文案只授权结束，不要求换做法：换做法式文案会把已经想结束的模型推回去继续调用。
+- 结果指纹在追加提示之前计算，提示本身不影响下一次比较。
+- 不改变 `isError`、schema、超时、图片顺序或工具身份；不硬停、不拒绝调用。
+- 空 `code` 与抛出的执行异常（中止、超时）不计数。
+- 提示触发时向 stderr 写一行 `[node_repl] no-progress hint`，只含档位、计数与 session/turn id，
+  不含 code 或结果正文。
+- 宿主进程重启后计数丢失，只退化为不提示。
 
 ## 3. Browser Use 与请求身份
 
@@ -153,7 +186,7 @@ BrowserControl/desktop guest manager: tab/page authority
 ## 6. 验收
 
 - 工具 identity 仅为 `mcp__node_repl__js`；`js_reset` 与 `js_add_node_module_dir` 不在 `tools/list` 中，
-  调用返回 `Tool not found`；不存在内置 `mcp__browser_use__*` 或 `mcp__computer-use__*` 模型工具。
+  调用返回工具不存在的错误；不存在内置 `mcp__browser_use__*` 或 `mcp__computer-use__*` 模型工具。
 - 连续两次 `js`：第二次看不到第一次的 global、timer、import module singleton 修改和 response meta；
   同一 Browser tab 的 DOM/page state 仍连续。
 - Desktop IAB full-chain 与 multi-tab replay 中，每个独立 `js` 都重新 bootstrap；下一次调用使用上一条
@@ -168,5 +201,6 @@ BrowserControl/desktop guest manager: tab/page authority
 - 模型可见 `js.code` schema 不包含与 fresh kernel 冲突的 persistent 文案。
 - `js_reset` 与 `js_add_node_module_dir` 的模型可见描述、handler、schema 与 moduleDirs 执行链全部
   移除；UI 名称映射保留供历史回放渲染。
+- 无进展提示按档位出现在 content 末尾；turn 切换清零；两个 session 互不影响；缺少 turn_id 不提示。
 - main 与 subagent Browser Use 都可用；subagent 与当前对话共用 tab，结束后 tab 保留；返回 main 后原 tab/page 可继续。
 - modern/legacy 第三方 MCP 协商回归、focused tests、Desktop pending E2E、`pnpm typecheck`、`pnpm lint` 通过。

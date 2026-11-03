@@ -1,5 +1,7 @@
 # 桌面端服务端 Manifest 自动更新
 
+> Open-ZCode v3.17.1：正式包以构建时明确配置的 HTTPS 产品服务 origin 为唯一更新授权；运行时后端覆盖和调试参数不能改写它，缺失或请求失败不回落官方。自动更新开关不变。下文官方域名约束描述上游默认发行策略；本 fork 的来源裁决见 `specs/features/upstream-v3.17.1-merge.md`。
+
 ## 背景
 
 旧版桌面端直接让 `electron-updater` 读取 CDN 上的 `latest*.yml`。这种方式适合静态全量发布，但不适合按设备灰度、区分 stable / preview 或在服务端把 preview 提升为 stable。新版客户端改为先请求 ZCode 服务端 manifest 接口，再把服务端返回的 `latest.yml` 同格式内容交给 `electron-updater` 执行下载、校验和安装。
@@ -110,10 +112,24 @@ skippedElectronUpdateVersions?: Partial<Record<"stable" | "preview", string>>;
 ## 兼容与迁移
 
 - 旧安装包若仍按包内 `app-update.yml` 从 CDN stable feed 检查更新，不再由当前 CI 全量阶段自动刷新对应 feed。需要兼容旧包时，应由服务端 manifest 迁移策略、单独的应急发布动作或旧 feed 运维流程承接，避免把新 release 状态再次绑定到 CI 的静态 feed 覆盖。
-- 新安装包默认使用服务端 manifest provider；`ZCODE_UPDATE_FEED_URL` 保留为诊断/应急覆盖入口，值必须是完整 manifest 接口 URL。显式配置时仍走服务端 manifest provider，并由客户端覆盖 `platform` / `device_mid` / `channel` 查询参数和对应 header，不再切换到旧 generic feed。
+- 新安装包默认使用服务端 manifest provider。打包态更新入口只允许既有官方生产或测试 HTTPS 域名，其他通用后端覆盖不会授权更新源，回到官方生产入口。打包后的应用忽略 `ZCODE_UPDATE_FEED_URL`、`--zcode-update-feed-url` 以及内部传入的自定义 manifest URL；深链或启动参数不得改变更新源。未打包的开发态可指定完整 manifest 接口 URL，仍由客户端覆盖 `platform` / `device_mid` / `channel` 查询参数和对应 header。`--` 后的参数不再作为更新器开关解析。
+- Windows 签名构建仍读取应用的有效 Authenticode 签名，并写入 `app-update.yml` 的 `publisherName`，以激活 electron-updater 6.8.10 的自定义签名检查入口。该字段只保留签名身份作为诊断信息，不是未来更新的 DN 白名单；不能直接删除字段，否则当前依赖会跳过验证。签名或配置读取失败时构建失败。
+- Windows 更新使用显式 Authenticode 校验：下载后及交给安装器之前均要求 Windows 返回有效签名和非空签名者；无签名、损坏、不可信证书、PowerShell 错误均拒绝。子进程仅静默模块初始化进度，避免进度 CLIXML 被误判为 stderr 错误；实际 stderr 和失败退出仍拒绝。不比较旧 DN，所以更新证书或发布者 DN 不需要用户预装过渡版。安装前使用既有 `preparing` 状态锁定目标，在退出 Host/Agent 前完成检查。
 - post-update release notes、已下载待安装状态和 Windows 安装前资源释放逻辑继续沿用现有实现。
 - Windows 从 `quitAndInstall()` 到 NSIS 的进程退出、快捷方式和完成页启动边界见
   `docs/desktop/windows-update-install-handoff.md`。
+
+### Windows 更新信任边界与换证
+
+正式包从既有官方 HTTPS 更新入口取得清单，下载文件仍须通过清单哈希校验，再通过有效 Authenticode 签名校验。发布授权依赖官方更新服务，不增加独立发布密钥或签名清单；若官方清单服务被攻破，有效 Windows 签名不能单独证明文件属于本产品。这是本方案明确接受的安全边界。
+
+```text
+官方 HTTPS 清单 → 文件哈希匹配 → Windows 签名有效 → 安装
+```
+
+`publisherName` 的旧 DN 不参与批准或拒绝，`ZCODE_WINDOWS_UPDATE_TRUSTED_PUBLISHER_DNS` 过渡配置不再使用。新旧证书可以具有不同 DN，但新安装包必须具有 Windows 认可的有效 Authenticode 签名。带有效时间戳的旧签名可在证书到期后继续验证；证书吊销、不可信证书链或操作系统信任策略仍可能导致拒绝。
+
+验收需覆盖真实旧正式包到修复包的升级、不同 DN 的有效签名通过、无签名及损坏签名拒绝、PowerShell 故障拒绝，以及缓存安装前检查。不同 DN 验证必须区分真实证书运行结果和受控替身；测试不能宣称所有 Windows 环境均已覆盖。未修改 macOS/Linux 的签名和安装链路。
 
 ## 本地调试启动
 

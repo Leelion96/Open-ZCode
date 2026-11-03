@@ -724,9 +724,7 @@ describe("ZCodeProtocolNdjsonConnection", () => {
       // B 排在 A 后面时，详情和新标签页的列表加载也不能等「最后排队请求开始」这个屏障。
       input.write(
         frame({ id: 2, method: zcodeProtocolMethods.pluginsInstall, params: {} }) +
-          readMethods
-            .map((method, index) => frame({ id: index + 3, method, params: {} }))
-            .join(""),
+          readMethods.map((method, index) => frame({ id: index + 3, method, params: {} })).join(""),
       );
       await readsAnswered.promise;
       expect(order).toEqual([
@@ -747,3 +745,74 @@ describe("ZCodeProtocolNdjsonConnection", () => {
 function frame(message: ZCodeProtocolMessage): string {
   return `${JSON.stringify(message)}\n`;
 }
+
+describe("session lifecycle transport admission", () => {
+  it("keeps lifecycle queries and operations available behind a hung ordinary request", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const entered: string[] = [];
+    const gate = Promise.withResolvers<void>();
+    const connection = new ZCodeProtocolNdjsonConnection({
+      input,
+      output,
+      handleMessage: async (message) => {
+        if (!("method" in message) || !("id" in message)) return;
+        entered.push(message.method);
+        if (message.method === "workspace/readState") await gate.promise;
+        return { id: message.id, result: {} };
+      },
+    });
+    connection.start();
+    input.write(frame({ id: "busy", method: "workspace/readState" }));
+    input.write(frame({ id: "queued", method: "session/read", params: { sessionId: "a" } }));
+    const methods = ["getState", "ensureReady", "stop", "restart"].map(
+      (method) => `session/lifecycle/${method}`,
+    );
+    for (const method of methods)
+      input.write(frame({ id: method, method: method as never, params: { sessionId: "a" } }));
+    try {
+      await vi.waitFor(() => expect(entered).toEqual(expect.arrayContaining(methods)));
+      expect(entered).not.toContain("session/read");
+    } finally {
+      gate.resolve();
+      input.end();
+      await connection.waitForClose();
+    }
+  });
+});
+
+describe("shared CLI session admission", () => {
+  it("admits another conversation and its control requests while one command is initializing", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const gate = Promise.withResolvers<void>();
+    const entered: string[] = [];
+    const connection = new ZCodeProtocolNdjsonConnection({
+      input,
+      output,
+      handleMessage: async (message) => {
+        if (!("id" in message) || !("method" in message)) return;
+        entered.push(String(message.id));
+        if (message.id === "a") await gate.promise;
+        return { id: message.id, result: {} };
+      },
+    });
+    connection.start();
+    input.write(frame({ id: "a", method: "v4/command", params: { sessionId: "a" } }));
+    input.write(frame({ id: "b", method: "v4/command", params: { sessionId: "b" } }));
+    input.write(
+      frame({
+        id: "observe-b",
+        method: "v4/conversation/subscribe",
+        params: { topic: "conversation/b" },
+      }),
+    );
+    try {
+      await vi.waitFor(() => expect(entered).toEqual(["a", "b", "observe-b"]));
+    } finally {
+      gate.resolve();
+      input.end();
+      await connection.waitForClose();
+    }
+  });
+});

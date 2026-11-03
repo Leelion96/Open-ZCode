@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-plugin-mcp-skill-installed-enabled",
+  "spec": "./test/e2e/conversation-session/conversation-session-plugin-mcp-skill-installed-enabled.test.ts",
+  "fixtures": [
+    {
+      "id": "upstream-plugin-mcp-skill-installed-enabled-call",
+      "description": "Plugin MCP skill installed+enabled: agent advertises mcp__plugin_e2e-plugin-mcp-ping_ping__ping as a tool, model uses it once.",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_PLUGIN_MCP_PING_INSTALLED_ENABLED"],
+        "bodyIncludes": ["E2E_PLUGIN_MCP_PING_INSTALLED_ENABLED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_plugin_mcp_ping_installed_enabled",
+          "name": "mcp__plugin_e2e-plugin-mcp-ping_ping__ping",
+          "input": {
+            "message": "ping-installed-enabled"
+          }
+        }
+      },
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "将旧专项回放原样归入本用例；真实 Agent 注册工具、工具调用和 Provider tools 数组仍由 E2E 断言。"
+      }
+    },
+    {
+      "id": "upstream-plugin-mcp-skill-installed-enabled-final",
+      "description": "Plugin MCP skill installed+enabled: final assistant text after the plugin MCP tool_result.",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_PLUGIN_MCP_PING_INSTALLED_ENABLED",
+          "toolu_e2e_plugin_mcp_ping_installed_enabled"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "upstream-e2e-ok"
+      },
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "将旧专项回放原样归入本用例；真实 Agent 注册工具、工具调用和 Provider tools 数组仍由 E2E 断言。"
+      }
+    },
+    {
+      "id": "plugin-mcp-installed-enabled-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定辅助标题，避免独立回放依赖旧共享 fixture 池。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_PLUGIN_MCP_PING_INSTALLED_ENABLED"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Plugin MCP lifecycle\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    }
+  ]
+}

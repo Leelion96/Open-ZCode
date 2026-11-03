@@ -120,6 +120,25 @@ describe("remote asset staging CLI", () => {
     expect(collect).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["win32", true],
+    ["darwin", false],
+    ["linux", false],
+  ])("spawns pnpm through a shell only on Windows (platform=%s)", async (platform, shell) => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { ...originalPlatform, value: platform });
+    try {
+      await runCli(["--linux"]);
+    } finally {
+      Object.defineProperty(process, "platform", originalPlatform);
+    }
+    expect(spawn).toHaveBeenCalledTimes(3);
+    for (const call of spawn.mock.calls) {
+      expect(call[0]).toBe("pnpm");
+      expect(call[2].shell).toBe(shell);
+    }
+  });
+
   it("does not publish when the second Linux target fails", async () => {
     spawn.mockImplementation((_command, args: string[]) => {
       const child = new EventEmitter();

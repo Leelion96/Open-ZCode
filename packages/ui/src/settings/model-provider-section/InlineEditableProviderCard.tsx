@@ -204,7 +204,6 @@ export function InlineEditableProviderCard({
   );
   const reorderModelIdsTargetRef = useRef(onReorderModelIds);
   reorderModelIdsTargetRef.current = onReorderModelIds;
-  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const nameCompositionActiveRef = useRef(false);
   const nameEditProviderIdRef = useRef<string | null>(null);
   const technicalInputCompositionActiveRef = useRef(false);
@@ -568,7 +567,6 @@ export function InlineEditableProviderCard({
     nameEditProviderIdRef.current = provider.providerId;
     nameCompositionActiveRef.current = false;
     setEditingName(true);
-    requestAnimationFrame(() => nameInputRef.current?.focus());
   }, [provider.providerId]);
 
   const saveConnection = useCallback(
@@ -760,7 +758,6 @@ export function InlineEditableProviderCard({
           logo={provider.config.logo}
           editingName={editingName}
           nameValue={nameValue}
-          nameInputRef={nameInputRef}
           nameEditable={nameEditable}
           onNameChange={handleNameValueChange}
           onNameBlur={handleNameBlur}

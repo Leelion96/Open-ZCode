@@ -4,6 +4,29 @@
   "spec": "./test/e2e/plugins/plugin-management-builtin-inline.test.ts",
   "fixtures": [
     {
+      "id": "plugin-management-builtin-inline-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
       "id": "upstream-plugin-management-inline-skill-call",
       "description": "PLM-LC-009 asks the fresh session to invoke the inline skill.",
       "match": {
@@ -13,13 +36,17 @@
         "bodyIncludes": ["E2E_PLUGIN_INLINE_REQUEST"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "replay": { "consumeOnce": true },
+      "replay": {
+        "consumeOnce": true
+      },
       "response": {
         "statusCode": 200,
         "toolUse": {
           "id": "toolu_e2e_plugin_inline_skill",
           "name": "Skill",
-          "input": { "skill": "inline-lifecycle" }
+          "input": {
+            "skill": "inline-lifecycle"
+          }
         }
       }
     },
@@ -36,7 +63,10 @@
         ],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "response": { "statusCode": 200, "text": "upstream-e2e-ok" }
+      "response": {
+        "statusCode": 200,
+        "text": "upstream-e2e-ok"
+      }
     }
   ]
 }

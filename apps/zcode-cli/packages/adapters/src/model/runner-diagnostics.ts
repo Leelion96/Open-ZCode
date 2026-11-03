@@ -437,6 +437,8 @@ const EMPTY_COMPLETION_RETRY_EXCLUSIONS = new Set([
   "refusal",
   "content-filter",
   "content_filter",
+  // GLM（MaaS）输出侧安全审核的终止原因，语义同 content_filter。
+  "sensitive",
 ]);
 
 export function createEmptyContextExceededError(input: {

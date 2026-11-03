@@ -48,8 +48,12 @@ function parsePriority(value: string | undefined): AssistantCodeCommentPriority 
 }
 
 export function extractAssistantCodeComments(content: string): AssistantCodeComment[] {
+  const directives = extractAssistantDirectives(content, CODE_COMMENT_DIRECTIVE_NAME);
+  // Bug 根因：搜索会投影每条历史正文；没有指令也扫描全部 Markdown 代码区造成额外线性开销。
+  // 先确认存在候选，再检查代码区保护，保留代码示例中的指令原文。
+  if (directives.length === 0) return [];
   const protectedRanges = findMarkdownCodeRanges(content);
-  return extractAssistantDirectives(content, CODE_COMMENT_DIRECTIVE_NAME).flatMap((directive) => {
+  return directives.flatMap((directive) => {
     if (
       !directive.parameters ||
       overlapsAssistantTextRanges(directive.start, directive.start + 1, protectedRanges)

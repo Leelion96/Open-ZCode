@@ -64,6 +64,9 @@ const turnStartedFactSchema = z
   .object({
     ...factBaseFields,
     kind: z.literal("turn.started"),
+    inputOrigin: z.enum(["desktop", "mobile"]).optional(),
+    modelName: z.string().optional(),
+    modelProvider: z.string().optional(),
     executionKind: z.enum(["agent", "controlOnly"]).optional(),
     inputSource: zcodeSyntheticUserMessageSourceSchema.optional(),
     // `workflow`：dynamic-workflow run 的完成 / 提问通知唤起的独立轮。

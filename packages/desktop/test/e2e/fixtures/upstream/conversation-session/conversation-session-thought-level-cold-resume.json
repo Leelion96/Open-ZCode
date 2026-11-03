@@ -4,6 +4,29 @@
   "spec": "./test/e2e/conversation-session/conversation-session-thought-level-cold-resume.test.ts",
   "fixtures": [
     {
+      "id": "conversation-session-thought-level-cold-resume-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "真实抓包确认标题经 GLM-5.2 的 Chat Completions 端点发送；按该非流式协议固定响应，不能套用 Messages 的 matcher 或响应体。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"chatcmpl-cold-resume-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":125,\"completion_tokens\":24,\"total_tokens\":149}}"
+      }
+    },
+    {
       "id": "thought-cold-resume-seed-main",
       "description": "I63 冷重启前创建 completed GLM-5.2 max session 的稳定回复。",
       "metadata": {
@@ -23,7 +46,9 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-thought-cold-seed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-thought-cold-seed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-thought-cold-seed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":128,\"completion_tokens\":12,\"total_tokens\":140}}\n\ndata: [DONE]\n\n"
       }
     },
@@ -47,7 +72,9 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-thought-cold-follow\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-thought-cold-follow\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-thought-cold-follow\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":144,\"completion_tokens\":12,\"total_tokens\":156}}\n\ndata: [DONE]\n\n"
       }
     }

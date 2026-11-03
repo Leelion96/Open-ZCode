@@ -334,7 +334,8 @@ describe("output-token continuation with Compact", () => {
               });
               return {
                 finishReason: "length",
-                text: "A ".repeat(2_000),
+                // 由回复长度稳定跨过 microcompact 阈值，不依赖默认 prompt 的长度。
+                text: "A ".repeat(4_000),
                 usage: { inputTokens: 2_000, outputTokens: 1, totalTokens: 2_001 },
               };
             }
@@ -362,7 +363,10 @@ describe("output-token continuation with Compact", () => {
 
     await runtime.executeTurn("next turn uses refreshed output style");
 
+    // output style 指令是追加的附件：旧公告留在历史里，新风格在其后宣告。
     expect(requests[4]).toContain(newOutputStylePrompt);
-    expect(requests[4]).not.toContain(oldOutputStylePrompt);
+    expect(requests[4]!.indexOf(oldOutputStylePrompt)).toBeLessThan(
+      requests[4]!.indexOf(newOutputStylePrompt),
+    );
   });
 });

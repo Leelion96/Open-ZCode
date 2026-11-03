@@ -66,6 +66,68 @@
 - turn group 内传给单条消息的 retry、文件切换、feedback、fork 回调通过 `useCallback` 稳定，避免 memo 被 map 里的 inline function 抵消。
 - diff 只稳定 options 和 viewer 输入，不缓存实际 DOM；主题、字号、换行和行号设置变化时仍会正常重渲染。
 
+## 每帧派生成本
+
+流式 delta 通常只改变最后一轮，但 `rows` 每帧都是新引用。虚拟化只限制 DOM 数量；renderer 在 React commit 之前仍要从完整 `rows` 派生 render unit 等数据。如果每个消费方都靠逐行比较来确认“历史没变”，每帧成本就会随历史长度线性增长。宽屏问题目录会补齐完整历史（见 `docs/ui/conversation-turn-navigator.md`），这在宽屏下尤其明显。目标是流式帧的派生成本与历史长度无关。
+
+### 冻结历史 + 尾轮分区
+
+```text
+delta 帧 → store apply → rows.window（唯一事实源，不变）
+                │
+                └─ advanceConversationRowsPartition：按 delta 判断，O(delta + 尾轮)
+                     只改尾轮 → 沿用上一份 history 数组（引用不变）
+                     其他情况 → 不登记；首次读取时整窗重建，O(N)
+                ▼
+getConversationRowsPartition(rows) = { history, tail }
+                ▼
+消费方：历史结果按 history 引用缓存，每帧只算 tail，再 O(1) 合并
+```
+
+- 分区是 `rows` 的纯派生缓存，用 `WeakMap` 以 window 数组身份为键。它不是第二份状态：`history` 与 `tail` 拼接后逐项等于 `rows`，读取方拿到的永远是与当前 `rows` 对应的分区，不需要层层透传，也不存在两份数据错配。
+- 分区类型 `ConversationRowsPartition` 定义在 `@zcode/shared/zcode-protocol-v4`，与 `ConversationRow` 放在同一文件。它只是行数组的视图类型，不上 wire，没有运行时 schema。构造和缓存（`getConversationRowsPartition`、`memoizeByRows`）留在 renderer 的 `conversationProjectionStore`。所有消费方都从 shared 引用这个类型；插件 UI 的 domain 层因此只依赖协议类型，不依赖 v4 store。
+- `tail` 是 window 的后缀，包含最后一行所在轮的全部行，可能包含多轮，与 `history` 的轮次不相交。整窗重建时，若尾段某一轮在更早位置也出现过，起点前移到那里；快路径沿用上一份 history 时，尾段可能留着已完成的轮（见下面的尾轮内截断）。消费方不能假设 `tail` 只有一轮；按轮分组的派生可以分段计算再拼接。
+- 只改尾轮的判定：`row.delta` / `row.upserted` 的 rowId ≥ 尾轮首行 rowId（窗口按 rowId 升序）；`row.appended` 的轮次已在尾轮中；`row.removed` 的起点在尾轮首行之后。新轮开始、旧行更新、前插、rewind 和 snapshot 帧都会让历史变化，此时整窗重建一次。
+- 成本边界：常数只针对流式帧，而且与历史轮数无关，不是与最后一轮的大小无关。尾轮的切片、分组和派生每帧都要算，所以单轮里有上千个工具调用时，每帧成本随这一轮增长。改到历史行的事件每次多付一帧 O(N)。这类事件都是一次性的：新轮开始与结束（`canRewindFiles` 变化）、compact 开始与结束（`canFork` 变化）、后台结果改写原工具行、subagent 启停、点赞与 rewind。CLI 的流式 `row.delta` 只指向当前轮的行，后台任务进度走 `state.updated`，所以都走快路径。
+- 尾轮内部截断（`row.removed` 起点在尾轮首行之后）时，沿用的分区可能不是规范分区：尾段里留着已完成的轮。轮次仍不相交，输出值不变，只是每帧多算这些轮，直到下一次整窗重建。
+
+### 消费方合并规则
+
+- render unit：历史段 unit 按 history 引用缓存。只有历史中存在无 header 的轮次、仍在运行的轮次或可固定的插件卡片时，缓存键才额外包含 session phase、时钟或插件固定裁决。尾轮每帧 materialize。合并时有三条跨轮规则：尾轮 unit 被过滤掉时，历史末项按最后一轮重新归一化，结果按 session phase 缓存，history 引用保持不变；highspeed footer 只在“含卡片的历史 unit + 尾轮 unit”这个子序列上收口，结果与全量收口相同；最终 unit 仍按引用复用。
+- 运行中的最后一轮作为 live tail 渲染，虚拟列表直接使用历史 unit 数组，引用在流式帧之间不变。
+- 插件卡片派生只依赖插件 UI 行和轮次顺序：历史不变、尾轮的轮次序列和插件 UI 行引用都不变时，复用上一份结果。
+- 问题目录和对话查找：历史段的条目与命中按 history 引用缓存。尾轮的目录条目每帧重建；查找命中与修改前一样，只缓存不在运行的 unit。未查找时返回固定的空索引并清空命中缓存，不留着上一次查询的 unit。目录条目的值只在尾轮预览变化时更新，预览最多 220 字，超过后不再变化。目录成员（realUser query rowId）同样按分区收集：历史段引用不变且尾轮成员不变时返回同一个集合对象，问题目录的锚点登记按这个对象身份失效。
+- bot 话题准备消息：没有准备中的材料时结果必为空，直接跳过；有材料时仍按整窗计算，只发生在话题准备期间。材料挂在历史末项上时（尾轮为空），同一份材料复用同一个 history 数组。
+- 按行扫描的派生用 `memoizeByRows(fn)` 按行数组缓存：分别对 `partition.history` 与 `partition.tail` 调用，history 在流式帧之间引用不变，所以只在历史变化时重算。它只收拢 WeakMap 的读取、计算、写入样板；两段结果怎么合并（求或、取最新、排序后二分、建索引）由各消费方自己写。当前用户：插件引用判定、workflow 联接行、MCP 不可用提示（每个工具只取最新一条）、highspeed 到期边界（升序后二分）、highspeed 统计索引（按 sourceCommandId 取首次出现）。它只用于去重，不能阻止新增的派生直接遍历 `rows.window` 而退回 O(N)；新增每帧执行的派生时，需要在评审中检查这一点。
+- 只取决于单行内容的判定按行对象缓存，例如 `selectWorkflowJoinRows` 的工作流工具名识别：尾段每帧重算时不必对未变的工具行重复做正则归一。协议行不可变，内容变化一定产生新对象，所以缓存不需要失效逻辑。
+- SessionPane 的最新完成轮用 `findLast`，只扫描尾部。发送渲染通知在没有待渲染发送时跳过；pending command 对账在本会话没有待对账条目、也没有结算监听时跳过。两者在跳过时本来就不会产生任何效果。结算监听是全局的，可能一直存在到权威结算（结果未知的提交不会产生结算通知）；有监听时所有会话照常整窗扫描，与修改前相同。
+- store 共享 delta 行时从窗口尾部扫描一次，找齐全部 delta 目标即停止。`applyConversationDelta` 处理 `row.upserted` / `row.delta` 时同样从尾部查找。apply 对每条 delta 复制一次 window；CLI 已在 flush 时合并相邻同行 delta，流式帧通常只复制一次。window 复制是协议 snapshot 表示带来的线性成本，留到后续再处理。
+
+### 回归验证
+
+可重复的性能验收入口是 PERF04（`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-streaming-history-performance.test.ts`，覆盖记录见 coverage matrix「PERF04 长历史流式渲染」）。它经 Host 导入服务建立 1000 回合 / 3000 行历史，回放 thinking 与正文流式输出，断言完成态正文逐字一致、帧间隔 P95 低于预算，并输出帧间隔、长任务和 renderer CPU profile。
+
+```bash
+ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts \
+  --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-streaming-history-performance.test.ts
+```
+
+读数口径：帧间隔 P95 反映画面是否掉帧，60Hz 显示器的理想值约 16.7ms；机器越快、历史越短，这个值越早贴近理想值，看不出派生成本的差别。派生成本看同一次运行的 CPU profile 里 renderer 非空闲时间。
+
+2026-10-29 同机（macOS arm64，Scan 关闭）对比，修改前为 HEAD `ec67ad4f58`：
+
+| 指标                                | 修改前           | 修改后           |
+| ----------------------------------- | ---------------- | ---------------- |
+| 帧间隔 P95                          | 18.3ms           | 17.5ms           |
+| 长任务                              | 2 个（60、57ms） | 2 个（69、69ms） |
+| renderer 非空闲时间（约 8.8s 采样） | 1649ms（18.5%）  | 1083ms（12.3%）  |
+
+两次都满帧；差别体现在 renderer CPU 少约三分之一。两个长任务出现在发送初期，在修改前就存在。数值只代表这台机器上的同机回放，不代表用户机器。
+
+分区实现剩下的线性部分：apply 复制 window，以及与最后一轮大小成正比的尾轮派生。
+
+浏览器验收夹具 `packages/ui/test/browser/manual-review/pending/message-render-isolation.fixture.tsx` 与 `render-boundaries.fixture.tsx` 直接使用分区 API：前者把 selector 结果拼平后与 `buildConversationTurnRenderUnits` 做值对照，后者驱动问题目录与查找。
+
 ## 远控边界
 
 本改动只影响 UI 层渲染，不改变 ZCode task 消息流、snapshot、queue 或恢复语义：
@@ -73,3 +135,15 @@
 - 桌面端 `desktop-continuous` 仍保持 direct continuous 主链路。
 - 手机远控 `web-remote-replayable` 仍通过 replayable snapshot/gap 恢复边界展示消息。
 - 远控全量历史仍由显式加载控制，不因虚拟滚动重新触发隐式全量快照传输。
+
+## 部分轮次补齐的绘制一致性（SSV03）
+
+冷切换可能先显示末尾 60 行，再补齐历史；首轮保持同一 turnId，但正文会显著增高。补齐正文与该轮测高、后续轮位置、列表总高度必须在同一次绘制前收口，不能等待下一帧 ResizeObserver 才更新坐标。只测量当前挂载的虚拟单元，沿用已有 virtualizer 与高度缓存；不重建 turn key、不增加延时或第二份布局状态。前插批次只由既有 prepend 锚点补偿一次，逐行测高不得再叠加滚动补偿。既有离底阅读锚点、用户滚动优先和跟随状态不变。
+
+```mermaid
+flowchart LR
+  A[提交补齐正文] --> B[测量挂载轮次]
+  B --> C[提交虚拟坐标与总高度]
+  C --> D[既有锚点对账]
+  D --> E[绘制无重叠帧]
+```

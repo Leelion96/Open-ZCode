@@ -28,6 +28,7 @@ import {
   formatUnavailableRewindResponse,
   formatWorkspaceRewindNoticeBody,
   getLatestActiveSessionMessageId,
+  isHiddenReminderMessage,
   isTurnCancellationError,
   selectCheckpointForMessage,
   selectCheckpointsForMessages,
@@ -39,7 +40,7 @@ import type {
   WorkspaceRewindResult,
 } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
-import { rebuildContextPrefix } from "./context-refresh.js";
+import { rebuildContextPrefix, refreshRestoredAnnouncements } from "./context-refresh.js";
 import { mainTurnCacheHitAggregateFromMessages } from "./turn-model-step-usage.js";
 
 export async function rewindToMessage(
@@ -699,11 +700,14 @@ async function rebuildConversationDerivedState(
   await hydrateReadFileStateFromSession({
     messages: options.persistedMessages,
     readFileState: this.readFileState,
+    // rewind 不重新加载 context：保留会话开始写入的 MEMORY.md 记录。
+    retainContextSeeds: true,
     workingDirectory: this.workingDirectory,
     workspaceRoot: this.workspaceRoot,
     ...branchOptions,
   });
   rebuildContextPrefix(this);
+  refreshRestoredAnnouncements(this);
   this.injectTargetStateIntoMessageHistory(
     await this.readSessionTargetForContext(options.traceContext),
   );
@@ -728,13 +732,13 @@ async function rebuildConversationDerivedState(
     activeMessages,
     persistedMessages: options.persistedMessages,
   });
-  this.turnNumber = activeMessages.filter(
-    (message) => message.info.role === "user" && !message.info.summary,
-  ).length;
+  this.turnNumber = activeMessages.filter(isRewindableUserPrompt).length;
   this.currentTurnFileChanges = new Map();
   this.autoCompactConsecutiveFailures = 0;
 }
 
+// 修复原因：隐藏提醒写在用户输入与 assistant 之间。assistant 锚点回溯停在它上面，旧输入留在历史里；
+// turnNumber 也把它算成一轮，冷恢复比 live 大。它不是对话消息，两处都跳过。
 function isRewindableUserPrompt(message: MessageWithParts): boolean {
-  return message.info.role === "user" && !message.info.summary;
+  return message.info.role === "user" && !message.info.summary && !isHiddenReminderMessage(message);
 }

@@ -81,6 +81,10 @@ export {
   normalizeZCodeProductFlavor,
 } from "./env.js";
 export * from "./errors.js";
+export {
+  USER_INSTRUCTIONS_MAX_BYTES,
+  USER_INSTRUCTIONS_TOO_LARGE_ERROR_CODE,
+} from "./userInstructions.js";
 export * from "./rendererActionTrace.js";
 export * from "./validation.js";
 export * from "./api.js";
@@ -144,6 +148,7 @@ export {
   DesktopCommandIds,
   buildLocalMediaPreviewUrl,
   createOpenInEditorRemoteTarget,
+  unwrapRemoteWorkspaceBindResult,
 } from "./platform.js";
 export type {
   ArmsCustomEventPayload,
@@ -154,12 +159,15 @@ export type {
   RendererTelemetryEventPayload,
   TelemetryEventPayload,
   TelemetryRendererContext,
+  TelemetryUiMode,
 } from "./telemetry.js";
 export {
   PLUGIN_TELEMETRY_EVENTS,
   mobilePluginDiscoveryTelemetrySchema,
   sanitizePluginTelemetryDetail,
   collectTelemetryRendererContext,
+  normalizeTelemetryUiMode,
+  telemetryUiModeSchema,
   resolveSafeTelemetryHostname,
   sanitizeTelemetryErrorMessage,
   sanitizeTelemetrySkillName,
@@ -205,6 +213,8 @@ export type {
   ChromeBrowserDataImportOptions,
   ChromeBrowserDataImportResult,
   ConnectRemoteRequest,
+  FileApplicationInfo,
+  FileApplicationTarget,
   CreateTempTextAttachmentRequest,
   CreateTempTextAttachmentResult,
   MaterializeWorkflowArtifactFileRequest,
@@ -340,7 +350,7 @@ export * from "./subagent-runtime-config.js";
 export * from "./subagent-profile.js";
 export { parseAgentProfileFromMarkdown } from "./subagent-profile-parser.js";
 
-export * from "./localTtft.js";
+export * from "./local-ttft/contract.js";
 export * from "./pluginStoreOrder.js";
 export * from "./clientConfig.js";
 export * from "./pluginStoreOrdering.js";
@@ -352,7 +362,10 @@ export { redactFeedbackText } from "./feedbackPrivacy.js";
 export { API_KEY_USAGE_SCENE, type ApiKeyCreationUsageScene } from "./api-key-usage-scene.js";
 export {
   projectAccessTokenFingerprint,
+  ProjectAccessTokenError,
+  ProjectAccessTokenHttpStatusError,
   ProjectAccessTokenTransientError,
+  type ProjectAccessTokenRequestFailure,
 } from "./project-access-token.js";
 export {
   ProjectAccessTokenClient,

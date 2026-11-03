@@ -8,6 +8,7 @@ import {
   FACADE_DTS,
   lowerWorkflow,
   SNIPPET_FACADE_DTS,
+  WORLD_READ_CAPS,
   WORLD_RUN_LITERAL_CODE,
 } from "../src/index.js";
 
@@ -25,6 +26,9 @@ describe("facade dts segments", () => {
   it("SNIPPET_FACADE_DTS keeps world reads, world.run, log and args, drops actors/report/artifact/phase", () => {
     expect(SNIPPET_FACADE_DTS).toContain("declare const args");
     expect(FACADE_DTS).toContain("declare const args");
+    // run 身份同理：引用 run.id 的片段要能逐字迁进工作流（片段里是一个一次性的 dwfeval- id）。
+    expect(SNIPPET_FACADE_DTS).toContain("declare const run");
+    expect(FACADE_DTS).toContain("declare const run");
     expect(SNIPPET_FACADE_DTS).toContain("declare const files");
     expect(SNIPPET_FACADE_DTS).toContain("declare const git");
     expect(SNIPPET_FACADE_DTS).toContain("declare const world");
@@ -205,6 +209,29 @@ describe("world.run (compile side)", () => {
     expect(lowered.code).toContain(`__host.worldRead("world-read#1", "run"`);
   });
 
+  it("typechecks every opts.output mode and rejects other shapes at compile time", () => {
+    const ok =
+      `const a = await world.run("pnpm", ["test"], { output: "full" });\n` +
+      `const b = await world.run("pnpm", ["test"], { output: "discard", timeoutMs: 600000 });\n` +
+      `const c = await world.run("pnpm", ["test"], { output: { tail: 16384 } });\n` +
+      `return a.exitCode + b.exitCode + c.stderr.length;`;
+    for (const facadeDts of [FACADE_DTS, SNIPPET_FACADE_DTS]) {
+      expect(collectDiagnostics(createWorkflowProgram(ok, { facadeDts }).program)).toEqual([]);
+    }
+    for (const bad of [`"quiet"`, `{ head: 10 }`, `{ tail: "10" }`]) {
+      const workflow = createWorkflowProgram(
+        `await world.run("pnpm", ["test"], { output: ${bad} });`,
+      );
+      expect(collectDiagnostics(workflow.program).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("states the run output cap the driver enforces (the prose number follows the constant)", () => {
+    expect(WORLD_READ_CAPS.runStdoutMaxBytes).toBe(WORLD_READ_CAPS.runStderrMaxBytes);
+    expect(FACADE_DTS).toContain(`n <= ${WORLD_READ_CAPS.runStdoutMaxBytes} (16 MiB)`);
+    expect(WORLD_READ_CAPS.runStdoutMaxBytes).toBe(16 * 1024 * 1024);
+  });
+
   it("collects the deduplicated, sorted command set from literals", () => {
     const workflow = createWorkflowProgram(
       `await world.run("node", ["-e", "0"]);\n` +
@@ -309,5 +336,47 @@ describe("args lowering", () => {
     const lowered = lowerWorkflow(workflow, table);
     expect(lowered.code).toContain("__host.args.topic");
     expect(lowered.code).toContain('__host.ask("ask#1"');
+  });
+});
+
+// run 身份的降级：与 args 同一条标识符级改写（docs/dynamic-workflow/authoring.md「The run's
+// identity」）。读它不是等待点，不占站点。
+describe("run identity lowering", () => {
+  it("lowers a facade run read to __host.run, with no site of its own", () => {
+    const workflow = createWorkflowProgram(
+      `log(\`run \${run.id} amends \${run.resumedFrom ?? "none"}\`);\nreturn run.id;`,
+    );
+    expect(collectDiagnostics(workflow.program)).toEqual([]);
+    const lowered = lowerWorkflow(workflow, collectSites(workflow));
+    expect(lowered.code).toContain("__host.run.id");
+    expect(lowered.code).toContain("__host.run.resumedFrom");
+    expect(lowered.siteIds).toEqual([]);
+  });
+
+  // `world.run` 的 `run` 是属性名，不是这个值；改写它会得到 `world.__host.run`。
+  it("leaves world.run alone next to a run read", () => {
+    const workflow = createWorkflowProgram(
+      `const r = await world.run("node", ["-v"]);\nreturn [run.id, r.exitCode];`,
+    );
+    expect(collectDiagnostics(workflow.program)).toEqual([]);
+    const lowered = lowerWorkflow(workflow, collectSites(workflow));
+    expect(lowered.code).toContain("__host.run.id");
+    expect(lowered.code).not.toContain("world.__host");
+    expect(lowered.siteIds).toHaveLength(1);
+  });
+
+  // 已有脚本常把一次命令结果叫 `run`：它解析到脚本自己的符号，原样保留、照常遮蔽。
+  it("leaves a script-declared local `run` alone", () => {
+    const workflow = createWorkflowProgram(`const run = { id: "mine" };\nreturn run.id;`);
+    expect(collectDiagnostics(workflow.program)).toEqual([]);
+    const lowered = lowerWorkflow(workflow, collectSites(workflow));
+    expect(lowered.code).not.toContain("__host.run");
+  });
+
+  it("lowers run in the snippet facade too (verbatim portability)", () => {
+    const workflow = createWorkflowProgram(`return run.id;`, { facadeDts: SNIPPET_FACADE_DTS });
+    expect(collectDiagnostics(workflow.program)).toEqual([]);
+    const lowered = lowerWorkflow(workflow, collectSites(workflow));
+    expect(lowered.code).toContain("__host.run.id");
   });
 });

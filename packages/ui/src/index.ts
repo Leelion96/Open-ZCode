@@ -117,5 +117,5 @@ export { recordArmsCustomEventForE2E } from "./lib/armsCustomEventObservability.
 export { generateMobileDeviceFingerprint, setStreamClientId } from "./lib/streamClientId.js";
 export { GlobalDatabaseStartupLoading } from "./root/GlobalDatabaseStartupLoading.js";
 
-export { LocalTtftObserver, setLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
+export { LocalTtftObserver, setLocalTtftObserver } from "@/v4/telemetry/local-ttft/contract.js";
 export { ensurePendingTaskDraft } from "@/v4/composer/composerDraftStore.js";

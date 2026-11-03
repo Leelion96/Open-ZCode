@@ -1,5 +1,7 @@
 # SSH 远程 Skills 同步设计
 
+> **被取代（2026-10，票 14）**：技能同步已并入[数据同步规格](../../remote/data-sync.md)。本文的「UI 设计」「服务边界」「数据流」和同名一律跳过的冲突策略已被取代：旧的技能同步弹窗、`listRemoteUserSkillStatuses` 等旧方法和 Header / 侧栏 / 设置页 / 连接向导各自的入口逻辑已删除，6 处入口统一打开数据同步弹窗（SSH、WSL、Docker 远程 tab 都显示）。技能来源与去重规则、软链与大小限制的动机仍可作为背景参考，以数据同步规格为准。
+
 ## 背景
 
 ZCode 的 skills 当前按运行时文件系统读取。本地 workspace 读取本机用户级与项目级 skills，SSH / Docker / WSL 远程 workspace 读取远端文件系统里的 skills。远程 workspace 可以使用 skills，但前提是远端机器上已经存在对应的 `SKILL.md` 目录。

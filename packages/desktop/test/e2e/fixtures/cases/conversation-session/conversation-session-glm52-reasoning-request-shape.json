@@ -13,7 +13,7 @@
       "kind": "common",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定响应同时守住 title sidecar 的 GLM-5.2 关闭思考请求字段，防止重新继承 max。"
+      "syntheticReason": "真实标题请求通过 thinking.type=disabled 与 reasoning_effort=none 明确关闭思考；旧 matcher 禁止整个 thinking 字段导致 Missing Fixture 500。"
     },
     {
       "id": "glm52-reasoning-max-main",

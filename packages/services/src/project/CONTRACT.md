@@ -4,9 +4,11 @@
 
 目录解析的 task 归属与 roots 来自同一读快照。已知 task 无项目时返回空附加目录；引用悬空项目或读取失败直接拒绝。prepareSession 的 cwd 创建后固定；编辑 roots 只影响下一次 runtime materialization。删除项目不删除会话；移动不写 CLI 事实、时间或 cwd。CLI continuous/replayable 流不由本模块修改。
 
-全局创建显式空归属，不按目录猜项目。跨 host 移动失败；同 host 缺目录时先返回错误，用户明确确认后原子追加 root 与移动。可删除容器永久保留，恢复仅由新建时明确选择同 roots 的已删项目。
+全局创建显式空归属，不按目录猜项目。跨 host 移动失败；同 host 缺目录时先返回错误，用户明确确认后原子追加 root 与移动。已删除容器默认永久保留，恢复仅由新建时明确选择同 roots 的已删项目；例外是下文的彻底删除数据。
 
 远端装配器在 prepareSession 和 resolveSessionDirectories 后，通过既有 workspace identity resolver 为返回的真实 cwd 登记并返回 workspaceIdentity；不复制请求中的身份，resolver 失败直接拒绝。readTree 返回前对全部项目 roots（包括无任务的空项目）与历史任务 cwd 去重并完成同一身份准备，失败不发布树，防止侧栏动态订阅落到未映射的事件源。它只提供导航/隔离身份，不改 cwd 和附加目录；UI 不得从远端真实路径推断本机 workspace。导航继续严格比较任务与目录解析结果的 cwd 和身份，不以路径相同绕过设备隔离。
+
+装配器用 `createRemoteIdentityRegistrationCache` 包住 resolver：同一物理连接内同一路径只向远端登记一次，并发调用共用同一次登记，失败不缓存。物理连接由装配器传入（Registry handle 的 `physicalOwner()` 或 Manager 连接的 `services`），不能用跨重连不换代的 logical handle。工作区打开的身份登记不经过这个去重。规则见 `docs/remote/project-first-remote-navigation-spec.md` §2.1b。
 
 readProjects 只查询项目/roots，不加载任务或触发 Agent，用于目录管理；readTree 同样只读，两者都不触发自动归档。旧 settings 集合由本机提交的项目/入口派生；窗口只写 lastActiveWorkspace。派生端口不得调用 settings 或网络，设置文件锁内重读，防止删除入口被迟到响应复活。
 
@@ -23,3 +25,9 @@ readDirectory 是项目选目录的 Host 路由入口：未指定 path 返回所
 本地仍允许 0..n roots；可信 ownerHostId 非 local 的持库宿主只允许恰好一个固定 root。远程创建必须有项目，prepareSession、reserveCreatedTask 与 moveTask 不得产生无归属或附加目录；根路径更新和缺 root 拖动在写事务中拒绝。客户端 hostId 不能改变持库身份。历史迁移数据不被裁剪，失败不得部分写入。
 
 未归类 Composer 可传 UUID draftId，目录由 Host 在 workspaceDirectory 下确定性派生；并发和重试只准备同一目录。reuseDraft 表示客户端已拿到该目录，缺失时报错，不重新 mkdir。无 draftId 的其他调用保持独立分配，远端仍要求项目；草稿和接纳记录不进入项目数据库。
+
+显式本地打开目录使用 saveProject 的 reuseExistingRoot 选项：仅接受无 ID、无编辑字段的单 root 请求。目录异步校验与 normalize 后，由同一 Host 写事务复用包含该 root 的未删除项目或创建单 root 项目；主要目录匹配优先，其后按 position、ID 稳定选择。复用不改项目元数据，不恢复已删除项目。普通保存、全局新任务和远程入口不启用此选项。
+
+## 2026-10-24 彻底删除数据
+
+`measureProjectData` / `deleteProjectData` 只在本机 Host 执行（远程与 Source Server 报 `project.data-local-only`，旧单 root 只读）。副作用经装配层注入的 `ProjectDataPort`：会话与记忆交给 CLI 的 `v4/storage/sessionData/*`（按 cwd 交给已有 Agent 进程，否则管理面进程），检查点目录由 Host 删除。`deleteProjectData` 只接受已软删除项目；目录在删任务索引行之前计算，保留（运行中 / 附件被引用）或失败会话的 cwd 不删记忆与检查点；目录全部删除成功后才删已删会话的任务索引行，项目不再被任务、自动化、闲时任务引用时删除项目行；有目录失败时只把这些行标为 CLI 已删除，项目保持软删除以便重试。目录 = roots ∪ 会话 cwd，扣除范围外项目（含已软删除、可恢复的项目）的 roots 与范围外未删除任务（`tasks.deleted=0`，含已软删除项目的任务：移除项目不改任务行）的 cwd。规则见 `docs/superpowers/specs/2026-10-24-project-management.md`「彻底删除数据」。

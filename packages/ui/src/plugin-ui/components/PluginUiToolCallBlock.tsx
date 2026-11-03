@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button.js";
+import { PluginIcon } from "@/components/PluginIcon.js";
 import { PluginUiCard } from "@/plugin-ui/components/PluginUiCard.js";
 import type { PluginUiToolCallViewProps } from "@/plugin-ui/contract.js";
 import { TID_PLUGIN_UI_OPEN_SIDE_PANE } from "@zcode/shared/test-ids";
@@ -15,12 +16,42 @@ export function PluginUiToolCallView(props: PluginUiToolCallViewProps) {
       {...(props.surface ? { "data-plugin-ui-surface": props.surface } : {})}
     >
       {props.fallback}
-      {props.sidePaneActive ? (
+      {props.sidePaneActive || !props.inlineAllowed ? (
         <div
-          className="flex items-center justify-between rounded-lg border border-border bg-surface px-3 py-2 text-ui-sm text-foreground-subtle"
+          className="flex min-w-0 items-center gap-3 rounded-xl border border-card-border bg-card px-4 py-3"
           data-testid="plugin-ui-side-pane-placeholder"
         >
-          <span>{props.openedLabel}</span>
+          <PluginIcon
+            key={props.pluginIcon ?? props.pluginId}
+            pluginId={props.pluginId}
+            src={props.pluginIcon}
+            className="size-10 rounded-lg"
+            iconClassName="size-5"
+          />
+          <div className="min-w-0 flex-1">
+            <div
+              className="truncate text-ui-base font-medium text-foreground"
+              title={props.pluginName}
+            >
+              {props.pluginName}
+            </div>
+            <div className="text-ui-sm text-foreground-subtle">
+              {props.sidePaneActive ? props.openedLabel : props.openLabel}
+            </div>
+          </div>
+          {props.onOpenSidePane ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              data-testid={TID_PLUGIN_UI_OPEN_SIDE_PANE}
+              aria-label={props.openLabel}
+              onClick={props.onOpenSidePane}
+            >
+              <PanelRightOpenIcon className="size-4" />
+              {props.openButtonLabel}
+            </Button>
+          ) : null}
         </div>
       ) : (
         <div className="relative">

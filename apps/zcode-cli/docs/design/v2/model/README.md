@@ -385,6 +385,9 @@ OpenAI-compatible 回放一致的契约：
   `session_title`、`project_memory_extract` 等调用用途。去掉首尾空白后只接受 1–128 个
   ASCII 字母、数字、下划线、点、冒号或短横线；缺失或非法值时省略，不回退到同名静态
   header。generate/stream、重试和跳过 transcript 的请求共用此规则。
+- `x-zcode-session-features`：本会话至今用过的能力标签（如 `workflow_cmd`、`workflow_auto`），
+  逗号分隔、字典序、只增不减。没有标签或值不合法时省略；工作区独立请求不发送；provider 静态
+  同名 header 被剔除。owner、继承与冷恢复规则见 [session-features-header.md](session-features-header.md)。
 
 `turnId`、`spanId`、`parentSpanId` 等细粒度诊断信息只进入 model status event、session event、
 trace span 和结构化日志，不进入 provider-visible HTTP header。上述归因 header 只用于统计、

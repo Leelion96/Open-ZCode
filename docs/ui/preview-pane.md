@@ -17,6 +17,17 @@
 
 ## 文件与文本渲染规则
 
+### 原生媒体控件主题
+
+- `video[controls]` / `audio[controls]` 统一跟随应用已有的 `.dark` 主题类设置 `color-scheme`：浅色为 `light`，深色为 `dark`。沿用 `applyTheme` 对 Zai、旧版偏好和 System 的解析，不单独读取系统偏好。
+- 规则由 UI 公共样式入口加载，覆盖 Preview Pane、聊天附件弹窗、共享媒体预览及云端媒体 Hero；无 `controls` 的缩略图不在范围内。
+- 样式定义在 `packages/ui/src/nativeMediaControls.css`，由 `packages/ui/src/styles.css` 导入；主题解析仍由 `packages/ui/src/useTheme.ts` 的 `applyTheme` 负责。
+- 桌面和手机 Web 共用样式。只改变浏览器原生菜单及控件的外观，保留播放、速度选择、媒体加载及远控数据路径。
+- macOS 视频菜单本地化依赖打包时保留 `en.lproj` / `zh_CN.lproj`；主题样式不能替代语言包修复。
+- 验证要求：单测读取实际媒体样式，覆盖深浅主题与 System、Desktop/Web 表面及无控件缩略图；真实 Electron 验证中英文溢出菜单和速度子菜单，并在桌面/窄屏下检查明暗主题切换。
+
+### 通用渲染规则
+
 - `.md` / `.markdown` 文件和 markdown 文本 source 默认进入预览模式，可在更多菜单切换到源码
 - `.svg` 文件和带 `.svg` path 的文本 source 默认进入 SVG 预览，可切换到代码；切到代码模式后可继续使用自动换行开关
 - 图片预览使用 4px 马赛克背景，内容区保留 `p-10`；位图默认按自然尺寸显示，文件名带 `@2x`、`@3x`、`@1.5x` 等倍率时，会按倍率折算为对应 CSS 展示尺寸，并继续受容器最大宽高约束；SVG 作为矢量图按容器 `contain` 适配，不参与位图倍率折算

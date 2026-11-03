@@ -245,7 +245,9 @@ describe("ToolExecutor Agent telemetry", () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.modelContent).toContain("hook validation context");
+    expect(result.hookAdditionalContexts).toEqual([
+      "PreToolUse:HookValidationTool hook additional context: hook validation context",
+    ]);
     expect(lifecycle).toEqual(["tool.start", "tool.run", "tool.fail:validation"]);
   });
 

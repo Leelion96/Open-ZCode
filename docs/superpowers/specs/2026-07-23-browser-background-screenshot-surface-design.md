@@ -7,7 +7,7 @@
 > 关联规范：
 > `docs/browser-use/2026-07-15-browser-turn-final-screenshot-spec.md`、
 > `docs/browser-use/2026-07-15-responsive-browser-viewport-spec.md`、
-> `docs/testing/browser-use-codex-parity-coverage-matrix.md`。
+> `docs/testing/browser-use-coverage-matrix.md`。
 
 ## 1. 问题与运行时证据
 

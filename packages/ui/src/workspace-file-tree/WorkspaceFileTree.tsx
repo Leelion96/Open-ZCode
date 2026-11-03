@@ -597,6 +597,7 @@ export function WorkspaceFileTree({
     getPathLeaf(workspacePath) ||
     intl.formatMessage({ id: "workspaceFileTree.title" });
   const editorState = {
+    workspaceRemoteSessionId,
     canOpenLocalFileManager,
     installedEditors: availableEditors,
     isRemoteWorkspaceFileTree,

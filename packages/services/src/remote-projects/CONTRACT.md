@@ -2,13 +2,15 @@
 
 本机 SQLite 是“用户添加了哪些远端项目”的唯一权威。远端项目 CRUD 继续走远端 project 服务。入口仅保存基础信息，不保存会话索引、归属、消息或待执行操作。连接运行态与凭据沿用既有服务。
 
-新增是明确用户动作，刷新只更新已有 entry ID，并比较请求开始时 lastSyncedAt。移除后重新添加产生新 ID，旧网络响应无法复活或覆盖新入口。并发刷新仅一个版本可提交，其余下一次刷新重读。移除 host 仅级联本机入口，事务中执行；保存 host 在事务内检查 20 个上限。所有变更经 afterChange 在当前 Host 发布，桌面与手机读取同一份本机数据，不创建新 runtime 或消息恢复路径。
+入口缓存包含远端项目的删除态（`cached_deleted`）。在线刷新随名称和 roots 一起写入；显式添加表示项目可用，写为未删除。离线或远端读取失败时，侧栏用缓存生成项目行，已删除的入口不展示，settings 兼容投影也不导出它。删除态只是远端事实的缓存，本模块不据此删除入口，也不触发远端写入。
+
+新增是明确用户动作，刷新只更新已有 entry ID，并比较请求开始时 lastSyncedAt。移除后重新添加产生新 ID，旧网络响应无法复活或覆盖新入口。并发刷新仅一个版本可提交，其余下一次刷新重读。移除 host 仅级联本机入口，事务中执行；保存 host 和确认不同 Source 均在事务内写入，不设保存数量硬上限。所有变更经 afterChange 在当前 Host 发布，桌面与手机读取同一份本机数据，不创建新 runtime 或消息恢复路径。
 
 schema 由 project-storage 的启动迁移准备。本模块仅操作 hosts 与 remote_project_entries；工厂注入已迁移的连接，不打开第二个数据库，不接触 CLI。settings 双写由装配层从提交后的入口快照派生，不能把旧 settings 再次导入。
 
 直接连接远端 owner 的客户端没有本机 Controller 入口表。装配时以 controller=false 禁止全部入口写入，readDirectory 返回空目录且不访问数据库；当前 owner 的权威项目仍从 projectService 读取。不能因为查询不支持 Controller 入口就把整个权威项目树拒绝掉。
 
-历史影子 host 的 target_json=NULL 占位不属于连接入口，不展示、不计容量。未改变缓存内容的刷新仍推进 CAS 版本，但不广播项目变化。
+历史影子 host 的 target_json=NULL 占位不属于连接入口，不展示。未改变缓存内容的刷新仍推进 CAS 版本，但不广播项目变化。
 
 connectHost 从成员表取得已保存连接，再通过装配端口调用既有连接器的 retain 路径；自身不加载凭据、不重试、不创建 Host/runtime，不增加入口。readDirectory 可附加连接管理器提供的当前 connectionStatus，字段仅为实时展示投影，禁止落盘或成为连接实例的第二 owner。
 

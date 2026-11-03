@@ -12,7 +12,7 @@
 
 ## 当前依赖树的生成状态
 
-`THIRD-PARTY-NOTICES.md` 与 `inventory.json` 已在冻结安装后按当前锁文件重新生成，基础许可标识与声明新鲜度检查通过。开源导出流程会再按开源树的实际依赖重新生成，两棵树不共用生成结果。
+`THIRD-PARTY-NOTICES.md` 与 `inventory.json` 已在冻结安装后按当前锁文件重新生成，基础许可分类、声明输入哈希和新鲜度校验通过。OFL-1.1 作为标准开放字体许可参与分类，完整原文仍必须随对应字体包进入声明；开源导出流程会再按开源树的实际依赖重新生成，两棵树不共用生成结果。
 
 基础检查通过不代表材料缺口已关闭：`inventory.json` 的 `reviewRequired` 仍保留待补齐的原文和来源证据。当前覆盖的精确包版本、复制组件与待核验数量以生成清单为准，避免文档中的历史数量被误当作当前状态。
 
@@ -28,7 +28,7 @@ node scripts/licenses.mjs check --strict
 
 严格检查目前只作为显式命令运行，尚未接入 SEA 的 CI 发布和手动 SMB 上传入口：当前清单仍有已登记缺口，接入后这两条发布路径会立即失败。本地构建仍可用于核验修复，基础检查会明确提示未解决数量。
 
-生成器以根锁文件的生产依赖图为覆盖集合，先比较实际安装图，再按精确版本读取内容；旧安装图必须先 frozen install，不能直接重生成。标识门禁和声明生成共用递归扫描，覆盖所有 workspace、嵌套版本和符号链接，并按真实目录防环。相同原文按 SHA-256 去重；同名不同版本分别记录。支持的平台可选包必须已安装。三个未安装 Canvas 目标（Android、Linux armv7、Linux riscv64）不属于当前桌面发行目标。
+生成器以根 lockfile 的生产依赖图为覆盖集合，并先把两侧换行统一为 LF 再严格比对 `pnpm-lock.yaml` 与 pnpm 的 `node_modules/.pnpm/lock.yaml` 安装快照（Windows autocrlf 工作区的 CRLF 不算依赖图漂移）；旧安装图必须先 frozen install，不能直接重生成。Windows 上递归 `pnpm list` 会超过文件句柄上限，因此生成器固定根 lockfile，按唯一 workspace 名称逐项读取 lockfile-only 图，避免跨 workspace dedupe 漏掉传递依赖。标识门禁和声明生成共用该锁图，再按真实目录递归扫描实装包并防环。相同原文按 SHA-256 去重；同名不同版本分别记录。支持的平台可选包必须已安装。三个未安装 Canvas 目标（Android、Linux armv7、Linux riscv64）不属于当前桌面发行目标。
 
 审核并提交通知和 `inventory.json`。清单同时记录锁文件、manifest、补丁、复制文件和补充材料的哈希；版本变化或声明被截断会使显式检查失败；构建只读取已有声明，不因此中断。该检查确认材料新鲜度与许可标识，不自动证明所有发行义务已经履行。
 
@@ -102,11 +102,3 @@ Apache-2.0 复制内容中的 148 个已确认改编文件包含文件内来源�
 
 这两个包由表格解析构建依赖引入；当前生产依赖图未包含它们。若以后进入发行产物，
 仍须收集该版本的完整许可原文。现有 `reviewRequired` 材料缺口继续保留，严格检查不得绕过。
-
-## 文档查看器字体许可
-
-`@fontsource/noto-sans-sc@5.3.1` 的随包许可为 `OFL-1.1`；原文保存在 [字体许可快照](upstream/noto-sans-sc-5.3.1-LICENSE.txt)，SHA-256 为 `18aabf190848725e2576eefb5c29ba06aac1029d02132252a7f312eac2e50cf3`。官方条件见 [SIL OFL 1.1 原文](https://openfontlicense.org/open-font-license-official-text/)。
-
-该依赖由 `office-runtime` 声明为构建依赖。PDF 插件构建从 `400.css` 选择原有 WOFF2 分片并原样复制，不改字体内部名称；`apps/zcode-cli/packages/office-runtime/scripts/build.mjs` 将随包版权与完整许可写入插件的 `THIRD_PARTY_NOTICES.txt`。字体作为插件资源分发，继续保留 OFL 许可，不单独销售字体。
-
-许可门禁仅登记这一精确包名、版本与许可标识；其他包、版本或许可仍需核验。此记录不替代最终安装包审计，不关闭既有材料缺口。

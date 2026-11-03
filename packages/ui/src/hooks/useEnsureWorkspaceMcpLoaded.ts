@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useServices } from "@/hooks/useServices.js";
-import { setMcpStoreDirectoryService, useMcpStore } from "@/store/mcpStore.js";
+import { useMcpStore } from "@/store/mcpStore.js";
 
 export function useEnsureWorkspaceMcpLoaded(
   workspaceAbsPath: string,
@@ -9,16 +9,9 @@ export function useEnsureWorkspaceMcpLoaded(
 ) {
   const services = useServices();
 
-  useEffect(() => {
-    if (!rpcReady) {
-      return;
-    }
-    setMcpStoreDirectoryService(services.mcpSyncService);
-    return () => {
-      setMcpStoreDirectoryService(null);
-    };
-  }, [rpcReady, services.mcpSyncService]);
-
+  // 修复说明：这里曾把当前 tab 的 mcpSyncService 设为 store 的全局目录服务，设置页 Scope
+  // 选中其他设备时写入仍落到当前 tab 所在设备。现在目录服务随目标一起经
+  // ensureLoadedForWorkspace 绑定，不再有全局服务。
   useEffect(() => {
     if (!rpcReady) {
       // remote tab 恢复时 App 会先拿到断连代理；若立即

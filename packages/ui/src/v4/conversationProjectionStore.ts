@@ -1,3 +1,5 @@
+import type { SessionLifecycleSnapshot } from "@zcode/shared";
+import { getLocalTtftObserver } from "@/v4/telemetry/local-ttft/contract.js";
 /* eslint-disable max-lines -- projection/base/recovery/optimistic 必须共享一个原子 store 状态机，拆分会重新引入跨对象竞态。 */
 // Per-session projection store（只读 projection store）。
 // 唯一写入方是订阅推送；UI 只读。客户端遵守三条规则：
@@ -13,6 +15,7 @@ import {
   type ConversationDelta,
   SUBSCRIPTION_CONTENT_REJECTED,
   type ConversationRow,
+  type ConversationRowsPartition,
   type ConversationSnapshot,
   type ConversationOpenTiming,
   type ConversationTopicFrame,
@@ -115,6 +118,8 @@ export interface OptimisticCommand {
 
 export interface ConversationStoreState {
   status: ConversationStoreStatus;
+  lifecycle?: SessionLifecycleSnapshot;
+  projectionReady?: boolean;
   snapshot: ConversationSnapshot | null;
   subscriptionId: string | null;
   lastError: string | null;
@@ -272,6 +277,116 @@ export function mergeOlderRows(
 }
 
 /**
+ * rows.window 的「冻结历史 + 尾轮」分区缓存（类型见 ConversationRowsPartition，
+ * spec：docs/ui/chat-virtual-scroll.md「每帧派生成本」）。
+ *
+ * 为什么需要它：流式帧只改最后一轮，但 rows 每帧都是新数组，消费方只能逐行比较才知道历史没变，
+ * 每帧成本随历史长度线性增长。分区让历史段在只改尾轮的帧之间保持同一个数组引用，
+ * 消费方按引用缓存历史派生，每帧只算尾轮。
+ *
+ * 分区是 rows 的纯派生缓存，以 window 数组身份为键：读取方拿到的永远是与当前 rows 对应的分区，
+ * 不是第二份消息状态。
+ */
+const EMPTY_ROWS_PARTITION: ConversationRowsPartition = { history: [], tail: [] };
+const rowsPartitions = new WeakMap<readonly ConversationRow[], ConversationRowsPartition>();
+
+export function getConversationRowsPartition(
+  rows: readonly ConversationRow[],
+): ConversationRowsPartition {
+  let partition = rowsPartitions.get(rows);
+  if (!partition) {
+    partition = splitConversationRows(rows);
+    rowsPartitions.set(rows, partition);
+  }
+  return partition;
+}
+
+/**
+ * 按行扫描的派生在分区上的通用缓存（spec：docs/ui/chat-virtual-scroll.md「每帧派生成本」）。
+ *
+ * 为什么需要它：按行扫描的派生要做到流式帧常数开销，都要把历史段结果按 history 数组引用缓存、
+ * 每帧只算尾段，再由消费方合并两段。这里只收拢“按行数组缓存”的 get/compute/set 样板；
+ * 合并方式（求或、取最新、排序二分、建索引）各不相同，留在各自的消费方。
+ * 它只用于去重，不能阻止新增的派生直接遍历整窗而退回 O(N)。
+ *
+ * `fn` 必须只依赖传入的行（协议行不可变），结果按数组引用缓存：history 在流式帧之间引用不变，
+ * 因此只在历史变化时重算；同一帧内多次读取同一个尾段也只算一次。WeakMap 不延长数组寿命。
+ */
+export function memoizeByRows<T>(
+  fn: (rows: readonly ConversationRow[]) => T,
+): (rows: readonly ConversationRow[]) => T {
+  const results = new WeakMap<readonly ConversationRow[], T>();
+  return (rows) => {
+    if (!results.has(rows)) results.set(rows, fn(rows));
+    return results.get(rows) as T;
+  };
+}
+
+/**
+ * 应用 delta 帧后调用。帧只改尾轮时沿用上一份 history 数组，成本 O(delta + 尾轮)；
+ * 其余情况（新轮开始、旧行更新、rewind 到历史）不登记，由首次读取时整窗重建。
+ * 判定依赖 window 按 rowId 升序：rowId ≥ 尾轮首行即在尾轮内。
+ */
+export function advanceConversationRowsPartition(
+  previousRows: readonly ConversationRow[],
+  nextRows: readonly ConversationRow[],
+  deltas: readonly ConversationDelta[],
+): void {
+  if (nextRows === previousRows) return;
+  const previous = rowsPartitions.get(previousRows);
+  const tailStartRowId = previous?.tail[0]?.rowId;
+  if (!previous || tailStartRowId === undefined) return;
+  const isTailTurn = (turnId: string) => previous.tail.some((row) => row.turnId === turnId);
+  for (const delta of deltas) {
+    switch (delta.op) {
+      case "row.appended":
+        if (!isTailTurn(delta.row.turnId)) return;
+        break;
+      case "row.upserted":
+        if (delta.row.rowId < tailStartRowId || !isTailTurn(delta.row.turnId)) return;
+        break;
+      case "row.delta":
+        if (delta.rowId < tailStartRowId) return;
+        break;
+      case "row.removed":
+        if (delta.fromRowId <= tailStartRowId) return;
+        break;
+      default:
+        // state / pluginUi / workflowRun delta 不改 rows。
+        break;
+    }
+  }
+  rowsPartitions.set(nextRows, {
+    history: previous.history,
+    tail: nextRows.slice(previous.history.length),
+  });
+}
+
+/**
+ * 尾轮起点 = 最后一行所在轮的首行。若尾段内某一轮在更早位置也出现过，起点前移到那里，
+ * 直到两段轮次不相交；按轮分组的派生因此可以分段计算再拼接。O(N)，只在历史变化时执行。
+ */
+function splitConversationRows(rows: readonly ConversationRow[]): ConversationRowsPartition {
+  const last = rows.at(-1);
+  if (!last) return EMPTY_ROWS_PARTITION;
+  const firstIndexByTurnId = new Map<string, number>();
+  rows.forEach((row, index) => {
+    if (!firstIndexByTurnId.has(row.turnId)) firstIndexByTurnId.set(row.turnId, index);
+  });
+  let start = firstIndexByTurnId.get(last.turnId)!;
+  let checkedFrom = rows.length;
+  while (start < checkedFrom) {
+    let nextStart = start;
+    for (let index = start; index < checkedFrom; index += 1) {
+      nextStart = Math.min(nextStart, firstIndexByTurnId.get(rows[index]!.turnId)!);
+    }
+    checkedFrom = start;
+    start = nextStart;
+  }
+  return { history: rows.slice(0, start), tail: rows.slice(start) };
+}
+
+/**
  * 外部 store（useSyncExternalStore 兼容：subscribe + getState 返回稳定引用）。
  * 生命周期由 SessionDataLayer 管（引用计数 + keep-warm），组件不直接 new。
  */
@@ -320,6 +435,7 @@ export class ConversationProjectionStore {
     /** 本次 flight 是为内容确定性失败发起的：终态用 contentRejected，不混进瞬态统计。 */
     contentFault: boolean;
   } | null = null;
+  private readonly offSessionLifecycle: (() => void) | undefined;
   private readonly offAssemblyFault: () => void;
   private readonly offRuntimeRestart: (() => void) | null = null;
   private readonly offRuntimeLifecycle: (() => void) | null = null;
@@ -350,6 +466,9 @@ export class ConversationProjectionStore {
     private readonly rowPool: ConversationRowPool = new ConversationRowPool(),
   ) {
     liveProjectionStores.add(this);
+    this.offSessionLifecycle = transport.onSessionLifecycle?.((snapshot) =>
+      this.handleSessionLifecycle(snapshot),
+    );
     this.offAssemblyFault = transport.onAssemblyFault((fault) => {
       if (fault.topic === this.topic) {
         this.handleAssemblyFault(fault.subscriptionId, fault.deliveryKind, fault.reasonCode);
@@ -416,6 +535,39 @@ export class ConversationProjectionStore {
    * 发起/重发订阅。base 取自当前 snapshot 水位（水位不变量：仅当真持有该时刻
    * 一致状态才携带）；forceSnapshot 用于 resume 续传帧仍断档的兜底，丢 base 要全量。
    */
+  private handleSessionLifecycle(snapshot: SessionLifecycleSnapshot, queried = false): void {
+    if (this.closed || snapshot.sessionId !== parseConversationTopic(this.topic)) return;
+    const previous = this.state.lifecycle;
+    if (previous && snapshot.revision <= previous.revision) return;
+    this.setState({ lifecycle: snapshot });
+    if (snapshot.state === "stopping" || snapshot.state === "faulted") {
+      this.generation += 1;
+      this.clearRuntimeRecycleRetry();
+      this.discardRecovery();
+      this.awaitingInitial = null;
+      this.subscriptionHasAppliedBase = false;
+      this.setState({
+        subscriptionId: null,
+        projectionReady: false,
+        status: snapshot.state === "faulted" ? "error" : "connecting",
+        lastError: snapshot.lastError?.message ?? null,
+      });
+      return;
+    }
+    if (snapshot.state === "unloaded" && snapshot.lastError) {
+      this.setState({ status: "error", lastError: snapshot.lastError.message });
+      return;
+    }
+    if (
+      !queried &&
+      (snapshot.state === "starting" || snapshot.state === "ready") &&
+      !this.state.subscriptionId &&
+      this.connectInFlight === 0
+    ) {
+      void this.connect({ forceSnapshot: true });
+    }
+  }
+
   async connect(
     options: {
       forceSnapshot?: boolean;
@@ -443,8 +595,20 @@ export class ConversationProjectionStore {
     };
     this.initialSubscribeAckAt = null;
     this.connectInFlight += 1;
-    this.setState({ status: "connecting", rendererTiming: this.sessionOpenRendererTiming });
+    this.setState({
+      status: "connecting",
+      projectionReady: false,
+      rendererTiming: this.sessionOpenRendererTiming,
+    });
     try {
+      const sessionId = parseConversationTopic(this.topic);
+      if (sessionId && this.transport.getSessionLifecycle) {
+        const lifecycle = await this.transport.getSessionLifecycle(sessionId);
+        if (generation !== this.generation || this.closed) return;
+        if (lifecycle) this.handleSessionLifecycle(lifecycle, true);
+        if (this.state.lifecycle?.state === "stopping" || this.state.lifecycle?.state === "faulted")
+          return;
+      }
       const result = await this.transport.subscribe({
         topic: this.topic,
         base: snapshot ? { logEpoch: snapshot.logEpoch, seq: snapshot.seq } : undefined,
@@ -483,6 +647,7 @@ export class ConversationProjectionStore {
       this.subscriptionHasAppliedBase = Boolean(
         snapshot && result.ack.mode === "resume" && result.ack.logEpoch === snapshot.logEpoch,
       );
+      if (this.subscriptionHasAppliedBase) this.setState({ projectionReady: true });
       // 公共 result 已是 ACK-only；initial 与 online 统一走 notification。
       // subscriptionId 必须先入 store，activate 才能同步释放同一 read 中暂存的 own initial。
       this.awaitingInitial = {
@@ -541,6 +706,16 @@ export class ConversationProjectionStore {
       this.setState({ status: "error", lastError: message });
     } finally {
       this.connectInFlight -= 1;
+      // 旧 subscribe 可能在 stopping 后迟到；starting/ready 已到达时接续一次新订阅。
+      if (
+        generation !== this.generation &&
+        !this.closed &&
+        this.connectInFlight === 0 &&
+        !this.state.subscriptionId &&
+        (this.state.lifecycle?.state === "starting" || this.state.lifecycle?.state === "ready")
+      ) {
+        void this.connect({ forceSnapshot: true });
+      }
     }
   }
 
@@ -589,7 +764,12 @@ export class ConversationProjectionStore {
     this.subscriptionHasAppliedBase = false;
     this.generation += 1;
     // 旧 subscriptionId 属于已死 runtime，不得再 unsubscribe（host 侧 owner 已失效）。
-    this.setState({ status: "connecting", subscriptionId: null });
+    this.setState({
+      status: "connecting",
+      subscriptionId: null,
+      lifecycle: undefined,
+      projectionReady: false,
+    });
     // 不能只 dormant 等 available：agent 懒启动，dispose 后无人拉起时该信号永不到达，
     // 面板会永久转圈。退避重连自身会拉起 runtime；available 先到则复位计数并即时重连。
     if (this.scheduleRuntimeRecycleReconnect(this.generation)) return;
@@ -691,6 +871,7 @@ export class ConversationProjectionStore {
       // 规则 1：整体替换，扔掉手里的一切换新的（行对象按值复用旧引用，语义仍是整体替换）。
       this.setState({
         snapshot,
+        projectionReady: true,
         planDirectoryRevision: this.state.planDirectoryRevision + 1,
         // snapshot 整体替换后 real-user query 集合可能已变，终态缓存必须失效。
         turnNavigatorDirectoryRevision: this.state.turnNavigatorDirectoryRevision + 1,
@@ -748,6 +929,8 @@ export class ConversationProjectionStore {
     const applied = applyConversationDeltas(current, frame.payload.deltas);
     // seq 是快照对齐水位（R-03），delta 帧应用完推进到帧右端点。
     const next = this.shareDeltaRows({ ...applied, seq: frame.toSeq }, frame.payload.deltas);
+    // 先于 setState 登记分区：订阅方在同一次通知里读取新 rows 时，分区已就绪。
+    advanceConversationRowsPartition(current.rows.window, next.rows.window, frame.payload.deltas);
     logSubagentProjectionTransition(this.topic, current, next, "deltas");
     const removedFromRowId = frame.payload.deltas.reduce<number | null>(
       (earliest, delta) =>
@@ -780,6 +963,7 @@ export class ConversationProjectionStore {
     this.reconcileOptimistic(next);
     this.reconcileAcceptedInputProjection(next);
     this.observeModelTransition(next, context.online);
+    if (context.online && !context.recovery) getLocalTtftObserver()?.projected(frame);
     if (context.recovery) this.markRecoveryFrameSeen();
     for (const listener of this.liveDeltaListeners) listener(frame.payload.deltas);
   }
@@ -816,18 +1000,28 @@ export class ConversationProjectionStore {
       else if (delta.op === "row.delta") rememberIds.add(delta.rowId);
     }
     if (shareIds.size === 0 && rememberIds.size === 0) return snapshot;
+    // 同一 rowId 同时被 upsert 和 delta 时以共享为准（与原先 if / else if 的优先级一致）。
+    for (const rowId of shareIds) rememberIds.delete(rowId);
+    // Bug 根因：原先每帧 forEach 整个 window 才找到 delta 命中的几行，长会话里每帧要扫描全部历史。
+    // 行之间的共享互不影响（池按 topic + rowId 分键），窗口内 rowId 唯一，所以从尾部扫描一次、
+    // 找齐全部目标即停；流式命中的行几乎都在尾部。目标不在窗口时退化为整窗扫描，与原先相同。
+    const rows = snapshot.rows.window;
     let window: ConversationRow[] | null = null;
-    snapshot.rows.window.forEach((row, index) => {
+    let remaining = shareIds.size + rememberIds.size;
+    for (let index = rows.length - 1; index >= 0 && remaining > 0; index -= 1) {
+      const row = rows[index]!;
       if (shareIds.has(row.rowId)) {
+        remaining -= 1;
         const shared = this.rowPool.shareRow(this.topic, row);
         if (shared !== row) {
-          window ??= [...snapshot.rows.window];
+          window ??= [...rows];
           window[index] = shared;
         }
       } else if (rememberIds.has(row.rowId)) {
+        remaining -= 1;
         this.rowPool.remember(this.topic, row);
       }
-    });
+    }
     return window === null ? snapshot : { ...snapshot, rows: { ...snapshot.rows, window } };
   }
 
@@ -1043,7 +1237,12 @@ export class ConversationProjectionStore {
     this.discardRecovery();
     this.awaitingInitial = null;
     this.subscriptionHasAppliedBase = false;
-    this.setState({ status: "connecting", subscriptionId: null });
+    this.setState({
+      status: "connecting",
+      subscriptionId: null,
+      lifecycle: undefined,
+      projectionReady: false,
+    });
     // proxy handoff 不等于 CLI runtime 重启；强制 snapshot 会把用户已加载的
     // older rows 替换回 tail window。handoff 保留一致 projection 水位，由服务端按
     // logEpoch/seq 裁决 resume 或 snapshot；真实 runtime restart 仍保持 full subscribe。
@@ -1417,6 +1616,7 @@ export class ConversationProjectionStore {
       topic: this.topic,
     });
     this.closed = true;
+    this.offSessionLifecycle?.();
     this.offAssemblyFault();
     this.offRuntimeRestart?.();
     this.offRuntimeLifecycle?.();

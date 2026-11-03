@@ -272,6 +272,16 @@ export class CommandInbox {
     return true;
   }
 
+  /** 仅供已关闭执行准入并释放旧实例的换代路径；终态事实仍从持久账本回源。 */
+  async resetReleasedSession(sessionId: string): Promise<void> {
+    const bucketKey = this.bucketKey(sessionId);
+    await Promise.all(
+      [...(this.inFlight.get(bucketKey)?.values() ?? [])].map((entry) => entry.final),
+    );
+    this.liveInputs.delete(bucketKey);
+    this.clearSession(sessionId);
+  }
+
   private async queryOne(
     key: CommandKey,
   ): Promise<{ key: CommandKey; result: CommandAck | "unknown" }> {

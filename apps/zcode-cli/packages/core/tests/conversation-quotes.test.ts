@@ -49,7 +49,7 @@ describe("structured conversation quotes", () => {
     expect(result).toContain("explicitly requests an additional");
     expect(result).not.toContain("bot_topic_context");
   });
-  it("carries native references through queue persistence and only exposes refIds to the model", () => {
+  it("persists native references without exposing channel reply instructions or send references", () => {
     const botGroupSource = {
       botId: "bot",
       chatId: "chat",
@@ -68,8 +68,15 @@ describe("structured conversation quotes", () => {
       ],
     };
     const model = withConversationQuotes("帮我 @Ryan Bot", [], botGroupSource);
-    expect(model).toContain("ReplyToChannel");
-    expect(model).toContain('"refId":"m1"');
+    for (const removed of [
+      "ReplyToChannel",
+      "mentionName",
+      "needs_clarification",
+      "Trusted native mention references",
+      '"refId"',
+    ])
+      expect(model).not.toContain(removed);
+    expect(model).toContain('"name":"Ryan Bot"');
     expect(model).not.toContain("ou_target");
     for (const state of ["queued", "drained"] as const)
       expect(
@@ -122,12 +129,8 @@ describe("structured conversation quotes", () => {
     const first = project(["ou_self", "ou_other"]);
     const swapped = project(["ou_other", "ou_self"]);
     expect(first).not.toBe(swapped);
-    expect(first).toContain(
-      '"refId":"m0","name":"Assistant","channel":"feishu","isCurrentBot":true',
-    );
-    expect(swapped).toContain(
-      '"refId":"m1","name":"Assistant","channel":"feishu","isCurrentBot":true',
-    );
+    expect(first).toContain('"name":"Assistant","channel":"feishu","isCurrentBot":true');
+    expect(swapped).toContain('"name":"Assistant","channel":"feishu","isCurrentBot":true');
     expect(first).not.toContain("ou_other");
     expect(swapped).not.toContain("ou_other");
   });
@@ -194,7 +197,7 @@ describe("structured conversation quotes", () => {
     });
     expect(batch).toContain('"messageId":"first","contentParts"');
     expect(batch).toContain('"messageId":"last","contentParts"');
-    for (const ref of ["self", "second", "third"]) expect(batch).toContain(`"refId":"${ref}"`);
+    expect(batch).not.toContain('"refId"');
     expect(batch).not.toContain('"targetId"');
   });
   it("leaves plain input unchanged", () => {

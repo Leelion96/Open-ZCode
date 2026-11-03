@@ -99,16 +99,39 @@ describe(`${CASE_MARKER}: 受限远端环境下的安装与连接（${SUBCASE}�
     const before = await readRemoteFacts(config);
     expect(before.current).toBe("none");
     await prepareV4ConversationE2E({ skipProvider: true });
+    await browser.execute(() => {
+      const state = window as Window & {
+        __installEnvironmentLogs?: Array<{ message: string; level: string }>;
+        zcode?: {
+          onRemoteConnectionLog: (
+            callback: (entry: { message: string; level: string }) => void,
+          ) => () => void;
+        };
+      };
+      state.__installEnvironmentLogs = [];
+      if (!state.zcode) throw new Error("Missing desktop platform");
+      state.zcode.onRemoteConnectionLog(({ message, level }) =>
+        state.__installEnvironmentLogs!.push({ message, level }),
+      );
+    });
     const initialHosts = await readHostProcesses();
     expect(initialHosts).toHaveLength(1);
 
     const outcome = await connectUntilErrorOrReady(config);
+    const connectionLogs = await browser.execute(
+      () =>
+        (
+          window as Window & {
+            __installEnvironmentLogs?: Array<{ message: string; level: string }>;
+          }
+        ).__installEnvironmentLogs ?? [],
+    );
     const after = await readRemoteFacts(config);
     const hosts = await readHostProcesses();
     await mkdir(artifactDir, { recursive: true });
     await writeFile(
       resolve(artifactDir, `${SUBCASE}.json`),
-      JSON.stringify({ subcase: SUBCASE, before, outcome, after, hosts }, null, 2),
+      JSON.stringify({ subcase: SUBCASE, before, outcome, connectionLogs, after, hosts }, null, 2),
     );
     expect(hosts).toEqual(initialHosts);
     expect(outcome.errorText).not.toContain(config.password);
@@ -135,15 +158,18 @@ describe(`${CASE_MARKER}: 受限远端环境下的安装与连接（${SUBCASE}�
       return;
     }
     if (SUBCASE === "old-glibc") {
-      // ZCT-2112008575366098944：glibc 低于 archive 内置 Node 的 2.28 下限时，probe 按环境检查失败；
-      // 不弹安装确认、不上传 archive、不在 Server root 建 staging。
+      // 仅注入 getconf 的低版本报告，真实 runtime 仍可运行：警告不得阻断首装、握手和项目绑定。
       expect(before.libc).toBe("glibc 2.17");
-      expect(outcome.ready).toBe(false);
-      expect(outcome.errorText).toMatch(/环境|environment/iu);
-      expect(outcome.connectionLog).toContain("glibc 2.17");
-      expect(outcome.connectionLog).not.toMatch(/Uploading|上传/u);
-      expect(after.current).toBe("none");
-      expect(after.serverRoot).toBe("");
+      expect(connectionLogs).toContainEqual(
+        expect.objectContaining({
+          level: "warn",
+          message: expect.stringMatching(/glibc 2\.17.*glibc 2\.28.*may fail.*Continuing/u),
+        }),
+      );
+      expect(outcome.errorText).toBe("");
+      expect(outcome.ready).toBe(true);
+      expect(after.current).toMatch(/archiveSha256/u);
+      expect(after.status).toContain('"state":"ready"');
       return;
     }
     // 主规格与 Transport Adapter 明确支持 direct-tcpip 被禁后回退 proxy-stdio。

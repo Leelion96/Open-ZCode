@@ -4,6 +4,52 @@
   "spec": "./test/e2e/conversation-session/conversation-session-share-publish-import.test.ts",
   "fixtures": [
     {
+      "id": "conversation-share-session-b-title",
+      "description": "为 Session B 返回独立标题，验证分享草稿不会串用 A 的标题。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "SHARE27 验证 A/B 分享状态隔离，需要不同固定标题；通用标题会使数据前置条件失效。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_CONVERSATION_SHARE_LOCAL_V1", "session-b"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"session-b\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "conversation-session-share-publish-import-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
       "id": "conversation-share-local-main",
       "description": "Local share publish uses a deterministic completed response.",
       "metadata": {
@@ -85,29 +131,56 @@
       }
     },
     {
-      "id": "conversation-share-error-main",
-      "description": "Share error case returns an unsafe local file URL in a completed assistant response.",
+      "id": "conversation-share-uri-file-main",
+      "description": "Share case returns local file URI text in a completed assistant response.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "The case validates actionable share error details, not provider behavior."
+        "syntheticReason": "The case verifies URI text passes share preflight."
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_CONVERSATION_SHARE_ERROR_V1"],
-        "bodyIncludes": ["file:///workspace/not-shareable.pdf"]
+        "lastUserMessageIncludes": ["E2E_CONVERSATION_SHARE_URI_V1"],
+        "bodyIncludes": ["file:///workspace/report.pdf"]
       },
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
         "text": {
-          "id": "conversation-share-error-main",
+          "id": "conversation-share-uri-file-main",
           "inputTokens": 64,
           "outputTokens": 16,
-          "text": "file:///workspace/not-shareable.pdf"
+          "text": "file:///workspace/report.pdf"
+        }
+      }
+    },
+    {
+      "id": "conversation-share-uri-data-main",
+      "description": "Share case returns data URI text in a completed assistant response.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "The case verifies URI text passes share preflight."
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_CONVERSATION_SHARE_URI_V1"],
+        "bodyIncludes": ["data:text/plain;base64,YQ=="]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "text": {
+          "id": "conversation-share-uri-data-main",
+          "inputTokens": 64,
+          "outputTokens": 16,
+          "text": "data:text/plain;base64,YQ=="
         }
       }
     },

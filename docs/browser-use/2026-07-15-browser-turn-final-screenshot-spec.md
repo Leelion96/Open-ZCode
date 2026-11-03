@@ -2,7 +2,7 @@
 
 > 状态：已实现，正式桌面/手机 E2E 待补。
 > 日期：2026-07-15。
-> 关联：`docs/browser-use/2026-07-10-browser-use-codex-parity-spec.md`、
+> 关联：`docs/browser-use/2026-07-10-browser-use-spec.md`、
 > `docs/conversation-session-case-catalog.md`、
 > `docs/testing/conversation-session-e2e-coverage-matrix.md`。
 

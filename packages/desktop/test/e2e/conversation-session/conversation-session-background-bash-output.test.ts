@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { clearAppData, DEFAULT_WORKSPACE, getE2EAppDataPaths } from "../helpers/desktop-app.js";
+import { clearAppData, DEFAULT_WORKSPACE } from "../helpers/desktop-app.js";
 import { resolveE2ERuntimePath } from "../helpers/e2e-runtime-paths.js";
 import { ensureToolCrossProductFullAccessMode } from "../helpers/conversation-session-tool-cross-product.js";
 import { countUpstreamRequests } from "../helpers/conversation-session-network.js";
@@ -58,15 +58,13 @@ async function launch(name: string) {
   await sendV4Prompt(`E2E_BGV_${name}: Run the exact background Bash fixture.`);
   await waitForV4AssistantMessageContaining(`E2E_BGV_${name}_DONE`, 60000);
   const sessionId = (await getV4PaneSnapshot()).sessionId!;
-  const outputPath = join(
-    getE2EAppDataPaths().storageRoot,
-    "cli",
-    "exec",
-    sessionId,
-    `toolu_bgv_${name}-stdout.log`,
-  );
-  outputFiles.add(outputPath);
   await openRow();
+  // 文件入口使用运行时返回的 canonical 路径；临时输出根不再固定在 HOME 下。
+  const file = $('[role="tabpanel"][data-state="active"] [data-testid="background-bash-file"]');
+  await file.waitForDisplayed();
+  const outputPath = await file.getAttribute("title");
+  if (!outputPath) throw new Error("后台详情没有返回实际输出文件路径");
+  outputFiles.add(outputPath);
   await contains(`${name}_STDERR_中文`);
   return { sessionId, outputPath };
 }

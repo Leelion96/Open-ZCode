@@ -6,7 +6,7 @@ import { ChannelServer, Event } from "../../../../../rpc/src/index.ts";
 export function createDeviceSwitchDesktopBridge(
   socket,
   bridge,
-  { locale, theme, responses = {}, events = {} },
+  { locale, theme, responses = {}, events = {}, exposeChannels },
 ) {
   const adapter = createAcknowledgedWebRemoteControlRelayProtocol({
     bridgeSessionId: bridge.bridgeSessionId,
@@ -30,10 +30,11 @@ export function createDeviceSwitchDesktopBridge(
     [`${contracts.IOAuthService.channelName}:restoreSession`]: null,
     [`${contracts.IOAuthService.channelName}:restoreCachedSessionState`]: { status: "signed-out" },
   };
+  const channels = new Map();
   for (const value of Object.values(contracts)) {
     if (!value || typeof value !== "object" || typeof value.channelName !== "string") continue;
     const channel = value.channelName;
-    server.registerChannel(channel, {
+    channels.set(channel, {
       listen: (_ctx, event) => events[`${channel}:${event}`] ?? Event.None,
       call: async (_ctx, command, args) => {
         const key = `${channel}:${command}`;
@@ -104,8 +105,12 @@ export function createDeviceSwitchDesktopBridge(
       },
     });
   }
+  // 服务边界用例可复用同一业务替身，再经过真实 Host attachment 装配；其他用例保持原行为。
+  if (exposeChannels) exposeChannels(server, channels);
+  else for (const [name, channel] of channels) server.registerChannel(name, channel);
   return {
     acceptPayload: (payload) => adapter.acceptPayload(payload),
+    onDegraded: adapter.onDegraded,
     dispose: () => {
       server.dispose();
       adapter.dispose();

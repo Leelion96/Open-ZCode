@@ -13,6 +13,7 @@ import {
   mergeBound,
   mergeInto,
   phKey,
+  readField,
   singleOcc,
   VALUE_DEPTH_CAP,
   type AbstractValue,
@@ -68,6 +69,13 @@ export function evalCall(ev: Evaluator, node: ts.CallExpression, ctx: EvalContex
     }
     if (isPromiseReject(node.expression)) return handlePromiseReject(ev, node, ctx);
     if (isObjectAssign(node.expression)) return handleObjectAssign(ev, node, ctx);
+    // 修复原因：下面每条路径都要接收者的值——堆变更的 smear、成员槽、`.call`/`.bind`
+    // 转发、延续的 settle 预言、再加 applyCall 求 callee 和 handleUnknownCall 并入接收者——
+    // 而它们曾各自重新求值 `node.expression.expression`。接收者本身又是一次调用时
+    // （`draft.trim().trim()…`、`new Map().set(…).set(…)`），每一环乘 2 到 4 倍，
+    // k 环就是 2^k 到 4^k（`.trim()` × 20 用了 13 秒）。这里求一次，往下传。
+    // 求值只增不减（gen-only），提前一次求值只改变同一遍里看到的先后，不改变不动点。
+    const receiver = ev.evalExpr(node.expression.expression, ctx);
     if (HEAP_MUTATORS.has(node.expression.name.text)) {
       // The name-only match used to swallow DISPATCH of a script-local method that
       // merely shares a mutator name (`inbox.add(item)` on `{ add(item) { … } }`): the
@@ -80,15 +88,15 @@ export function evalCall(ev: Evaluator, node: ts.CallExpression, ctx: EvalContex
       // (sound over-approximation, never a kill). Native collections carry no tracked fns
       // in their member slot (smear-on-read drops `.fns`), so they keep the pure-smear path.
       const smear = handleHeapMutator(ev, node, node.expression, ctx);
-      const memberVal = ev.evalExpr(node.expression, ctx);
+      const memberVal = readField(receiver, node.expression.name.text);
       const hasTrackedFns = [...memberVal.fns].some((fn) => ev.s.fnId.has(fn));
-      return hasTrackedFns ? handleGenericCall(ev, node, ctx) : smear;
+      return hasTrackedFns ? handleGenericCall(ev, node, ctx, receiver) : smear;
     }
     // `.call` / `.apply` / `.bind` on a script-local function receiver reshape the actuals
     // before they reach the callee's positional parameters. Only intercepts when the
     // receiver actually carries a script-local function; otherwise defers to the generic
     // path (which still applies function-valued ARGUMENTS pessimistically — the keystone).
-    const forwarded = handleInvocationForwarding(ev, node, node.expression, ctx);
+    const forwarded = handleInvocationForwarding(ev, node, node.expression, receiver, ctx);
     if (forwarded !== undefined) return forwarded;
     // A deferred continuation (`p.then(cb)`, `p.catch(cb)`, `p.finally(cb)`) runs its callback
     // after the RECEIVER settles: record the receiver's value as the settle oracle at the
@@ -99,9 +107,9 @@ export function evalCall(ev: Evaluator, node: ts.CallExpression, ctx: EvalContex
     // offset (`p.then(a).finally(b)` — both receivers begin at `p`), and an await operand
     // never starts at a member name, so this key collides with nothing.
     if (callbackSemanticsOf(node, ev.checker, ev.s.program)?.deferred === true) {
-      const receiver = node.expression.expression;
-      ev.s.mergeSink(ev.s.awaitVal, node.expression.name.getStart(ev.s.scriptFile), collapse(ev.evalExpr(receiver, ctx)));
+      ev.s.mergeSink(ev.s.awaitVal, node.expression.name.getStart(ev.s.scriptFile), collapse(receiver));
     }
+    return handleGenericCall(ev, node, ctx, receiver);
   }
 
   return handleGenericCall(ev, node, ctx);
@@ -138,9 +146,14 @@ function handleHole(
   return out;
 }
 
-function handleGenericCall(ev: Evaluator, node: ts.CallExpression, ctx: EvalContext): AbstractValue {
+function handleGenericCall(
+  ev: Evaluator,
+  node: ts.CallExpression,
+  ctx: EvalContext,
+  receiver?: AbstractValue,
+): AbstractValue {
   const { explicit, places, tail } = buildActuals(ev, node.arguments, ctx);
-  return applyCall(ev, node.expression, explicit, ctx, places, tail, node);
+  return applyCall(ev, node.expression, explicit, ctx, places, tail, node, receiver);
 }
 
 /**
@@ -184,11 +197,11 @@ function handleInvocationForwarding(
   ev: Evaluator,
   node: ts.CallExpression,
   access: ts.PropertyAccessExpression,
+  receiverVal: AbstractValue,
   ctx: EvalContext,
 ): AbstractValue | undefined {
   const method = access.name.text;
   if (method !== "call" && method !== "apply" && method !== "bind") return undefined;
-  const receiverVal = ev.evalExpr(access.expression, ctx);
   const fns = [...receiverVal.fns].filter((fn) => ev.s.fnId.has(fn));
   if (fns.length === 0) return undefined;
   const exact = fns.length === 1 && isDirectCallee(access.expression);
@@ -226,6 +239,7 @@ function handleInvocationForwarding(
  * live value of a place actual, used for parameter write-back. `tail`, when present, is an
  * inexact spread smear bound to every parameter at index >= `argVals.length`. `site` is the
  * call / tagged-template node the application is recorded against (the call oracle).
+ * `receiver`, when present, is the already-evaluated receiver of a member callee.
  */
 export function applyCall(
   ev: Evaluator,
@@ -235,14 +249,30 @@ export function applyCall(
   argPlaces?: (AbstractValue | undefined)[],
   tail?: AbstractValue,
   site?: ts.Node,
+  receiver?: AbstractValue,
 ): AbstractValue {
-  const calleeVal = ev.evalExpr(calleeExpr, ctx);
+  // A member callee reads its field off the receiver (what evalPropertyAccess does), so the
+  // receiver is evaluated once here and handed on to handleUnknownCall.
+  const receiverVal = ts.isPropertyAccessExpression(calleeExpr)
+    ? (receiver ?? ev.evalExpr(calleeExpr.expression, ctx))
+    : undefined;
+  const calleeVal =
+    receiverVal !== undefined && ts.isPropertyAccessExpression(calleeExpr)
+      ? readField(receiverVal, calleeExpr.name.text)
+      : ev.evalExpr(calleeExpr, ctx);
   // A library / facade member is never a script function (see {@link isForeignMember}): the
   // callables a whole-value read smeared into the member slot are the receiver's contents,
   // not the callee. `then(a, b).finally(c)` would otherwise dispatch to a and b as `.finally`.
   const foreign = ts.isPropertyAccessExpression(calleeExpr) && isForeignMember(calleeExpr.name, ev.checker, ev.s.scriptFile);
   const fns = foreign ? [] : [...calleeVal.fns].filter((fn) => ev.s.fnId.has(fn));
-  if (fns.length === 0) return handleUnknownCall(ev, calleeExpr, calleeVal, argVals, ctx, tail, site);
+  if (fns.length === 0) return handleUnknownCall(ev, calleeVal, receiverVal, argVals, ctx, tail, site);
+  // The callee IS a parameter of the enclosing function (`fn()` inside a shared helper): its
+  // slot holds every caller's callback, so the record also says which parameter, and the
+  // walk inlines only what the call it is inlining passed (docs/analysis.md "The call oracle").
+  if (site !== undefined) {
+    const ref = ev.s.parameterRefOf(calleeExpr);
+    if (ref !== undefined) ev.s.recordThroughParam(site, ref, "callee", fns);
+  }
   const exact = fns.length === 1 && isDirectCallee(calleeExpr);
   return applyToFns(ev, fns, exact, argVals, ctx, argPlaces, tail, calleeVal.bound, site);
 }
@@ -274,18 +304,19 @@ function applyToFns(
 ): AbstractValue {
   const result = emptyValue();
   const hasBound = bound !== undefined && bound.length > 0;
-  applyAligned(ev, fns, hasBound ? false : exact, explicit, ctx, argPlaces, tail, result, site);
+  applyAligned(ev, fns, hasBound ? false : exact, explicit, ctx, argPlaces, tail, result, site, 0);
   if (hasBound) {
     const prefixed = [...(bound as AbstractValue[]), ...explicit];
     const prefixedPlaces = [...(bound as AbstractValue[]).map(() => undefined), ...(argPlaces ?? [])];
-    applyAligned(ev, fns, false, prefixed, ctx, prefixedPlaces, tail, result, site);
+    applyAligned(ev, fns, false, prefixed, ctx, prefixedPlaces, tail, result, site, (bound as AbstractValue[]).length);
   }
   return result;
 }
 
 /** One alignment of {@link applyToFns}: bind `explicit`/`tail` to each callee and union the
  * recorded actuals + substituted return summaries into `result`. clearExact clones, so the
- * fns-binding and place write-back in recordCall stay live. */
+ * fns-binding and place write-back in recordCall stay live. `shift` is how many leading
+ * values of `explicit` are a `bind` prefix with no argument expression behind them. */
 function applyAligned(
   ev: Evaluator,
   fns: ts.Node[],
@@ -295,9 +326,14 @@ function applyAligned(
   argPlaces: (AbstractValue | undefined)[] | undefined,
   tail: AbstractValue | undefined,
   result: AbstractValue,
-  site?: ts.Node,
+  site: ts.Node | undefined,
+  shift: number,
 ): void {
   const clear = !exact;
+  // The argument expressions behind `explicit`, for the binding record: a value whose
+  // expression is itself a parameter of the enclosing function is bound "through" it.
+  const argExprs =
+    site !== undefined && (ts.isCallExpression(site) || ts.isNewExpression(site)) ? (site.arguments ?? []) : undefined;
   for (const fn of fns) {
     const id = ev.s.fnId.get(fn);
     if (id === undefined) continue;
@@ -312,6 +348,14 @@ function applyAligned(
     }
     const recorded = clear ? args.map((a) => clearExact(a)) : args;
     recordCall(ev, id, ctx.regionStack, recorded, places, site === undefined ? undefined : { site, via: "callee" });
+    if (site !== undefined) {
+      args.forEach((value, param) => {
+        if (value.fns.size === 0) return;
+        const exprIndex = param - shift;
+        const expr = exprIndex >= 0 && exprIndex < explicit.length - shift ? argExprs?.[exprIndex] : undefined;
+        ev.s.recordBinding(site, fn, param, value, expr === undefined ? undefined : ev.s.parameterRefOf(expr));
+      });
+    }
     mergeInto(result, substitute(ev.s.summaryOf(id), id, args, clear));
   }
 }
@@ -338,15 +382,15 @@ function applyAligned(
  */
 function handleUnknownCall(
   ev: Evaluator,
-  calleeExpr: ts.Expression,
   calleeVal: AbstractValue,
+  receiver: AbstractValue | undefined,
   argVals: AbstractValue[],
   ctx: EvalContext,
   tail?: AbstractValue,
   site?: ts.Node,
 ): AbstractValue {
   const applied = emptyValue();
-  if (ts.isPropertyAccessExpression(calleeExpr)) collapseInto(applied, ev.evalExpr(calleeExpr.expression, ctx));
+  if (receiver !== undefined) collapseInto(applied, receiver);
   for (const arg of argVals) collapseInto(applied, arg);
   if (tail !== undefined) collapseInto(applied, tail);
 
@@ -361,6 +405,18 @@ function handleUnknownCall(
   // the call oracle then inlines as a `loop` (reentrant-then-composition).
   const actual = clearExact(applied);
   actual.fns.clear();
+  // A function-valued argument that IS a parameter of the enclosing function (`.then(fn)`
+  // inside a shared helper): record which parameter, as for a callee (see applyCall).
+  if (site !== undefined && (ts.isCallExpression(site) || ts.isNewExpression(site))) {
+    (site.arguments ?? []).forEach((argExpr, index) => {
+      const value = argVals[index];
+      if (value === undefined || ts.isSpreadElement(argExpr)) return;
+      const ref = ev.s.parameterRefOf(argExpr);
+      if (ref === undefined) return;
+      const tracked = [...value.fns].filter((fn) => ev.s.fnId.has(fn));
+      if (tracked.length > 0) ev.s.recordThroughParam(site, ref, "argument", tracked);
+    });
+  }
   for (const arg of argVals) applyPessimistically(ev, arg, actual, ctx, out, site);
   if (tail !== undefined) applyPessimistically(ev, tail, actual, ctx, out, site);
 

@@ -7,6 +7,37 @@ const SUPPORTED_DESKTOP_PLATFORM_KEYS = [
   "win32-x64",
 ];
 
+// sharp 通过 optionalDependencies 分发全平台二进制变体。electron-builder 26.17 的
+// pnpm 收集器按 lockfile 全平台图收包，会把 darwin/linux/异架构 win32 变体（Mach-O/ELF，
+// 约 110MB 未压缩）全部带进 app.asar：既撑大安装包，又会被 signApp 送进 Windows 签名
+// 触发 0x8010006a 连锁失败（2026-10-26 CI 实况，签名钩子已按 PE 魔数跳过）。
+// 每个目标平台只保留运行时实际解析的一组变体。
+const SHARP_VARIANT_PACKAGES = [
+  "sharp-win32-x64",
+  "sharp-win32-arm64",
+  "sharp-darwin-x64",
+  "sharp-darwin-arm64",
+  "sharp-libvips-darwin-x64",
+  "sharp-libvips-darwin-arm64",
+  "sharp-linux-x64",
+  "sharp-linux-arm64",
+  "sharp-libvips-linux-x64",
+  "sharp-libvips-linux-arm64",
+  "sharp-linuxmusl-x64",
+  "sharp-linuxmusl-arm64",
+  "sharp-libvips-linuxmusl-x64",
+  "sharp-libvips-linuxmusl-arm64",
+];
+
+const SHARP_VARIANTS_BY_PLATFORM = {
+  "win32-x64": ["sharp-win32-x64"],
+  "win32-arm64": ["sharp-win32-arm64"],
+  "darwin-x64": ["sharp-darwin-x64", "sharp-libvips-darwin-x64"],
+  "darwin-arm64": ["sharp-darwin-arm64", "sharp-libvips-darwin-arm64"],
+  "linux-x64": ["sharp-linux-x64", "sharp-libvips-linux-x64"],
+  "linux-arm64": ["sharp-linux-arm64", "sharp-libvips-linux-arm64"],
+};
+
 function assertSupportedTargetPlatformKey(targetPlatformKey) {
   if (!SUPPORTED_DESKTOP_PLATFORM_KEYS.includes(targetPlatformKey)) {
     throw new Error(`不支持的桌面目标平台: ${targetPlatformKey}`);
@@ -29,6 +60,10 @@ export function createDesktopNativePackagePrunePatterns(targetPlatformKey) {
     ...SUPPORTED_DESKTOP_PLATFORM_KEYS.filter((key) => key !== targetPlatformKey).map(
       (key) => `!node_modules/node-pty/prebuilds/${key}/**`,
     ),
+    // 裁剪非目标平台的 @img/sharp 变体；目标平台变体由下方违规检查兜底确认。
+    ...SHARP_VARIANT_PACKAGES.filter(
+      (name) => !SHARP_VARIANTS_BY_PLATFORM[targetPlatformKey].includes(name),
+    ).map((name) => `!node_modules/@img/${name}/**`),
   ];
 }
 
@@ -69,6 +104,16 @@ export function findDesktopNativePackageViolations(entries, targetPlatformKey) {
       path.startsWith("/node_modules/@napi-rs/canvas-")
     ) {
       violations.push(`不应打包 renderer 无需的 Canvas native: ${path}`);
+      continue;
+    }
+
+    // 裁剪规则漏网或收集器行为回退时，非目标平台的 @img/sharp 变体必须在这里 fail-closed。
+    const sharpVariantMatch = /^\/node_modules\/@img\/(sharp-[a-z0-9-]+)(?:\/|$)/.exec(path);
+    if (
+      sharpVariantMatch &&
+      !SHARP_VARIANTS_BY_PLATFORM[targetPlatformKey].includes(sharpVariantMatch[1])
+    ) {
+      violations.push(`sharp 包含非目标平台变体: ${sharpVariantMatch[1]} ${path}`);
       continue;
     }
 

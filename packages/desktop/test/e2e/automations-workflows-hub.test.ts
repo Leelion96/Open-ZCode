@@ -1012,6 +1012,26 @@ describe("直接启动 E2E", () => {
       { timeout: 30000, timeoutMsg: "状态胶囊没有按名字显示在跑的工作流" },
     );
 
+    // 2d) 胶囊不盖住启动卡（docs/dynamic-workflow/presentation.md「The run card」，转写顶部 inset）：
+    //     启动轮是会话首轮且没有气泡，卡头部的配置 / 停止 / ⤢ 曾落在胶囊下面。clickTestIdByDom 走 DOM
+    //     click 不做命中测试，所以这里按按钮中心点 elementFromPoint，命中的必须是按钮自己。
+    const coveredHeaderButtons = await browser.execute(() => {
+      const header = document.querySelector<HTMLElement>('[data-testid="workflow-card-header"]');
+      const buttons = Array.from(header?.querySelectorAll<HTMLElement>("button") ?? []);
+      if (buttons.length === 0) return ["<no header buttons>"];
+      return buttons
+        .filter((button) => {
+          const rect = button.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+          );
+          return !button.contains(hit);
+        })
+        .map((button) => button.getAttribute("aria-label") ?? button.outerHTML.slice(0, 80));
+    });
+    expect(coveredHeaderButtons).toEqual([]);
+
     // 3) composer 徽标：恰好一条 workflow、没有终端与子代理，且自述落点是 workflow-run。
     await browser.waitUntil(
       async () => {

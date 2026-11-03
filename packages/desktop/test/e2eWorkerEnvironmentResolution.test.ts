@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 import { resolveAskUserQuestionClockScaleForWorker } from "./e2e/helpers/e2e-worker-environment.js";
 
 describe("E2E worker environment resolution", () => {
-  it("injects the accelerated clock only for the pending auto-resolution case", () => {
+  it("injects the accelerated clock only for the auto-resolution case", () => {
     expect(
       resolveAskUserQuestionClockScaleForWorker({
         specs: [
-          "./test/e2e/conversation-session/manual-review/pending/conversation-session-ask-user-question-auto-resolution-setting.test.ts",
+          "./test/e2e/conversation-session/conversation-session-ask-user-question-auto-resolution-setting.test.ts",
         ],
       }),
     ).toBe("20");
@@ -23,7 +23,7 @@ describe("E2E worker environment resolution", () => {
       resolveAskUserQuestionClockScaleForWorker({
         requestedScale: "25",
         specs: [
-          "./test/e2e/conversation-session/manual-review/pending/conversation-session-ask-user-question-auto-resolution-setting.test.ts",
+          "./test/e2e/conversation-session/conversation-session-ask-user-question-auto-resolution-setting.test.ts",
         ],
       }),
     ).toBe("25");

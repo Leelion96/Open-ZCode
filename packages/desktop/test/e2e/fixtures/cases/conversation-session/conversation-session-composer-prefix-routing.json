@@ -7,7 +7,7 @@
     "./test/e2e/fixtures/upstream/conversation-session/conversation-session-composer-prefix-routing.json"
   ],
   "fileFixtures": [],
-  "noProviderRequests": true,
   "providerRequestReason": "纯 UI composer prefix routing case，只验证提示分组和键盘写入 mention，不发送 prompt，也不触发 provider 请求。",
-  "requests": []
+  "requests": [],
+  "providerRequestPolicy": "none"
 }

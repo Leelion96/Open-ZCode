@@ -31,6 +31,30 @@ function event(type: SessionEvent["type"], payload: unknown, seq: number): Sessi
 }
 
 describe("main turn telemetry identity", () => {
+  it("projects admitted mobile origin without copying prompt or arbitrary metadata", () => {
+    const normalizer = new ConversationTelemetryFactNormalizer();
+    const started = normalizer.normalize(
+      "parent",
+      event(
+        SessionEventType.TurnStarted,
+        {
+          turnNumber: 1,
+          input: "private prompt",
+          inputId: "command",
+          intent: { inputOrigin: "mobile" },
+        },
+        1,
+      ),
+      { modelName: "model", modelProvider: "provider" },
+    );
+    expect(started).toMatchObject({
+      inputOrigin: "mobile",
+      sourceCommandId: "command",
+      modelName: "model",
+      modelProvider: "provider",
+    });
+    expect(JSON.stringify(started)).not.toContain("private prompt");
+  });
   it.each([undefined, "background_task"])("keeps inputId through %s turn facts", (inputSource) => {
     const normalizer = new ConversationTelemetryFactNormalizer();
     const inputId = uuidv7();

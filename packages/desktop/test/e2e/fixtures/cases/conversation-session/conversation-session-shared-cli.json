@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-shared-cli",
+  "spec": "./test/e2e/conversation-session/conversation-session-shared-cli.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-shared-cli.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "shared-cli-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "共享进程用例的标题旁路固定响应，不参与运行归属断言。"
+    },
+    {
+      "id": "shared-cli-reply",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "模型仅完成真实消息链路；用例断言跨任务 PID 复用与消息归属。"
+    },
+    {
+      "id": "shared-cli-running",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "上游时间线保持 A 运行，测试以请求开始事件同步，不使用 sleep 猜状态。"
+    },
+    {
+      "id": "shared-cli-tool-a",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "同名工具调用经真实审批与 Bash 执行，验证共享 CLI 的 session 路由和 cwd 隔离。"
+    },
+    {
+      "id": "shared-cli-tool-b",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "同名工具调用经真实审批与 Bash 执行，验证共享 CLI 的 session 路由和 cwd 隔离。"
+    },
+    {
+      "id": "shared-cli-tool-done-a",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "工具结果后的固定 continuation；实际权限审批和文件写入由 CLI 执行。"
+    },
+    {
+      "id": "shared-cli-tool-done-b",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "工具结果后的固定 continuation；实际权限审批和文件写入由 CLI 执行。"
+    }
+  ]
+}

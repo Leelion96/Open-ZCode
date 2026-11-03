@@ -38,6 +38,8 @@ function createClaimToken(windowId: number, requestId: string): string {
 }
 
 export class BroadcastHub {
+  onMobilePushRun: ((payload: unknown) => void) | undefined;
+  onMobilePushEvent: ((payload: unknown) => void) | undefined;
   private processes = new Map<number, ElectronUtilityProcess>();
   /** 通用 opaque reservation/claim；不保存 Coding Plan 等业务状态。 */
   private readonly claims = new Map<string, BroadcastClaimRecord>();
@@ -184,6 +186,15 @@ export class BroadcastHub {
       return;
     }
 
+    // 通知事实只交给 Main 网络适配器，不向其他 Host 回播形成第二次事件。
+    if (result.data.channel === "mobile-push:run") {
+      this.onMobilePushRun?.(result.data.payload);
+      return;
+    }
+    if (result.data.channel === "mobile-push:event") {
+      this.onMobilePushEvent?.(result.data.payload);
+      return;
+    }
     // 填充来源信息，接收端可用于去重
     const enriched: BroadcastMessage = { ...result.data, sourceWindowId };
 

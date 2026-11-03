@@ -301,16 +301,55 @@ title sidecar, or a memory agent all pass the gate without knowing it exists. Th
 answers "who is calling", which the runtime knows when it builds the handle; the call site
 answers only "why".
 
+When one runtime's handle is wrapped by another runtime's layer, the **outer** layer wins,
+that is the runtime that actually makes the call: a subagent that inherits its parent's model
+reuses the parent's handle (`createInheritedSubagentModelFactory`), and the parent's layer,
+being nearer the adapter, used to override the subagent's, so the subagent's requests carried
+the parent's port, retry budget and session type (`main`, which also reached the provider as
+the session-type header). An inner runtime layer now passes through when an outer one has
+already applied; a runtime layer still overrides the call site. The "already applied" marker
+travels inside the invocation context itself, because an inner layer can be reached late: the
+off-peak wrapper's `streamText` is an async generator that calls the handle inside it only on
+the first `next()`, after it has waited for a ticket, and only the invocation context is carried
+across that boundary (`runWithModelInvocationContext` re-enters it for every `next()`).
+
 | Runtime | Port | Effect |
 |---|---|---|
 | a workflow subagent (`taskType` `workflow_child` or `nested_workflow_child`) | the driver's per-subagent wrapper over the run's seat gate and the governor | takes a seat when the run's own bound was lowered under it ("Retuning a live run"), then queues at the governor's gate; feeds signals |
 | the main agent, and its tools and sidecars | the governor's **observer** | never queues, never waits for cooldown; counts in flight and feeds signals |
+| a subagent of the main agent (`taskType` `subagent_child`, the `Agent` tool), and its tools and sidecars | the governor's **session subagent pool**, one per parent session | queues at the governor's gate and waits for cooldown like a workflow run; feeds signals |
 | a subagent of the legacy `Workflow` tool | none | ungoverned: no gate, no signals |
 | a snippet evaluation (`EvalWorkflowSnippet`) | none | its driver has no ask path |
 
 The main agent is an observer because its turn must never block behind workflow traffic,
 and it still feeds the controller because the provider sees its requests too: a 429 on the
 user's own conversation lowers the workflow cap.
+
+A subagent of the main agent is **not** an observer. It used to inherit the observer from its
+parent, and a turn that fans out ten `Agent` calls then sent ten request streams that neither
+queued nor honoured a Retry-After, each retrying on its own backoff: in production the
+subagents were the largest source of rate-limit refusals (2026-10-20: 46% of the sampled
+1302s, against 21% for main-agent turns), and they kept refusing the workflow runs and the
+user's own turn too. The main-agent rule protects the user's turn, which a subagent is not:
+it is delegated work, the same kind of work a workflow subagent does, so it takes the same
+gate. The governor exposes one admission per parent session, `sessionSubagents(parentSessionId)`:
+
+- Its run identity is `\0subagents:<parentSessionId>`, so all the subagents of a session share
+  **one** queue and take one turn in the round robin (below) next to each workflow run. A turn
+  that fans out ten subagents gets one share of a saturated bucket, not ten.
+- It neither registers a bound nor subscribes; it does not join a bucket's `runs`, so it never
+  lifts the growth limit and leaves nothing behind when the session goes away.
+- `tryAcquire` is the fast path, so a queued subagent request publishes `model_request_queued`
+  and `model_request_admitted` like a workflow subagent's, and a tool deadline pauses for the wait.
+  The `Agent` tool itself has no deadline, so a long cooldown cannot time a subagent out.
+- A user cancel aborts the request signal, which takes the waiter out of the queue.
+- The parent's foreground `Agent` call holds no ticket while it waits for its subagents (tool
+  execution holds no ticket), so the parent waiting on a queued subagent cannot deadlock.
+
+The runtime binds it at spawn time: `AgentRuntimeDeps.subagentModelRequestAdmission` is a
+factory the core calls with its current session id when it builds a subagent runtime; an
+assembly without it leaves the subagent on the parent's port, as before. Subagents cannot
+spawn subagents, so the pool has no nesting.
 
 ### One attempt, start to end
 
@@ -610,9 +649,12 @@ and the "may we try again after this failure" gate, and nothing else:
 
 The backoff curve is the runner's: 2 s doubling to a 60 s ceiling, multiplied by a jitter in
 [0.5, 1]. A Retry-After header replaces the computed delay when it is at most five minutes,
-or shorter than the exponential delay would have been. After the ceiling the runner probes
+or shorter than the exponential delay would have been; the runner then adds a small jitter on
+top, never below the header (see `docs/bigmodel-business-error-retry.md` "Retry-After
+Header"). After the ceiling the runner probes
 forever; the only exits are success, user cancel, which interrupts the sleep and the gate
-wait alike, and the policy table below.
+wait alike, and the policy table below (which includes a cap on consecutive unknown provider
+codes).
 
 Status events carry `maxAttempts: 0` to mean unbounded, since `Infinity` does not
 serialize; consumers that render "attempt n of N" special-case zero.
@@ -637,10 +679,27 @@ failure the runner declines is one the driver will stop on.
 | error code `model_not_found` | `stop`, kind `model_unavailable` |
 | reason `context_exceeded` | `context_exceeded` |
 | reason `invalid_request`, unless the code is `invalid_model_response` | `stop`, kind `invalid_request` |
-| anything else: rate limits, overload, 5xx, timeouts, network and TLS errors, unknown provider codes, a response the adapter could not parse | `retry` |
+| reason `unknown` with a provider code (a code the classifier does not know, such as `1113`), the 10th time in a row within one request | `stop`, kind `other` |
+| anything else: rate limits, overload, 5xx, timeouts, network and TLS errors, an unknown provider code fewer than 10 times in a row, a response the adapter could not parse | `retry` |
 
 Under `unbounded`, `retry` means retry; `stop` and `context_exceeded` mean the attempt loop
-ends and the turn rejects. Under `default` the classifier's flag is consulted exactly as
+ends and the turn rejects.
+
+The cap on unknown provider codes (`WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE`, 10)
+exists because such a code can be deterministic. On 2026-10-16 the server returned `1113`
+to a set of accounts on every request; the classifier did not know the code, so workflow
+runs retried it forever and only the stall notice said anything. An unknown code may also be
+transient, so the first one does not stop the run. The count is consecutive, not the
+attempt number: the runner keeps a streak per request (`nextUnrecognizedCodeStreak`), adds
+one for each failure that is an unknown provider code, and resets it to zero on any other
+failure. Nine network errors followed by one unknown code is a streak of one and retries;
+unknown codes alternating with network errors never stop the run; ten unknown codes in a row
+stop it, after about six minutes of backoff when nothing else interrupts them. Both paths
+that see a failure count it, the catch around the request and the in-stream error chunk.
+The runner passes the streak to the table, and the adapter error carries it as
+`unrecognizedCodeStreak`, so the driver reads the same input and reaches the same stop.
+The run stops as `stopped(provider)` with kind `other` and can be
+resumed once the cause is fixed. Under `default` the classifier's flag is consulted exactly as
 before, so main-conversation behaviour is untouched. The quota check comes before the
 reason check on purpose: code `1005` classifies as `invalid_request`, and a stopped run
 that reads "quota" is the one the user can act on.

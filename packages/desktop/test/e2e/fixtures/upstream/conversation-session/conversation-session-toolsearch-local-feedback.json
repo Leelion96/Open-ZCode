@@ -23,7 +23,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"first\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:mcp__catalog__lookup\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"first\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:mcp__catalog__lookup\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -46,7 +46,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"first\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:mcp__catalog__lookup\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"first\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:mcp__catalog__lookup\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -69,7 +69,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"mixed\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:lookup,TodoWrite\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"mixed\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:lookup,TodoWrite\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -92,7 +92,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"mixed\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:lookup,TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"mixed\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:lookup,TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -115,7 +115,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"repeat\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:mcp__catalog__lookup,TodoWrite\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"repeat\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:mcp__catalog__lookup,TodoWrite\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -138,7 +138,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"repeat\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:mcp__catalog__lookup,TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"repeat\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:mcp__catalog__lookup,TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -161,7 +161,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"resident\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:Read,TodoWrite\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"resident\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:Read,TodoWrite\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -184,7 +184,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"resident\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:Read,TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"resident\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:Read,TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -207,7 +207,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"parallel_one\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:WebFetch\"}}, {\"type\": \"tool_use\", \"id\": \"parallel_two\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:WebFetch\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"parallel_one\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:WebFetch\"}}, {\"type\": \"tool_use\", \"id\": \"parallel_two\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:WebFetch\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -230,7 +230,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"parallel_one\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:WebFetch\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"tool_use\", \"id\": \"parallel_two\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:WebFetch\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 1}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"parallel_one\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:WebFetch\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"tool_use\", \"id\": \"parallel_two\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:WebFetch\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 1}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -253,7 +253,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"cold_repeat\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:lookup\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"cold_repeat\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:lookup\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -276,7 +276,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"cold_repeat\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:lookup\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"cold_repeat\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:lookup\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -391,7 +391,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"promoted_select\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:lookup\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"promoted_select\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:lookup\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -414,7 +414,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"promoted_select\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:lookup\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"promoted_select\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:lookup\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {
@@ -437,7 +437,7 @@
         "headers": {
           "content-type": "application/json"
         },
-        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"new_search\", \"name\": \"ToolSearch\", \"input\": {\"query\": \"select:TodoWrite\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
+        "body": "{\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [{\"type\": \"tool_use\", \"id\": \"new_search\", \"name\": \"LocalToolSearch\", \"input\": {\"query\": \"select:TodoWrite\"}}], \"stop_reason\": \"tool_use\", \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 30}}"
       }
     },
     {
@@ -460,7 +460,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"new_search\", \"name\": \"ToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_e2e_local_feedback\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"test-toolsearch\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"tool_use\", \"id\": \"new_search\", \"name\": \"LocalToolSearch\", \"input\": {}}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"input_json_delta\", \"partial_json\": \"{\\\"query\\\": \\\"select:TodoWrite\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"tool_use\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 30}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
       }
     },
     {

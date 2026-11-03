@@ -69,7 +69,7 @@ Host tasks-index    project_id、pinned、archived、unread_at(+CAS)、sort_orde
 
 - 版本化 migration runner 两库共用（抽自 `apps/zcode-cli/.../session-store/migration-runner.ts`）：`schema_migration(id, checksum, app_version)`，checksum 不可变，未知 id 忽略。
 - 每条 migration 显式声明 `touchedTables`；runner 在同一读事务里只备份这些表（`ATTACH + CREATE TABLE AS SELECT`）；备份只为迁移失败恢复，正常流程只产生不消费，不做整库快照（本机整库 770MB vs 表级 16MB）。
-- 每条 migration 一个单测：fixture 前后对全部表做内容哈希，只允许 `touchedTables` 变化。`schema.baseline.sql` 由 CI 做只增 diff。
+- 每条 migration 都需验证 fixture 前后全部表的内容哈希，只允许 `touchedTables` 变化。App 使用 E2E 或可重复运行时验收，不再新增业务单测；CLI 迁移保留独立单测。`schema.baseline.sql` 由 CI 做只增 diff。
 - 兼容退场三阶段：V1 只读新列、旧列只写不读；V2 写 `schema_floor` 并停双写；V3 物理删退场列 / `time_archived` 并重建主键。分组表已恢复为运行态，不能按旧计划删除。不要在任何阶段引入「永久」兼容分支。
 - 降级靠加法 schema，不靠备份；首次迁移遗留、旧版本新增或 CLI 首次发现的未归属 session 只判定一次：目录唯一匹配同 host 下未删除项目才归入，零个或多个匹配保留 NULL 并进入任务区，不自动建项目。唯一例外是远端 Source Server 的首次迁移：远端自身没有旧 workspace 清单，按历史任务目录建单 root 项目（虚拟项目 spec 2026-10-15 裁决）。旧 group、空组、系统组、颜色、成员和顺序继续读取；旧 Group → Project 转换取消，workspace → Project 保留。
 - `project_id IS NULL` 是合法未归类状态，不是待迁移标记。启动时先识别 `host_id IS NULL` 的旧版本新增行，再在同一事务补齐身份与首次归属；新版本创建或首次插入行时原子写入身份和归属。已处理的 NULL 行不因启动、对账或新增同目录项目而自动归入；全局新建任务显式保持未归类。
@@ -81,7 +81,7 @@ Host tasks-index    project_id、pinned、archived、unread_at(+CAS)、sort_orde
 2. 你写入的时间戳来自 CLI 事件还是 `Date.now()`？后者只允许写 Host 组织态自己的时间列（`pinned_at`、`meta_updated_at`），不允许进任何排序依据。
 3. 是否会让 sessions-index 决定行的存在或消失？不允许。
 4. 是否用 `workspacePath` 做了身份判等或建 key？远程必须带 `workspaceIdentity`。
-5. 新增列 / 表是否可空或带默认、是否更新了 `schema.baseline.sql` 与 migration 的 `touchedTables`、是否有逐表哈希单测？
+5. 新增列 / 表是否可空或带默认、是否更新了 `schema.baseline.sql` 与 migration 的 `touchedTables`、是否有逐表哈希验证证据？
 6. 改了 CLI 配置发现逻辑？只允许在 skills / subagents / 路径策略三处消费 `additionalDirectories`；其余保持只按 `workingDirectory`。
 7. 涉及标题 / 状态 / 未读 / 归档 / 删除的行为变化，e2e 是否覆盖了「桌面 + 手机远控」「本地 + SSH/WSL」两组交叉？
 8. 涉及 schema 的改动，是否跑过「旧 fixture 升级 → 旧代码路径读写（含修改既有行：删除、重命名）→ 再升级」的 e2e？

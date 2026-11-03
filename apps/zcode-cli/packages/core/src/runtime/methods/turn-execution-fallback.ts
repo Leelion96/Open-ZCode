@@ -11,8 +11,9 @@ import type { ModelSelection } from "@zcode/contracts";
 import { isModelContextExceededError, projectExecutionErrorPayload } from "../helpers/index.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { ModelExecutionContext } from "../types.js";
+import { rebuildContextPrefix } from "./context-refresh.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
-import { createTurnModel } from "./turn-model.js";
+import { createTurnModel, sameModelSelection } from "./turn-model.js";
 
 type SelectionFallbackDeclaration = NonNullable<ModelExecutionContext["selectionFallback"]>;
 
@@ -278,7 +279,16 @@ export async function applyExecutionSelectionFallback(
   );
   await runtime.appendEvent(fallbackEvent, state.turnTraceContext);
   state.events.push(fallbackEvent);
+  // 修复原因：Context Prefix 的 Harness 文案按请求模型的 mid-conversation system 能力生成；
+  // 只换 state.model 时，退回请求仍带执行模型的文案，与实际的 reminder 通道不一致。
+  const selectionChanged = !sameModelSelection(state.model, fallbackModel);
   state.model = fallbackModel;
+  if (selectionChanged) {
+    state.turnRequestState.entries = rebuildContextPrefix(runtime, {
+      model: fallbackModel,
+      turnRequestEntries: state.turnRequestState.entries,
+    });
+  }
   // 只降级一次：退回后的普通模型若再失败，必须让整轮按真实错误失败。
   state.selectionFallback = undefined;
   if (!settledAcceptedTools) {

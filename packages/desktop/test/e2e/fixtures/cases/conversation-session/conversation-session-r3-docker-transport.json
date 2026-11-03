@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-docker-transport",
+  "spec": "./test/e2e/conversation-session/conversation-session-r3-docker-transport.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-docker-transport.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "r3-docker-transport-title",
+      "description": "Docker transport 首发的标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只验证 Docker 真实连接与请求链路，云模型内容不属于本例断言。"
+    },
+    {
+      "id": "r3-docker-transport-main",
+      "description": "Docker transport 首发固定响应。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只验证 Docker 真实连接与请求链路，云模型内容不属于本例断言。"
+    }
+  ]
+}

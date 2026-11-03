@@ -1,0 +1,7 @@
+node source
+node fan-out#1 "fan-out" @11:3
+node ask#1 "ask" @14:56 actors=actor#1 type="string"
+node sink
+actor actor#1 @14:35
+edge fan-out#1 -> fan-out#1 data exact
+edge fan-out#1 -> ask#1 data exact

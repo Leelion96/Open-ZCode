@@ -20,21 +20,21 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "tool-use",
-      "syntheticReason": "固定触发 WebFetch，验证桌面会话到 agent runtime 的 WebFetch HttpClientPort 成功抓取闭环。"
+      "syntheticReason": "真实 provider 不一定稳定选择 WebFetch；本响应固定触发 WebFetch，专门验证 agent HttpClientPort 成功抓取闭环。"
     },
     {
       "id": "upstream-conversation-webfetch-lite-extraction",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定 WebFetch 内部 lite model 输出，验证 HTML 提取结果能进入 tool_result。"
+      "syntheticReason": "真实 lite model 输出不可控；本响应固定返回提取结果，用于验证 WebFetch 工具结果回灌主模型。"
     },
     {
       "id": "upstream-conversation-webfetch-final",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定最终回复，验证 WebFetch tool_result 已进入主模型 continuation。"
+      "syntheticReason": "核心断言是 WebFetch 成功 tool_result 进入 continuation；最终文案只需稳定收口。"
     }
   ]
 }

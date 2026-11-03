@@ -17,15 +17,15 @@
         "pathIncludes": "/messages",
         "bodyIncludes": ["Generate a concise title", "E2E_WPL_008_RESIDENT_ENABLED"]
       },
-      "replay": { "consumeOnce": true },
+      "replay": {
+        "consumeOnce": true
+      },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "resident-enabled-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"WPL-008 resident enabled\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"resident-enabled-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"WPL-008 resident enabled\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {
@@ -42,15 +42,15 @@
         "pathIncludes": "/messages",
         "bodyIncludes": ["Generate a concise title", "E2E_WPL_008_NEW_SESSION_DISABLED"]
       },
-      "replay": { "consumeOnce": true },
+      "replay": {
+        "consumeOnce": true
+      },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "new-session-disabled-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"WPL-008 new session disabled\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"new-session-disabled-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"WPL-008 new session disabled\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {
@@ -69,13 +69,17 @@
         "bodyIncludes": ["E2E_WPL_008_RESIDENT_ENABLED"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "replay": { "consumeOnce": true },
+      "replay": {
+        "consumeOnce": true
+      },
       "response": {
         "statusCode": 200,
         "toolUse": {
           "id": "toolu_e2e_wpl_008_resident",
           "name": "mcp__plugin_e2e-plugin-mcp-ping_ping__ping",
-          "input": { "message": "wpl-008-resident" }
+          "input": {
+            "message": "wpl-008-resident"
+          }
         }
       }
     },
@@ -94,8 +98,13 @@
         "bodyIncludes": ["E2E_WPL_008_RESIDENT_ENABLED", "toolu_e2e_wpl_008_resident"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "replay": { "consumeOnce": true },
-      "response": { "statusCode": 200, "text": "wpl-008-resident-ok" }
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "wpl-008-resident-ok"
+      }
     },
     {
       "id": "new-session-disabled-final",
@@ -112,8 +121,13 @@
         "bodyIncludes": ["E2E_WPL_008_NEW_SESSION_DISABLED"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "replay": { "consumeOnce": true },
-      "response": { "statusCode": 200, "text": "wpl-008-new-session-ok" }
+      "replay": {
+        "consumeOnce": true
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "wpl-008-new-session-ok"
+      }
     },
     {
       "id": "cold-resume-disabled-final",
@@ -130,7 +144,10 @@
         "bodyIncludes": ["E2E_WPL_008_COLD_RESUME_DISABLED"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "response": { "statusCode": 200, "text": "wpl-008-cold-resume-ok" }
+      "response": {
+        "statusCode": 200,
+        "text": "wpl-008-cold-resume-ok"
+      }
     }
   ]
 }

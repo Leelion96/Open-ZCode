@@ -4,6 +4,7 @@
 Linux 服务器上跑**，远端用同机 Docker 容器模拟，不追求跨机验证。
 
 当前命令、构建环境、源码验真、调度和清理规则统一见 [harness README](../../harness/remote/README.md)。
+开发机上只跑少量 spec（数据同步等）时，用同一镜像与环境合同的本机 Docker runner，见 README「本机 Docker 远端（开发机）」。
 本文保留拓扑、真实/模拟边界、case 档位和历史归因；不同日期的结果不能拼成当前全量 PASS。
 10 月 SSH 范围结果见[指南回归](desktop-ssh-guide-regression.md)。
 
@@ -146,6 +147,11 @@ Host / Agent 最大数量各为 1。RSS 首尾采样 1220 / 1211 MB；这只是�
 51 份变更 conversation spec 中，48 份回放 fixture 合同通过；`live-team`、`live-zapi`、
 `dockertrn` 使用真实账号请求，原基线未配置回放 fixture/manifest，通用 fixture 检查器对这三项报缺失。
 保留该检查限制，以实际 live 队列为执行证据，不为通过检查伪造回放响应，也不据此转正。
+
+2026-10-19 合同更新：上述 Docker 真实账号限制只适用于原基线。当前 `dockertrn`
+已通过独立 SSH 隧道转发 case-local 模型回放，产品控制面仍走真实 Docker transport。
+队列将其归入 replay，不要求个人凭据或 VPN；目标容器由调度器按运行身份创建并注入，
+不得引用固定共享容器。此配置修正不代表安装、首发或重连断言已通过。
 
 测试修复与证据边界：
 
@@ -290,7 +296,7 @@ Host / Agent 最大数量各为 1。RSS 首尾采样 1220 / 1211 MB；这只是�
 | 5 远端开发                   | `a`                                        | attachments / media-preview / file-local-actions / remote-hooks / terminal                                                                                   |
 | 6 安装 / 升级 / 连接生命周期 | `a`（install-faults 用 `a`+`c`）           | daemon-detached / install-faults / server-update / uninstall / cancel-retry / cold-reconnect / server-fault / download-proxy                                 |
 | 7 既有 P0                    | `a`，development-p0 需带 git 的容器        | ssh-remote-p0 / connection-p0 / development-p0                                                                                                               |
-| 8 RDUX 与 scope              | `a`                                        | rdux-13 / rdux-14 / project-conversation-scope / share-ssh-artifact                                                                                          |
+| 8 RDUX 与 scope              | `a`                                        | rdux-13 / rdux-14 / project-read-failed / project-conversation-scope / share-ssh-artifact                                                                    |
 | 9 远程 workspace 插件        | identity 用 `a`+`c`，sync 用 `a`           | WPL-010 / WPL-011                                                                                                                                            |
 | 10 Bot 远程 workspace        | 无容器                                     | BOT-E2E-RW-01（synthetic fixture 契约）                                                                                                                      |
 | 11 移动端                    | `a` + chromium + relay                     | mobile / mobile-permission                                                                                                                                   |
@@ -298,8 +304,7 @@ Host / Agent 最大数量各为 1。RSS 首尾采样 1220 / 1211 MB；这只是�
 | 13 受限环境安装              | `d` / `e` / `f` / `g`                      | noexec-tmp / no-tar / no-forwarding / old-glibc（注入返回 `glibc 2.17` 的 getconf）                                                                          |
 | 14 live                      | `a`，docker transport 用 `dt`              | live-zapi / live-bigmodel-team / docker-transport                                                                                                            |
 
-覆盖门禁：`packages/desktop/scripts/r3-remote-spec-inventory.mjs` 是远程 spec 清单单点，
-`packages/desktop/test/r3RemoteSpecInventory.test.ts` 校验队列排满清单。现有档位造不出 fixture 的用例必须显式报告阻塞，不得从计划分母消失。RDUX-16 已在 case 内真实首装，再通过本 run 的 staged archive 构造同版本异 SHA 更新；不再要求人工预装。更新与安装故障解除本 run 的硬链接后再写，公共构建包保持只读。
+队列覆盖：队列手工维护，没有自动门禁核对它与远程 spec 是否一致；新增远程 case 时须同步入队。现有档位造不出 fixture 的用例登记在 `packages/desktop/scripts/r3-remote-spec-inventory.mjs` 的 `DEDICATED_FIXTURE_SPECS`，必须显式报告阻塞，不得从计划分母消失。RDUX-16 已在 case 内真实首装，再通过本 run 的 staged archive 构造同版本异 SHA 更新；不再要求人工预装。更新与安装故障解除本 run 的硬链接后再写，公共构建包保持只读。
 
 ### 项目导航迁移与用例价值
 
@@ -368,7 +373,7 @@ VPN 是宿主共享基础设施，由 systemd 管理 `corplink.service`、`feili
                                             └─ 未就绪 → 依赖项 BLOCKED_ENV；其余 replay 可继续
 ```
 
-`live-zapi`、`dockertrn` 显式声明 `R3_REQUIRE_VPN=1`；`--list`、`--audit` 与纯 replay
+`live-zapi` 显式声明 `R3_REQUIRE_VPN=1`；`--list`、`--audit` 与纯 replay
 定向运行不启动 VPN。部署准备也执行 VPN 准入。检查要求服务 active、飞连 `utun` 有全局 IPv4、
 Docker 子网仍走本机 bridge，以及 GitLab HTTPS 返回有效非 5xx 响应；401/403 只证明网络可达，
 不冒充仓库认证成功。额外内网服务可由 `R3_VPN_PROBE_URLS` 配置无凭据、无查询参数的 HTTPS 地址。

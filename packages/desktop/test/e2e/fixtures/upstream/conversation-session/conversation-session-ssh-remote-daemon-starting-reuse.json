@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-remote-daemon-starting-reuse",
+  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-daemon-starting-reuse.test.ts",
+  "fixtures": [
+    {
+      "id": "ssh-daemon-starting-reuse-title",
+      "description": "远端 agent 的标题辅助响应。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于 daemon 复用与版本头断言。"
+      },
+      "maxMatches": 4,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_SSH_DAEMON_STARTING_REUSE"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": { "content-type": "application/json; charset=utf-8" },
+        "body": "{\"id\":\"ssh-daemon-starting-reuse-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"SSH daemon starting reuse\\\"}\"},\"finish_reason\":\"stop\"}]}"
+      }
+    },
+    {
+      "id": "ssh-daemon-starting-reuse-main",
+      "description": "远端 agent 首发回复；用例只断言请求头与连接结果。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "首发只需稳定完成，断言对象是远端请求头。"
+      },
+      "maxMatches": 6,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_SSH_DAEMON_STARTING_REUSE_"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "body": "data: {\"id\":\"ssh-daemon-starting-reuse-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"SSH_DAEMON_STARTING_REUSE_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"ssh-daemon-starting-reuse-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

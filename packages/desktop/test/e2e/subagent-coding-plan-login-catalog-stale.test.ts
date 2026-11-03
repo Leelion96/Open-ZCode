@@ -343,7 +343,7 @@ async function readModelCatalogSnapshot(): Promise<ModelCatalogSnapshot> {
       type Fiber = {
         memoizedProps?: {
           modelSelectionView?: ModelSelectionView;
-          modelSelectionLoading?: boolean;
+          modelCatalogStatus?: "ready" | "loading" | "unavailable";
         };
         return?: Fiber;
       };
@@ -365,7 +365,7 @@ async function readModelCatalogSnapshot(): Promise<ModelCatalogSnapshot> {
                 value: `${provider.providerId}/${model.modelId}`,
               })),
             ),
-            status: props.modelSelectionLoading ? "loading" : "ready",
+            status: props.modelCatalogStatus ?? null,
           };
         }
         fiber = fiber.return;

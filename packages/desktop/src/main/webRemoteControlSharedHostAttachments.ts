@@ -6,6 +6,7 @@ type WebRemoteControlSharedHostKind = "local" | "remote";
 
 interface WebRemoteControlSharedHostAttachContext {
   kind: WebRemoteControlSharedHostKind;
+  terminalOwnerId?: string;
   workspacePath: string;
   workspaceIdentity?: string;
   remoteSessionId?: string;
@@ -48,6 +49,7 @@ export function createWebRemoteControlSharedHostAttachments(dependencies: {
     workspaceIdentity: string;
     workspaceKey: string;
     clientMode: "web-remote-replayable";
+    terminalOwnerId?: string;
   }) => {
     process: ElectronUtilityProcess;
     port: MessagePortMain;
@@ -73,7 +75,10 @@ export function createWebRemoteControlSharedHostAttachments(dependencies: {
     return dependencies.createMessageChannel?.() ?? new MessageChannelMain();
   }
 
-  function attachLocalHost(windowId: number): WebRemoteControlSharedHostAttachment {
+  function attachLocalHost(
+    windowId: number,
+    terminalOwnerId?: string,
+  ): WebRemoteControlSharedHostAttachment {
     const hostProcessWindowId = BrowserWindow.fromId(windowId)?.webContents.id ?? windowId;
     const process = dependencies.windowHostProcessMap.get(hostProcessWindowId);
     if (!process) {
@@ -91,6 +96,7 @@ export function createWebRemoteControlSharedHostAttachments(dependencies: {
         requestId: `shared-host-request-${nextAttachmentId}`,
         attachmentId,
         clientMode: "web-remote-replayable",
+        ...(terminalOwnerId ? { terminalOwnerId } : {}),
         scope: { kind: "local" },
       },
       [port2],
@@ -109,7 +115,7 @@ export function createWebRemoteControlSharedHostAttachments(dependencies: {
     context: WebRemoteControlSharedHostAttachContext,
   ): Promise<WebRemoteControlSharedHostAttachment> {
     if (context.kind === "local") {
-      return attachLocalHost(windowId);
+      return attachLocalHost(windowId, context.terminalOwnerId);
     }
     if (!context.remoteSessionId) {
       throw createSharedHostError(
@@ -132,6 +138,7 @@ export function createWebRemoteControlSharedHostAttachments(dependencies: {
       workspaceIdentity,
       workspaceKey,
       clientMode: "web-remote-replayable",
+      ...(context.terminalOwnerId ? { terminalOwnerId: context.terminalOwnerId } : {}),
     });
     const attachmentId = `shared-host-attachment-${++nextAttachmentId}`;
     attachments.set(attachmentId, {
@@ -180,7 +187,17 @@ export function createWebRemoteControlSharedHostAttachments(dependencies: {
     }
   }
 
+  function setTerminalOwner(windowId: number, ownerId: string | null): void {
+    // local/remote attachment 都归该窗口已有 Host；不把页面 owner 绑定到临时 port。
+    const webContentsId = BrowserWindow.fromId(windowId)?.webContents.id ?? windowId;
+    dependencies.windowHostProcessMap.get(webContentsId)?.postMessage({
+      type: HostMessageTypes.SetTerminalOwner,
+      ownerId,
+    });
+  }
+
   return {
+    setTerminalOwner,
     attachWorkspaceHost,
     releaseAttachment,
     disposeWindow,

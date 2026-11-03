@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-plugin-mcp-skill-disabled",
+  "spec": "./test/e2e/conversation-session/conversation-session-plugin-mcp-skill-disabled.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-plugin-mcp-skill-disabled.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "upstream-plugin-mcp-skill-disabled-noop",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "将旧专项回放原样归入本用例；真实 Agent 注册工具、工具调用和 Provider tools 数组仍由 E2E 断言。"
+    },
+    {
+      "id": "plugin-mcp-disabled-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定辅助标题，避免独立回放依赖旧共享 fixture 池。"
+    }
+  ]
+}

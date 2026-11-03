@@ -88,7 +88,9 @@ Workspace 配置只覆盖自己声明的字段，其余字段继续继承 User �
 
 - `plugins.enabledPlugins`：项目启用/禁用哪些 Plugin；
 - `plugins.options`：项目共享的普通 option、credential、secret；
-- `plugins.dirs`：项目内 Plugin root 或项目相对 Plugin 路径，受路径和 manifest schema 校验。
+- `plugins.dirs`：仅 User 配置支持。项目配置中的该字段在读取时忽略，包括自动发现和显式指定的项目配置；相对路径与绝对路径均不进入插件发现。
+
+项目目录不构成用户安装授权。关闭 Workspace `plugins.dirs`，避免仓库声明的目录插件绕过用户安装直接注册 Hook、MCP 等能力。已有项目文件不改写；需要目录插件时由用户显式登记到 User 配置。Workspace 的 `enabledPlugins` 与 `options` 覆盖规则保持不变。
 
 Workspace 配置不保存 package bytes、安装完成态、Marketplace cache、Plugin data 或 Host 用户级安装记录。
 敏感 option 的空输入表示保留当前值；用户显式清除时只删除当前 scope 的指定 option key，
@@ -133,7 +135,7 @@ Plugin package、安装、更新、卸载、缓存和 data 仍是目标 Agent Ho
 按 Plugin ID/key 合并 effective enabled/options
           |
           v
-发现目标 Host 上的 installed/builtin/Workspace Plugin package
+发现目标 Host 上的 installed/builtin/User 目录 Plugin package
           |
           +-------------------+
           |                   |
@@ -388,10 +390,10 @@ Workspace-level E2E feature 分组如下：
 | resident/cold resume            | `WPL-008` | resident App 冻结，新 Session/cold resume 读取新配置                                                                    |
 | Global Marketplace install      | `WPL-009` | 只有 User Marketplace 可添加/刷新；声明本身不触发下载；市场安装写 User inventory/config，不写 Workspace enabled/options |
 | Remote target isolation         | `WPL-010` | 相同 path、不同 identity 不串配置和 runtime                                                                             |
-| Remote missing/explicit install | `WPL-011` | 连接不复制本机 package；显式 Sync/Install 只物化 remote Host                                                            |
+| Remote missing/explicit install | `WPL-011` | 连接不复制本机 package；显式 Sync（Header「同步插件」打开数据同步弹窗）只物化 remote Host                               |
 | Mobile shared-host              | `WPL-012` | `/remote` 使用现有 Host，不复制 Plugin runtime/store                                                                    |
 | builtin Workspace disable       | `WPL-013` | 只改 enabledPlugins，不删除 builtin asset/user data                                                                     |
-| project Plugin root/MCP         | `WPL-014` | 合法项目 Plugin root 直接激活；非法 manifest/path fail closed                                                           |
+| project Plugin root/MCP         | `WPL-014` | 项目 `plugins.dirs` 不激活目录插件；不向模型注册其 MCP 工具                                                             |
 | Marketplace/installed roundtrip | `WPL-015` | 从 User 已安装进入全局市场；浏览页无 scope/config；安装写 User；主导航返回聊天，再进入管理切 Workspace 做配置           |
 
 E2E 证据分层：

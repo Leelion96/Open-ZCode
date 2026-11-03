@@ -4,65 +4,305 @@
   "spec": "./test/e2e/conversation-session/conversation-session-subagent-model-boundary.test.ts",
   "fixtures": [
     {
+      "id": "conversation-session-subagent-model-boundary-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
       "id": "subagent-boundary-parent-agent",
       "description": "父会话触发没有显式模型覆盖的 general-purpose child。",
-      "metadata": { "kind": "main", "timingPolicy": "fast-text", "source": "synthetic", "syntheticReason": "固定 Agent tool_use，模型身份由真实运行时请求断言。" },
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定 Agent tool_use，模型身份由真实运行时请求断言。"
+      },
       "maxMatches": 1,
-      "match": { "method": "POST", "pathIncludes": "/messages", "bodyIncludes": ["E2E_SUBAGENT_MODEL_BOUNDARY_PARENT", "E2E_SUBAGENT_MODEL_BOUNDARY_CHILD"], "bodyExcludes": ["E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE", "Generate a concise title", "CRITICAL: Respond with TEXT ONLY"] },
-      "response": { "statusCode": 200, "toolUse": { "id": "toolu_e2e_subagent_model_boundary", "name": "Agent", "input": { "description": "Run inherited child", "prompt": "E2E_SUBAGENT_MODEL_BOUNDARY_CHILD: reply exactly E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE and no other text.", "subagent_type": "general-purpose" } } }
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SUBAGENT_MODEL_BOUNDARY_PARENT", "E2E_SUBAGENT_MODEL_BOUNDARY_CHILD"],
+        "bodyExcludes": [
+          "toolu_e2e_subagent_model_boundary",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_subagent_model_boundary",
+          "name": "Agent",
+          "input": {
+            "description": "Run inherited child",
+            "prompt": "E2E_SUBAGENT_MODEL_BOUNDARY_CHILD: reply exactly E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE and no other text.",
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
     },
     {
       "id": "subagent-boundary-child-delayed",
-      "description": "child 响应延迟，给父会话切换模型的在途窗口。",
-      "metadata": { "kind": "main", "timingPolicy": "delayed-text", "source": "synthetic", "syntheticReason": "延迟只用于验证 child execution snapshot，不改变业务结果。" },
+      "description": "子请求保持创建时模型，父模型选择完成后显式释放响应。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "门闩确定性保持子响应在途，父模型改选后再完成子请求。"
+      },
       "maxMatches": 1,
-      "match": { "method": "POST", "pathIncludes": "/messages", "bodyIncludes": ["E2E_SUBAGENT_MODEL_BOUNDARY_CHILD"], "bodyExcludes": ["E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE", "Generate a concise title", "CRITICAL: Respond with TEXT ONLY"] },
-      "response": { "statusCode": 200, "delayMs": 30000, "text": { "id": "subagent-boundary-child", "inputTokens": 40, "outputTokens": 8, "text": "E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE" } }
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SUBAGENT_MODEL_BOUNDARY_CHILD"],
+        "bodyExcludes": [
+          "E2E_SUBAGENT_MODEL_BOUNDARY_PARENT",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"subagent-child\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"start-subagent-boundary-model\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 40, \"output_tokens\": 0}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}, \"usage\": {\"output_tokens\": 8}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"subagent-child\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"start-subagent-boundary-model\", \"content\": [], \"stop_reason\": null, \"usage\": {\"input_tokens\": 40, \"output_tokens\": 0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\"}, \"usage\": {\"output_tokens\": 8}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 2
+      }
     },
     {
       "id": "subagent-boundary-parent-final",
       "description": "父会话消费 child 结果并完成。",
-      "metadata": { "kind": "main", "timingPolicy": "fast-text", "source": "synthetic", "syntheticReason": "验证父 continuation 仍能完成。" },
-      "match": { "method": "POST", "pathIncludes": "/messages", "bodyIncludes": ["E2E_SUBAGENT_MODEL_BOUNDARY_PARENT", "E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE"], "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"] },
-      "response": { "statusCode": 200, "text": { "id": "subagent-boundary-parent-final", "inputTokens": 60, "outputTokens": 8, "text": "E2E_SUBAGENT_MODEL_BOUNDARY_PARENT_DONE" } }
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "验证父 continuation 仍能完成。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_SUBAGENT_MODEL_BOUNDARY_PARENT",
+          "E2E_SUBAGENT_MODEL_BOUNDARY_CHILD_DONE",
+          "toolu_e2e_subagent_model_boundary",
+          "tool_result"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SUBAGENT_MODEL_BOUNDARY_NEXT_INPUT"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "subagent-boundary-parent-final",
+          "inputTokens": 60,
+          "outputTokens": 8,
+          "text": "E2E_SUBAGENT_MODEL_BOUNDARY_PARENT_DONE"
+        }
+      }
     },
     {
       "id": "subagent-nested-parent-agent",
-      "description": "三层场景的父 Agent tool_use。",
-      "metadata": { "kind": "main", "timingPolicy": "fast-text", "source": "synthetic", "syntheticReason": "固定第一层 child。" },
+      "description": "父会话启动唯一允许的子 Agent 层级。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定第一层 child。"
+      },
       "maxMatches": 1,
-      "match": { "method": "POST", "pathIncludes": "/messages", "bodyIncludes": ["E2E_SUBAGENT_NESTED_PARENT", "E2E_SUBAGENT_NESTED_CHILD"], "bodyExcludes": ["E2E_SUBAGENT_NESTED_CHILD_DONE", "Generate a concise title", "CRITICAL: Respond with TEXT ONLY"] },
-      "response": { "statusCode": 200, "toolUse": { "id": "toolu_e2e_subagent_nested_child", "name": "Agent", "input": { "description": "Run nested child", "prompt": "E2E_SUBAGENT_NESTED_CHILD: launch a grandchild Agent for E2E_SUBAGENT_NESTED_GRANDCHILD, then reply exactly E2E_SUBAGENT_NESTED_CHILD_DONE.", "subagent_type": "general-purpose" } } }
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SUBAGENT_NESTED_PARENT", "E2E_SUBAGENT_NESTED_CHILD"],
+        "bodyExcludes": [
+          "toolu_e2e_subagent_nested_child",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_subagent_nested_child",
+          "name": "Agent",
+          "input": {
+            "description": "Run nested child",
+            "prompt": "E2E_SUBAGENT_NESTED_CHILD: launch a grandchild Agent for E2E_SUBAGENT_NESTED_GRANDCHILD, then reply exactly E2E_SUBAGENT_NESTED_CHILD_DONE.",
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
     },
     {
       "id": "subagent-nested-child-agent",
-      "description": "第二层 child 继续触发 grandchild。",
-      "metadata": { "kind": "main", "timingPolicy": "fast-text", "source": "synthetic", "syntheticReason": "固定第二层 Agent tool_use。" },
+      "description": "模拟模型调用未暴露的递归 Agent 工具，必须被运行时拒绝。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "注入非法递归工具调用，验证工具权限边界。"
+      },
       "maxMatches": 1,
-      "match": { "method": "POST", "pathIncludes": "/messages", "bodyIncludes": ["E2E_SUBAGENT_NESTED_CHILD", "E2E_SUBAGENT_NESTED_GRANDCHILD"], "bodyExcludes": ["E2E_SUBAGENT_NESTED_GRANDCHILD_DONE", "Generate a concise title", "CRITICAL: Respond with TEXT ONLY"] },
-      "response": { "statusCode": 200, "toolUse": { "id": "toolu_e2e_subagent_nested_grandchild", "name": "Agent", "input": { "description": "Run nested grandchild", "prompt": "E2E_SUBAGENT_NESTED_GRANDCHILD: reply exactly E2E_SUBAGENT_NESTED_GRANDCHILD_DONE and no other text.", "subagent_type": "general-purpose" } } }
-    },
-    {
-      "id": "subagent-nested-grandchild-final",
-      "description": "第三层 grandchild 固定回复。",
-      "metadata": { "kind": "main", "timingPolicy": "fast-text", "source": "synthetic", "syntheticReason": "验证第三层请求实际使用继承身份。" },
-      "maxMatches": 1,
-      "match": { "method": "POST", "pathIncludes": "/messages", "bodyIncludes": ["E2E_SUBAGENT_NESTED_GRANDCHILD"], "bodyExcludes": ["E2E_SUBAGENT_NESTED_GRANDCHILD_DONE", "Generate a concise title", "CRITICAL: Respond with TEXT ONLY"] },
-      "response": { "statusCode": 200, "text": { "id": "subagent-nested-grandchild", "inputTokens": 32, "outputTokens": 8, "text": "E2E_SUBAGENT_NESTED_GRANDCHILD_DONE" } }
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SUBAGENT_NESTED_CHILD", "E2E_SUBAGENT_NESTED_GRANDCHILD"],
+        "bodyExcludes": [
+          "toolu_e2e_subagent_nested_grandchild",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SUBAGENT_NESTED_PARENT"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_subagent_nested_grandchild",
+          "name": "Agent",
+          "input": {
+            "description": "Run nested grandchild",
+            "prompt": "E2E_SUBAGENT_NESTED_GRANDCHILD: reply exactly E2E_SUBAGENT_NESTED_GRANDCHILD_DONE and no other text.",
+            "subagent_type": "general-purpose"
+          }
+        }
+      }
     },
     {
       "id": "subagent-nested-child-final",
-      "description": "第二层 child 消费 grandchild 结果。",
-      "metadata": { "kind": "main", "timingPolicy": "fast-text", "source": "synthetic", "syntheticReason": "验证直接父级收到 grandchild tool_result。" },
-      "match": { "method": "POST", "pathIncludes": "/messages", "bodyIncludes": ["E2E_SUBAGENT_NESTED_CHILD", "E2E_SUBAGENT_NESTED_GRANDCHILD_DONE"], "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"] },
-      "response": { "statusCode": 200, "text": { "id": "subagent-nested-child-final", "inputTokens": 48, "outputTokens": 8, "text": "E2E_SUBAGENT_NESTED_CHILD_DONE" } }
+      "description": "子 Agent 收到递归工具拒绝结果后正常结束。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "验证运行时拒绝未暴露的 Agent 工具，不产生孙级请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_SUBAGENT_NESTED_CHILD",
+          "No such tool available: Agent",
+          "toolu_e2e_subagent_nested_grandchild",
+          "tool_result"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_SUBAGENT_NESTED_PARENT"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "subagent-nested-child-final",
+          "inputTokens": 48,
+          "outputTokens": 8,
+          "text": "E2E_SUBAGENT_NESTED_CHILD_DONE"
+        }
+      }
     },
     {
       "id": "subagent-nested-parent-final",
       "description": "父会话消费第二层 child 结果。",
-      "metadata": { "kind": "main", "timingPolicy": "fast-text", "source": "synthetic", "syntheticReason": "验证三层调用最终收口。" },
-      "match": { "method": "POST", "pathIncludes": "/messages", "bodyIncludes": ["E2E_SUBAGENT_NESTED_PARENT", "E2E_SUBAGENT_NESTED_CHILD_DONE"], "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"] },
-      "response": { "statusCode": 200, "text": { "id": "subagent-nested-parent-final", "inputTokens": 56, "outputTokens": 8, "text": "E2E_SUBAGENT_NESTED_PARENT_DONE" } }
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "验证递归拒绝后父会话仍正常完成。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_SUBAGENT_NESTED_PARENT",
+          "E2E_SUBAGENT_NESTED_CHILD_DONE",
+          "toolu_e2e_subagent_nested_child",
+          "tool_result"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "subagent-nested-parent-final",
+          "inputTokens": 56,
+          "outputTokens": 8,
+          "text": "E2E_SUBAGENT_NESTED_PARENT_DONE"
+        }
+      }
+    },
+    {
+      "id": "subagent-boundary-next-input",
+      "description": "父会话切换模型后，新提交输入使用新模型。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "提供后续普通输入响应，真实请求断言切换后的模型身份。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SUBAGENT_MODEL_BOUNDARY_NEXT_INPUT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "subagent-boundary-next-input",
+          "inputTokens": 60,
+          "outputTokens": 8,
+          "text": "E2E_SUBAGENT_NEXT_DONE"
+        }
+      }
     }
   ]
 }

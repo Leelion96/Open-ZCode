@@ -81,6 +81,53 @@ async function settle() {
 }
 
 describe("v4 原生 compact", () => {
+  it.each([false, true])("compact 固定提交的 B：busy=%s", async (busy) => {
+    const modelSelection = { providerId: "provider-b", modelId: "model-b" };
+    const app = makeApp();
+    const record = makeRecord({
+      app,
+      ...(busy ? { activeAbortController: new AbortController() } : {}),
+    });
+    await new V4CommandExecutor(makeHost(record)).execute(envelope("compact", { modelSelection }));
+    const call = (busy ? app.steerTurn : app.submitPrompt).mock.calls[0];
+    expect(call?.[0]).toBe("/compact");
+    expect(call?.[1]).toMatchObject({
+      intent: { kind: "compact", sourceCommandId: "cmd-1", modelSelection },
+    });
+    expect(call?.[1]?.intent).not.toHaveProperty("mode");
+    expect(call?.[1]?.intent).not.toHaveProperty("planEnabled");
+    await settle();
+  });
+
+  it("旧 compact 在接收时固定 A，就绪等待期间切到 C 不改写请求", async () => {
+    let ready!: () => void;
+    const readyGate = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const app = makeApp();
+    const record = makeRecord({ app });
+    const executing = new V4CommandExecutor(
+      makeHost(record, {
+        ensureModelReady: vi.fn().mockReturnValue(readyGate),
+      }),
+    ).execute(envelope("compact", {}));
+    app.getModel.mockReturnValue("provider-c/model-c");
+    ready();
+    await executing;
+    expect(app.submitPrompt).toHaveBeenCalledWith(
+      "/compact",
+      expect.objectContaining({
+        intent: expect.objectContaining({
+          modelSelection: {
+            providerId: "primary-provider",
+            modelId: "default-model",
+          },
+        }),
+      }),
+    );
+    await settle();
+  });
+
   it("正路径：后台 submitPrompt('/compact') + 上锁 + ready 边界释放", async () => {
     let finishCompact!: () => void;
     const compactGate = new Promise<Record<string, never>>((resolve) => {
@@ -191,15 +238,20 @@ describe("v4 原生 compact", () => {
   });
 
   it("goal verifier busy routing：即使没有 steerable active turn，也进入 deferred FIFO", async () => {
+    const modelSelection = { providerId: "provider-b", modelId: "model-b" };
     const enqueueDeferredInput = vi.fn().mockResolvedValue({ kind: "queued" });
     const app = makeApp({ enqueueDeferredInput });
     const record = makeRecord({ app });
     await new V4CommandExecutor(
       makeHost(record, { getInputRoutingMode: vi.fn().mockReturnValue("enqueue") }),
-    ).execute(envelope("compact", {}));
+    ).execute(envelope("compact", { modelSelection }));
     expect(enqueueDeferredInput).toHaveBeenCalledWith(
       "/compact",
-      expect.objectContaining({ commandKind: "compact", delivery: "queue" }),
+      expect.objectContaining({
+        commandKind: "compact",
+        delivery: "queue",
+        intent: expect.objectContaining({ modelSelection }),
+      }),
     );
     expect(app.submitPrompt).not.toHaveBeenCalled();
   });

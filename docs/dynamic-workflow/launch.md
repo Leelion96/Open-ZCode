@@ -116,6 +116,18 @@ after normalization (below) the input legitimately carries `script` next to `sav
 rewrite. Whatever the source, the script ends up in a file the model edits between
 submissions; see "Script files".
 
+More than one source and no source are refused with different messages, because they have
+different causes. More than one is a choice to undo. No source at all usually means the
+arguments never parsed: when a tool call's arguments are not valid JSON, the model adapter
+logs `model.tool_input.normalize_failed` and hands the executor `{}`, and `{}` passes this
+tool's schema because every field is optional. A model that did write a `script` would read
+"passing none is ambiguous" as a contradiction and resend the same broken call. The
+no-source message therefore says that a call which does not parse arrives empty, names the
+usual cause (an unescaped backslash or double quote inside the inline script, such as a
+regex's `\d`), and offers `path` as the way around it. `EvalWorkflowSnippet` has the same
+two messages for `code` and `path`; the other authoring tools have required fields, so an
+empty call fails their schema first.
+
 There is no predecessor field. Revising an existing run is `AmendWorkflow`'s job (below);
 the input is strict, so a stray `resume_from` is rejected as an unknown key instead of
 silently starting a full-price run. The two tools have the same output.
@@ -1049,7 +1061,7 @@ These places do not show the window, on purpose:
 | Apply in the Configure popover | the user is looking at the run, chose its new settings and read what applying does; the click is the consent. The change goes through `amendWorkflowRunSettings`, not the tool executor, and it runs the script the user already approved. |
 | a retune of a live run's parallelism, from either caller | it starts nothing. No script is read, compiled or executed; one number moves, up or down, on a run that is already executing approved code ("Changing only the parallelism of a live run"). |
 | the terminal UI and headless `-p` | the terminal user is already in a command-line context; friction outweighs protection. The bypass lives in the client's permission responder, not in core. |
-| workflow child sessions | a subagent does not launch, revise or steer runs: that is the main agent's job, and the window would ask the user about a run nobody in the conversation proposed. `CreateWorkflow`, `AmendWorkflow`, `SaveWorkflow`, `ResumeWorkflowRun` and `ResolveWorkflowQuestion` are removed from a child's tool set; the child gets a clean tool-disallowed error. `ListSavedWorkflows`, `ListWorkflowRuns` and `GetWorkflowRun` stay available. The subagent's other asks and its questions are not exempt: they reach the user ("Permissions inside a run"). |
+| workflow child sessions | a subagent does not launch, revise or steer runs: that is the main agent's job, and the window would ask the user about a run nobody in the conversation proposed. `CreateWorkflow`, `AmendWorkflow`, `SaveWorkflow`, `ResumeWorkflowRun` and `ResolveWorkflowQuestion` are removed from a child's tool set; the child gets a clean tool-disallowed error. `ListSavedWorkflows` stays available. `ListWorkflowRuns` and `GetWorkflowRun` are removed too, from every child runtime (a workflow child, a nested workflow child, and a subagent of the main agent's `Agent` tool), for a different reason: they read through the dynamic-workflow run port, which only the app's top-level runtime holds and a child must not (`dynamic-workflow-run-progress-sink.ts` records why), so in a child they could only ever fail with `workflow_introspection_unavailable` (production, 2026-10-20: 155 calls from workflow children, all of them failing). The subagent's other asks and its questions are not exempt: they reach the user ("Permissions inside a run"). |
 
 ### Other clients
 
@@ -1108,13 +1120,12 @@ ordinary denied tool result and the subagent carries on. A waiting subagent keep
 concurrency seat, and a permission wait is not a retry, so it does not count toward the run's
 stall notice. Stopping the run cancels its pending asks with it.
 
-**Questions.** A subagent has `AskUserQuestion`, in every mode. Its question travels the same
-route as a permission ask: under the parent session's id, mirrored into the parent session,
-with the same origin badge, and it follows the main agent's question rules (including the
-timer that closes an unanswered question). The answers come back to the subagent as its tool
-result. `escalate` stays the way to put a question to the main agent instead; a subagent uses
-`AskUserQuestion` only when the decision is the user's. `EnterPlanMode` and `ExitPlanMode`
-stay removed: a subagent never plans for approval.
+**Questions.** A subagent does not have `AskUserQuestion`, in any mode. A subagent never asks
+the user directly: when a decision is not its own, it calls `escalate`, and the main agent
+answers it or asks the user itself. This keeps one route for questions. The subagent's system
+prompt says it has no tool that asks a person, and its tool set agrees; several subagents in
+parallel do not each open their own question for the user. `EnterPlanMode` and `ExitPlanMode`
+stay removed too: a subagent never plans for approval.
 
 Legacy `/workflow` runs (the `Workflow` tool's expert and script kinds) are not dynamic
 workflows and keep forced YOLO children.
@@ -1453,7 +1464,8 @@ window and the handler see the same bytes they would see for an inline script, a
 to the file after approval does not change what the run executes.
 
 The same field exists on `AmendWorkflow` (in place of `script`) and on `EvalWorkflowSnippet`
-(in place of `code`, read whole). On `SaveWorkflow` it is `script_path`, because `path` is
+(in place of `code`, read whole; the resolved input carries the bytes as both `code` and
+`script`). On `SaveWorkflow` it is `script_path`, because `path` is
 already that tool's resolved destination; the file's body is what gets saved and a metadata
 block in it is dropped, since the metadata comes from the fields.
 

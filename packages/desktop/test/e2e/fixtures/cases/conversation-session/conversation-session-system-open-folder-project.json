@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-system-open-folder-project",
+  "spec": "./test/e2e/conversation-session/conversation-session-system-open-folder-project.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-system-open-folder-project.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "requests": []
+}

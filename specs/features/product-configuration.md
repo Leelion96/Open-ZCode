@@ -41,6 +41,7 @@ fork 后一次性配置桌面产品，用一个名称、一个 appId 和三个�
 | 内嵌 Agent 用户目录候选及默认资料 | `.open-zcode` 下的既有子结构 | `isolateUserData` |
 | 项目私有根 | `<workspacePath>/.open-zcode` | `isolateProjectData` |
 | 项目根配置 / 忽略文件 / 分享目录 | open-zcode.json / .open-zcodeignore / .open-zcode-share | `isolateProjectData` |
+| Sites 项目绑定 | `<workspacePath>/.open-zcode-site.json` | `isolateProjectData` |
 | 工作流临时回落 | `<tmp>/open-zcode-workflow-runs` | `isolateProjectData` |
 
 每个隔离开关单独选择派生值或该类上游原规则，不能因填写名称而自动开启其他类别。关闭资料隔离意味着允许共享上游资料，不拒绝构建，也不宣称该类别已隔离。

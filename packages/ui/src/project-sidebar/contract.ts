@@ -23,6 +23,8 @@ export interface ProjectRowAction {
   run(): void;
   disabled?: boolean;
   destructive?: boolean;
+  /** 与上一组操作之间画分隔线；首项忽略。 */
+  separatorBefore?: boolean;
 }
 export {
   buildRemoteHostWorkspaceIdentity,
@@ -66,7 +68,7 @@ export interface ProjectAvailability {
   unresolved?: boolean;
 }
 export type { Locale, Theme };
-export type ProjectSidebarView = "projects" | "grouped" | "timeline";
+export type ProjectSidebarView = "projects" | "grouped" | "timeline" | "unread";
 export interface SidebarFileTreeTarget {
   workspacePath: string;
   workspaceName: string;

@@ -14,7 +14,7 @@
 // 与草稿本身一样**尽力而为**：stat 不到就不记，模型的第一次 Edit 退回「先 Read」的老路。
 
 import { createReadFileStateMetadataFromEntry } from "../read-file-state-metadata.js";
-import { createReadFileStateKey, normalizeReadFileStateMtimeMs } from "../read-file-state.js";
+import { normalizeReadFileStateMtimeMs, setReadFileStateEntry } from "../read-file-state.js";
 import type { ReadFileStateEntry, ToolExecutionContext } from "../types.js";
 
 export type WorkflowDraftAuthoringTool = "CreateWorkflow" | "AmendWorkflow" | "FillWorkflowHole";
@@ -56,7 +56,7 @@ export async function recordAuthoredWorkflowDraft(
     mtimeMs: normalizeReadFileStateMtimeMs(revision.mtimeMs),
     sizeBytes: revision.sizeBytes ?? Buffer.byteLength(draft.source, "utf8"),
   };
-  readFileState.set(createReadFileStateKey(draft.path, 1, undefined), entry);
+  setReadFileStateEntry(readFileState, entry);
 
   // resume 只从 tool part metadata 恢复 read-state（read-file-state-hydrator.ts），不落这一笔，
   // 会话恢复后同一个 bug 原样回来。

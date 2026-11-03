@@ -192,7 +192,9 @@ network/model-io、Runtime diagnostics 与 `providerMetadata.rawFinishReason` �
 
 真正以 request error 抛出的 context overflow 不属于本节，继续走既有 Reactive Compact。完整 tool
 call 的优先级高于 output-limit；判断使用 adapter 已经完成组装的全部 tool calls，而不是只看本地可执行
-tool calls。只有命中上述 output-limit 判据时，text、reasoning 和 usage 全空的响应才允许恢复；其他空
+tool calls。例外是服务端内置工具轮次（见 `apps/zcode-cli/docs/design/v2/model/anthropic-stream-compat.md`
+「Provider 内置工具多轮回放」）：这些调用在流中已切成带结果的前序轮次单独提交，不属于本 step 的最终调用，
+不参与本判断；最后一轮被截断时照常续写。web_search 等未切轮的 provider 调用仍按完整 tool call 处理。只有命中上述 output-limit 判据时，text、reasoning 和 usage 全空的响应才允许恢复；其他空
 响应继续走 suspicious-empty 错误。
 
 恢复最多追加 3 条 user-role Continue，因此一次恢复链最多产生 4 次正常模型请求。文案必须保持

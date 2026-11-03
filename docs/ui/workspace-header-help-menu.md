@@ -21,9 +21,11 @@ Workspace header action 区在终端按钮左侧提供轻量帮助菜单，作�
 3. 问题上报：打开内置反馈表单，保持 `type=bug`、`module=其它`、`includeLogs=true` 和截图行为。
 4. 给产品提需求：打开独立需求弹窗，保持 `type=feature`、`includeLogs=false`。
 
-第二组仅桌面端展示，从上到下：导出日志、资源管理器、检查更新、关于 ZCode。检查更新仅 production 显示，保留已有动态文案及禁用状态；Preview 隐藏。关于始终为最后一项。
+第二组仅桌面端展示，从上到下：导出日志、复制设备 MID、资源管理器、检查更新、关于 ZCode。复制设备 MID 读取 `IPlatformService.getDeviceId()` 的当前设备标识，并通过标准剪贴板 API 写入文本；成功或失败均显示本地化提示。检查更新仅 production 显示，保留已有动态文案及禁用状态；Preview 隐藏。关于始终为最后一项。
 
 “导出日志”复用 `titleBar.menu.help.exportLogs` 文案和 `createHelpMenuActionHandlers().exportLogs`，经 `IPlatformService.exportLogs()` 调用系统菜单使用的同一个主进程导出函数。沿用正在导出的 toast、失败提示及完成后在系统文件浏览器中定位日志包的行为，不新增导出实现。Web（含手机远控）没有本地导出能力，只保留第一组，不渲染导出日志或多余分隔线。
+
+“复制设备 MID”仅在桌面端显示。它复用 renderer 已注入的稳定 device MID，不读取 telemetry 文件、不新增 IPC，也不区分 macOS、Windows 和 Linux 的实现路径。
 
 ```text
 问号菜单 → 共享导出动作 / toast → IPlatformService.exportLogs() → IPC ─┐
@@ -37,6 +39,8 @@ Workspace header action 区在终端按钮左侧提供轻量帮助菜单，作�
 验收：桌面任务页、草稿态和设置页的共享问号菜单均可打开关于窗口，中英文显示“关于 ZCode” / “About ZCode”；Web 不出现无效入口。
 
 导出验收：组件单测覆盖桌面入口、共享动作和 Web 隐藏；`help-menu-about.test.ts` 的英文草稿态与中文设置页场景实际点击导出日志，验证主进程生成 ZIP 并请求系统定位、完成后关闭导出提示，继续验证菜单顺序及关于入口。系统定位调用在隔离 E2E 中拦截，实际归档仍执行。
+
+复制验收：组件单测覆盖成功、剪贴板失败和 Web 隐藏；桌面 E2E 实际点击英文“Copy device MID”，从 Electron 系统剪贴板读取并核对当前 renderer 注入的 device MID。
 
 2026-10-09 验证：macOS arm64 Preview E2E 4/4 通过，英文 Zai Light、中文 Zai Dark 截图已核对；帮助配置使用本地夹具，等待动态项加载结束后断言顺序。相关单测 34/34、typecheck、E2E typecheck、lint、架构及格式检查通过；lint 有 68 条非本次改动警告。未运行 Windows/Linux 实机、手机浏览器及 production 身份 E2E。运行记录：`packages/desktop/.e2e-artifacts/desktop-e2e-20261009043852849-p29715-f22a05c87493b116/summary.json`。
 

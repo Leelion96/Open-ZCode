@@ -24,13 +24,36 @@ Bash tool 的权限、只读和并发安全判断必须避免把动态 shell 结
 
 Bash read-only 判定按多层 policy table 与执行器组合设计，而不是单一 allowlist：
 
-- 主命令 safe flag policy：按命令声明允许的 flag 与参数类型，覆盖 `tree`、`sed`、`sort`、`file`、`ps`、`date`、`fd`、`test` 等命令。
+- 主命令 safe flag policy：按命令声明允许的 flag 与参数类型，覆盖 `tree`、`sort`、`file`、`ps`、`date`、`fd`、`test` 等命令。
 - 命令族子表合入主表：git 子命令、`rg`、`pyright`、`docker logs/inspect` 等命令族各自维护 safe flags。
 - fallback allowlist 和 glob 分支：只有在命令结构、参数和动态特征都安全时才放行。
 - 写入/执行选项拒绝表：拒绝 `find -delete/-exec/...` 这类会写入或执行的选项。
 - 路径目标、读写类型、redirect 和 git internal path 等更宽的 permission 语义由独立层处理。
 
-ZCode 当前先实现 Bash read-only auto-allow 所需的核心子集：AST 安全检查、simple command 限制、命令级 `safeFlags`、参数类型校验、短 flag 组合、`--flag=value`、`--` 处理、`find` / `sed` 写语义拒绝。后续扩展其他命令时必须只改 policy table，不在执行器里追加命令名特判。
+ZCode 当前先实现 Bash read-only auto-allow 所需的核心子集：AST 安全检查、simple command 限制、命令级 `safeFlags`、参数类型校验、短 flag 组合、`--flag=value`、`--` 处理、`find` 写语义拒绝。后续扩展其他命令时必须只改 policy table，不在执行器里追加命令名特判。
+
+`sed` 的表达式属于另一套脚本语言；原来的 `-i` 和 `w` 黑名单漏掉了执行/写入形式。
+只读判定改为完整脚本白名单，不使用危险指令黑名单。解析器只消费既有 AST argv：
+
+- 选项仅允许 `-n/--quiet/--silent`、`-E/-r/--regexp-extended`、`--posix`、`-z/--zero-terminated`；
+  短选项可以组合，选项必须在脚本前，可在脚本前用 `--` 结束选项。
+- 打印要求 quiet：脚本仅由 `p`、`Np`、`N,Mp` 构成（地址为正整数），用分号连接，可带输入文件。
+- 替换不接受 quiet、零分隔选项和文件参数：只处理标准输入，脚本必须完整匹配一条
+  `s/pattern/replacement/flags`，只支持 `/` 分隔符及 `g/p/i/I/m/M` 与最多一个 `1–9` 标志。
+  转义仅支持 `/`、反斜杠、`&`、`1–9` 和常见正则元字符 `. ^ $ * + ? ( ) [ ] { } |`；其他转义拒绝。
+- 脚本中的控制字符、替换中的分号、未知选项、`-e/--expression`、`-f/--file`、`-i/--in-place`、
+  脚本后的 option 形参数（单独 `-` 输入除外）、额外命令及执行/写入标志均拒绝自动放行。
+
+子集外返回 `readOnly=false`、`concurrentSafe=false`：默认 Plan 拒绝，Build 请求审批。
+管道、命令链、已支持 wrapper 和 Memory Agent 复用同一分类器。展示层的 `sed -i*` 识别保留，
+已授权的普通 Bash 仍能执行原始 sed 命令。
+
+2026-10-28 回归证据：Linux/GNU sed 下，真实 executor 与 NodeExecutionAdapter 在临时目录
+复现了旧策略放行 `e`、替换命令的 `e`/`w` 标志并创建文件，且没有权限请求事件。
+首次封堵移除 sed 只读资格后，同一组 Plan 调用只发出 PermissionDenied，不调用执行端、不创建文件；
+Build 经审批仍可执行，cat/grep 继续自动放行。安全子集补充验收在 macOS/BSD sed 和
+Linux/GNU sed 各通过 49 个真实执行链场景：安全打印与标准输入替换直接执行，危险或子集外
+脚本在 Plan 下零执行、零文件改动；普通 Build 的 `-e` 打印经审批仍能执行。Windows 未实测。
 
 ## 项目级 command prefix 权限
 

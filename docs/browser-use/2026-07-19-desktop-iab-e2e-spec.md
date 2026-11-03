@@ -2,7 +2,7 @@
 
 > 日期：2026-07-19
 > 状态：产品边界已确认，首批自动化已进入 `manual-review/pending`。
-> 关联：`docs/testing/browser-use-codex-parity-coverage-matrix.md`、
+> 关联：`docs/testing/browser-use-coverage-matrix.md`、
 > `docs/conversation-session-case-catalog.md`、
 > `docs/testing/conversation-session-e2e-coverage-matrix.md`。
 
@@ -146,7 +146,7 @@ main: bootstrap -> cache Browser/Tab -> parent-before
 ## 首批实现与验证记录
 
 - 候选 spec：`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-browser-use-iab-full-chain.test.ts`
-- 多 tab lifecycle spec：`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-browser-use-iab-multitab-lifecycle.test.ts`
+- 多 tab lifecycle spec：`packages/desktop/test/e2e/conversation-session/conversation-session-browser-use-iab-multitab-lifecycle.test.ts`
 - provider replay：标题、bootstrap、action、final 共 4 条 case-local fixture；本地 HTTP 端口由用户 marker 动态回填，且只接受 loopback URL。
 - replay continuation 按最新 `user/tool_result` 匹配成功 marker，禁止从 assistant tool code 的同名字符串制造假阳性；权限 helper 每个阶段只点击一次唯一 `allowOnce`，禁止快速连续调用时误批下一张权限卡。
 - 2026-07-19 已通过 fixture check、E2E TypeScript 检查和 macOS Electron isolated replay。真实链路包含两次 build-mode MCP“允许一次”、真实 IAB guest、moving input 的 unique-visible fill、strict duplicate/overlay 拒绝、宿主 Composer 抢焦后的 CUA type、DOM locator 点击、显式图与轮尾图、会话切换保活、自由尺寸、50%、Desktop zoom `+2/-2` 以及 conversation 图片 cold restore。

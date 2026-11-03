@@ -1,3 +1,8 @@
+import {
+  telemetryInputOrigin,
+  backgroundBatchTelemetryAttributes,
+  TELEMETRY_INPUT_ORIGIN_ATTRIBUTE,
+} from "../src/runtime/methods/input-intent-persistence.js";
 import { describe, expect, it } from "vitest";
 import type { TurnInputIntentMetadata } from "@zcode/contracts";
 import { buildPersistedConversationInputIntent } from "../src/runtime/methods/input-intent-persistence.js";
@@ -23,6 +28,7 @@ describe("persisted conversation input intent", () => {
         },
         mode,
         sharedContextRefs: [{ kind: "shared_context_import", context_id: "context-1" }],
+        genUiContext: [{ path: "/project/example.html", state: { stage: "entry" } }],
       };
 
       expect(
@@ -33,6 +39,7 @@ describe("persisted conversation input intent", () => {
         modelSelection: intent.modelSelection,
         mode,
         sharedContextRefs: intent.sharedContextRefs,
+        genUiContext: intent.genUiContext,
       });
     },
   );
@@ -66,4 +73,21 @@ describe("persisted conversation input intent", () => {
       },
     );
   });
+});
+
+it("后台因果来源按整批判定，新输入覆盖旧来源", () => {
+  const mobile = { attributes: { [TELEMETRY_INPUT_ORIGIN_ATTRIBUTE]: "mobile" } };
+  const desktop = { attributes: { [TELEMETRY_INPUT_ORIGIN_ATTRIBUTE]: "desktop" } };
+  expect(
+    telemetryInputOrigin(undefined, backgroundBatchTelemetryAttributes([mobile, mobile])),
+  ).toBe("mobile");
+  expect(
+    telemetryInputOrigin(undefined, backgroundBatchTelemetryAttributes([mobile, desktop])),
+  ).toBe("mobile");
+  expect(telemetryInputOrigin(undefined, backgroundBatchTelemetryAttributes([mobile, {}]))).toBe(
+    "mobile",
+  );
+  expect(
+    telemetryInputOrigin({ inputOrigin: "desktop" } as TurnInputIntentMetadata, mobile.attributes),
+  ).toBe("desktop");
 });

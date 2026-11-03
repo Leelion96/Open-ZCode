@@ -20,6 +20,175 @@ afterEach(async () => {
 });
 
 describe("Upstream replay server", () => {
+  it("分阶段工具参数必须逐次释放，第一次释放不能越过第二个观察点", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-replay-stages-"));
+    tempDirs.push(dir);
+    const fixture = join(dir, "fixture.json");
+    await writeFile(
+      fixture,
+      JSON.stringify({
+        version: 1,
+        fixtures: [
+          {
+            id: "stages",
+            metadata: { timingPolicy: "controlled-stream" },
+            match: { pathIncludes: "/messages" },
+            response: {
+              statusCode: 200,
+              releaseAfterChunks: [1, 2],
+              chunks: [
+                { offsetMs: 0, text: "partial\n" },
+                { offsetMs: 45000, text: "path-ready\n" },
+                { offsetMs: 90000, text: "completed\n" },
+              ],
+            },
+          },
+        ],
+      }),
+    );
+    const server = await startUpstreamReplayServer({
+      artifactPath: join(dir, "artifact.json"),
+      fixturePaths: [fixture],
+    });
+    activeServers.push(server);
+    const response = await fetch(`${server.baseUrl}/messages`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const reader = response.body!.getReader();
+    for (const text of ["partial\n", "path-ready\n"]) {
+      expect(new TextDecoder().decode((await reader.read()).value)).toBe(text);
+      expect(await fetch(`${server.baseUrl}/__e2e__/gates`).then((r) => r.json())).toEqual([
+        "stages",
+      ]);
+      expect(
+        (await fetch(`${server.baseUrl}/__e2e__/release/stages`, { method: "POST" })).status,
+      ).toBe(204);
+    }
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe("completed\n");
+    expect((await reader.read()).done).toBe(true);
+    expect(
+      (await fetch(`${server.baseUrl}/__e2e__/release/stages`, { method: "POST" })).status,
+    ).toBe(409);
+  });
+
+  it("从最新真实 workflow-hole 通知绑定 run ID，缺失通知时拒绝伪造 FillWorkflowHole", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-workflow-hole-replay-"));
+    tempDirs.push(dir);
+    const fixture = join(dir, "fixture.json");
+    await writeFile(
+      fixture,
+      JSON.stringify({
+        version: 1,
+        fixtures: [
+          {
+            id: "fill-hole",
+            match: { pathIncludes: "/messages" },
+            response: {
+              statusCode: 200,
+              toolUse: {
+                name: "FillWorkflowHole",
+                input: {
+                  run_id: "{{latestWorkflowRunId}}",
+                  hole_id: "hole#21b40fca",
+                  script: "return 1;",
+                },
+              },
+            },
+          },
+        ],
+      }),
+    );
+    const server = await startUpstreamReplayServer({
+      artifactPath: join(dir, "artifact.json"),
+      fixturePaths: [fixture],
+    });
+    activeServers.push(server);
+    const request = (content: string) =>
+      fetch(`${server.baseUrl}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: [{ role: "user", content }] }),
+      });
+    const response = await request(
+      "<workflow-hole><run-id>run-old</run-id></workflow-hole>\n<workflow-hole><run-id>run-current</run-id></workflow-hole>",
+    );
+    const body = await response.text();
+    expect(response.status).toBe(200);
+    expect(body).toContain("run-current");
+    expect(body).not.toContain("run-old");
+    expect(body).not.toContain("{{latestWorkflowRunId}}");
+    const missing = await request("no workflow notification");
+    expect(missing.status).toBe(500);
+    expect(await missing.text()).toContain("Missing");
+  });
+
+  it("按请求的 stream 属性选择 SSE 或 JSON 响应格式", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-replay-response-format-"));
+    tempDirs.push(dir);
+    const fixture = join(dir, "fixture.json");
+    await writeFile(
+      fixture,
+      JSON.stringify({
+        version: 1,
+        fixtures: [
+          {
+            id: "format-text",
+            match: { bodyIncludes: ["FORMAT_PROBE_TEXT"], pathIncludes: "/messages" },
+            response: { statusCode: 200, text: { id: "msg_format_text", text: "FORMAT_TEXT_OK" } },
+          },
+          {
+            id: "format-tool",
+            match: { bodyIncludes: ["FORMAT_PROBE_TOOL"], pathIncludes: "/messages" },
+            response: {
+              statusCode: 200,
+              toolUse: { id: "toolu_format_tool", input: { value: 1 }, name: "Read" },
+            },
+          },
+        ],
+      }),
+    );
+    const server = await startUpstreamReplayServer({
+      artifactPath: join(dir, "artifact.json"),
+      fixturePaths: [fixture],
+    });
+    activeServers.push(server);
+    const request = (content: string, stream?: true) =>
+      fetch(`${server.baseUrl}/messages`, {
+        body: JSON.stringify({
+          ...(stream ? { stream } : {}),
+          messages: [{ role: "user", content }],
+        }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+        signal: AbortSignal.timeout(5000),
+      });
+
+    const nonStreamText = await request("FORMAT_PROBE_TEXT");
+    expect(nonStreamText.headers.get("content-type")).toContain("application/json");
+    expect(await nonStreamText.json()).toMatchObject({
+      id: "msg_format_text",
+      type: "message",
+      role: "assistant",
+      content: [{ type: "text", text: "FORMAT_TEXT_OK" }],
+      stop_reason: "end_turn",
+    });
+
+    const streamingText = await request("FORMAT_PROBE_TEXT", true);
+    expect(streamingText.headers.get("content-type")).toContain("text/event-stream");
+    const streamingBody = await streamingText.text();
+    expect(streamingBody).toContain("event: message_start");
+    expect(streamingBody).toContain("FORMAT_TEXT_OK");
+
+    const nonStreamTool = await request("FORMAT_PROBE_TOOL");
+    expect(nonStreamTool.headers.get("content-type")).toContain("application/json");
+    expect(await nonStreamTool.json()).toMatchObject({
+      type: "message",
+      role: "assistant",
+      content: [{ type: "tool_use", id: "toolu_format_tool", name: "Read", input: { value: 1 } }],
+      stop_reason: "tool_use",
+    });
+  });
+
   it("受控流在释放前保持 running，释放后不再等待旧的 45 秒时间轴", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-replay-gate-"));
     tempDirs.push(dir);
@@ -184,6 +353,7 @@ describe("Upstream replay server", () => {
 
     const response = await fetch(`${server.baseUrl}/messages`, {
       body: JSON.stringify({
+        stream: true,
         messages: [
           {
             content: `Read ${runtimeRoot}/shared/readonly.txt`,
@@ -244,6 +414,7 @@ describe("Upstream replay server", () => {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          stream: true,
           messages: [
             {
               role: "user",

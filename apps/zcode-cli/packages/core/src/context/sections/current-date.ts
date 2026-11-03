@@ -10,7 +10,7 @@ export function buildCurrentDateSection(currentDate: string | undefined): Contex
     return null;
   }
 
-  const content = `# currentDate\nToday's date is ${currentDate}.`;
+  const content = `Today's date is ${currentDate}.`;
 
   return {
     name: "Current Date",

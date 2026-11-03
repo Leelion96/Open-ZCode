@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-goal-session-model",
+  "spec": "./test/e2e/conversation-session/conversation-session-goal-session-model.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-goal-session-model.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/shared/readonly-tool.txt",
+      "source": "created-by-helper",
+      "description": "Goal 会话前置的真实工具历史。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "goal-session-model-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "在真实 UI 入队与切换配置后显式释放上游流，Goal 运行窗口持续到测试通过真实 Stop 结束，不用固定延时抢时序。"
+    },
+    {
+      "id": "upstream-conversation-readonly-goal-session-seed-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "在真实 UI 入队与切换配置后显式释放上游流，Goal 运行窗口持续到测试通过真实 Stop 结束，不用固定延时抢时序。"
+    },
+    {
+      "id": "goal-session-running",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "在真实 UI 入队与切换配置后显式释放上游流，Goal 运行窗口持续到测试通过真实 Stop 结束，不用固定延时抢时序。"
+    },
+    {
+      "id": "goal-session-queued",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "在真实 UI 入队与切换配置后显式释放上游流，Goal 运行窗口持续到测试通过真实 Stop 结束，不用固定延时抢时序。"
+    },
+    {
+      "id": "goal-session-active",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "在真实 UI 入队与切换配置后显式释放上游流，Goal 运行窗口持续到测试通过真实 Stop 结束，不用固定延时抢时序。"
+    },
+    {
+      "id": "upstream-conversation-readonly-tool-call",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只读工具首段用于构造稳定 tool_use/tool_result 历史；工具业务由本地文件 fixture 决定，不依赖真实模型选择。"
+    }
+  ]
+}

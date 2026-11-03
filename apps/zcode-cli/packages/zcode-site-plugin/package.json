@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@zcode/zcode-site-plugin",
+  "version": "0.4.2",
+  "private": true,
+  "description": "Built-in ZCode Sites plugin: publishes new or throwaway web projects to ZCode Sites for preview and sharing, with a Sites panel to manage them.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "clean": "node ../../scripts/clean-dist.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.mjs && vitest run --config src/vitest.config.ts",
+    "lint": "oxlint src scripts --no-ignore"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/ext-apps": "2.0.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@zcode/shared": "workspace:*",
+    "esbuild": "^0.25.0",
+    "lucide-react": "^1.17.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.5",
+    "zod": "4.6.5"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}

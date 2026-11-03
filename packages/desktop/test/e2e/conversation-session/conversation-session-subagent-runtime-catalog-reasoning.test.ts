@@ -1,7 +1,11 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { decodeCustomModelValue, encodeCustomModelValue } from "@zcode/shared";
+import {
+  decodeCustomModelValue,
+  encodeCustomModelValue,
+  formatSubagentMarkdownModel,
+} from "@zcode/shared";
 import {
   TID_CHAT_MODEL_SELECT_GROUP,
   TID_CHAT_MODEL_SELECT_ITEM,
@@ -57,10 +61,17 @@ const PROVIDER_NAME = "Claude Runtime Catalog E2E";
 const MODEL_ID = "claude-opus-4-8";
 const MODEL_VALUE = encodeCustomModelValue(PROVIDER_ID, MODEL_ID);
 const UPSTREAM_MODEL_VALUE = encodeCustomModelValue(UPSTREAM_PROVIDER_ID, UPSTREAM_MODEL);
+// 选择器值是 `custom:provider:model`；落盘的 Markdown 用 provider/model，保存后按落盘格式断言。
+const MARKDOWN_MODEL_VALUE = formatSubagentMarkdownModel({
+  providerId: PROVIDER_ID,
+  modelId: MODEL_ID,
+});
 const CUSTOM_AGENT_NAME = "e2e-claude-catalog-reviewer";
 const CUSTOM_AGENT_PATH = join(resolveE2EStorageRoot(), "agents", `${CUSTOM_AGENT_NAME}.md`);
 const SUBAGENT_FORM_SELECTOR = `form:has(input[type="text"]):has(${sel(TID_CHAT_MODEL_SELECT_TRIGGER)})`;
 const THOUGHT_LEVELS = ["low", "medium", "high", "xhigh"] as const;
+// 档位表按低到高排列；最高档用于「主动选模型按最高档补全」的断言。
+const HIGHEST_EFFORT = THOUGHT_LEVELS[THOUGHT_LEVELS.length - 1]!;
 const INVALID_EFFORT = "invalid-e2e";
 const PARENT_EFFORT = "low";
 const GENERAL_EFFORT = "high";
@@ -200,7 +211,7 @@ async function configureSubagentReasoningOverrides() {
   expect(await $(exploreScope).getText()).toMatch(
     /Select a reasoning effort supported by this model|请选择当前模型支持的推理档位/u,
   );
-  await assertCurrentThoughtLabel(exploreScope, INVALID_EFFORT);
+  await assertThoughtLevelPlaceholder(exploreScope);
   await assertThoughtOptionsAndSelectInScope(exploreScope, THOUGHT_LEVELS, EXPLORE_EFFORT);
   await assertNoGenericModelTooltip(exploreScope);
   await waitForAgentsState(
@@ -209,19 +220,22 @@ async function configureSubagentReasoningOverrides() {
   );
 
   await selectModelInScope(generalScope, UPSTREAM_MODEL_VALUE);
-  await waitForAgentsState(
-    (state) =>
-      readBuiltInModelValue(state, "general-purpose") === UPSTREAM_MODEL_VALUE &&
-      readBuiltInReasoningLevel(state, "general-purpose") === null,
-    "general-purpose 切换到 上游 后没有清除旧 effort",
+  // 主动选模型按 Registry 的最高档位补全并落盘（历史缺失/失效才留空等用户选）；
+  // 上游模型的档位表由运行时 Registry 决定，这里断言「界面有值就落盘同一个值」这条不变量。
+  const upstreamEffort = await waitForBuiltInEffortAfterModelSwitch(
+    "general-purpose",
+    UPSTREAM_MODEL_VALUE,
+    "general-purpose 切换到上游模型后没有按 Registry 档位落盘",
   );
+  await assertCurrentThoughtLabel(generalScope, upstreamEffort);
   await selectModelInScope(generalScope, MODEL_VALUE);
   await waitForAgentsState(
     (state) =>
       readBuiltInModelValue(state, "general-purpose") === MODEL_VALUE &&
-      readBuiltInReasoningLevel(state, "general-purpose") === null,
-    "general-purpose 切回 Claude 后不应恢复旧 effort",
+      readBuiltInReasoningLevel(state, "general-purpose") === HIGHEST_EFFORT,
+    "general-purpose 切回 Claude 后没有使用该模型最高档位，也不应恢复旧 effort",
   );
+  await assertCurrentThoughtLabel(generalScope, HIGHEST_EFFORT);
   await selectThoughtLevelInScope(generalScope, GENERAL_EFFORT);
   await waitForAgentsState(
     (state) => readBuiltInReasoningLevel(state, "general-purpose") === GENERAL_EFFORT,
@@ -246,7 +260,7 @@ async function configureSubagentReasoningOverrides() {
     },
   });
   expect(parseCustomAgentFrontmatter(await readFile(CUSTOM_AGENT_PATH, "utf8"))).toMatchObject({
-    model: MODEL_VALUE,
+    model: MARKDOWN_MODEL_VALUE,
     thoughtLevel: CUSTOM_EFFORT,
   });
 
@@ -263,7 +277,7 @@ async function configureCustomSubagentReasoningOverride() {
   expect(initialMarkdown).toContain(`thoughtLevel: ${INVALID_EFFORT}`);
 
   await openCustomAgentForm();
-  await assertCurrentThoughtLabel(SUBAGENT_FORM_SELECTOR, INVALID_EFFORT);
+  await assertThoughtLevelPlaceholder(SUBAGENT_FORM_SELECTOR);
   await assertNoGenericModelTooltip(SUBAGENT_FORM_SELECTOR);
   await assertCustomFormLayoutAcrossThemes();
   const form = $(SUBAGENT_FORM_SELECTOR);
@@ -286,11 +300,14 @@ async function configureCustomSubagentReasoningOverride() {
   await selectModelInScope(SUBAGENT_FORM_SELECTOR, UPSTREAM_MODEL_VALUE);
   await selectModelInScope(SUBAGENT_FORM_SELECTOR, MODEL_VALUE);
   await saveCustomAgentForm();
-  const clearedMarkdown = await waitForCustomMarkdown((content) => {
+  // 与 builtin 行同一条口径：主动切换模型按该模型最高档位补全，不恢复切换前的旧 effort。
+  const switchedMarkdown = await waitForCustomMarkdown((content) => {
     const frontmatter = parseCustomAgentFrontmatter(content);
-    return frontmatter.model === MODEL_VALUE && frontmatter.thoughtLevel === undefined;
-  }, "custom 切换模型后没有删除旧 effort");
-  expect(clearedMarkdown).not.toMatch(/^thoughtLevel:/mu);
+    return (
+      frontmatter.model === MARKDOWN_MODEL_VALUE && frontmatter.thoughtLevel === HIGHEST_EFFORT
+    );
+  }, "custom 切换模型后没有使用该模型最高档位");
+  expect(switchedMarkdown).not.toContain(`thoughtLevel: ${CUSTOM_EFFORT}`);
 
   await openCustomAgentForm();
   await selectThoughtLevelInScope(SUBAGENT_FORM_SELECTOR, GENERAL_EFFORT);
@@ -298,7 +315,7 @@ async function configureCustomSubagentReasoningOverride() {
   await saveCustomAgentForm();
   await waitForCustomMarkdown((content) => {
     const frontmatter = parseCustomAgentFrontmatter(content);
-    return frontmatter.model === MODEL_VALUE && frontmatter.thoughtLevel === CUSTOM_EFFORT;
+    return frontmatter.model === MARKDOWN_MODEL_VALUE && frontmatter.thoughtLevel === CUSTOM_EFFORT;
   }, "custom 最终 Claude model + medium effort 没有写入 Markdown");
 }
 
@@ -459,6 +476,23 @@ async function assertCurrentThoughtLabel(scope: string, thoughtLevel: string) {
   );
 }
 
+/**
+ * 非法历史 effort 的展示口径：Model Selection 把缺失和失效的 reasoning 统一按空值处理，
+ * 控件显示占位、等用户重选，不回显磁盘上的原值。错误提示、保存禁用与原值不被改写由调用处断言。
+ */
+async function assertThoughtLevelPlaceholder(scope: string) {
+  const placeholderLabels = ["select reasoning level", "选择思考档位"];
+  await browser.waitUntil(
+    async () => {
+      const label = await $(scope)
+        .$(sel(TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER))
+        .getAttribute("aria-label");
+      return placeholderLabels.includes((label ?? "").trim().toLowerCase());
+    },
+    { timeout: 15000, timeoutMsg: "reasoning effort 控件没有显示待选择占位" },
+  );
+}
+
 async function assertNoGenericModelTooltip(scope: string) {
   const trigger = $(scope).$(sel(TID_CHAT_MODEL_SELECT_TRIGGER));
   await trigger.waitForDisplayed({ timeout: 15000 });
@@ -482,6 +516,23 @@ async function waitForAgentsState(
     timeout: 15000,
     timeoutMsg,
   });
+}
+
+/** 等到主动切换的模型落盘，并返回同时写入的档位；档位缺席视为未完成补全。 */
+async function waitForBuiltInEffortAfterModelSwitch(
+  agentName: string,
+  modelValue: string,
+  timeoutMsg: string,
+): Promise<string> {
+  await waitForAgentsState(
+    (state) =>
+      readBuiltInModelValue(state, agentName) === modelValue &&
+      readBuiltInReasoningLevel(state, agentName) !== null,
+    timeoutMsg,
+  );
+  const effort = readBuiltInReasoningLevel(await readAgentsState(), agentName);
+  expect(effort).not.toBeNull();
+  return effort!;
 }
 
 function readBuiltInSelection(state: Record<string, unknown>, agentName: string) {
@@ -518,7 +569,11 @@ async function waitForCustomMarkdown(predicate: (content: string) => boolean, ti
       { timeout: 15000, timeoutMsg },
     );
   } catch (error) {
-    throw new Error(`${timeoutMsg}\n最后读取到的 Markdown:\n${latest}`, { cause: error });
+    // 原文看着满足断言时，差异常在字段格式上（如 model 落盘为 provider/model）；带上解析结果直接比对。
+    throw new Error(
+      `${timeoutMsg}\n解析出的 frontmatter: ${JSON.stringify(parseCustomAgentFrontmatter(latest))}\n最后读取到的 Markdown:\n${latest}`,
+      { cause: error },
+    );
   }
   return latest;
 }

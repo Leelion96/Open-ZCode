@@ -1,0 +1,867 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-streaming-history-performance",
+  "spec": "./test/e2e/conversation-session/conversation-session-streaming-history-performance.test.ts",
+  "fixtures": [
+    {
+      "id": "streaming-history-main",
+      "description": "PERF04: 合成长历史后通过真实 provider/CLI/Host 连续发送 thinking 与正文。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "recorded-stream",
+        "source": "synthetic",
+        "syntheticReason": "固定 30ms SSE 节奏用于同环境修复前后性能比较，不代表用户现场真实 token 节奏。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_STREAM_HISTORY"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream"
+        },
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_stream_history\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"fixture-model\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 100, \"output_tokens\": 0}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"thinking\", \"thinking\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 30,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 1：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 60,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 2：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 90,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 3：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 120,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 4：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 150,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 5：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 180,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 6：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 210,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 7：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 240,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 8：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 270,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 9：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 300,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 10：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 330,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 11：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 360,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 12：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 390,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 13：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 420,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 14：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 450,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 15：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 480,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 16：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 510,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 17：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 540,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 18：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 570,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 19：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 600,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 20：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 630,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 21：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 660,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 22：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 690,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 23：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 720,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 24：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 25：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 780,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 26：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 810,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 27：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 840,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 28：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 870,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 29：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 900,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 30：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 930,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 31：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 960,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 32：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 990,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 33：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1020,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 34：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1050,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 35：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1080,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 36：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1110,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 37：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1140,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 38：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1170,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 39：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1200,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 40：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1230,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 41：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1260,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 42：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1290,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 43：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1320,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 44：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1350,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 45：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1380,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 46：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1410,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 47：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1440,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 48：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1470,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 49：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 50：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1530,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 51：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1560,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 52：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1590,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 53：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1620,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 54：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1650,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 55：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1680,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 56：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1710,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 57：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1740,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 58：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1770,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 59：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1800,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 60：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1830,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 61：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1860,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 62：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1890,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 63：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1920,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 64：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1950,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 65：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 1980,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 66：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2010,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 67：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2040,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 68：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2070,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 69：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2100,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 70：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2130,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 71：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2160,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 72：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2190,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 73：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2220,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 74：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 75：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2280,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 76：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2310,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 77：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2340,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 78：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2370,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 79：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2400,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 80：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2430,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 81：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2460,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 82：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2490,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 83：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2520,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 84：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2550,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 85：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2580,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 86：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2610,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 87：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2640,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 88：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2670,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 89：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2700,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 90：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2730,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 91：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2760,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 92：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2790,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 93：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2820,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 94：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2850,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 95：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2880,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 96：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2910,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 97：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2940,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 98：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 2970,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 99：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 3000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"thinking_delta\", \"thinking\": \"思考 100：检查当前步骤。 \"}}\n\n"
+          },
+          {
+            "offsetMs": 3030,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"signature_delta\", \"signature\": \"fixture-signature\"}}\n\n"
+          },
+          {
+            "offsetMs": 3030,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\n"
+          },
+          {
+            "offsetMs": 3060,
+            "text": "event: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 1, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\n"
+          },
+          {
+            "offsetMs": 3090,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 1：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3120,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 2：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3150,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 3：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3180,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 4：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3210,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 5：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3240,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 6：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3270,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 7：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3300,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 8：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3330,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 9：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3360,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 10：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3390,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 11：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3420,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 12：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3450,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 13：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3480,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 14：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3510,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 15：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3540,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 16：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3570,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 17：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3600,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 18：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3630,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 19：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3660,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 20：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3690,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 21：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3720,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 22：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3750,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 23：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3780,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 24：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3810,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 25：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3840,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 26：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3870,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 27：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3900,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 28：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3930,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 29：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3960,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 30：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 3990,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 31：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4020,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 32：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4050,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 33：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4080,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 34：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4110,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 35：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4140,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 36：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4170,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 37：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4200,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 38：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4230,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 39：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4260,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 40：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4290,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 41：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4320,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 42：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4350,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 43：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4380,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 44：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4410,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 45：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4440,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 46：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4470,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 47：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4500,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 48：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4530,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 49：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4560,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 50：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4590,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 51：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4620,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 52：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4650,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 53：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4680,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 54：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4710,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 55：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4740,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 56：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4770,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 57：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4800,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 58：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4830,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 59：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4860,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 60：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4890,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 61：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4920,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 62：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4950,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 63：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 4980,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 64：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5010,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 65：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5040,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 66：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5070,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 67：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5100,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 68：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5130,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 69：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5160,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 70：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5190,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 71：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5220,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 72：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5250,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 73：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5280,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 74：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5310,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 75：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5340,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 76：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5370,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 77：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5400,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 78：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5430,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 79：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5460,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 80：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5490,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 81：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5520,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 82：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5550,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 83：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5580,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 84：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5610,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 85：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5640,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 86：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5670,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 87：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5700,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 88：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5730,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 89：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5760,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 90：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5790,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 91：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5820,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 92：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5850,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 93：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5880,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 94：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5910,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 95：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5940,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 96：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 5970,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 97：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 6000,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 98：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 6030,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 99：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 6060,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"正文 100：持续输出。\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 6090,
+            "text": "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 1, \"delta\": {\"type\": \"text_delta\", \"text\": \"E2E_STREAM_FINAL_END\"}}\n\n"
+          },
+          {
+            "offsetMs": 6090,
+            "text": "event: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 1}\n\n"
+          },
+          {
+            "offsetMs": 6120,
+            "text": "event: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 1000}}\n\n"
+          },
+          {
+            "offsetMs": 6120,
+            "text": "event: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+          }
+        ]
+      }
+    }
+  ]
+}

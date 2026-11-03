@@ -50,8 +50,8 @@ node scripts/create-workspace-hook-trust-uat-fixture.mjs --verify "<workspace>"
 ## 3. UAT-01：默认拒绝与行内入口
 
 1. 在 Desktop 添加该 workspace，创建新 task，发送 `reply with ok`。
-2. 确认对话正常完成，聊天区域出现 Workspace Hook 待审核提示。
-3. 点击提示进入 `设置 → 钩子 → 工作区`。
+2. 确认对话正常完成，composer 权限选择器右侧出现 Hook 图标和未读点，上方不再显示横幅。
+3. 点击图标，确认未读点消失，浮层显示原说明和“去审核”“忽略”；Esc / 外部点击可关闭，图标可重开。点击“去审核”进入 `设置 → 钩子 → 工作区`。
 4. 检查每条未信任 Hook。
 
 预期：

@@ -292,3 +292,120 @@ return gate;
     expect(result.causality.steps[0]?.certainty).toBe("always");
   });
 });
+
+/**
+ * Callbacks bound through a parameter (docs/analysis.md "The call oracle", "Inlining"): the
+ * oracle records WHICH parameter a call applies and WHAT each call site bound to it, and the
+ * walk resolves the two against the activation it is inlining. These pins state what the
+ * corpus goldens show for shared-helper-*.ts as invariants on the trace.
+ */
+describe("callbacks bound through a parameter", () => {
+  const LIMITED = "async function limited(fn: () => Promise<string>): Promise<string> { return await fn(); }\n";
+
+  it("inlines only the callback the call being inlined passed", () => {
+    const { core, regions } = trace(`
+${LIMITED}const xs0 = ["a", "b"];
+const xs1 = ["c", "d"];
+const out: string[] = [];
+out.push(...(await Promise.all(xs0.map(async (x) => limited(async () => agent(\`f0-\${x}\`).ask<string>(\`do \${x}\`))))));
+out.push(...(await Promise.all(xs1.map(async (x) => limited(async () => agent(\`f1-\${x}\`).ask<string>(\`do \${x}\`))))));
+out.push(await limited(async () => agent("m0").ask<string>("top 0")));
+out.push(await limited(async () => {
+  const inner = await limited(async () => agent("n1").ask<string>("nested"));
+  return agent("m1").ask<string>(\`after \${inner}\`);
+}));
+return out;
+`);
+    // Five calls of the helper, each inlining exactly one callback: ten call regions, no
+    // choice (no "one of every caller's callback"), no loop (the nested use is not recursion).
+    expect(regionsOf(regions, "call")).toHaveLength(10);
+    expect(regionsOf(regions, "choice")).toEqual([]);
+    expect(regionsOf(regions, "loop")).toEqual([]);
+    // Each step belongs to the fan-out that passed its callback, or to none.
+    expect(core.sites.asks.map((ask) => [ask.label, ask.within])).toEqual([
+      ["ask", "fan-out#1"],
+      ["ask", "fan-out#2"],
+      ["m0", undefined],
+      ["n1", undefined],
+      ["m1", undefined],
+    ]);
+    expect(core.sites.actors.map((actor) => actor.within)).toEqual(["fan-out#1", "fan-out#2", undefined, undefined, undefined]);
+  });
+
+  it("resolves a callback through two wrapper layers", () => {
+    const { regions } = trace(`
+${LIMITED}async function retry(fn: () => Promise<string>): Promise<string> { return await limited(() => fn()); }
+const a = await retry(async () => agent("a").ask<string>("a"));
+const b = await retry(async () => agent("b").ask<string>("b"));
+const c = await retry(async () => agent("c").ask<string>("c"));
+return [a, b, c];
+`);
+    // retry → limited → arrow → callback: four call regions per caller, nothing else.
+    expect(regionsOf(regions, "call")).toHaveLength(12);
+    expect(regionsOf(regions, "choice")).toEqual([]);
+  });
+
+  it("resolves a parameter handed on to a library call", () => {
+    const { regions } = trace(`
+async function later(fn: () => Promise<string>): Promise<string> { return Promise.resolve("go").then(fn); }
+const a = await later(async () => agent("a").ask<string>("a"));
+const b = await later(async () => agent("b").ask<string>("b"));
+return [a, b];
+`);
+    // later + its own `.then` callback, twice.
+    expect(regionsOf(regions, "call")).toHaveLength(4);
+  });
+
+  it("resolves a parameter handed to a per-element library call", () => {
+    const { core, regions } = trace(`
+async function each(xs: string[], fn: (x: string) => Promise<string>): Promise<string[]> { return Promise.all(xs.map(fn)); }
+const ids = ["1", "2"];
+const a = await each(ids, async (x) => agent(\`a-\${x}\`).ask<string>(\`a \${x}\`));
+const b = await each(ids, async (x) => agent(\`b-\${x}\`).ask<string>(\`b \${x}\`));
+return [...a, ...b];
+`);
+    // each + its own callback inside the one map site, twice; both asks run per element of it.
+    expect(regionsOf(regions, "call")).toHaveLength(4);
+    expect(regionsOf(regions, "fanout")).toHaveLength(2);
+    expect(core.sites.asks.map((ask) => ask.within)).toEqual(["fan-out#1", "fan-out#1"]);
+  });
+
+  it("keeps recursion when the re-entrant call rebinds the same callback", () => {
+    const { regions } = trace(`
+interface Tree { name: string; children: Tree[] }
+async function walkTree(node: Tree, visit: (n: Tree) => Promise<string>): Promise<void> {
+  await visit(node);
+  for (const child of node.children) await walkTree(child, visit);
+}
+const root: Tree = { name: "r", children: [] };
+await walkTree(root, async (n) => agent(\`v-\${n.name}\`).ask<string>(\`visit \${n.name}\`));
+return "done";
+`);
+    expect(regionsOf(regions, "loop").filter((region) => region.recursive === true)).toHaveLength(1);
+    // walkTree once, visit once; the re-entrant call is a recur jump, not a third call.
+    expect(regionsOf(regions, "call")).toHaveLength(2);
+  });
+
+  it("falls back to every caller's callback when the parameter reaches the call through an alias", () => {
+    const { regions } = trace(`
+async function viaAlias(fn: () => Promise<string>): Promise<string> { const h = fn; return await h(); }
+const a = await viaAlias(async () => agent("a").ask<string>("a"));
+const b = await viaAlias(async () => agent("b").ask<string>("b"));
+return [a, b];
+`);
+    // Provenance is lost through `h`, so each call inlines both callbacks as an exhaustive choice.
+    expect(regionsOf(regions, "choice")).toHaveLength(2);
+    expect(regionsOf(regions, "call")).toHaveLength(6);
+  });
+
+  it("keeps within as a may-fact for a helper called inside and outside a fan-out", () => {
+    const { core } = trace(`
+async function step(x: string): Promise<string> { return agent("w").ask<string>(x); }
+const ids = ["1", "2"];
+const a = await Promise.all(ids.map((x) => step(x)));
+const b = await step("solo");
+return [...a, b];
+`);
+    expect(core.sites.asks[0]?.within).toBe("fan-out#1");
+  });
+});

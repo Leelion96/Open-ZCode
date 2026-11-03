@@ -66,8 +66,20 @@ describe.each(["bigmodel", "zai"] as const)("%s PAT 临时刷新失败", (family
       });
       vi.setSystemTime(start + 600_000);
     }
+    // ZCT-2111046389485834240：最终失败保留固定类别；未分类的 HttpClientPort 错误仍归 request_failed。
+    const expectedCode: Record<string, string> = {
+      network_error: "project_token_network_error",
+      timeout: "project_token_timeout",
+      cancelled: "project_token_request_failed",
+      egress_blocked: "project_token_request_failed",
+      invalid: "project_token_invalid_response",
+      429: "project_token_http_429",
+      503: "project_token_http_503",
+      403: "project_token_http_403",
+      404: "project_token_invalid_response",
+    };
     await expect(resolver.resolve(input)).rejects.toThrow(
-      /^project_token_(request_failed|invalid_response)$/,
+      new RegExp(`^${expectedCode[String(failure)]}$`),
     );
     expect(JSON.stringify(observe.mock.calls)).not.toMatch(/secret|old-pat|oauth|business-jwt/);
   });

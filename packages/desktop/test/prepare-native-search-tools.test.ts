@@ -112,6 +112,35 @@ describe("native search 归档来源判定", () => {
     ).toBe("intranet");
   });
 
+  it("显式 NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE=repository 在依赖源已配置时强制走仓库归档", () => {
+    expect(
+      resolveNativeSearchArtifactSource({
+        NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE: "repository",
+        NATIVE_SEARCH_TOOLS_DOWNLOAD_BASE_URL: "https://deps.example.test/native-search-tools",
+      }),
+    ).toBe("repository");
+    const plan = resolveNativeSearchPrebuiltPlan({
+      platform: "linux",
+      arch: "x64",
+      env: { NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE: " repository " },
+    }) as PrebuiltPlan;
+    expect(plan.artifacts.length).toBeGreaterThan(0);
+    expect(plan.artifacts.every((artifact) => artifact.downloadUrl === undefined)).toBe(true);
+  });
+
+  it("显式 NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE=intranet 在依赖源未配置时仍走 intranet", () => {
+    mocks.intranetConfigured = false;
+    expect(
+      resolveNativeSearchArtifactSource({ NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE: "intranet" }),
+    ).toBe("intranet");
+  });
+
+  it("NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE 取值非法时直接失败，不回落到推断来源", () => {
+    expect(() =>
+      resolveNativeSearchArtifactSource({ NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE: "repo" }),
+    ).toThrow(/Unsupported NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE: repo/);
+  });
+
   it("依赖源未配置时判定为 repository，计划不再解析下载地址", () => {
     mocks.intranetConfigured = false;
     expect(resolveNativeSearchArtifactSource({})).toBe("repository");
@@ -214,6 +243,24 @@ describe("prepareNativeSearchTools", () => {
     expect(readFileSync(plan.artifacts[0].binaryPath)).toEqual(binaryBeforeCacheHit);
     for (const artifact of plan.artifacts) {
       expect(existsSync(join(dirname(artifact.binaryPath), "THIRD-PARTY-NOTICES.txt"))).toBe(true);
+    }
+  });
+
+  it("依赖源已配置但显式选择 repository 时，返回的计划不带下载地址且不触发下载", async () => {
+    const outputDir = join(await createTemporaryDirectory(), "tools");
+
+    const plan = (await prepareNativeSearchTools({
+      platform: "linux",
+      arch: "x64",
+      outputDir,
+      env: { NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE: "repository" },
+    })) as PrebuiltPlan;
+
+    expect(mocks.downloadNativeSearchTools).not.toHaveBeenCalled();
+    expect(plan.artifacts.length).toBeGreaterThan(0);
+    for (const artifact of plan.artifacts) {
+      expect(artifact.downloadUrl).toBeUndefined();
+      expect(readSources(artifact).binary.origin).toBe("repository-archive");
     }
   });
 

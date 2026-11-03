@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { projectTokenSuccessCodeSchema } from "./project-access-token-response.js";
 import { API_KEY_USAGE_SCENE } from "./api-key-usage-scene.js";
-import { ProjectAccessTokenCache, ProjectAccessTokenError } from "./project-access-token.js";
+import {
+  ProjectAccessTokenCache,
+  ProjectAccessTokenError,
+  ProjectAccessTokenHttpStatusError,
+  projectAccessTokenRequestFailureCode,
+  ProjectAccessTokenTransientError,
+} from "./project-access-token.js";
 import { ZCODE_VERSION } from "./version.js";
 import { isCredentialDecryptError } from "./oauth.js";
 
@@ -230,17 +236,21 @@ export class ProjectAccessTokenClient {
       return { token: value.token, ...location };
     } catch (error) {
       // 上游错误体或网络异常可能携带凭据；只传播固定错误码，不保留原始 cause/message。
+      // adapter 已结构化归类的请求失败按类别投影，其余未知异常仍归 request_failed。
       const code =
         error instanceof ProjectAccessTokenError
           ? error.code
-          : error instanceof Error &&
-              [
-                "project_token_disabled",
-                "project_token_project_unavailable",
-                "project_token_invalid_response",
-              ].includes(error.message)
-            ? error.message
-            : "project_token_request_failed";
+          : error instanceof ProjectAccessTokenTransientError ||
+              error instanceof ProjectAccessTokenHttpStatusError
+            ? projectAccessTokenRequestFailureCode(error.failure)
+            : error instanceof Error &&
+                [
+                  "project_token_disabled",
+                  "project_token_project_unavailable",
+                  "project_token_invalid_response",
+                ].includes(error.message)
+              ? error.message
+              : "project_token_request_failed";
       this.options.observe?.({ family: input.family, stage: "resolve", code });
       throw new Error(code);
     }

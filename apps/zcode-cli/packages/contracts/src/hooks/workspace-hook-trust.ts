@@ -15,7 +15,8 @@ export const WORKSPACE_HOOK_SCHEMA_FIELDS = {
     "PostToolUseFailure",
     "Stop",
   ],
-  process: ["type", "command", "enabled", "args", "timeoutMs", "statusMessage"],
+  // onError 进声明摘要（shared/workspace-hook-digest.ts），改了要重新信任。
+  process: ["type", "command", "enabled", "args", "timeoutMs", "statusMessage", "onError"],
   command: [
     "type",
     "command",
@@ -25,6 +26,7 @@ export const WORKSPACE_HOOK_SCHEMA_FIELDS = {
     "timeout",
     "timeoutMs",
     "statusMessage",
+    "onError",
   ],
 } as const;
 
@@ -207,6 +209,8 @@ const canonicalEntryBaseShape = {
   resolvedTimeoutMs: positiveIntegerSchema,
   resolvedMaxOutputBytes: positiveIntegerSchema,
   statusMessage: nonEmptyStringSchema.optional(),
+  // 只在声明写成 deny 时在场（与声明摘要同一条规则，见 shared/workspace-hook-digest.ts）。
+  onError: z.literal("deny").optional(),
   sourceRootEnabled: z.boolean(),
   declarationEnabled: z.boolean(),
   runtimeHooksEnabled: z.boolean(),

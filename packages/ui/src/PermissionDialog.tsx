@@ -1,3 +1,4 @@
+import { useYoloModeConfirmation } from "@/hooks/useConfirmDialog.js";
 import { useToolPresentationHostCapabilities } from "@/hooks/useToolPresentationHostCapabilities.js";
 import { ToolPresentationCapabilitiesProvider } from "@/ToolCallBlocks/presentationCapabilities.js";
 import { ToolCallBlock } from "@/ToolCallBlocks.js";
@@ -472,9 +473,11 @@ export function PermissionDialog({
   isWebRemoteControl = false,
   responding = false,
   responseError,
+  permissionMode,
 }: {
   request: ZCodePermissionRequest;
   responding?: boolean;
+  permissionMode?: string;
   responseError?: string;
   /**
    * `content` 只在工作流确认窗的放行应答上出现：用户在窗里改过的设置（docs/dynamic-workflow/launch.md
@@ -495,6 +498,17 @@ export function PermissionDialog({
   isWebRemoteControl?: boolean;
 }) {
   const { intl } = useZCodeIntl();
+  const confirmMode = useYoloModeConfirmation(
+    JSON.stringify([
+      workspacePath,
+      workspaceIdentity,
+      remoteSessionId,
+      request.taskId,
+      request.requestId,
+      responding,
+    ]),
+    permissionMode,
+  );
   const presentationCapabilities = useToolPresentationHostCapabilities(workspacePath);
   const isMobileTextInputViewport = useIsMobileTextInputViewport();
   // Bug 根因：反馈输入也会渲染在手机 Web 远控的 PermissionDialog 中，14px 输入框聚焦时会触发 iOS 页面放大。
@@ -641,13 +655,16 @@ export function PermissionDialog({
         workflowSettingsContent !== undefined && isWorkflowSettingsCarrier(option)
           ? { ...workflowSettingsContent }
           : undefined;
-      if (content === undefined) {
-        onRespond(request.requestId, option, trimmedFeedback || undefined);
-      } else {
-        onRespond(request.requestId, option, trimmedFeedback || undefined, content);
-      }
+      confirmMode(option.optionId === "fullAccess" ? "yolo" : "unchanged", () => {
+        if (content === undefined) {
+          onRespond(request.requestId, option, trimmedFeedback || undefined);
+        } else {
+          onRespond(request.requestId, option, trimmedFeedback || undefined, content);
+        }
+      });
     },
     [
+      confirmMode,
       feedback,
       isOptionBlocked,
       onRespond,

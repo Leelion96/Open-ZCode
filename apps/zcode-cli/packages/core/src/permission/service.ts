@@ -230,6 +230,25 @@ export class PermissionService {
       );
     }
 
+    // 根因：needsApproval=false 不会越过 build/edit 对 workspace 副作用的通用询问，
+    // 导致无人值守的 automation 执行轮停在审批界面。该工具无模型可控 id，只能暂停
+    // Host 为本轮注入且用户可恢复的任务；显式 project deny/ask 与 plan 限制已在上方处理。
+    if (
+      context.toolName === "CronPauseSelf" &&
+      capability.permissionName === "automation.pause" &&
+      capability.sideEffectScope === "workspace" &&
+      capability.riskLevel === "low" &&
+      !capability.destructive &&
+      !capability.needsApproval
+    ) {
+      return this.allow(
+        context,
+        capability,
+        "tool.automationPauseSelf.preapproved",
+        "The current automation run may pause only its own automation",
+      );
+    }
+
     // workflow 草稿免确认：
     // 与 WebFetch 预批同一位次——排在 plan 分支之后，因为 plan 模式必须继续拦下一切写入，
     // 草稿也是写入；也排在项目 deny / ask 之后，项目规则照样压得过它。判定本身见

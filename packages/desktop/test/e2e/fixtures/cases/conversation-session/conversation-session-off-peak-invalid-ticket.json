@@ -2,7 +2,10 @@
   "version": 1,
   "caseName": "conversation-session-off-peak-invalid-ticket",
   "spec": "./test/e2e/conversation-session/conversation-session-off-peak-invalid-ticket.test.ts",
-  "providerFixtures": [],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-off-peak-invalid-ticket.json"
+  ],
   "fileFixtures": [],
   "providerRequestPolicy": "none",
   "requests": []

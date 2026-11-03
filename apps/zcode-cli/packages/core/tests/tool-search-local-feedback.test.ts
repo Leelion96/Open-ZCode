@@ -82,7 +82,7 @@ function resultText(prepared: ReturnType<ReturnType<typeof fixture>["prepare"]>,
 
 function loadedReminder(names: string[]): string {
   const action = names.length === 1 ? "Call it now" : "Call them now";
-  return `<system-reminder>\nLoaded: ${names.join(", ")}. ${action} with DeferredToolCall {"name":"<tool name>","input":{...}}, using the exact tool name and filling input according to its schema above. No additional ToolSearch is needed before calling these tools.\n</system-reminder>`;
+  return `<system-reminder>\nLoaded: ${names.join(", ")}. ${action} with DeferredToolCall {"name":"<tool name>","input":{...}}, using the exact tool name and filling input according to its schema above. No additional LocalToolSearch is needed before calling these tools.\n</system-reminder>`;
 }
 
 describe("Local search per-result feedback", () => {
@@ -286,7 +286,7 @@ describe("Local checkpoint promotion", () => {
     const prepared = prepare(entries);
     expect(prepared.toolSearch.mode).toBe("local");
     expect(prepared.request.tools?.map((t) => t.name)).toEqual([
-      "ToolSearch",
+      "LocalToolSearch",
       "DeferredToolCall",
       "A",
       "B",

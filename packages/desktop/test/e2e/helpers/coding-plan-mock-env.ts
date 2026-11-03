@@ -3,6 +3,10 @@ export const CODING_PLAN_UPGRADE_MOCK_BASE_URL_ENV = "ZCODE_CODING_PLAN_UPGRADE_
 
 type MutableEnvironment = Record<string, string | undefined>;
 
+export function isOffPeakTeamPlanSpec(specs: readonly string[]) {
+  return specs.some((spec) => spec.endsWith("conversation-session-off-peak-team-plan.test.ts"));
+}
+
 const CODING_PLAN_COMMON_ENV_KEYS = [
   "ZCODE_BASE_URL",
   "ZCODE_ENDPOINT_ORIGIN",
@@ -29,6 +33,8 @@ const CODING_PLAN_TEAM_SPEC_MARKERS = [
   "settings-ui-polish.test.ts",
   "side-pane-tabs-responsive-interactions.test.ts",
   "conversation-session-share-tool-presentation.test.ts",
+  // 发布入口要求登录；遗漏此用例会播种匿名账号，连分享按钮都无法展示。
+  "conversation-session-share-publish-import.test.ts",
   // 分享浮窗仅测 Desktop 交互，账号与套餐旁路请求必须留在本地。
   "conversation-session-share-popover.test.ts",
   "conversation-session-start-plan-independent.test.ts",

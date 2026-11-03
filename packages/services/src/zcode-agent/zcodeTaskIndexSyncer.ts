@@ -188,8 +188,12 @@ function resolveTerminalUnreadSignal(
   if (summary.phase === "error") {
     return "background_terminal";
   }
+  // completedInterrupted 表示用户主动停止、发新消息打断或新建对话时中断旧执行。
+  // 它仍是 terminal/ready 边界，task status 仍收口为 completed；这里只不制造未读提醒，
+  // 避免用户主动动作后出现红点且必须切走再切回才能清除。
+  if (summary.phase === "completedInterrupted") return undefined;
   if (
-    (summary.phase === "completedSuccess" || summary.phase === "completedInterrupted") &&
+    summary.phase === "completedSuccess" &&
     (summary.goalStatus === undefined || summary.goalStatus === "verified")
   ) {
     return "background_terminal";

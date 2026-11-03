@@ -446,6 +446,7 @@ function V4ComposerModelControlsImpl({
   modelSelectionState = MODEL_SELECTION_LOADING_STATE,
   modelSelectionReload,
   modelSelectionRefresh,
+  sessionId,
   provider,
   isWebRemoteControl = false,
   isMobileViewport = false,
@@ -1214,6 +1215,8 @@ function V4ComposerModelControlsImpl({
   // 模型留空是正常的待选择状态，包括已有会话；不能因为没有已选模型隐藏重选入口。
   // 有可选组时正常显示；无组但有「管理模型」入口时也显示，避免用户零模型入口。
   const modelMenuVisible = modelSelectGroups.length > 0 || showManageModelsAction;
+  // 配置恢复不是用户改选：未知时不显示“选择模型”，首次恢复不播放新旧标签滚动。
+  const sessionConfigPending = sessionId !== null && draftConfig?.mode === undefined;
   // Bug 根因：手机端固定宽度的二级菜单没有消费 Radix 测得的当前方向可用宽度，
   // 共享 min-w-32 还会阻止极窄空间继续收缩。保持二级交互，同时把窗口边缘作为硬上限。
   const providerSubmenuClassName =
@@ -1318,11 +1321,17 @@ function V4ComposerModelControlsImpl({
         </Button>
       ) : modelMenuVisible ? (
         <ModelConfigSelect
-          key={workspaceIdentity?.trim() || workspacePath}
+          key={JSON.stringify([
+            workspaceIdentity?.trim() || workspacePath,
+            sessionId,
+            sessionConfigPending,
+          ])}
           modelGroups={modelSelectGroups}
           contentAlign="center"
           normalizedValue={normalizedModelValue}
-          triggerLabel={modelTriggerDisplay.modelLabel}
+          triggerLabel={
+            sessionConfigPending && !effectiveConfig?.model ? "" : modelTriggerDisplay.modelLabel
+          }
           composerOptions={composerOptions}
           showManageModelsAction={showManageModelsAction}
           manageModelsLabel={manageModelsLabel}

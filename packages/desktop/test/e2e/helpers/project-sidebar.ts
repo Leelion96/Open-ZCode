@@ -225,7 +225,15 @@ export async function startDraftFromProject(
   workspacePath: string,
   options: { workspaceIdentity?: string } = {},
 ): Promise<void> {
-  const draftKey = options.workspaceIdentity?.trim() || workspacePath;
+  let workspaceIdentity = options.workspaceIdentity?.trim();
+  if (!workspaceIdentity) {
+    const project = $(projectSectionSelector(workspacePath));
+    await project.waitForDisplayed({ timeout: 30_000 });
+    workspaceIdentity =
+      (await project.getAttribute("data-project-workspace-identity")) || undefined;
+  }
+  // 远端草稿按 Source identity 存储；只传目录时也从目标项目读取身份，不能一直等待不存在的路径键。
+  const draftKey = workspaceIdentity || workspacePath;
   const previousDraftVersion = await browser.execute((key) => {
     const bridge = (
       window as unknown as {
@@ -236,11 +244,9 @@ export async function startDraftFromProject(
     ).__zcodeSessionStoreE2E;
     return bridge?.getState().workspaces[key]?.draftFocusVersion ?? 0;
   }, draftKey);
-  if (options.workspaceIdentity) {
+  if (workspaceIdentity) {
     // 跨 Source 可以有同名同路径项目；显式 identity 时不能落到名称匹配的第一行。
-    const project = $(
-      `[data-project-workspace-identity=${JSON.stringify(options.workspaceIdentity)}]`,
-    );
+    const project = $(`[data-project-workspace-identity=${JSON.stringify(workspaceIdentity)}]`);
     await project.waitForDisplayed({ timeout: 30_000 });
     await project.moveTo();
     await project.$(`[data-testid="${TID_VIRTUAL_PROJECT_CREATE_TASK}"]`).click();
@@ -257,7 +263,9 @@ export async function startDraftFromProject(
     () =>
       browser.execute(
         (inputId, panePrefix, workspaceTriggerId, projectName, identity, key, previousVersion) => {
-          const inputs = document.querySelectorAll(`[data-testid="${panePrefix}-workspace-main"] [data-testid="${inputId}"]`);
+          const inputs = document.querySelectorAll(
+            `[data-testid="${panePrefix}-workspace-main"] [data-testid="${inputId}"]`,
+          );
           const pane = inputs[0]?.closest<HTMLElement>(`[data-testid^="${panePrefix}-"]`);
           const trigger = document.querySelector<HTMLElement>(
             `[data-testid="${workspaceTriggerId}"]`,
@@ -291,7 +299,7 @@ export async function startDraftFromProject(
         TID_V4_SESSION_PANE,
         TID_COMPOSER_WORKSPACE_TRIGGER,
         projectNameForWorkspace(workspacePath),
-        options.workspaceIdentity,
+        workspaceIdentity,
         draftKey,
         previousDraftVersion,
       ),

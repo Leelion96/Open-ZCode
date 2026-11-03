@@ -1,12 +1,12 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const repoRoot = process.cwd();
 const desktopDir = resolve(repoRoot, "packages/desktop");
 const pendingSpec =
-  "./packages/desktop/test/e2e/plugins/manual-review/pending/plugin-management-personal-lifecycle.test.ts";
+  "./packages/desktop/test/e2e/plugins/manual-review/pending/plugin-promotion-check-probe.test.ts";
 const manualOnlySpec =
   "./packages/desktop/test/e2e/plugins/manual-review/pending/plugin-cdn-zip-official-cdn-smoke.test.ts";
 const fixtureCheckCase = "plugin-fixture-check-probe";
@@ -22,9 +22,9 @@ const formalProbeManifest = resolve(
   `${fixtureCheckCase}.json`,
 );
 
-beforeAll(() => {
-  writeProbeFile(formalProbeSpec, 'describe("E2E_PLUGIN_FIXTURE_CHECK_PROBE", () => {});\n');
-  writeProbeFile(
+beforeAll(async () => {
+  await writeProbeFile(formalProbeSpec, 'describe("E2E_PLUGIN_FIXTURE_CHECK_PROBE", () => {});\n');
+  await writeProbeFile(
     formalProbeFixture,
     `${JSON.stringify(
       {
@@ -48,7 +48,7 @@ beforeAll(() => {
       2,
     )}\n`,
   );
-  writeProbeFile(
+  await writeProbeFile(
     formalProbeManifest,
     `${JSON.stringify(
       {
@@ -73,12 +73,30 @@ beforeAll(() => {
       2,
     )}\n`,
   );
+  // 候选已经转正时，准入测试仍使用自己的 pending fixture，不能依赖产品文件的审核状态。
+  await writeProbeFile(
+    resolve(repoRoot, pendingSpec),
+    'describe("E2E_PLUGIN_FIXTURE_CHECK_PROBE", () => {});\n',
+  );
+  for (const file of [formalProbeFixture, formalProbeManifest]) {
+    await writeProbeFile(
+      file.replace(fixtureCheckCase, "plugin-promotion-check-probe"),
+      (await readFile(file, "utf8")).replaceAll(fixtureCheckCase, "plugin-promotion-check-probe"),
+    );
+  }
 });
 
-afterAll(() => {
-  rmSync(formalProbeSpec, { force: true });
-  rmSync(formalProbeFixture, { force: true });
-  rmSync(formalProbeManifest, { force: true });
+afterAll(async () => {
+  for (const file of [
+    formalProbeSpec,
+    formalProbeFixture,
+    formalProbeManifest,
+    resolve(repoRoot, pendingSpec),
+    formalProbeFixture.replace(fixtureCheckCase, "plugin-promotion-check-probe"),
+    formalProbeManifest.replace(fixtureCheckCase, "plugin-promotion-check-probe"),
+  ]) {
+    await rm(file, { force: true });
+  }
 });
 
 describe("plugin lifecycle E2E admission scripts", () => {
@@ -123,7 +141,7 @@ function runScript(scriptName: string, args: string[]) {
   );
 }
 
-function writeProbeFile(path: string, content: string): void {
-  mkdirSync(resolve(path, ".."), { recursive: true });
-  writeFileSync(path, content, "utf-8");
+async function writeProbeFile(path: string, content: string): Promise<void> {
+  await mkdir(resolve(path, ".."), { recursive: true });
+  await writeFile(path, content, "utf-8");
 }

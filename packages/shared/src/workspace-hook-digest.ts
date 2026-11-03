@@ -28,6 +28,8 @@ export interface CanonicalWorkspaceHookEntryData {
   resolvedTimeoutMs: number;
   resolvedMaxOutputBytes: number;
   statusMessage?: string;
+  /** 只在声明写成 `deny` 时在场：`allow` 与缺省同义，不进条目也不进摘要。 */
+  onError?: "deny";
   sourceRootEnabled: boolean;
   declarationEnabled: boolean;
   runtimeHooksEnabled: boolean;
@@ -95,6 +97,7 @@ export function resolveWorkspaceHookEntries(input: {
             resolvedTimeoutMs,
             resolvedMaxOutputBytes: input.runtimeRoot.maxOutputBytes,
             ...(hook.statusMessage ? { statusMessage: hook.statusMessage } : {}),
+            ...(hook.onError === "deny" ? { onError: "deny" as const } : {}),
             ...gates,
             editable: source.editable,
             declarationDigestAlgorithm: "sha256" as const,
@@ -244,6 +247,9 @@ function canonicalDeclarationPayload(input: {
     execution,
     input.resolvedTimeoutMs,
     input.resolvedMaxOutputBytes,
+    // onError: deny 把「出错放行」改成「出错拦截」，是安全语义，改了就要重新信任，所以进摘要。
+    // 只在 deny 时追加：没写或写 allow 的声明，摘要与引入该字段之前逐字节相同，已有信任不失效。
+    ...(input.hook.onError === "deny" ? [["onError", "deny"]] : []),
   ];
 }
 

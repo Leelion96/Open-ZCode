@@ -22,9 +22,9 @@
         "statusCode": 200,
         "statusMessage": "OK",
         "headers": {
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"chatcmpl-thinking-toggle-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-thinking-toggle-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"Thinking Toggle\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-thinking-toggle-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"chatcmpl-thinking-toggle-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Thinking Toggle\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}"
       }
     },
     {
@@ -47,7 +47,9 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-qwen-enabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-qwen-enabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-qwen-enabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":128,\"completion_tokens\":12,\"total_tokens\":140}}\n\ndata: [DONE]\n\n"
       }
     },
@@ -71,7 +73,9 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-qwen-disabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-qwen-disabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-qwen-disabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"qwen3.5-plus\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":132,\"completion_tokens\":12,\"total_tokens\":144}}\n\ndata: [DONE]\n\n"
       }
     },
@@ -95,7 +99,9 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-kimi-enabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"kimi-k2.6\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-kimi-enabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"kimi-k2.6\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-kimi-enabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"kimi-k2.6\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":136,\"completion_tokens\":12,\"total_tokens\":148}}\n\ndata: [DONE]\n\n"
       }
     },
@@ -119,7 +125,9 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-kimi-disabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"kimi-k2.6\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-kimi-disabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"kimi-k2.6\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-kimi-disabled\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"kimi-k2.6\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":140,\"completion_tokens\":12,\"total_tokens\":152}}\n\ndata: [DONE]\n\n"
       }
     }

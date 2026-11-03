@@ -16,7 +16,8 @@ import {
 import {
   ArtifactOpenAsFileButton,
   useCanOpenArtifactAsFile,
-} from "@/app-shell/workflow-artifacts/ArtifactOpenAsFileButton.js";
+  useCanSaveArtifactAsFile,
+} from "@/file-menu/index.js";
 import { WorkflowArtifactBody } from "@/app-shell/workflow-artifacts/WorkflowArtifactBody.js";
 import { artifactPresetFieldPaths } from "@/app-shell/workflow-artifacts/presets/spec.js";
 import { useWorkflowRunArtifactBytes } from "@/hooks/useWorkflowRunArtifactBytes.js";
@@ -209,7 +210,10 @@ function WorkflowArtifactView({
 
   // 头部只留一个文件控件：能「作为文件打开」时「在工作区显示」收进它的菜单，否则独立成按钮。
   const canOpenAsFile = useCanOpenArtifactAsFile();
-  const openAsFile = !preset && canOpenAsFile;
+  const canSaveAsFile = useCanSaveArtifactAsFile();
+  const openAsFile = !preset && canSaveAsFile;
+  // Web 只有保存按钮，没有本机打开菜单，不能随保存能力一起隐藏原来的定位入口。
+  const revealInMenu = !preset && canOpenAsFile;
   const reveal =
     localSourcePath !== undefined && onRevealFileInTree !== undefined
       ? () => onRevealFileInTree(localSourcePath)
@@ -270,7 +274,7 @@ function WorkflowArtifactView({
                 {...(reveal === undefined ? {} : { onReveal: reveal })}
               />
             ) : null}
-            {!openAsFile && reveal !== undefined ? (
+            {!revealInMenu && reveal !== undefined ? (
               <Button
                 data-testid="workflow-artifact-reveal"
                 onClick={reveal}

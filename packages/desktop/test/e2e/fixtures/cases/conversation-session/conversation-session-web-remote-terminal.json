@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-web-remote-terminal",
+  "spec": "./test/e2e/conversation-session/conversation-session-web-remote-terminal.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-web-remote-terminal.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "mobile-terminal-existing-session",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "A fixed reply creates a persisted task because terminal actions are not exposed on the empty draft page. Model output quality is outside this terminal regression."
+    }
+  ]
+}

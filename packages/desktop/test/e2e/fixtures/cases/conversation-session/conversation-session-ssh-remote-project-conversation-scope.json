@@ -3,7 +3,10 @@
   "caseName": "conversation-session-ssh-remote-project-conversation-scope",
   "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-project-conversation-scope.test.ts",
   "providerRequestPolicy": "none",
-  "providerFixtures": ["./test/e2e/fixtures/upstream/common.json"],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-remote-project-conversation-scope.json"
+  ],
   "fileFixtures": [],
   "requests": []
 }

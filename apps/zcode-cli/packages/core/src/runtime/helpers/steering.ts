@@ -254,6 +254,17 @@ export function clonePartForFork(
     if (cloned.tail_start_id) {
       cloned.tail_start_id = mapMessage(cloned.tail_start_id, "compaction tail_start_id");
     }
+    const leadingIds: unknown = cloned.metadata?.compactLeadingMessageIds;
+    if (Array.isArray(leadingIds)) {
+      // 旧版本 fork 原样复制 metadata，可能留下父会话 ID；声明只影响公告位置，映射不到的丢弃，不阻断 fork。
+      cloned.metadata = {
+        ...cloned.metadata,
+        compactLeadingMessageIds: leadingIds.flatMap((id) => {
+          const mapped = messageIdMap.get(id);
+          return mapped ? [mapped] : [];
+        }),
+      };
+    }
     if (cloned.compactBoundary) {
       const boundary = cloned.compactBoundary;
       cloned.compactBoundary = {

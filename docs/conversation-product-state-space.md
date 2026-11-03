@@ -111,8 +111,8 @@ completion-blocking active work：
 | desktop/mobile busy + accepted input                            | 按 CLI 串行 admission 顺序进入同一 FIFO；不存在双队列竞态                                                                                                                |
 | guide ineligible/attachment/compact/verifier                    | 保留完整 Submission（含 ModelSelection）并 fallback CLI queue；compact 不进入 guided row；模型/provider 不参与 eligibility                                               |
 | guide + ordinary queue nonempty                                 | guide 进入当前 active turn；普通 queue 保持未来 turn FIFO，不构成 guide eligibility guard                                                                                |
-| guide + toolResultBatch=committed                               | 全部 sibling tool results 先落事实，再最多内联消费一条 guide；同一 product turn 继续，Session Selection 与下一 model step 的 Active Model 切到该 Submission 的 Selection |
-| accepted guide + current visual work segment                    | 关闭上一 segment，在同一 product turn 以 guided user entity 开启新 segment；各段工时与折叠独立                                                                           |
+| guide + toolResultBatch=committed                               | 全部 sibling tool results 先落事实，再按 FIFO 一次内联消费全部已等待的 guide；同一 product turn 继续，Session Selection 与下一 model step 的 Active Model 切到最后一条 Submission 的 Selection |
+| accepted guide + current visual work segment                    | 关闭上一 segment，在同一 product turn 以 guided user entity 开启新 segment；一起消费的相邻 guide 共用一段；各段工时与折叠独立                                            |
 | guide + parallelTools + toolResultBatch=pending                 | 不消费；单个 sibling 先完成不能构成 guide boundary                                                                                                                       |
 | guide + turn terminal + toolResultBatch=none                    | 同一 intent 原地 fallback queue；保留 IDs、payload、admission order                                                                                                      |
 | ordinary queue + session ready + goal=none/complete + autoDrain | 按 FIFO 提升一个队首，并按原 text/goal/compact kind 执行                                                                                                                 |
@@ -145,7 +145,7 @@ guide 与普通 queue 的状态层级不能折叠成一个 generic round-trip dr
 
 ```text
 Guide inline path
-  admitted -> wait complete tool batch -> one guided drain -> same product turn
+  admitted -> wait complete tool batch -> drain waiting guides (turn-steering.md「Drain 边界」) -> same product turn
        \-> no batch before terminal -> same intent becomes ordinary queue
 
 Ordinary queue path

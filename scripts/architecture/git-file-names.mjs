@@ -1,5 +1,20 @@
 import { spawn } from "node:child_process";
 
+export function gitAddedFilesSince(cwd, { since, ref = "HEAD" }) {
+  // Git 会给纯日期补上当前时刻和宿主时区，导致相同 ref 的准入集合随执行时间漂移。
+  // 纯日期统一取 UTC 零点；显式时间戳沿用调用方给定的边界。
+  const boundary = /^\d{4}-\d{2}-\d{2}$/.test(since) ? `${since}T00:00:00Z` : since;
+  return gitFileNames(cwd, [
+    "log",
+    "--diff-filter=A",
+    "--name-only",
+    "-z",
+    "--format=",
+    `--since=${boundary}`,
+    ref,
+  ]);
+}
+
 export function gitFileNames(cwd, args) {
   return new Promise((resolve, reject) => {
     const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"] });

@@ -9,12 +9,19 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-plan-approval-feedback-user-message-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "upstream-conversation-plan-approval-enter-plan-call",
       "description": "首轮请求返回 EnterPlanMode，进入 plan mode。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "稳定制造 plan mode 状态，避免依赖真实模型是否选择 EnterPlanMode。"
+      "syntheticReason": "需要稳定制造 plan mode 状态，避免依赖真实模型是否选择 EnterPlanMode。"
     },
     {
       "id": "upstream-conversation-plan-approval-exit-plan-call",
@@ -22,7 +29,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "稳定触发 ExitPlanMode 审批弹窗，避免模型输出文本而跳过工具。"
+      "syntheticReason": "需要稳定触发 ExitPlanMode 审批弹窗，避免模型输出文本而跳过工具。"
     },
     {
       "id": "upstream-conversation-plan-approval-feedback-final",
@@ -30,7 +37,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "证明 custom feedback 已作为下一条 user message 进入 provider-visible 请求。"
+      "syntheticReason": "需要断言 custom feedback 出现在下一轮用户消息，而不是被塞回 ExitPlanMode tool_result。"
     }
   ]
 }

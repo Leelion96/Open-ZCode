@@ -19,7 +19,8 @@ import {
 } from "../src/agent/session-history-hydrator.js";
 import { MessageHistoryImpl } from "../src/agent/message-history.js";
 import { buildProviderRequestMessages } from "../src/runtime/helpers/provider-request-messages.js";
-import { cloneMessageForFork } from "../src/runtime/helpers/steering.js";
+import { cloneMessageForFork, clonePartForFork } from "../src/runtime/helpers/steering.js";
+import { buildRuntimeReminderMessage } from "../src/runtime/methods/runtime-reminder-persistence.js";
 import {
   activeForkTranscriptMessages,
   buildForkHistoryMessages,
@@ -613,6 +614,104 @@ describe("session fork history", () => {
     }
   });
 
+  it("fork-before-input 的选型回退跳过停止后的中断标记", async () => {
+    const user = userMessage("msg_marker_user" as MessageId, "first", 1);
+    const assistant = assistantMessage(
+      "msg_marker_assistant" as MessageId,
+      user.info.id,
+      "stopped answer",
+      2,
+    );
+    if (assistant.info.role !== "assistant") return;
+    assistant.info.reasoningLevel = "max";
+    const target = userMessage("msg_marker_target" as MessageId, "edit me", 4);
+    const runtimeSelection = {
+      modelId: "glm-4-air",
+      providerId: "glm",
+      options: { reasoningLevel: "high" },
+    };
+    // 停止后写的中断标记：只记 provider/model，不带 options。
+    const marker = buildRuntimeReminderMessage(
+      {
+        config: { agentName: "zcode-agent" },
+        getSessionModelSelection: () => runtimeSelection,
+        sessionId: SESSION_ID,
+      } as never,
+      {
+        message: { role: "user", content: "[Request interrupted by user]" },
+        metadata: { source: "interrupt_marker" },
+      },
+      { created: 3 },
+    )!;
+    let committedBundle: Parameters<NonNullable<SessionStorePort["commitForkBundle"]>>[0] | null =
+      null;
+    const parentSession = {
+      directory: "/workspace",
+      id: SESSION_ID,
+      path: "/workspace",
+      projectID: "project-marker-fork",
+      slug: "parent-marker-fork",
+      taskType: "interactive",
+      time: { created: 1, updated: 1 },
+      title: "parent",
+      version: "test",
+    } as SessionInfo;
+    const runtime = {
+      appendEvent: async () => undefined,
+      config: { agentName: "zcode-agent", mode: "build" },
+      createEvent: (_type: unknown, payload: Record<string, unknown>) => ({ payload }),
+      getSessionModelSelection: () => runtimeSelection,
+      rootTraceContext: { traceId: "trace_marker_fork" },
+      sessionId: SESSION_ID,
+      sessionStore: {
+        async commitForkBundle(bundle) {
+          committedBundle = bundle;
+          return bundle.child as SessionInfo;
+        },
+        async getSession() {
+          return parentSession;
+        },
+        async messages() {
+          return [user, assistant, marker, target];
+        },
+      } satisfies Partial<SessionStorePort>,
+      workingDirectory: "/workspace",
+      workspaceRoot: "/workspace",
+    };
+
+    await forkConversationBeforeMessage.call(runtime as never, {
+      commandFact: {
+        parentSessionId: SESSION_ID,
+        sourceCommandId: "cmd-marker-fork",
+        ack: {
+          commandId: "cmd-marker-fork",
+          status: "accepted",
+          revisionAtDecision: 1,
+          result: { type: "editUserQuery", disposition: "fork", sessionId: "sess_marker_child" },
+        },
+        metadata: {},
+      },
+      forkedSessionId: "sess_marker_child" as SessionId,
+      goalBoundary: { kind: "none" },
+      initialInput: {
+        id: "queue_cmd-marker-fork",
+        sessionID: "sess_marker_child" as SessionId,
+        kind: "sendText",
+        delivery: "startNow",
+        payload: { text: "edited" },
+      },
+      sourceCommandId: "cmd-marker-fork",
+      targetMessageId: target.info.id,
+      targetProductTurnId: "turn-product",
+      targetTranscriptTurnId: "turn-runtime",
+    });
+
+    // 取 fork 点之前最后一条对话消息（assistant）的选型，而不是中断标记或 runtime 当前值。
+    expect(
+      committedBundle!.entries.find((entry) => entry.type === SESSION_ENTRY_MODEL_SELECTION)?.data,
+    ).toEqual({ modelId: "glm-4-air", providerId: "glm", options: { reasoningLevel: "max" } });
+  });
+
   it("V4 stable fork 只通过 commitForkBundle 一次发布完整 child", async () => {
     const user = userMessage("msg_atomic_user" as MessageId, "fork me", 1);
     const assistant = assistantMessage(
@@ -905,6 +1004,36 @@ describe("session fork history", () => {
         boundaryMessageId: String(childAnchor.boundaryMessageId),
       }),
     ).not.toThrow();
+  });
+
+  it("remaps compact leading announcement ids and drops ids outside the child transcript", () => {
+    const summaryId = "msg_leading_summary" as MessageId;
+    const leadingId = "msg_leading_announcement" as MessageId;
+    const cloned = clonePartForFork(
+      {
+        id: partId("leading_compaction"),
+        sessionID: SESSION_ID,
+        messageID: summaryId,
+        type: "compaction",
+        auto: false,
+        metadata: {
+          compactLeadingMessageIds: [leadingId, "msg_parent_only" as MessageId],
+        },
+      } as MessagePart,
+      {
+        forkedSessionId: "ses_leading_child" as never,
+        nextMessageId: "msg_child_summary" as MessageId,
+        messageIdMap: new Map<MessageId, MessageId>([
+          [summaryId, "msg_child_summary" as MessageId],
+          [leadingId, "msg_child_announcement" as MessageId],
+        ]),
+        strictLocalReferences: true,
+      },
+    );
+    // 旧版本 fork 原样复制 metadata；映射不到的声明只影响公告位置，不能阻断 fork。
+    expect(cloned).toMatchObject({
+      metadata: { compactLeadingMessageIds: ["msg_child_announcement"] },
+    });
   });
 
   it("stable fork golden remap 覆盖 message/part/turn/compact/goal/verifier 全部 child-local identity", async () => {

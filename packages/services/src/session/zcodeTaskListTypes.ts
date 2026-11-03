@@ -10,8 +10,9 @@ export interface ZCodeTaskListWorkspaceScope {
 }
 
 export interface ZCodeTaskListQuery {
-  kind: ZCodeTaskListKind;
-  workspaceScopes: ZCodeTaskListWorkspaceScope[];
+  kind: ZCodeTaskListKind | "all";
+  /** host 由存储 owner 确定全部范围，不接受 UI 已打开工作区作为历史目录。 */
+  workspaceScopes: ZCodeTaskListWorkspaceScope[] | "host";
   sortBy: ZCodeTaskListSortBy;
   search?: string;
   limit?: number;

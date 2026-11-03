@@ -1,7 +1,18 @@
-import { mkdir, writeFile, rename, rm, readdir, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  writeFile,
+  rename,
+  rm,
+  readdir,
+  readFile,
+  stat,
+} from "node:fs/promises";
 import { dirname, basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { acquireFileLock } from "@zcode/shared/node";
+import { acquireFileLock, atomicWritePrivateTextFile } from "@zcode/shared/node";
 import { isInjectedFsFaultError, maybeThrowInjectedFsFault } from "./fsFaultInjection.js";
 
 const DEFAULT_RENAME_RETRY_DELAYS_MS = [50, 100, 200, 400, 800, 1600, 3200] as const;
@@ -49,6 +60,36 @@ function getErrorCode(error: unknown): string | undefined {
 
   const code = (error as { code?: unknown }).code;
   return typeof code === "string" ? code : undefined;
+}
+
+/** 路径本身是否存在（lstat，不跟随软链：悬空软链也算存在）。其他错误原样抛出。 */
+export async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (getErrorCode(error) === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/**
+ * 同目录临时文件（`.` 开头，扫描会跳过）+ rename，原子替换目标文件；传入 mode 时保留原文件权限位。
+ * 写临时文件用 `wx`，不会覆盖已有文件；失败时删除临时文件。不加锁、不重试。
+ */
+export async function writeFileAtomically(
+  path: string,
+  content: Uint8Array,
+  mode?: number,
+): Promise<void> {
+  const temp = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temp, content, { flag: "wx" });
+    if (mode !== undefined) await chmod(temp, mode & 0o777);
+    await rename(temp, path);
+  } finally {
+    await rm(temp, { force: true });
+  }
 }
 
 function isRetryableAtomicRenameError(error: unknown): boolean {
@@ -185,4 +226,74 @@ export async function atomicWriteJson(
   options?: AtomicWriteTextOptions,
 ): Promise<void> {
   await atomicWriteText(filePath, JSON.stringify(data, null, 2), options);
+}
+
+/**
+ * 配置文件存在但读不出来、不是合法 JSON 或根节点不是对象时抛出。
+ * 调用方必须中止写入，把错误交给界面现有的失败反馈。
+ */
+export class JsonObjectFileUnreadableError extends Error {
+  constructor(
+    readonly filePath: string,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options);
+    this.name = "JsonObjectFileUnreadableError";
+  }
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 写入前读取 JSON 对象文件：不存在视为空对象；读失败、JSON 无效或根节点不是对象时抛错。
+ * 只读展示路径可以把损坏文件当作空配置，写入路径不行，否则会把整份文件写回成只剩自己的字段。
+ */
+export async function readJsonObjectFileForUpdate(
+  filePath: string,
+): Promise<Record<string, unknown>> {
+  let raw: string;
+  try {
+    raw = await readFile(filePath, "utf-8");
+  } catch (error) {
+    if (getErrorCode(error) === "ENOENT") return {};
+    throw new JsonObjectFileUnreadableError(filePath, `Failed to read config file ${filePath}`, {
+      cause: error,
+    });
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new JsonObjectFileUnreadableError(filePath, `Config file ${filePath} is not valid JSON`, {
+      cause: error,
+    });
+  }
+  if (!isJsonObject(parsed)) {
+    throw new JsonObjectFileUnreadableError(
+      filePath,
+      `Config file ${filePath} must contain a JSON object`,
+    );
+  }
+  return parsed;
+}
+
+/**
+ * `~/.zcode/cli/config.json` 有多个写入方（命令、钩子、技能、MCP、插件、同步导入，以及 CLI 自身），彼此不加锁。
+ * 每个写入方都按「写前重读 → 只改自己的字段 → 原子替换」执行：
+ * - update 拿到的是读取那一刻磁盘上的内容，只能改自己负责的字段；
+ * - 临时文件 + rename 替换，写入中途失败不会留下半截文件；
+ * - 不做 rename 重试，失败直接抛给调用方。
+ * 已知限制：读取与替换之间没有任何锁。两个写入方同时执行时，后替换的一方会覆盖前一方刚写入的字段
+ * （进程内并发同样如此）。见 docs/remote/data-sync.md「写入安全加固」。
+ */
+export async function updateJsonObjectFile(
+  filePath: string,
+  update: (current: Record<string, unknown>) => Record<string, unknown>,
+): Promise<void> {
+  const next = update(await readJsonObjectFileForUpdate(filePath));
+  await atomicWritePrivateTextFile(filePath, `${JSON.stringify(next, null, 2)}\n`, []);
 }

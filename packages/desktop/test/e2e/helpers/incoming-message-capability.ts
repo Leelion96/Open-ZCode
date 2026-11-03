@@ -7,6 +7,7 @@ import {
   UPSTREAM_MODEL,
   UPSTREAM_PROVIDER_ID,
 } from "./upstream-provider.js";
+import { armDraftRegenerationResendOnce } from "#e2e/helpers/draft-regeneration-resend";
 import { prepareV4ConversationE2E, switchV4Model } from "./v4-conversation.js";
 
 export const INCOMING_MESSAGE_MODES = [
@@ -54,6 +55,8 @@ export async function prepareIncomingMessageCapability(
   await browser.reloadSession();
   await prepareV4ConversationE2E({ resetDraftBeforeProvider: true, skipProvider: true });
   await switchIncomingMessageCapability(mcs);
+  // 重启 + 切模型正是草稿换代首发失败的触发窗口；下一次发送遇到该错误时按产品提示重发（含首发最多 3 次）。
+  armDraftRegenerationResendOnce();
 }
 
 export async function switchIncomingMessageCapability(mcs: boolean): Promise<void> {

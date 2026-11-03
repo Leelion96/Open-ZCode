@@ -9,12 +9,19 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-plan-file-compact-continuity-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "upstream-plan-file-compact-enter-plan-call",
       "description": "首轮请求返回 EnterPlanMode，进入 plan mode。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "稳定制造 plan mode 状态，避免依赖真实模型是否选择 EnterPlanMode。"
+      "syntheticReason": "需要稳定制造 plan mode 状态，避免依赖真实模型是否选择 EnterPlanMode。"
     },
     {
       "id": "upstream-plan-file-compact-exit-plan-call",
@@ -22,7 +29,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "稳定触发 ExitPlanMode 审批弹窗，并让已批准 plan 内容可在文件和 compact 后请求中被追踪。"
+      "syntheticReason": "需要稳定触发 ExitPlanMode 审批弹窗，并让已批准 plan 内容可在文件和 compact 后请求中被追踪。"
     },
     {
       "id": "upstream-plan-file-compact-approval-final",
@@ -30,7 +37,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "审批通过后的回复内容不是本 case 核心，只需要稳定结束当前轮。"
+      "syntheticReason": "审批通过后的回复内容不是本 case 核心，只需要稳定结束当前轮并保留 provider-visible approved plan。"
     },
     {
       "id": "upstream-plan-file-compact-checkpoint-final",

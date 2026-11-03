@@ -97,7 +97,6 @@ export interface RemoteConnectionPresentation {
     shortMessageId: string;
     values: { attempt: number; limit: number };
   };
-  optionalUpdate: boolean;
   updateNotice: { foreground: string; surface: string };
   description: string;
   displayName?: string;
@@ -209,7 +208,6 @@ export function resolveRemoteConnectionPresentation(
           },
         }
       : {}),
-    optionalUpdate: input.updateAvailability === "available",
     updateNotice: input.updateAvailability === "available" ? TONES.neutral : TONES[tone],
     description: formatRemoteConnectionDescription(input.target),
     displayName: input.displayName,
@@ -336,23 +334,4 @@ export function buildAggregatedSourceStatusMap(
       ).status,
     ]) ?? [],
   );
-}
-
-/** 设置导航聚合也是展示决策，界面不自行挑颜色或把失败降成警告。 */
-export function resolveRemoteConnectionNavigationPresentation(
-  snapshot: SourceServerManagementSnapshot | null | undefined,
-): RemoteConnectionPresentation {
-  const devices =
-    snapshot?.servers.map((server) =>
-      resolveRemoteConnectionPresentation(
-        getRemoteDevicePresentationInput(snapshot, server.sourceServerId),
-      ),
-    ) ?? [];
-  const result =
-    devices.find((item) => item.status === "pending" || item.status === "failed") ??
-    devices.find((item) => item.optionalUpdate) ??
-    devices.find((item) => item.status === "connecting") ??
-    devices.find((item) => item.status === "online") ??
-    resolveRemoteConnectionPresentation({});
-  return result.optionalUpdate ? { ...result, dot: "bg-foreground-subtle" } : result;
 }

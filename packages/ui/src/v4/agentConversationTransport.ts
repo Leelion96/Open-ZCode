@@ -1,5 +1,6 @@
+import type { SessionLifecycleSnapshot } from "@zcode/shared";
 import { sendWithConversationDelayE2E } from "@/v4/conversationTransportDelayE2E.js";
-import { getLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
+import { getLocalTtftObserver } from "@/v4/telemetry/local-ttft/contract.js";
 import { calibrateLocalTtftClock, localTtftNow } from "@zcode/shared";
 /* oxlint-disable eslint(max-lines) -- transport 将上传、分块读取和 runtime 生命周期保持在同一 host 边界。 */
 // ConversationTransport 的 desktop/host 实现：桥到 IZCodeAgentService 的 v4 转发面
@@ -77,6 +78,8 @@ type ConversationV4AgentService = Pick<
   | "attachmentAbortV4"
   | "attachmentPreviewSourceV4"
   | "attachmentReadV4"
+  | "getSessionLifecycle"
+  | "onDynamicSessionLifecycle"
   | "onDynamicConversationFrame"
   | "onDynamicLocalTtftFacts"
   | "onAgentRuntimeRestarted"
@@ -168,6 +171,9 @@ export function createAgentConversationTransport(
   let runtimeRestartUpstream: { dispose(): void } | null = null;
   let runtimeLifecycleUpstream: { dispose(): void } | null = null;
   let runtimeGeneration = 0;
+  const sessionGenerations = new Map<string, number>();
+  const sessionLifecycleListeners = new Set<(snapshot: SessionLifecycleSnapshot) => void>();
+  let sessionLifecycleUpstream: { dispose(): void } | null = null;
   const targetWorkspaceKey = target.workspaceIdentity?.trim() || target.workspacePath;
   const lifecycleContext = {
     workspaceKey: targetWorkspaceKey,
@@ -184,6 +190,32 @@ export function createAgentConversationTransport(
     return bytes;
   };
   return {
+    getSessionLifecycle(sessionId) {
+      return agentService.getSessionLifecycle({ ...workspace, sessionId });
+    },
+    onSessionLifecycle(listener) {
+      sessionLifecycleListeners.add(listener);
+      sessionLifecycleUpstream ??= agentService.onDynamicSessionLifecycle(workspace)((snapshot) => {
+        if (snapshot.state === "stopping") {
+          const topic = `conversation/${snapshot.sessionId}`;
+          sessionGenerations.set(topic, (sessionGenerations.get(topic) ?? 0) + 1);
+          for (const [id, subscriptionTopic] of topicBySubscriptionId) {
+            if (subscriptionTopic !== topic) continue;
+            barrier.forget(id);
+            decoder.discard(topic, id);
+            topicBySubscriptionId.delete(id);
+          }
+        }
+        for (const callback of sessionLifecycleListeners) callback(snapshot);
+      });
+      return () => {
+        sessionLifecycleListeners.delete(listener);
+        if (sessionLifecycleListeners.size === 0) {
+          sessionLifecycleUpstream?.dispose();
+          sessionLifecycleUpstream = null;
+        }
+      };
+    },
     async subscribe(params: SubscribeParams): Promise<V4ConversationSubscribeResult> {
       const sessionId = parseConversationTopic(params.topic);
       if (!sessionId) {
@@ -204,6 +236,7 @@ export function createAgentConversationTransport(
         await ensureHandshake();
         pending = barrier.begin(params.topic);
         const subscribeRuntimeGeneration = runtimeGeneration;
+        const subscribeSessionGeneration = sessionGenerations.get(params.topic) ?? 0;
         const result = await agentService.subscribeConversationV4({
           ...workspace,
           sessionId,
@@ -213,7 +246,10 @@ export function createAgentConversationTransport(
             ? { retryInitialization: params.retryInitialization }
             : {}),
         });
-        if (subscribeRuntimeGeneration !== runtimeGeneration) {
+        if (
+          subscribeRuntimeGeneration !== runtimeGeneration ||
+          subscribeSessionGeneration !== (sessionGenerations.get(params.topic) ?? 0)
+        ) {
           // 旧 runtime 的迟到 ACK 可能复用新 runtime 的 subId；此处只能
           // 丢本地 pending，不能向新 runtime 盲退订同名 subscription。
           barrier.cancel(pending);
@@ -359,6 +395,7 @@ export function createAgentConversationTransport(
         planEnabled?: boolean;
         config?: { planEnabled?: boolean };
         firstInput?: { planEnabled?: boolean };
+        genUiContext?: unknown[];
       };
       // 旧 Host 会剥掉未知字段；不能把 yolo + Plan 错发成完全访问执行。
       if (
@@ -366,6 +403,14 @@ export function createAgentConversationTransport(
         (payload.planEnabled || payload.config?.planEnabled || payload.firstInput?.planEnabled)
       ) {
         throw new Error("proto.independentPlanUnsupported");
+      }
+      // 旧 Host 可能先剥掉未知字段，执行端检查无法找回已丢失的状态。
+      if (
+        envelope.type === "sendText" &&
+        payload.genUiContext?.length &&
+        hello.capabilities.genUiContext !== true
+      ) {
+        throw new Error("proto.genUiContextUnsupported");
       }
       return sendWithConversationDelayE2E(envelope, () =>
         agentService.sendConversationCommandV4({ ...workspace, ...context, envelope }),

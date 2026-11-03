@@ -1,4 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -531,4 +533,22 @@ describe("desktop e2e process cleanup", () => {
       ).toEqual([]);
     },
   );
+});
+
+describe("desktop e2e runner waits", () => {
+  it("keeps the runner process alive while it waits, so the exit code still reflects the run", () => {
+    // 与 onComplete 强杀残留 Electron 时相同：进程里只剩被等待的计时器。等待结束后的代码必须执行，
+    // 退出码由它决定；不能在等待中途以 0 退出。
+    const helperUrl = pathToFileURL(
+      fileURLToPath(new URL("./e2e/helpers/e2e-process-cleanup.ts", import.meta.url)),
+    ).href;
+    const script = `const { waitE2EDelay } = await import(${JSON.stringify(helperUrl)}); await waitE2EDelay(50); process.exitCode = 3;`;
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "--input-type=module", "--eval", script],
+      { cwd: fileURLToPath(new URL(".", import.meta.url)), encoding: "utf8", timeout: 30_000 },
+    );
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(3);
+  });
 });

@@ -21,10 +21,28 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
   settingsFile: string;
   workspacePath: string;
   webUrl?: string;
+  mobilePush?: boolean;
 }): Promise<() => Promise<void>> {
   const relay = await createFakeRelayV2({
     users: { "mock-token": "zcode-e2e-user" },
     onHttp: (call) => {
+      if (options.mobilePush && call.path === "/api/v1/remote/notification/status")
+        return {
+          status: 200,
+          body: {
+            code: 0,
+            data: { protocol_version: 1, event_transport: "http", status: "available" },
+          },
+        };
+      if (options.mobilePush && call.path === "/__e2e/push")
+        return {
+          status: 200,
+          body: {
+            messages: relay.messages,
+            queries: relay.httpCalls.filter((x) => x.path === "/api/v1/remote/notification/status")
+              .length,
+          },
+        };
       if (call.path.startsWith("/api/v1/remote/")) return;
       // 完整工作区会读取推荐场景；配置对象不能冒充场景数组，否则真实首页渲染会崩溃。
       if (call.path === "/api/v1/client/scenes")
@@ -56,17 +74,14 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
   };
   const previous = Object.fromEntries(Object.keys(envPatch).map((key) => [key, process.env[key]]));
   Object.assign(process.env, envPatch);
+  const webPort = options.webUrl ? new URL(options.webUrl).port : undefined;
   // 手机入口与 desktop relay 必须连接同一个隔离服务，不能沿用开发服务器的线上代理。
   const web = options.webUrl
     ? spawn(
         process.execPath,
         [
-          resolve(import.meta.dirname, "../../../../../node_modules/vite/bin/vite.js"),
-          "--host",
-          "127.0.0.1",
-          "--port",
-          "5173",
-          "--strictPort",
+          resolve(import.meta.dirname, "../../../scripts/e2e-mobile-web-server.mjs"),
+          webPort || "5173",
         ],
         {
           cwd: resolve(import.meta.dirname, "../../../../../packages/web"),
@@ -85,7 +100,20 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
         reject(new Error(`Mobile Web fixture exited before ready: ${code}`)),
       );
       web.stdout.on("data", (chunk) => {
-        if (String(chunk).includes("http://127.0.0.1:5173")) resolveReady();
+        const origin = String(chunk).match(/http:\/\/127\.0\.0\.1:\d+/u)?.[0];
+        // Vite 的重载通知写 stdout；原来只读 ready 会丢失手机操作中断的来源。
+        // 只保留开发服务器生命周期，不转发页面控制台中的业务或配对数据。
+        for (const line of String(chunk).split("\n")) {
+          if (line.includes("[vite]") && !line.includes("[console."))
+            process.stderr.write(`[mobile-web-fixture] ${line}\n`);
+        }
+        if (!origin) return;
+        // 独立夹具可能避开已占用端口，手机配对必须使用 Vite 实际监听的端口。
+        process.env.ZCODE_WEB_REMOTE_CONTROL_URL = new URL(
+          new URL(options.webUrl!).pathname,
+          origin,
+        ).href;
+        resolveReady();
       });
       web.stderr.on("data", (chunk) => process.stderr.write(chunk));
     });
@@ -99,7 +127,9 @@ export async function prepareWebRemoteControlSessionEventsFixture(options: {
     JSON.stringify({
       ...settings,
       zcodeEndpointOrigin: relay.httpUrl,
-      webRemoteControlLastEnabledContext: { workspacePath: options.workspacePath },
+      webRemoteControlLastEnabledContext: options.mobilePush
+        ? undefined
+        : { workspacePath: options.workspacePath },
     }),
   );
   return async () => {

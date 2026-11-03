@@ -5,12 +5,6 @@ import {
 } from "@zcode/contracts";
 import { findOfficialCuaFrameContentPair } from "@zcode/zcode-cua/frame-contract";
 import type { ToolEntry, ToolResultSerialization } from "../types.js";
-import { isPersistedOutputContent } from "../result-persistence-format.js";
-
-export interface HookStringProjection {
-  content: string;
-  truncated: boolean;
-}
 
 const TOOL_REFERENCE_TEXT_TRUNCATION_MARKER = "[Tool result text truncated by resultBudget]";
 
@@ -134,99 +128,6 @@ export function projectOfficialCuaStructuredContent(
   };
 }
 
-export function appendHookWithoutReorderingStructuredContent(
-  serialization: ToolResultSerialization,
-  hookContext: string,
-  suffix: string,
-  maxModelBytes: number,
-): ToolResultSerialization {
-  const modelContent = serialization.modelContent ?? serialization.content;
-  if (!Array.isArray(modelContent)) return serialization;
-
-  const currentBytes = Buffer.byteLength(serialization.content, "utf8");
-  const remainingBytes = Math.max(0, maxModelBytes - currentBytes);
-  const separator = "\n\n";
-  const separatorBytes = Buffer.byteLength(separator, "utf8");
-  const fittedHookContext =
-    remainingBytes > separatorBytes
-      ? fitStringToBytes(hookContext, remainingBytes - separatorBytes, "head")
-      : "";
-  const fittedSuffix = fittedHookContext.length > 0 ? `${separator}${fittedHookContext}` : "";
-  const hookTruncated = Buffer.byteLength(suffix, "utf8") > remainingBytes;
-  const content = `${serialization.content}${fittedSuffix}`;
-
-  return {
-    ...serialization,
-    content,
-    // 只能在原始块之后追加 hook。这样 raster 仍然是首块、image_ref 仍紧随其后，
-    // 即使 hook 超出预算也不会把文本搬到图片前或用字符串替换图片。
-    modelContent:
-      fittedHookContext.length > 0
-        ? [...modelContent, { type: "text", text: fittedHookContext }]
-        : modelContent,
-    // returnedBytes 已包含受保护 raster；追加 hook 只增加实际新增的文本 bytes，
-    // 避免重新拆分文本/媒体并维护第二份计量状态。
-    returnedBytes: serialization.returnedBytes + Buffer.byteLength(fittedSuffix, "utf8"),
-    truncated: serialization.truncated || hookTruncated,
-  };
-}
-
-export function appendHookToStringContent(
-  content: string,
-  suffix: string,
-  maxBytes: number,
-  previewDirection: "head" | "tail",
-): HookStringProjection {
-  const augmentedContent = `${content}${suffix}`;
-  if (Buffer.byteLength(augmentedContent, "utf8") <= maxBytes) {
-    return { content: augmentedContent, truncated: false };
-  }
-  return {
-    content: fitContentWithSuffix(content, maxBytes, suffix, previewDirection),
-    truncated: true,
-  };
-}
-
-export function appendHookToPersistedArtifactPreview(
-  content: string,
-  suffix: string,
-  maxHookBytes: number,
-): HookStringProjection {
-  const fittedSuffix = fitStringToBytes(suffix, maxHookBytes, "head");
-  return {
-    content: `${content}${fittedSuffix}`,
-    truncated: Buffer.byteLength(suffix, "utf8") > maxHookBytes,
-  };
-}
-
-export function projectHookAugmentedModelContent(input: {
-  artifactPreview: boolean;
-  contentProjection: HookStringProjection;
-  hookContext: string;
-  maxModelBytes: number;
-  modelContent: ModelMessageContent;
-  previewDirection: "head" | "tail";
-  suffix: string;
-}): ModelMessageContent {
-  if (input.artifactPreview) return input.contentProjection.content;
-  if (!input.contentProjection.truncated) {
-    return appendHookContextToModelContent(input.modelContent, input.hookContext);
-  }
-  if (!hasPreservedStructuredBlocks(input.modelContent)) return input.contentProjection.content;
-
-  const textContent = budgetedTextFromStructuredContent(input.modelContent);
-  const budgetedText = fitContentWithSuffix(
-    textContent,
-    input.maxModelBytes,
-    input.suffix,
-    input.previewDirection,
-  );
-  return [
-    ...input.modelContent.filter(shouldPreserveStructuredBlock),
-    ...(budgetedText.length > 0 ? [{ type: "text" as const, text: budgetedText }] : []),
-  ];
-}
-
 export function fitContentWithSuffix(
   content: string,
   maxBytes: number,
@@ -274,49 +175,6 @@ export function stringifyOutputForModel(output: unknown, entry: ToolEntry): Mode
   } catch {
     return String(output);
   }
-}
-
-export function isPersistedArtifactPreview(serialization: ToolResultSerialization): boolean {
-  return (
-    serialization.budgetStrategy === "artifact" &&
-    serialization.truncated &&
-    typeof serialization.artifactPath === "string" &&
-    serialization.artifactPath.length > 0 &&
-    isPersistedOutputContent(serialization.content)
-  );
-}
-
-function appendHookContextToModelContent(
-  content: ModelMessageContent,
-  hookContext: string,
-): ModelMessageContent {
-  if (typeof content === "string") return `${content}\n\n${hookContext}`;
-  return [...content, { type: "text", text: hookContext }];
-}
-
-function hasPreservedStructuredBlocks(
-  content: ModelMessageContent,
-): content is ModelMessageContentBlock[] {
-  return Array.isArray(content) && content.some(shouldPreserveStructuredBlock);
-}
-
-function shouldPreserveStructuredBlock(block: ModelMessageContentBlock): boolean {
-  if (block.type === "text") return false;
-  if (block.type === "file" && typeof block.text === "string" && block.text.length > 0) {
-    return false;
-  }
-  return true;
-}
-
-function budgetedTextFromStructuredContent(content: ModelMessageContentBlock[]): string {
-  return content
-    .map((block) => {
-      if (block.type === "text") return block.text;
-      if (block.type === "file" && typeof block.text === "string") return block.text;
-      return "";
-    })
-    .filter((text) => text.length > 0)
-    .join("\n\n");
 }
 
 function fitStringToBytes(value: string, maxBytes: number, direction: "head" | "tail"): string {

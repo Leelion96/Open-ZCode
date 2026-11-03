@@ -1,3 +1,4 @@
+import { setRendererViewport, clearRendererViewport } from "#e2e/helpers/renderer-viewport";
 import { skipOccupationOnboardingIfPresent } from "../../../helpers/occupation-onboarding.js";
 import { restartWithSeededOpenAIProviders } from "../../../helpers/custom-openai-provider.js";
 import {
@@ -24,7 +25,6 @@ import {
   clickV4QueueItemDelete,
   clickV4Stop,
   selectV4TaskById,
-  setV4ElectronWindowSize,
 } from "../../../helpers/v4-conversation.js";
 
 describe("BOT-E2E-GR-02/04 real Host CLI group queue", () => {
@@ -35,6 +35,7 @@ describe("BOT-E2E-GR-02/04 real Host CLI group queue", () => {
   });
   after(async () => {
     if ((await getV4PaneSnapshot()).canStop) await clickV4Stop();
+    await clearRendererViewport();
     await browser.electron.restoreAllMocks();
     await clearAppData();
     await replay?.stop();
@@ -215,11 +216,7 @@ describe("BOT-E2E-GR-02/04 real Host CLI group queue", () => {
     expect(
       await browser.execute(() => document.body.innerText.includes("E2E_SAVED_GROUP_RESULT")),
     ).toBe(false);
-    const originalSize = await browser.execute(() => ({
-      width: window.outerWidth,
-      height: window.outerHeight,
-    }));
-    await setV4ElectronWindowSize(430, 900);
+    await setRendererViewport(430, 900);
     await deliveryAction.click();
     expect(
       await browser.execute(() => {
@@ -235,7 +232,7 @@ describe("BOT-E2E-GR-02/04 real Host CLI group queue", () => {
       async () => browser.execute(() => !document.querySelector("[data-bot-group-delivery]")),
       { timeout: 15000 },
     );
-    await setV4ElectronWindowSize(originalSize.width, originalSize.height);
+    await clearRendererViewport();
     const sendGroup = async (text: string, senderId: string) =>
       browser.execute(
         async (message) => {
@@ -291,7 +288,16 @@ describe("BOT-E2E-GR-02/04 real Host CLI group queue", () => {
     expect(
       draftState.bots[JSON.stringify([botId, chatId])].pendingPermissionOptions ?? [],
     ).toHaveLength(0);
-    await sendGroup("/mode yolo", "ou_e2e_user");
+    const modeReply = await sendGroup("/mode yolo", "ou_e2e_user");
+    console.log(
+      "E2E_GROUP_MODE_RESULT",
+      JSON.stringify({
+        reply: modeReply,
+        draft: JSON.parse(await readFile(join(root, "bot-state.v3.json"), "utf8")).bots[
+          JSON.stringify([botId, chatId])
+        ].draftOptions,
+      }),
+    );
     await sendGroup("E2E_GROUP_RUNTIME_SLOW new group task", "ou_member");
     const persisted = JSON.parse(await readFile(join(root, "bot-state.v3.json"), "utf8"));
     const createdId = persisted.bots[JSON.stringify([botId, chatId])].activeTaskId as string;

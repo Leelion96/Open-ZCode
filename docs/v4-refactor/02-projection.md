@@ -1,6 +1,6 @@
 # Conversation Product Projection 当前实现
 
-更新日期：2026-07-15
+更新日期：2026-10-29
 
 `ConversationProductProjection` 是 CLI 面向 App/Web 的会话读模型。产品语义以
 [conversation-product-protocol.md](../conversation-product-protocol.md) 为准，wire schema 以
@@ -70,6 +70,40 @@ normalizer/projection。
 因此当前保证是“同一份持久事实恢复到相同产品终态”，不是“任意历史 revision 都可回溯”。如果
 live 日志只覆盖部分 transcript，gateway 会按 footprint 检查选择完整 hydration/merge，禁止在 UI
 旁路渲染数据库消息。
+
+## 命令 actions 的物化时机
+
+行上的 `actions`（`canEdit` 及其 `editDisposition`、`canRetry`、`canFork`、`canRewindFiles`）由
+`materializeCommandRowActions` 生成：每个 live 事件归约后，对“当前快照 + 本事件 delta”整窗计算，
+变化的行以 `row.upserted` 一并发出，并同步更新命令层使用的当前可编辑目标。edit/retry/fork target
+的侧表由 reducer 登记，不在这里生成。strict replay 逐事件走同一规则；cold batch hydration 期间不逐
+事件物化，只在结束时收敛一次。
+
+例外：事件是对已打开流式行的追加，且本事件归约结果只有 `row.delta` 或为空，跳过物化。归约结果为空
+的情况有三种：文件工具预览被节流；文件工具在节流窗口外，但累积内容与本次 delta 都为空；工具输入已
+定稿后迟到的原始流。“已打开流式行的追加”与 publisher
+快路径用同一个判据 `establishedStreamingAppend(event) !== null`，即 running 或 prewarming 状态下，
+已打开 text/reasoning 行的 delta 和已登记工具行的 input delta。这类追加若同时带出其他增量（例如清除
+`apiRetry` 的 `state.updated`、subagent 增量），照常物化。
+
+- 等价理由：物化读取 prospective 行的种类、状态、轮次、userInput 的 `origin`、rowId 顺序与现有
+  `actions`，turnHeader 的 `fileChanges.state`，`control.activeWorks` 与快照顶层的 `pendingInteractions`，以及
+  messageId / entityId / edit target / turnHeader 四张侧表；输出行 `actions` 并更新当前可编辑目标。
+  `row.delta` 只追加文本字段，流式追加路径也不写这些侧表，所以物化结果必为空、可编辑目标不变。
+- 前提：事件到达前 actions 已与当前状态一致。现在由三点保证：其他 live 事件都会物化；cold batch
+  结束时收敛一次；事件之外的写入方（`seed*`、`setRuntimeInitialization`）都不改写上述输入。
+- 原因：此前每个 token 都整窗物化，长会话流式输出时每个事件的 CLI 成本随历史线性增长。以下数字来自
+  Node 合成回放（每轮 3 行，临时脚本未入库，只作量级参考），`ProductProjection.applyEvent` 处理一个
+  text_delta：3000 行 473µs → 16µs，8100 行 1319µs → 36µs，24000 行 4924µs → 166µs。剩余成本基本是
+  不可变 apply 复制 `rows.window`（同规模约 21 / 39 / 152µs），属于 snapshot 表示的线性成本，不在本规则
+  范围内。
+- 约束：新增只产生 `row.delta` 的 reducer 若同时改写上述任一输入，必须让它不满足这个判据；在事件之外
+  改写这些输入的写入方必须自己物化。否则 actions 会停在旧值。
+- 回归：`apps/zcode-cli/packages/bootstrap/tests/product-projection-streaming-actions.test.ts`。
+  逐事件断言哪些事件不调用物化，以锁定判据；同时与总是物化的参考投影比较 delta、snapshot 与 edit
+  target，防止输出回归。参考比较能抓到“只产 `row.delta` 却改写侧表”而让 `canEdit` 或历史轮 `canFork`
+  变化的回归；运行中的轮次里 `canRetry`、`canRewindFiles` 和本轮 `canFork` 本来就关闭，参考比较分辨
+  不出判据宽窄，这一点由调用断言锁定。
 
 ## 订阅与投递边界
 

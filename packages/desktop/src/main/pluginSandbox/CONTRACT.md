@@ -4,7 +4,7 @@ Electron Main 适配层，拥有沙箱内容、guest、端口和浏览器分区�
 
 - 登记绑定实际 Host attachment 的 ownerWebContentsId、workspace、session、server、scope 和 Agent 运行凭证；同凭证重复登记返回不可变句柄，不覆写 HTML。sandboxId/initId 仅服务单次 Electron 生命周期。
 - partition 为 `persist:plugin-sandbox-v2-<hash(appIdentity)>`。shell/plugin 两个不同 origin 都由可信 appIdentity 派生；随机 sandboxId 位于资源路径。Chromium 的顶层站点存储键必须稳定，才能使 localStorage/IndexedDB 跨进程恢复。
-- 稳定 origin 不授予资源权限。protocol 校验 origin、实例路径和登记；session 请求检查实际 guest 与目标实例；will-attach-webview 验证 owner、partition 和句柄。重载、销毁与越界导航撤销旧登记。
+- 稳定 origin 不授予资源权限。protocol 校验 origin、实例路径和登记；session 请求检查实际 guest 与目标实例；will-attach-webview 验证 owner、partition 和句柄。重载、销毁与越界导航撤销旧登记；重载指 shell 主 frame 或其直接子 frame（插件 frame）的跨文档导航，插件文档内部的子 frame（如 srcdoc 预览）导航不撤销登记，仍受插件 CSP（`frame-src` 缺省 none）与导航 origin 白名单约束。
 - guest 固定 contextIsolation/sandbox/webSecurity，禁用 Node、子框架 Node、webviewTag、plugins、dialogs/popups。MessagePort 在受信 guest 就绪后分发，shell 只转发 JSON-RPC；旧端口不能替代新实例。
 - CSP 使用 default-src none；资源域、连接域、frame 域按声明派生。frame-ancestors 只允许该稳定 shell origin；form-action none。既有 zcode/csp 扩展只放宽 unsafe-eval/wasm-unsafe-eval，不增加浏览器能力。
 - 原生 camera/microphone/geolocation/clipboardWrite 仍按资源声明和既有确认策略授权；绑定实际 guest/frame、owner、运行凭证，异步确认和系统授权返回后再验证。失效页面的确认不能授权替换页面。
@@ -29,5 +29,7 @@ Gen UI 的 CSS/inner kit 使用 Visualize 插件的同一份固定资源，构�
 离线依赖继续由 `assets/vendor/manifest.json` 记录固定 npm 版本、包完整性、脚本及许可文件哈希。更新时核对包完整性、提取声明的分发文件和许可证，再更新哈希；Desktop 与独立导出共用这些文件，导出脚本将其嵌入为 data URL。验收覆盖复制资源的哈希、各打包清单路径存在性与许可入口可解析性；交互和会话状态契约不变。
 
 Host preload enables state-preserving atomic moves only for explicitly marked sandbox webviews. The hook is installed before Electron registers its custom element; ordinary detach/disposal and unmarked webviews retain their original behavior. Main copy-image IPC validates sender owner, sandboxId/initId and bounded content/viewport geometry before and after native capture, crops using the actual image scale, and writes the native clipboard. It exposes neither arbitrary guest IDs nor image bytes to untrusted page code.
+
+Electron 44 图片复制以 PNG Blob / ClipboardItem 调用异步 clipboard.write。IPC 等待实际写入完成后才报告成功；原生写入错误仍向调用方传播。截图期间失效的实例不能继续写入，原有 owner/initId 与 guest 校验不变。
 
 `contentKind: "gen-ui"` 由桌面 Host 签发独立凭证，不要求 pluginId/serverName，也不能携带原生权限。使用内存分区 `gen-ui-<appIdentity>`；跨重开恢复依赖 Gen UI 服务，不依赖浏览器存储。HTML 外壳包含先于作者脚本执行的已转义状态快照与专用 `gen-ui.js`，不注入旧兼容桥。连接、子框架和表单提交禁用，静态资源限制为 Gen UI 固定域。其余 owner、guest、端口、手势和撤销机制复用本契约。

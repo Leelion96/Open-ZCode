@@ -426,7 +426,7 @@ cache/{marketplace}/{plugin}/{version}/
 ### Desktop E2E: startup seed + service install + discover
 
 - pending manual-review spec：
-  `packages/desktop/test/e2e/plugins/manual-review/pending/plugin-cdn-zip-marketplace-install.test.ts`。
+  `packages/desktop/test/e2e/plugins/plugin-cdn-zip-marketplace-install.test.ts`。
 - WDIO `beforeSession` 在 Electron 启动前启动 loopback zip fixture server，并把 zip marketplace seed 到
   `<E2E_HOME>/.zcode/cli/plugins/known_marketplaces.json` 与
   `<E2E_HOME>/.zcode/cli/plugins/marketplaces/{marketplace}/marketplace.json`。

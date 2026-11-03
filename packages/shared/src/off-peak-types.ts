@@ -28,14 +28,13 @@ export function isOffPeakTerminalStatus(
   return (OFF_PEAK_TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
-/**
- * 票据不可用（服务端 400/3102：active 3h 到期 / ready 5min 废票 / settled / 非本人）的
- * 稳定错误标记。zcode-cli 适配层把该业务码分类为不可重试失败并在错误消息里嵌入本标记；
- * 旧 Host 终态兼容分支据此重新取号；驻留执行通过严格生命周期通知申请新票，
- * 不依赖错误文本控制续跑。兼容标记保持稳定；与
- * apps/zcode-cli/packages/adapters/src/model/offpeak-retry.ts 的同名常量跨包同值。
- */
+/** 过期标记跨 App/CLI 保持一致；具体 ready/active 原因保留在原始业务错误码中。 */
 export const OFF_PEAK_TICKET_EXPIRED_MARKER = "off-peak-ticket-expired";
+
+/** 服务端将未激活过号和运行超时分码；两者都需要由 Host 收口，不能遗漏 active 超时。 */
+export function isOffPeakTicketExpiredCode(code: string | number | undefined): boolean {
+  return code === "3102" || code === 3102 || code === "3106" || code === 3106;
+}
 
 /** Off-Peak Provider 与当前账号 Family 同身份；任务保存精确选择，不跨 Family 静默迁移。 */
 export const OFF_PEAK_PROVIDER_IDS = {

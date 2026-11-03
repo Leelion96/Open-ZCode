@@ -1,3 +1,4 @@
+import { resolveRequestSecurityErrorMessageId } from "@/request-security-edition/errors.js";
 import { getRemoteConnectionFailureCode } from "@/lib/remoteWorkspaceServiceError.js";
 import { formatRemoteConnectionError } from "@/lib/remoteConnectionPresentation.js";
 import { CodingPlanEntryButton } from "@/settings/CodingPlanEntryButton.js";
@@ -134,6 +135,9 @@ export function resolveChatErrorBannerDisplayMessage(
         );
   }
 
+  const requestSecurityMessageId = resolveRequestSecurityErrorMessageId(error);
+  if (requestSecurityMessageId) return intl.formatMessage({ id: requestSecurityMessageId });
+
   const providerBusinessCode =
     resolveRequestVerificationBusinessCode(error.code, error.message) ??
     resolveOffPeakTicketExpiredBusinessCode(error.code, error.message) ??
@@ -190,6 +194,7 @@ export function ChatErrorBanner({
   const openFeedbackSubmit = useFeedbackStore((state) => state.openSubmit);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const actionButtonClassName = "shrink-0";
+  const requestConfigError = Boolean(resolveRequestSecurityErrorMessageId(error));
   const iconButtonClassName = "shrink-0";
   const localizedErrorMessage = resolveChatErrorBannerDisplayMessage(
     error,
@@ -270,7 +275,13 @@ export function ChatErrorBanner({
           "w-full flex flex-wrap items-center gap-2 rounded-xl bg-surface backdrop-blur-md border border-border px-3 py-2",
         )}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-2 text-ui-base text-foreground">
+        {/* 配置恢复需要可操作的完整提示；手机横幅若与按钮挤在同一行，正文会只剩省略号。 */}
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2 text-ui-base text-foreground",
+            requestConfigError && "basis-full",
+          )}
+        >
           {hookBlocked ? (
             <AnchorIcon
               aria-hidden="true"
@@ -280,7 +291,14 @@ export function ChatErrorBanner({
           ) : (
             <InfoIcon aria-hidden="true" className="size-4 shrink-0" />
           )}
-          <div className="min-w-0 truncate font-medium">{localizedErrorMessage}</div>
+          <div
+            className={cn(
+              "min-w-0 font-medium",
+              requestConfigError ? "whitespace-normal break-words" : "truncate",
+            )}
+          >
+            {localizedErrorMessage}
+          </div>
         </div>
 
         {modelConfigMissing ? (

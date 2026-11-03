@@ -7,14 +7,27 @@ the production CLI and SEA packaging path.
 
 ## Current limitations
 
-Validation on 2026-10-14 found two existing failures: `record:prompt` exits before
-the model request with `createModelAdapter requires executionConfig`, and `model-io`
-rejects the current default CLI log when `request.body.messages` has been pruned.
-The commands below describe the tool interface; these paths need repair and
-validation before use in a training-data pipeline. See the
+Fixture recording was repaired and validated on 2026-10-21: every `fixture.json`
+case with `mockResponses` records offline. Prompt-only cases (`prompt.txt`) and
+`system-reminder-sr9-runtime` have no mock responses and still need a real upstream
+(`--model`, `--upstream-base-url`). `model-io` still rejects the current default CLI
+log when `request.body.messages` has been pruned. See the
 [CLI capture guide](../../docs/usage/13-automation.md) for the verified scope and
 capture boundaries. Do not reconstruct missing provider messages from a different
 message representation merely to make conversion succeed.
+
+Recording rules:
+
+- Each case runs with a temporary home and `ZCODE_STORAGE_DIR`. User skills,
+  plugins, `~/.zcode/AGENTS.md` and the user's session database never enter a
+  recording, and the recording leaves no session in the user's database.
+- The recorder registers one Registry provider for the fixture model. Its
+  capabilities come only from the Registry model declaration; use the fixture
+  `modelProperties` field (for example `{ "supportsNativeWebSearch": true }`) to
+  change them.
+- A request that matches no mock gets HTTP 400, so the case fails at once without
+  provider retries. A streaming request receives the chat-completion mock as SSE
+  chunks.
 
 ## Commands
 

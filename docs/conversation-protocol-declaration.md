@@ -136,7 +136,7 @@ desktop continuous 规则替代为手机 `web-remote-replayable` 的 snapshot/ga
 `delivery=startNow|queue|guide`。Renderer 的提交恢复账本只覆盖“上行是否被权威层接收”的短窗口，
 不是跨 runtime 的第二份 queue：一旦 snapshot 出现同 `sourceCommandId` 的 queue/guided item，立即清除
 对应 localStorage 记录；若 App/CLI 恰在 ACK 与 projection 之间重启，query 返回 `queue|guide` 时同样
-静默清账；权威层返回 `unknown` 时也删除 renderer 恢复线索且不呈现 UI 错误。只有 `startNow` 在重启后
+静默清账；权威层返回 `unknown` 时保留 renderer 恢复线索且不呈现 UI 错误，等待明确结果、权威投影或既有 TTL。只有 `startNow` 在重启后
 仍未进入 transcript，才保留显式重发入口，禁止自动重放。
 
 ```text
@@ -144,7 +144,7 @@ renderer pre-uplink journal
   |-- queue/guided projection -------------> settle + remove localStorage
   |-- restart query: delivery=queue|guide --> settle silently
   |-- transcript sourceCommandId ----------> settle + remove localStorage
-  |-- restart query: unknown -------------> settle silently
+  |-- restart query: unknown -------------> keep pending, no recovery banner
   `-- restart query: delivery=startNow ---> show explicit resend decision
 ```
 
@@ -211,13 +211,13 @@ assert:
 | destructiveReplayPreservesReplacement | `editUserQuery` / `retryTurn` 在 branch cut 前完成外部模型目录预检；提交 branch cut 后不得因再次读取变化中的目录而拒绝 replacement。若 Core 创建模型时目录已变化，必须先发布 `TurnStarted` 并持久化 replacement user input，再发布 `TurnError(model_creation)`。replacement 走普通轮的同一条生命周期，终态只写一次：落库本身失败时仍以原始模型创建错误收口，Stop 收口为 `completed(cancelled)`；该轮不接受 guide，guide 改投普通 queue。允许工作区保持已确认的 rewind，但不得出现“旧分支已截断且 replacement 不存在”的状态；唯一例外是 `UserPromptSubmit` hook 显式拦截，按普通轮的策略拒绝结束且不落库。`/compact` 不产生 user row，创建失败直接发布 `TurnError(model_creation)` |
 | promptRequiresTextOrAttachment | `sendText`、`createSession.firstInput`、`createSelectionSideSession.firstInput` 与 `editUserQuery` 的正文和有效附件至少存在一个；普通附件输入可以使用空正文，本功能的 child 首发只允许非空正文，二者同时为空必须明确 reject |
 | sourceCommandIdEndToEnd | queue item、drain/guided event、user row、message anchor、marker 与 fork child metadata 保留原始 sourceCommandId |
-| guideDrainsAfterCompletedToolBatch | eligible guide 可以在 tool 出现前等待；只有一次 model step 的全部 sibling tool results 已提交后，才最多内联消费一条 guide，并在同一 product turn 继续 |
-| acceptedGuideStartsWorkSegment | accepted guide 不切 product turn，但必须关闭上一 visual work segment，并以 guided user entity 开启独立工时/折叠段；最终 action target 不变 |
+| guideDrainsAfterCompletedToolBatch | eligible guide 可以在 tool 出现前等待；只有一次 model step 的全部 sibling tool results 已提交后，才按 admission FIFO 一次内联消费全部已等待的 guide，并在同一 product turn 继续 |
+| acceptedGuideStartsWorkSegment | accepted guide 不切 product turn，但必须关闭上一 visual work segment，并以 guided user entity 开启独立工时/折叠段；同一边界一起消费的相邻 guide 共用第一条开启的段；最终 action target 不变 |
 | guideFallbackPreservesIntent | 当前 turn 无可用 tool batch 就终态，或 guide 不适用/被拒绝时，同一 intent 原地改投普通 queue；payload、client、IDs、admissionSeq 和 FIFO 不变 |
 | incompleteGoalBlocksQueueDrain | 普通 queue 自动消费必须同时满足 session ready，且 target 不存在或 `target.status=complete`；active/paused/budget_limited target 阻塞 text、goal、compact 全部 kind |
 | verifierFailOpenCompletesTarget | verifier 基础设施、输出格式或工具误用异常采用 `passed=true` fail-open，并通过正常 target complete 路径解锁 queue；禁止添加绕过 target 更新的 drain 分支 |
 | verifierCancelDoesNotPass | 手动 Stop/abort verifier 是 cancelled/failed + target paused，queue 保留且 `autoDrain=false`；不能当作 fail-open 或 pass。非流式 model provider 即使没有及时响应 `AbortSignal`，adapter 也必须以 abort race 立即结束本地 `generateText` 等待，禁止等上游自然返回后才收口 verifier |
-| restartDiscardRespectsDeliveryLifetime | CLI restart 后未进入终态的 admitted input 标记 discarded；`queue/guide` 属于旧 runtime 周期，按持久 delivery 静默结算且不保留 renderer 重发副本；`unknown` 同样静默清账且不显示 UI 错误；只有未进入 transcript 的 `startNow` 提示用户确认，禁止自动重放 |
+| restartDiscardRespectsDeliveryLifetime | CLI restart 后未进入终态的 admitted input 标记 discarded；`queue/guide` 属于旧 runtime 周期，按持久 delivery 静默结算且不保留 renderer 重发副本；`unknown` 保留待确认线索且不显示 UI 错误；只有未进入 transcript 的 `startNow` 提示用户确认，禁止自动重放 |
 | runningCompactQueues | running 时 `/compact` 作为 `kind=compact` 的维护意图追加到 CLI FIFO；不打断当前 active work，也不能当普通消息 |
 | stopEndsAsInterruptedCompleted | 停止生成后没有“暂停态”；当前轮结束为 `completed(interrupted)` |
 | stopKeepsQueueAndDisablesAutoDrain | 停止后 queue 原样保留，且默认不自动消费 |
@@ -355,7 +355,7 @@ completion-blocking active work，分别表达为 `activeWork.kind=compact` 和 
 | 前置                                                                                                         | 用户动作                                 | 产品结果                                                                                                                                              |
 | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `running, followupMode=queue`                                                                                | 发普通消息                               | 追加到 queue，不打断当前轮                                                                                                                            |
-| `running, followupMode=guide`，满足模型/provider 无关的 runtime eligibility                                  | 发普通消息                               | admission 为 guide；等待完整 tool result batch 后最多内联消费一条，不启动第二个 turn                                                                  |
+| `running, followupMode=guide`，满足模型/provider 无关的 runtime eligibility                                  | 发普通消息                               | admission 为 guide；等待完整 tool result batch 后与其他已等待的 guide 一起内联消费，不启动第二个 turn                                                 |
 | `running, followupMode=guide`，已有普通 queue                                                                | 发普通消息                               | guide 仍进入当前 active turn；既有 queue 作为未来 turn FIFO 保持原相对顺序，不构成 fallback guard                                                     |
 | `running, followupMode=guide`，无 tool batch 即终态，或因附件/Stop/不可 steer active work 不满足 eligibility | 发普通消息                               | 同一 intent 原地回退 queue；保留 payload、IDs 和 admission FIFO；模型/provider 不能作为 fallback guard                                                |
 | `running`                                                                                                    | 发 `/goal xxx`                           | 追加到 queue；消费时已有 goal 就更新，没有 goal 就设置                                                                                                |
@@ -417,14 +417,16 @@ upload/adopt，删除、runtime restart 和 staged cleanup 也不得误清。没
 guide 与普通 queue 只共享输入事实和 admission FIFO，不共享消费触发器：
 
 ```text
-guide: tool batch committed -> drain at most one inline -> same product turn continues
+guide: tool batch committed -> drain all waiting guides inline (FIFO) -> same product turn continues
 queue: session ready -> target absent/complete -> promote one head item as a future turn
 ```
 
 guide 在 tool call 出现前提交是合法的；runtime 等待下一次完整 tool result batch。parallel tool call
-必须等所有 sibling result（成功或失败）都落事实后才能消费一条 guide。guide 被接收时，它携带的
-ModelSelection 同时成为 Session Selection，并在下一个 model step 创建新的 Active Model；接收前已经
-发出的请求继续使用原 Model。当前 turn text-only complete、stop 或 interrupted 且未出现可用 batch 时，
+必须等所有 sibling result（成功或失败）都落事实后才能消费 guide；同一边界按 admission FIFO 一次取出
+全部已等待的 guide；每条在 user message 与 promote 提交后各自写入一条 drained fact，中途失败时已提交的已显示，
+未提交的留在队列。guide 被接收时，它携带的 ModelSelection 同时成为 Session
+Selection，并在下一个 model step 创建新的 Active Model；同一边界取出多条时，最后一条带意图的 guide 决定 Selection、
+权限模式与 Plan 意图。接收前已经发出的请求继续使用原 Model。当前 turn text-only complete、stop 或 interrupted 且未出现可用 batch 时，
 runtime 必须用明确的 delivery/fallback fact 把同一 Submission 原地改投 queue，保留 Selection、payload、
 IDs 与 admission 顺序；live projection 与 cold hydration 必须一致，不能用新 ID 重新入队。
 
@@ -453,8 +455,8 @@ attachments 和来源 command，但第一方桌面、Web、手机 UI 不再调�
 
 queue 只保证当前 CLI 进程内可靠。CLI restart 后仍未进入 transcript/终态的 admitted input 进入 discarded
 ledger，`commands/query` 返回 `fault.command.inputDiscardedOnRestart` 及持久 `delivery`。UI 的 24 小时
-pending registry 只覆盖权威投递未知窗口：queue/guided projection、restart query 的 `queue/guide` 或
-`unknown` 都会立即清账；只有未进入 transcript 的 `startNow` 保留人工确认重发，禁止自动重放。
+pending registry 只覆盖权威投递未知窗口：queue/guided projection、restart query 的 `queue/guide`
+会立即清账；`unknown` 保留待确认线索直到明确结果、权威投影或既有 TTL；只有未进入 transcript 的 `startNow` 保留人工确认重发，禁止自动重放。
 
 如果 `completed, queue>0, autoDrain=false`，用户从输入框提交普通消息或 `/goal <新目标>`，UI 必须先弹确认框，不能用 composer 内联双按钮替换正常发送按钮。弹窗关闭、Esc 或点击遮罩都只取消本次提交，草稿、附件和 prompt history 不发生移交；`/compact` 例外，直接追加队尾并保持暂停。
 

@@ -1,3 +1,4 @@
+import { SessionLifecycleController } from "../src/session-lifecycle/index.js";
 import {
   applyConversationDeltas,
   type ConversationSnapshot,
@@ -82,16 +83,142 @@ function setup(
   };
 }
 
+function setupOwned() {
+  const fixture = setup();
+  const activate = vi.fn(
+    async (_messages: import("@zcode/contracts").MessageWithParts[]) => undefined,
+  );
+  let active = false;
+  const lifecycle = new SessionLifecycleController({
+    exists: async () => true,
+    hasRuntime: () => active,
+    assertCanStop: () => {},
+    activate: async () => {
+      const messages = await fixture.gateway.prepareSessionHistory("history");
+      await activate(messages);
+      active = true;
+    },
+    release: async (_id, failed) => {
+      active = false;
+      if (!failed) await fixture.gateway.releaseSessionProjection("history");
+    },
+  });
+  fixture.resume.mockImplementation(async () => {
+    await lifecycle.ensureReady("history");
+    return { status: "resumed", persistedMessages: [] };
+  });
+  return { ...fixture, lifecycle, activate };
+}
+
 describe("history-first cold subscription", () => {
+  it("retries a failed owned activation without waiting on the old failed publisher", async () => {
+    const { gateway, lifecycle, activate, params, seed, snapshot } = setupOwned();
+    activate.mockRejectedValueOnce(new Error("startup failed"));
+    await expect(lifecycle.ensureReady("history")).rejects.toThrow("startup failed");
+    await lifecycle.ensureReady("history");
+    expect(activate).toHaveBeenCalledTimes(2);
+    seed((await gateway.subscribe(params)).initialFrame);
+    await vi.waitFor(() => expect(snapshot()?.runtimeInitialization?.status).toBe("ready"));
+    gateway.dispose();
+  });
+
+  it("rejects late subscription and command admission while the session is stopping", async () => {
+    const executeCommand = vi.fn();
+    const gateway = new ConversationV4Gateway({
+      sessionExists: () => true,
+      isSessionStopping: () => true,
+      executeCommand,
+      emitWireFrame: () => {},
+    });
+    await expect(
+      gateway.subscribe({
+        topic: "conversation/history",
+        connectionId: "desktop",
+        clientMode: "desktop-continuous",
+      }),
+    ).rejects.toThrow("fault.sessionLifecycle.stopping");
+    await expect(
+      gateway.handleCommand({
+        sessionId: "history",
+        commandId: "late-rename",
+        clientId: "desktop",
+        issuedAt: 1,
+        type: "renameSession",
+        payload: { title: "late" },
+        expectedRevision: 0,
+      }),
+    ).resolves.toMatchObject({ status: "failed" });
+    expect(executeCommand).not.toHaveBeenCalled();
+    gateway.dispose();
+  });
+
+  it("waits for old final hydration before releasing the publisher", async () => {
+    const { gateway, lifecycle, loadPersistedEvents } = setupOwned();
+    const hydrationEntered = deferred();
+    const hydrationGate = deferred();
+    loadPersistedEvents
+      .mockImplementationOnce(async () => ({ events: [], synthesized: true, sourceEventSeq: 0 }))
+      .mockImplementationOnce(async () => {
+        hydrationEntered.resolve();
+        await hydrationGate.promise;
+        return { events: [], synthesized: true, sourceEventSeq: 0 };
+      });
+    await lifecycle.ensureReady("history");
+    await hydrationEntered.promise;
+    let released = false;
+    const release = gateway.releaseSessionProjection("history").then(() => {
+      released = true;
+    });
+    await Promise.resolve();
+    expect(released).toBe(false);
+    hydrationGate.resolve();
+    await release;
+    expect(released).toBe(true);
+    gateway.dispose();
+  });
+
+  it("opens fresh history during an externally owned restart without recursively resuming", async () => {
+    const { gateway, lifecycle, activate, params, read, snapshot, seed } = setupOwned();
+    const gate = deferred();
+    activate.mockImplementationOnce(async () => {
+      await gate.promise;
+    });
+    const restarting = lifecycle.restart("history");
+    await vi.waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
+    seed((await gateway.subscribe(params)).initialFrame);
+    expect(snapshot()?.runtimeInitialization?.status).toBe("initializing");
+    expect(read).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(activate).toHaveBeenCalledTimes(1));
+    gate.resolve();
+    await restarting;
+    await vi.waitFor(() => expect(snapshot()?.runtimeInitialization?.status).toBe("ready"));
+    gateway.dispose();
+  });
+
+  it("completes an externally owned restart without any subscriber", async () => {
+    const { gateway, lifecycle, activate } = setupOwned();
+    await lifecycle.restart("history");
+    expect(activate).toHaveBeenCalledTimes(1);
+    gateway.dispose();
+  });
   it.each(["desktop-continuous", "web-remote-replayable"])(
     "%s preserves project directories alongside the persisted history snapshot",
     async (clientMode) => {
       const { gateway, gate, resume, params, snapshot, seed } = setup();
       const workspace = { workspacePath: "/project", workspaceKey: "/project" };
       const additionalDirectories = ["/shared"];
-      seed((await gateway.subscribe({ ...params, clientMode, workspace, additionalDirectories })).initialFrame);
+      seed(
+        (await gateway.subscribe({ ...params, clientMode, workspace, additionalDirectories }))
+          .initialFrame,
+      );
       await vi.waitFor(() => expect(resume).toHaveBeenCalledTimes(1));
-      expect(resume).toHaveBeenCalledWith("history", undefined, workspace, additionalDirectories, []);
+      expect(resume).toHaveBeenCalledWith(
+        "history",
+        undefined,
+        workspace,
+        additionalDirectories,
+        [],
+      );
       gate.resolve();
       await vi.waitFor(() => expect(snapshot()?.runtimeInitialization?.status).toBe("ready"));
       gateway.dispose();
@@ -156,7 +283,7 @@ describe("history-first cold subscription", () => {
     gateway.dispose();
   });
 
-  it("cleans the activated runtime when final history reconciliation fails", async () => {
+  it("retains a ready runtime when only final history reconciliation fails", async () => {
     const { gateway, params, resume, snapshot, seed, loadPersistedEvents } = setup();
     const disposeOnFailure = vi.fn(async () => undefined);
     resume.mockImplementationOnce(async () => ({
@@ -167,7 +294,7 @@ describe("history-first cold subscription", () => {
     seed((await gateway.subscribe(params)).initialFrame);
     loadPersistedEvents.mockRejectedValueOnce(new Error("storage unavailable"));
     await vi.waitFor(() => expect(snapshot()?.runtimeInitialization?.status).toBe("failed"));
-    expect(disposeOnFailure).toHaveBeenCalledTimes(1);
+    expect(disposeOnFailure).not.toHaveBeenCalled();
     gateway.dispose();
   });
 

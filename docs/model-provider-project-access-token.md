@@ -58,6 +58,20 @@ Token 不写 Provider Config、Registry、Session、UI 快照、日志或 creden
 
 账号身份不能取短期 Token 的哈希。桌面 continuous、手机 replayable 和 workspaceIdentity 隔离保持。
 
+### 换证失败错误码
+
+公共换证客户端只向调用方和 observe 事件传播固定错误码，不保留上游 message、cause、URL、响应体或 Token。I/O adapter（Host `readApiJson`、CLI HttpClientPort）负责把请求失败归类为结构化类别，客户端按类别映射：
+
+| 失败类别                                                                                       | 错误码                                                                                 | 是否属于临时故障 |
+| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------- |
+| 无 HTTP 响应的传输失败（连接、DNS、TLS 等）                                                    | `project_token_network_error`                                                          | 是               |
+| 内部请求超时                                                                                   | `project_token_timeout`                                                                | 是               |
+| HTTP 状态非 2xx（404 除外）                                                                    | `project_token_http_<status>`，例如 `project_token_http_401`、`project_token_http_503` | 仅 429/5xx       |
+| HTTP 404（签发端会先清除 Key ID 位置）；2xx 响应但正文不是 JSON，或 envelope/数据不满足 schema | `project_token_invalid_response`                                                       | 否               |
+| 其他未分类异常                                                                                 | `project_token_request_failed`                                                         | 否               |
+
+是否允许提前刷新复用旧 PAT 仍只看“临时故障”类别，与错误码细分无关；新增错误码只服务日志与 runtime headers 失败文本的诊断，不新增重试、回退或 UI 分支。
+
 ## 长任务与业务登录凭据刷新
 
 闲时模型每个物理 HTTP attempt 必须通过现有 Provider Runtime Headers 私有通道向 Host 换取当前 PAT。派发时仅冻结票据和账号作用域约束，不把派发时 PAT 当作整轮有效凭据。`requestAuth.accountScope` 是 Host 生成的不可逆作用域校验值（登录生命周期、family、个人/团队、组织/项目/产品），不作为账号身份、不包含短期 PAT、不持久化或写日志。后续请求带 `expectedAccountScope`；账号/套餐变化或换证期间作用域变化立即失败，不把原票据套到新账号。Mock 无真实 PAT，原静态注入保持。

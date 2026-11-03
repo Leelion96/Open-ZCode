@@ -1,4 +1,9 @@
-import type { CompactBoundaryPayload, MessagePart, MessageWithParts } from "@zcode/contracts";
+import type {
+  CompactBoundaryPayload,
+  MessagePart,
+  MessageId,
+  MessageWithParts,
+} from "@zcode/contracts";
 import { invalidateRuntimeTokenUsage } from "./message-history.js";
 
 export function compactActiveSessionMessages(
@@ -6,7 +11,12 @@ export function compactActiveSessionMessages(
   boundaryIndex: number,
   includePreservedSegment: boolean,
 ): MessageWithParts[] {
-  const activeMessages = messages.slice(boundaryIndex);
+  // summary 之前的请求前公告与 summary 同一事务写在其之前，由 compaction part 声明后放回。
+  const leadingIds = new Set(compactLeadingMessageIds(messages[boundaryIndex]!));
+  const activeMessages = [
+    ...messages.slice(0, boundaryIndex).filter((message) => leadingIds.has(message.info.id)),
+    ...messages.slice(boundaryIndex),
+  ];
   if (!includePreservedSegment) return activeMessages;
 
   const boundary = compactBoundaryFromMessage(messages[boundaryIndex]!);
@@ -18,12 +28,25 @@ export function compactActiveSessionMessages(
   const anchorIndex = activeMessages.findIndex(
     (message) => message.info.id === boundary.preservedSegment?.anchorMessageId,
   );
-  const insertIndex = anchorIndex >= 0 ? anchorIndex + 1 : 1;
+  const insertIndex =
+    anchorIndex >= 0 ? anchorIndex + 1 : activeMessages.indexOf(messages[boundaryIndex]!) + 1;
   return [
     ...activeMessages.slice(0, insertIndex),
     ...preservedMessages,
     ...activeMessages.slice(insertIndex),
   ];
+}
+
+/** 读取 compaction part 声明的请求前公告；磁盘数据形状不对时视为未声明。 */
+function compactLeadingMessageIds(message: MessageWithParts): MessageId[] {
+  for (const part of message.parts) {
+    if (part.type !== "compaction" || !part.compactBoundary) continue;
+    const ids: unknown = part.metadata?.compactLeadingMessageIds;
+    return Array.isArray(ids) && ids.every((id) => typeof id === "string")
+      ? (ids as MessageId[])
+      : [];
+  }
+  return [];
 }
 
 export function compactPreservedSegmentMessages(
@@ -40,9 +63,15 @@ export function compactPreservedSegmentMessages(
     return [];
   }
 
+  // 保留段可以落在上一次 compact 的保留段里，此时 head 在存储中位于上一次的
+  // summary 之前，区间会跨过上一次的请求前公告。这些公告在压缩后的第一组，总被下一次
+  // compact 总结，live 保留段里不会有，所以按各 summary 的声明跳过。
+  const leadingIds = new Set(messages.flatMap(compactLeadingMessageIds));
   return messages
     .slice(headIndex, tailIndex + 1)
-    .filter(isCompactPreservableSessionMessage)
+    .filter(
+      (message) => isCompactPreservableSessionMessage(message) && !leadingIds.has(message.info.id),
+    )
     .map(cloneCompactPreservedSessionMessage);
 }
 

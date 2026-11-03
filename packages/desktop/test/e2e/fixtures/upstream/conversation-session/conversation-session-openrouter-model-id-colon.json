@@ -20,8 +20,10 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
-        "body": "data: {\"id\":\"openrouter-model-id-colon-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"nvidia/nemotron-3-ultra-550b-a55b:free\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"OpenRouter colon\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"openrouter-model-id-colon-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"nvidia/nemotron-3-ultra-550b-a55b:free\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"openrouter-model-id-colon-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"nvidia/nemotron-3-ultra-550b-a55b:free\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"OpenRouter colon\\\"}\"},\"finish_reason\":\"stop\"}]}"
       }
     },
     {
@@ -38,16 +40,15 @@
         "method": "POST",
         "pathIncludes": "/chat/completions",
         "lastUserMessageIncludes": ["E2E_OPENROUTER_MODEL_ID_COLON"],
-        "bodyIncludes": [
-          "E2E_OPENROUTER_MODEL_ID_COLON",
-          "nvidia/nemotron-3-ultra-550b-a55b:free"
-        ],
+        "bodyIncludes": ["E2E_OPENROUTER_MODEL_ID_COLON", "nvidia/nemotron-3-ultra-550b-a55b:free"],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"openrouter-model-id-colon-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"nvidia/nemotron-3-ultra-550b-a55b:free\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream-e2e-ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"openrouter-model-id-colon-main\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"nvidia/nemotron-3-ultra-550b-a55b:free\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
       }
     }

@@ -331,6 +331,11 @@ export async function setInputValueByTestIdDom(
           !(element instanceof HTMLTextAreaElement) &&
           (element.isContentEditable || element.hasAttribute("data-e2e-lexical-bridge"))
         ) {
+          // 原因：冷恢复时 bridge 已挂载但编辑器仍禁用，越权 setText 会与草稿恢复竞争。
+          // 只在真实 DOM 开放输入后写入，不能靠延时或再次写入补偿被覆盖的文字。
+          if (!element.isContentEditable) {
+            return { ok: false, reason: "not-editable", tagName: element.tagName };
+          }
           const bridge = (
             element as HTMLElement & {
               __zcodeLexicalInputE2E?: {
@@ -410,7 +415,8 @@ export async function setInputValueByTestIdDom(
         // missing 不是“选择器指向非输入框”的终态，必须和 bridge 初始化一起重试。
         return (
           current.ok ||
-          (current.reason !== "lexical-bridge-not-ready" &&
+          (current.reason !== "not-editable" &&
+            current.reason !== "lexical-bridge-not-ready" &&
             current.reason !== "lexical-pending" &&
             !(current.reason === "not-input" && current.tagName === null))
         );

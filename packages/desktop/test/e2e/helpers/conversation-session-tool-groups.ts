@@ -1,9 +1,6 @@
 import { TID_TOOL_SUMMARY_TRIGGER } from "@zcode/shared/test-ids";
 
-export type ConversationToolGroupName =
-  | "Explore"
-  | "ExecuteGroup"
-  | "ChangesGroup";
+export type ConversationToolGroupName = "Explore" | "ExecuteGroup" | "ChangesGroup";
 
 export interface ConversationToolGroupSnapshot {
   childCount: number;
@@ -15,19 +12,13 @@ export interface ConversationToolGroupSnapshot {
   toolName: ConversationToolGroupName;
 }
 
-export function listConversationToolGroups(): Promise<
-  ConversationToolGroupSnapshot[]
-> {
+export function listConversationToolGroups(): Promise<ConversationToolGroupSnapshot[]> {
   return browser.execute((summaryPrefix) => {
     const groupNames = new Set(["Explore", "ExecuteGroup", "ChangesGroup"]);
-    return Array.from(
-      document.querySelectorAll<HTMLElement>("[data-tool-call-id][data-tool-name]"),
-    )
+    return Array.from(document.querySelectorAll<HTMLElement>("[data-tool-call-id][data-tool-name]"))
       .filter((block) => groupNames.has(block.dataset.toolName ?? ""))
       .map((block) => {
-        const trigger = block.querySelector<HTMLElement>(
-          `[data-testid^="${summaryPrefix}-"]`,
-        );
+        const trigger = block.querySelector<HTMLElement>(`[data-testid^="${summaryPrefix}-"]`);
         const childCount = Array.from(
           block.querySelectorAll<HTMLElement>("[data-tool-call-id]"),
         ).filter((child) => child !== block).length;
@@ -51,18 +42,24 @@ export async function waitForConversationToolGroup(
   timeout = 30000,
 ): Promise<ConversationToolGroupSnapshot> {
   let latest: ConversationToolGroupSnapshot | null = null;
-  await browser.waitUntil(
-    async () => {
-      latest = (await listConversationToolGroups())
-        .filter((group) => group.toolName === toolName)
-        .at(-1) ?? null;
-      return latest !== null && predicate(latest);
-    },
-    {
-      timeout,
-      timeoutMsg: `${failureMessage}; latest=${JSON.stringify(latest)}`,
-    },
-  );
+  try {
+    await browser.waitUntil(
+      async () => {
+        latest =
+          (await listConversationToolGroups())
+            .filter((group) => group.toolName === toolName)
+            .at(-1) ?? null;
+        return latest !== null && predicate(latest);
+      },
+      {
+        timeout,
+        timeoutMsg: failureMessage,
+      },
+    );
+  } catch (cause) {
+    // waitUntil 的 options 在轮询前构造；失败后再读取 latest 才能保留真实现场。
+    throw new Error(`${failureMessage}; latest=${JSON.stringify(latest)}`, { cause });
+  }
   if (!latest) throw new Error(`${failureMessage}; group missing`);
   return latest;
 }
@@ -74,14 +71,10 @@ export async function toggleLatestConversationToolGroup(
   const clicked = await browser.execute(
     (summaryPrefix, expectedToolName, shouldExpand) => {
       const blocks = Array.from(
-        document.querySelectorAll<HTMLElement>(
-          `[data-tool-name="${expectedToolName}"]`,
-        ),
+        document.querySelectorAll<HTMLElement>(`[data-tool-name="${expectedToolName}"]`),
       );
       const block = blocks.at(-1);
-      const trigger = block?.querySelector<HTMLElement>(
-        `[data-testid^="${summaryPrefix}-"]`,
-      );
+      const trigger = block?.querySelector<HTMLElement>(`[data-testid^="${summaryPrefix}-"]`);
       if (!trigger) return false;
       const expanded = trigger.getAttribute("aria-expanded") === "true";
       if (expanded !== shouldExpand) trigger.click();

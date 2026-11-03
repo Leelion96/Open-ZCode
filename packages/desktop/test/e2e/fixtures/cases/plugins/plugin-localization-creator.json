@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "plugin-localization-creator",
+  "spec": "./test/e2e/plugins/plugin-localization-creator.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-localization-creator.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

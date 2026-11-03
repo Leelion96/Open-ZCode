@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-holes",
+  "spec": "./test/e2e/conversation-session/conversation-session-dynamic-workflow-holes.test.ts",
+  "fixtures": [
+    {
+      "id": "dwh-title",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [],
+        "bodyIncludes": ["Generate a concise title", "E2E_DWH_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_upstream_e2e_text\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"工作流留白 E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwh-skill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwh_skill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWH_START"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwh_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwh-create",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwh_create"
+        ],
+        "bodyIncludes": ["E2E_DWH_START", "toolu_dwh_skill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwh_create",
+          "name": "CreateWorkflow",
+          "input": {
+            "name": "E2E 留白工作流",
+            "script": "interface Plan { groups: string[][] }\ninterface Verdict { passed: boolean }\nphase(\"准备\");\nconst plan = await hole<Plan>(\"决定分组\", \"补全须返回 Plan\");\nphase(\"汇总\");\nreturn await hole<Verdict>(\"评判\", \"请判断分组是否完整\");"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwh-created",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "<workflow-hole>",
+          "toolu_dwh_fill"
+        ],
+        "bodyIncludes": ["E2E_DWH_START", "toolu_dwh_create"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWH_STARTED 工作流已启动。"
+      }
+    },
+    {
+      "id": "dwh-hole-waiting",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["<workflow-hole>"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWH_WAITING 等待补全。"
+      }
+    },
+    {
+      "id": "dwh-fill",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "toolu_dwh_fill"
+        ],
+        "lastUserMessageIncludes": ["E2E_DWH_FILL_NOW"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_dwh_fill",
+          "name": "FillWorkflowHole",
+          "input": {
+            "run_id": "{{latestWorkflowRunId}}",
+            "hole_id": "hole#21b40fca",
+            "script": "phase(\"收集\");\nphase(\"分组\");\nreturn { groups: [[\"one\"]] };"
+          }
+        }
+      }
+    },
+    {
+      "id": "dwh-filled",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": ["toolu_dwh_fill"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": "E2E_DWH_FILLED 留白已补全。"
+      }
+    }
+  ]
+}

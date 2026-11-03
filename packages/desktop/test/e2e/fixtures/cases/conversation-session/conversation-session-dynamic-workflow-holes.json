@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-dynamic-workflow-holes",
+  "spec": "./test/e2e/conversation-session/conversation-session-dynamic-workflow-holes.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-dynamic-workflow-holes.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dwh-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+    },
+    {
+      "id": "dwh-skill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+    },
+    {
+      "id": "dwh-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+    },
+    {
+      "id": "dwh-created",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+    },
+    {
+      "id": "dwh-hole-waiting",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+    },
+    {
+      "id": "dwh-fill",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+    },
+    {
+      "id": "dwh-filled",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Skill/CreateWorkflow/FillWorkflowHole 模型选择；真实工作流编译、运行、留白通知、批准与补全由 Agent 执行，run ID 从真实通知读取。"
+    }
+  ]
+}

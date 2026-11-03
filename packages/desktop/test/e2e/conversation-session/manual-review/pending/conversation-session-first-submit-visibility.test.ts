@@ -5,6 +5,7 @@ import { TID_V4_SESSION_PANE, testId } from "@zcode/shared/test-ids";
 import {
   prepareV4ConversationE2E,
   sendV4Prompt,
+  startNewV4Draft,
   V4_MAIN_PANE_ID,
   waitForV4UserMessageContaining,
   waitForV4AssistantMessageContaining,
@@ -15,7 +16,11 @@ describe("草稿首发列表与详情同步", () => {
   for (const scope of ["global", "project"] as const) {
     it(`FSV05：${scope} 首次详情帧已有同一个选中的侧栏任务`, async function () {
       this.timeout(150_000);
-      if (scope === "global") await prepareV4ConversationE2E();
+      if (scope === "global") {
+        await prepareV4ConversationE2E();
+        // 通用准备固定在 fixture 项目；FSV05 的全局分支必须实际点击全局新建。
+        await startNewV4Draft();
+      }
       // 展开所属项目；折叠偏好不是本用例要改变的创建语义。
       const project = $('[data-project-name="ZCodeProject"]');
       let expectedProjectId: string | null = null;

@@ -180,7 +180,7 @@ Docker 准入不执行：该 auth/config case 不依赖 provider replay，也不
 
 | 字段             | 内容                                                                                    |
 | ---------------- | --------------------------------------------------------------------------------------- |
-| Spec             | `packages/desktop/test/e2e/manual-review/pending/jwt-expiry-reauthentication.test.ts`   |
+| Spec             | `packages/desktop/test/e2e/jwt-expiry-reauthentication.test.ts`   |
 | Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/auth-config/jwt-expiry-reauthentication.json` |
 | Provider fixture | 无，`providerRequestPolicy: "none"`                                                     |
 | 当前状态         | 候选 case，等待人工确认过期提示与重新登录入口后转正                                     |
@@ -236,7 +236,7 @@ Welcome 展示 Z.ai + BigModel 登录入口
 
 2026-08-06 已执行：
 
-- `ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/manual-review/pending/jwt-expiry-reauthentication.test.ts`
+- `ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/jwt-expiry-reauthentication.test.ts`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260806040559238-p94707-95e800e8762670fe/summary.md`。
   - 运行时发现并修复：provider 启动门禁的 `open=false` 曾无条件清空 `session-expired`，导致用户确认后重新登录页被工作区覆盖；现在门禁只关闭自己拥有的 `startup-provider-required`。
@@ -258,7 +258,7 @@ Welcome 展示 Z.ai + BigModel 登录入口
 
 | 字段             | 内容                                                                            |
 | ---------------- | ------------------------------------------------------------------------------- |
-| Spec             | `packages/desktop/test/e2e/manual-review/pending/jwt-401-auto-logout.test.ts`   |
+| Spec             | `packages/desktop/test/e2e/jwt-401-auto-logout.test.ts`   |
 | Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/auth-config/jwt-401-auto-logout.json` |
 | Provider fixture | 无，`providerRequestPolicy: "none"`                                             |
 | 当前状态         | 候选 case，等待人工确认 401 触发提示、凭据清理和重启动作后转正                  |
@@ -418,7 +418,7 @@ CR-01 本地隔离 Electron 回归（2026-10-12），以下三组各 1 case pass
 
 采用本地 HTTP fixture 和合成凭据；用例继续保留 pending。未验证真实后端、手机或 Windows/Linux 设备，不声称正式 CI 准入。
 
-- 候选 spec：`packages/desktop/test/e2e/manual-review/pending/access-token-401-auto-logout.test.ts`。
+- 候选 spec：`packages/desktop/test/e2e/access-token-401-auto-logout.test.ts`。
 - manifest：`packages/desktop/test/e2e/fixtures/cases/auth-config/access-token-401-auto-logout.json`。
 - 输入：隔离 HOME 的 BigModel 旧版用户资料缓存、不同值的业务 access token 与未被判定过期的 ZCode JWT，以及一个独立 Bot 凭据。
 - 动作：启动资料迁移真实发出 userinfo 请求；本地 HTTP fixture 暂停响应，待 UI 可用后返回 HTTP 401，或通过 `ZCODE_E2E_AUTH_EXPIRY_HTTP_STATUS=200` 返回 HTTP 200 + `{"code":401,"msg":"登录状态已过期","success":false}`。用例确认 fixture 实际启用的状态码；其它控制面请求返回正常 200，避免 JWT 401 掩盖新增判断。
@@ -461,7 +461,7 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 - 沿用现有 pending case 与合成凭据，不使用真实平台或用户文件。
 - 最终验证：`pnpm exec vitest run packages/services/test/oauthUnauthorizedLogout.test.ts packages/services/test/oauthUnauthorizedRequest.test.ts packages/services/test/nodeApiClient.test.ts packages/services/test/nodeApiClientEndpoint.test.ts packages/services/test/oauthService.test.ts`：148/148 通过，含 9 项新竞态/通知回归。
 - `pnpm typecheck`、`pnpm --filter @zcode/desktop typecheck:e2e`、`pnpm lint`、`pnpm architecture:check --changed` 通过；lint 为 46 条既有警告、0 错误。
-- `ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/manual-review/pending/access-token-401-auto-logout.test.ts`：最终代码重新构建 App/Agent 后 1/1 通过，未设置 skip build。制品：`packages/desktop/.e2e-artifacts/desktop-e2e-20260909071607852-p66392-b7f49a248cd9bd36/summary.json`。
+- `ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/access-token-401-auto-logout.test.ts`：最终代码重新构建 App/Agent 后 1/1 通过，未设置 skip build。制品：`packages/desktop/.e2e-artifacts/desktop-e2e-20260909071607852-p66392-b7f49a248cd9bd36/summary.json`。
 - macOS arm64；保留现有 IPC 拦截以验证 RelaunchApp 命令，不执行真实进程重启。手机 shared-host、Windows/Linux 和真实平台响应未补跑。
 
 - 跟进审查基线检查后，已 rebase 到 `a1fcf91ec11ab34d263b6347bc704b5dd09ac016`；WDIO 冲突保留新增的安全校验 fixture 与认证 fixture 两个按 case 启用的入口。rebase 后再次通过上述 148 项单测、typecheck、E2E typecheck、lint 和 architecture 检查，App/Agent 重新构建后 AUTH-06 为 1/1 通过。最新制品：`packages/desktop/.e2e-artifacts/desktop-e2e-20260909072706868-p75427-b55cce637bf05b15/summary.json`。
@@ -489,7 +489,7 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 
 ## AUTH-07: OAuth 回调与轮询完成竞态（pending）
 
-- Spec：`packages/desktop/test/e2e/manual-review/pending/oauth-completion-race.test.ts`。
+- Spec：`packages/desktop/test/e2e/oauth-completion-race.test.ts`。
 - Fixture：`helpers/oauth-completion-race-fixture.ts` 启动本地 HTTP，init 后真实 Host 轮询；
   preload 回调启动 token 兑换并挂起，poll ready 返回后才释放 token HTTP 500。
 - 先挂起一次兑换并通过 UI 取消，释放兑换成功响应；等待 Host 回调完成后确认未登录、无错误，再重新发起登录。
@@ -530,9 +530,9 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 
 ## AUTH-08: 桌面远控登录门禁（pending）
 
-- 设备身份保存失败回归（CR-02）：`manual-review/pending/web-remote-control-session-events.test.ts` 在已有首次注册完成后，通过真实弹窗停止远控，在 loopback relay 删除旧 SID，再将隔离 HOME 的 setting.json 与父目录设为只读，保留文件读取与 endpoint，仅阻止原子写入。重新打开弹窗触发 `AUTH_FAILED` 恢复注册，断言启动立即进入 `error`、没有二维码，新设备已被补偿删除，超过首个退避窗口后设备数不再增长；恢复原权限后，用户再次打开弹窗可正常启动。复用 loopback V2 relay，不产生模型请求；不冒充真实磁盘满、线上 relay 或 Windows/Linux 验证。用例保留 pending，待人工审阅。
+- 设备身份保存失败回归（CR-02）：`web-remote-control-session-events.test.ts` 在已有首次注册完成后，通过真实弹窗停止远控，在 loopback relay 删除旧 SID，再将隔离 HOME 的 setting.json 与父目录设为只读，保留文件读取与 endpoint，仅阻止原子写入。重新打开弹窗触发 `AUTH_FAILED` 恢复注册，断言启动立即进入 `error`、没有二维码，新设备已被补偿删除，超过首个退避窗口后设备数不再增长；恢复原权限后，用户再次打开弹窗可正常启动。复用 loopback V2 relay，不产生模型请求；不冒充真实磁盘满、线上 relay 或 Windows/Linux 验证。用例保留 pending，待人工审阅。
 
-- 凭据完成事件回归：`manual-review/pending/web-remote-control-session-events.test.ts` 使用单窗口、真实 Host OAuth 与 loopback V2 relay。已配对后持有隔离 HOME 的 setting.json 写锁，保留有效设置读取与独立凭据写入，再从真实用户菜单登出；断言凭据清空、Main 为 `auth-required`、旧 terminal WS 关闭且未靠重启关闭。额外断言凭据清除之后出现 `setting.update FAIL`，清理阶段释放写锁。该候选不覆盖多窗口，也不代表真实 OAuth 或线上 relay 验收。
+- 凭据完成事件回归：`web-remote-control-session-events.test.ts` 使用单窗口、真实 Host OAuth 与 loopback V2 relay。已配对后持有隔离 HOME 的 setting.json 写锁，保留有效设置读取与独立凭据写入，再从真实用户菜单登出；断言凭据清空、Main 为 `auth-required`、旧 terminal WS 关闭且未靠重启关闭。额外断言凭据清除之后出现 `setting.update FAIL`，清理阶段释放写锁。该候选不覆盖多窗口，也不代表真实 OAuth 或线上 relay 验收。
 
 - Spec：`packages/desktop/test/e2e/manual-review/pending/web-remote-control-auth-gate.test.ts`。
 - 前置：隔离 HOME 的 OAuth/JWT 凭据为空；保留上次启用目标；case-local HTTP/WS 计数服务在 Electron 启动前接入 main 的 endpoint 和 relay URL。
@@ -580,7 +580,7 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 
 ## PAT-LOCATION-RECOVERY：项目定位密文异常局部恢复（pending）
 
-- Spec：`packages/desktop/test/e2e/manual-review/pending/project-location-decrypt-recovery.test.ts`。
+- Spec：`packages/desktop/test/e2e/project-location-decrypt-recovery.test.ts`。
 - 有效 BigModel OAuth 与同账号坏位置共存；真实 Host 原子删除坏位置，自动重新查询并换证。
 - 断言 OAuth 原始密文、Bot 凭据保持；头像恢复；无登录失效提示、无 OAuth polling、无重启。
 - 同一用例经本地 HTTP 控制再次制造缓存故障及元数据 503，断言恢复失败仍保留当前登录；
@@ -601,7 +601,7 @@ Todo103 本轮运行证据记录在 staging-integration ledger。
 
 ## PAT-KEY-UPGRADE：有效登录态与坏旧 Key 共存
 
-候选用例：`packages/desktop/test/e2e/manual-review/pending/account-key-usage-scene.test.ts`。
+候选用例：`packages/desktop/test/e2e/account-key-usage-scene.test.ts`。
 复用该文件 Z.AI 恢复用例：在隔离 HOME 的 credentials.json 中保存有效合成 OAuth 与账号资料，同时将同账号 account-provider:\*:api-key 写为损坏密文；重启 Electron，要求直接恢复工作区，Host 创建 usageScene=1 的专用 Key 并签发 Token，不调用 Copy，原坏旧记录保持不变。BigModel 用例覆盖无旧 Key 的创建/换证路径。
 此用例不触发模型推理；HTTP 为既有本地 Coding Plan mock，不代表真实后端联调。手机/远程链路由 Provisioning 与鉴权服务测试覆盖，本轮不宣称设备级远程 E2E。保持 pending，不自动转正。
 

@@ -12,15 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { EditorInfo } from "@zcode/shared";
-import {
-  ChevronRightIcon,
-  Ellipsis,
-  EyeIcon,
-  ExternalLinkIcon,
-  FileCode2Icon,
-  CopyIcon,
-} from "lucide-react";
+import { ChevronRightIcon, Ellipsis, EyeIcon, FileCode2Icon } from "lucide-react";
 import { nanoid } from "nanoid";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
@@ -46,9 +38,7 @@ import { normalizeCodeViewerSource } from "@/lib/codeViewerSource.js";
 import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
 import { getPathLeaf, isAbsoluteFilePath } from "@/lib/path.js";
 import { decodeBase64ToArrayBuffer, getOfficeFilePreviewKind } from "@/lib/officeFilePreview.js";
-import { usePlatform } from "@/hooks/usePlatform.js";
-import { useFileContextActions } from "@/hooks/useFileContextActions.js";
-import { useWorkspaceOpenInEditorTarget } from "@/hooks/useWorkspaceOpenInEditorTarget.js";
+import { OpenSplitButton } from "@/OpenSplitButton.js";
 import { logger } from "@/logger.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useCodeCommentPreviewStore } from "@/store/codeCommentPreviewStore.js";
@@ -57,14 +47,12 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js";
-import { readLastSelectedEditorId } from "@/lib/editorPreference.js";
 import { PreviewPaneContent } from "@/previewPaneContent.js";
 import {
   dispatchCodeCommentAddToChat,
@@ -78,7 +66,6 @@ import {
   isWorkspaceFilePathInside,
 } from "@/workspace-file-tree/model.js";
 import type { WorkspaceFileDragPayload } from "@/lib/workspaceFileDrag.js";
-import { resolveWorkspaceEditorSelection } from "@/lib/workspaceEditorSelection.js";
 import {
   assertPptxPreviewDataComplete,
   isPptxPreviewIncompleteFileError,
@@ -530,7 +517,6 @@ export function PreviewPane({
   headerContainer?: HTMLElement | null;
   markdownSelectionTarget?: MarkdownSelectionTarget;
 }) {
-  const platform = usePlatform();
   const { intl } = useZCodeIntl();
   const theme = useZCodeStore((state) => state.theme);
   const codePreviewSettings = useZCodeStore((state) => state.codePreviewSettings);
@@ -548,18 +534,6 @@ export function PreviewPane({
       ),
     [source, workspacePath, markdownSelectionTarget?.workspaceKey],
   );
-  const matchedOpenContext = useWorkspaceOpenInEditorTarget({
-    workspacePath: sourceWorkspacePath,
-    workspaceIdentity: source?.workspaceIdentity,
-    workspaceRemoteSessionId: source?.workspaceRemoteSessionId,
-  });
-  const openInEditorRemoteTarget = matchedOpenContext.remoteTarget;
-  const isRemoteSource = Boolean(
-    source?.workspaceIdentity ||
-    source?.workspaceRemoteSessionId ||
-    matchedOpenContext.isRemoteWorkspace,
-  );
-  const fileActions = useFileContextActions();
   const { fileService, fileWatcherService, mediaPreviewService } = useWorkspaceServices(
     sourceWorkspacePath,
     source?.workspaceRemoteSessionId,
@@ -599,18 +573,6 @@ export function PreviewPane({
   const [validatedPptxReferenceNavigationRequestId, setValidatedPptxReferenceNavigationRequestId] =
     useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const editorFilePath = source?.type !== "code-review" ? source?.path : undefined;
-  const [installedEditorQuery, setInstalledEditorQuery] = useState<{
-    path: string | undefined;
-    editors: EditorInfo[];
-  } | null>(null);
-  // 文件类型变化后不能沿用上一份应用列表；查询结果与路径绑定，旧请求由 effect 清理失效。
-  const installedEditors = useMemo(
-    () =>
-      installedEditorQuery?.path === editorFilePath ? (installedEditorQuery?.editors ?? []) : [],
-    [installedEditorQuery, editorFilePath],
-  );
-  const [preferredEditorId] = useState<string | null>(() => readLastSelectedEditorId());
   const [markdownViewMode, setMarkdownViewMode] = useState<"preview" | "code">("preview");
   const [svgViewMode, setSvgViewMode] = useState<"preview" | "code">("preview");
   const [wrapLongLinesOverride, setWrapLongLinesOverride] = useState<boolean | null>(null);
@@ -679,17 +641,6 @@ export function PreviewPane({
     () => (source ? buildCodeViewerBreadcrumb(source, sourceWorkspacePath) : null),
     [source, sourceWorkspacePath],
   );
-  const editorSelection = useMemo(
-    () =>
-      resolveWorkspaceEditorSelection({
-        installedEditors: isRemoteSource && !openInEditorRemoteTarget ? [] : installedEditors,
-        selectedEditorId: preferredEditorId,
-        remoteTarget: openInEditorRemoteTarget,
-      }),
-    [installedEditors, isRemoteSource, openInEditorRemoteTarget, preferredEditorId],
-  );
-  const selectedEditor = editorSelection.selectedEditor;
-  const canOpenInEditor = Boolean(source?.path && selectedEditor);
   const canOpenDiffFilePreview = Boolean(diffFilePreviewSource && onOpenCodeViewer);
   const wrapLongLines = wrapLongLinesOverride ?? codePreviewSettings.wrapLongLines;
   const canCreateCodeComment = Boolean(
@@ -726,29 +677,6 @@ export function PreviewPane({
   // 两个 labels 接口都是必填全字段，各写一份漏的不会是类型错误，而是一句没翻译的文案。
   const pdfViewerLabels = usePdfViewerLabels();
   const pptxViewerLabels = usePptxViewerLabels();
-
-  useEffect(() => {
-    let disposed = false;
-
-    platform
-      .getInstalledEditors(editorFilePath)
-      .then((editors) => {
-        if (disposed) {
-          return;
-        }
-
-        setInstalledEditorQuery({ path: editorFilePath, editors });
-      })
-      .catch((platformError) => {
-        logger.warn("[PreviewPane] 获取已安装编辑器列表失败", {
-          error: platformError instanceof Error ? platformError.message : String(platformError),
-        });
-      });
-
-    return () => {
-      disposed = true;
-    };
-  }, [platform, editorFilePath]);
 
   useEffect(() => {
     if (!source) {
@@ -1539,36 +1467,6 @@ export function PreviewPane({
     return null;
   }
 
-  const handleOpenInEditor = async () => {
-    if (!source.path || !selectedEditor) {
-      return;
-    }
-
-    try {
-      // 远程能力过滤产生的 fallback 只用于本次打开；不能把它写回面板偏好，
-      // 否则同一 PreviewPane 切回本地文件时仍会错误沿用远程 VS Code。
-      const result = await platform.openInEditor(selectedEditor.id, source.path, {
-        pathKind: "file",
-        remoteTarget: openInEditorRemoteTarget,
-        workspaceIdentity: source.workspaceIdentity,
-      });
-      if (result.success) {
-        return;
-      }
-
-      logger.warn("[PreviewPane] 用编辑器打开文件失败", {
-        editorId: selectedEditor.id,
-        path: source.path,
-        error: result.error ?? "unknown-error",
-      });
-    } catch (platformError) {
-      logger.warn("[PreviewPane] 打开文件失败", {
-        path: source.path,
-        error: platformError instanceof Error ? platformError.message : String(platformError),
-      });
-    }
-  };
-
   const handleOpenDiffFilePreview = () => {
     if (!diffFilePreviewSource) {
       return;
@@ -1583,6 +1481,72 @@ export function PreviewPane({
           height: `${preservedScrollMetricsRef.current.scrollHeight}px`,
         }
       : undefined;
+
+  const viewMenuItems = hasMoreMenu ? (
+    <>
+      {canToggleMarkdownView ? (
+        <>
+          <DropdownMenuLabel>
+            {intl.formatMessage({ id: "codeViewer.markdownMode" })}
+          </DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={markdownViewMode}
+            onValueChange={(value) => {
+              setMarkdownViewMode(value as "preview" | "code");
+            }}
+          >
+            <DropdownMenuRadioItem value="preview">
+              <EyeIcon className="size-4" />
+              {intl.formatMessage({
+                id: "codeViewer.markdownPreview",
+              })}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="code">
+              <FileCode2Icon className="size-4" />
+              {intl.formatMessage({
+                id: "codeViewer.markdownSource",
+              })}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </>
+      ) : null}
+      {canToggleSvgView ? (
+        <>
+          {canToggleMarkdownView ? <DropdownMenuSeparator /> : null}
+          <DropdownMenuLabel>{intl.formatMessage({ id: "codeViewer.svgMode" })}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={svgViewMode}
+            onValueChange={(value) => {
+              setSvgViewMode(value as "preview" | "code");
+            }}
+          >
+            <DropdownMenuRadioItem value="preview">
+              <EyeIcon className="size-4" />
+              {intl.formatMessage({ id: "codeViewer.svgPreview" })}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="code">
+              <FileCode2Icon className="size-4" />
+              {intl.formatMessage({ id: "codeViewer.svgSource" })}
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </>
+      ) : null}
+      {canToggleCodeWrap ? (
+        <>
+          {canToggleMarkdownView || canToggleSvgView ? <DropdownMenuSeparator /> : null}
+          <DropdownMenuCheckboxItem
+            checked={wrapLongLines}
+            onCheckedChange={(checked) => {
+              setWrapLongLinesOverride(Boolean(checked));
+            }}
+          >
+            <FileCode2Icon className="size-4" />
+            {intl.formatMessage({ id: "codeViewer.wrapLines" })}
+          </DropdownMenuCheckboxItem>
+        </>
+      ) : null}
+    </>
+  ) : null;
 
   const header = (
     <div
@@ -1649,8 +1613,8 @@ export function PreviewPane({
             </span>
           </Button>
         ) : null}
-        {/* Bugfix: 图片和 patch 这类预览没有任何显示选项，继续渲染触发器会打开空菜单，所以只在存在菜单项时显示更多按钮。 */}
-        {hasMoreMenu || source.path ? (
+        {/* 无路径内容没有文件动作；保留唯一的视图入口。有路径文件统一收进 Open 下拉。 */}
+        {!source.path && viewMenuItems ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -1664,126 +1628,26 @@ export function PreviewPane({
                 <Ellipsis className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              {canToggleMarkdownView ? (
-                <>
-                  <DropdownMenuLabel>
-                    {intl.formatMessage({ id: "codeViewer.markdownMode" })}
-                  </DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={markdownViewMode}
-                    onValueChange={(value) => {
-                      setMarkdownViewMode(value as "preview" | "code");
-                    }}
-                  >
-                    <DropdownMenuRadioItem value="preview">
-                      <EyeIcon className="size-4" />
-                      {intl.formatMessage({
-                        id: "codeViewer.markdownPreview",
-                      })}
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="code">
-                      <FileCode2Icon className="size-4" />
-                      {intl.formatMessage({
-                        id: "codeViewer.markdownSource",
-                      })}
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </>
-              ) : null}
-              {canToggleSvgView ? (
-                <>
-                  {canToggleMarkdownView ? <DropdownMenuSeparator /> : null}
-                  <DropdownMenuLabel>
-                    {intl.formatMessage({ id: "codeViewer.svgMode" })}
-                  </DropdownMenuLabel>
-                  <DropdownMenuRadioGroup
-                    value={svgViewMode}
-                    onValueChange={(value) => {
-                      setSvgViewMode(value as "preview" | "code");
-                    }}
-                  >
-                    <DropdownMenuRadioItem value="preview">
-                      <EyeIcon className="size-4" />
-                      {intl.formatMessage({ id: "codeViewer.svgPreview" })}
-                    </DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="code">
-                      <FileCode2Icon className="size-4" />
-                      {intl.formatMessage({ id: "codeViewer.svgSource" })}
-                    </DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </>
-              ) : null}
-              {canToggleCodeWrap ? (
-                <>
-                  {canToggleMarkdownView || canToggleSvgView ? <DropdownMenuSeparator /> : null}
-                  <DropdownMenuCheckboxItem
-                    checked={wrapLongLines}
-                    onCheckedChange={(checked) => {
-                      setWrapLongLinesOverride(Boolean(checked));
-                    }}
-                  >
-                    <FileCode2Icon className="size-4" />
-                    {intl.formatMessage({ id: "codeViewer.wrapLines" })}
-                  </DropdownMenuCheckboxItem>
-                </>
-              ) : null}
-              {source.path ? (
-                <>
-                  {hasMoreMenu ? <DropdownMenuSeparator /> : null}
-                  <DropdownMenuItem
-                    onSelect={() => void fileActions.copyAbsolutePath({ path: source.path! })}
-                  >
-                    <CopyIcon className="size-4" />
-                    {intl.formatMessage({ id: "fileActions.copyAbsolutePath" })}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={() =>
-                      void fileActions.copyRelativePath({
-                        path: source.path!,
-                        relativePath: sourceWorkspacePath
-                          ? getWorkspaceFileRelativePath(sourceWorkspacePath, source.path!)
-                          : source.path!,
-                      })
-                    }
-                  >
-                    <CopyIcon className="size-4" />
-                    {intl.formatMessage({ id: "fileActions.copyRelativePath" })}
-                  </DropdownMenuItem>
-                </>
-              ) : null}
+            <DropdownMenuContent align="end" className="w-64 max-w-[calc(100vw-1rem)]">
+              {viewMenuItems}
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
-        {/* 第一期 PPTX 明确为只读预览，不展示任何编辑入口。 */}
-        <Button
-          type="button"
-          size="icon-md"
-          variant="ghost"
-          className="shrink-0 text-foreground-subtle hover:text-foreground disabled:text-foreground-subtlest"
-          onClick={() => {
-            void handleOpenInEditor();
-          }}
-          disabled={!canOpenInEditor}
-          title={
-            selectedEditor
-              ? intl.formatMessage(
-                  { id: "appHeader.openInEditor" },
-                  { editor: selectedEditor.name },
-                )
-              : intl.formatMessage({ id: "chat.changeSummary.openInEditor" })
-          }
-          aria-label={
-            selectedEditor
-              ? intl.formatMessage(
-                  { id: "appHeader.openInEditor" },
-                  { editor: selectedEditor.name },
-                )
-              : intl.formatMessage({ id: "chat.changeSummary.openInEditor" })
-          }
-        >
-          <ExternalLinkIcon className="size-3.5" />
-        </Button>
+        {source.path && (
+          <OpenSplitButton
+            openDefaultOnPrimary
+            viewMenuItems={viewMenuItems}
+            target={{
+              type: "file",
+              path: source.path,
+              title: source.title,
+              label: getPathLeaf(source.path),
+              // 文件菜单沿用预览已解析的工作区，避免仅传入外层 workspacePath 时丢失来源。
+              previewSource: { ...source, workspacePath: sourceWorkspacePath },
+            }}
+            onOpenCodeViewer={onOpenCodeViewer}
+          />
+        )}
       </div>
     </div>
   );

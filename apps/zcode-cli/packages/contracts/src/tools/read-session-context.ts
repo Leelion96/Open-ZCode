@@ -7,7 +7,8 @@ export const READ_SESSION_CONTEXT_MAX_TOKENS = 12000;
 
 // 最小 JSON Schema 校验器不检查 pattern；联合字符串会在 oneOf 中同时匹配，错误拒绝 current。
 // 用单个字符串模式，具体身份格式继续由运行时 schema 严格验证。
-const SESSION_ID_PATTERN = /^(?:current|sess_[A-Za-z0-9._-]+)$/;
+// 3.16 Host 已持久化 session_ ID；读取必须接受原身份，不能改名前缀后查另一个会话。
+const SESSION_ID_PATTERN = /^(?:current|(?:sess|session)_[A-Za-z0-9._-]+)$/;
 
 export const ReadSessionContextStrategySchema = z.enum(["relevant", "handoff", "topic"]);
 
@@ -15,11 +16,14 @@ export const ReadSessionContextInputSchema = z
   .object({
     sessionId: z
       .string()
-      .regex(SESSION_ID_PATTERN, "Session id must be current or use the sess_* format.")
+      .regex(
+        SESSION_ID_PATTERN,
+        "Session id must be current or use the sess_* or session_* format.",
+      )
       .optional()
       .default("current")
       .describe(
-        "For topic strategy omit this field to use the current task. Other strategies require an explicit sess_* target.",
+        "For topic strategy omit this field to use the current task. Other strategies require the exact persisted sess_* or legacy session_* target.",
       ),
     query: z
       .string()

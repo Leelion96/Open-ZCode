@@ -72,7 +72,7 @@ I27-I31 验证当前连接回退、Family 切换与模型选择恢复，已按�
 
 ## BR117-F01：远端 Built-in 下载失败不阻断账号连接
 
-- Pending spec：`settings/manual-review/pending/provider-builtin-refresh-failure.test.ts`。
+- Pending spec：`settings/provider-builtin-refresh-failure.test.ts`。
 - Setup：隔离本地账号控制面、有效包内配置、有效 BigModel 登录，个人套餐为初始选择；
   case-local 控制面下发 HTTP Built-in 地址，正式下载器必须拒绝，不覆盖产品 Active。
 - Action：通过设置页切换到 Team，返回 Composer 选择 Team 模型，再选择 Start 模型。

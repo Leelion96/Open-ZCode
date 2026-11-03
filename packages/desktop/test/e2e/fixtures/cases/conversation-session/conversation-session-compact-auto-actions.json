@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-compact-auto-actions",
+  "spec": "./test/e2e/conversation-session/conversation-session-compact-auto-actions.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-compact-auto-actions.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "title-E2E_AUTO_ACTIONS",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "upstream-auto-actions-context-seed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "upstream-auto-actions-compact-slow",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "upstream-auto-actions-pending-text",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "upstream-auto-actions-queued-text",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "upstream-auto-actions-queued-goal-continuation",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    },
+    {
+      "id": "upstream-auto-actions-queued-goal-verifier-passed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留原回放的压缩、工具和队列响应；由真实 Agent 执行命令与状态转换，慢流式仅用于观察 compacting 动作窗口。"
+    }
+  ]
+}

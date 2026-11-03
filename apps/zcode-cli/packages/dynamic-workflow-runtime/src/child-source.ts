@@ -204,9 +204,12 @@ function __report(siteId, item, artifactId) {
 // ⚠ Object.freeze 是**浅**冻结：嵌套对象未冻结，脚本仍能改动 args.foo.bar。v1 接受这个
 // 界限——它挡的是"手滑重新赋值 args"，不是一个安全边界（实参本来就是调用方给的）。
 var __args = Object.freeze(JSON.parse(__argsJson));
+// run 身份（facade 的 run 全局）同一种构造：context 内 JSON.parse、浅冻结（它本身就是平的）。
+var __run = Object.freeze(JSON.parse(__runJson));
 
 globalThis.__host = {
   args: __args,
+  run: __run,
   createActor: __createActor,
   ask: __ask,
   worldRead: __worldRead,
@@ -314,9 +317,11 @@ Math.random = function () {
   // 沙箱这一侧就是它成立的地方。
   const sandbox = {
     __argsJson: JSON.stringify(payload.args ?? {}),
+    __runJson: JSON.stringify(payload.run),
   } as {
     __send: (line: string) => void;
     __argsJson: string;
+    __runJson: string;
     __deliver: (line: string) => void;
     __execute: (runFn: unknown) => Promise<void>;
     __checkStalled: () => boolean;

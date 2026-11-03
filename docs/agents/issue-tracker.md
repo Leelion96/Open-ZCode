@@ -20,5 +20,16 @@
 
 - [桌面本地消息 TTFT 分阶段遥测](../monitoring/ttft-stage-telemetry.md)
 - [Web 远控接入 Relay V2：手机登录后连接桌面](../issues/web-remote-control-relay-v2/01-relay-v2-login-pairing.md)
+- [数据同步：把本机配置推送到远端设备](../remote/data-sync.md)
+  - 实施票 [01](../issues/data-sync/01-harden-user-config-writers.md)～[16](../issues/data-sync/16-migration-entry.md)，编号按依赖先后排列；01、02、03 可立即开始，04 是首条 Tracer（依赖 01、03），其余每张票写明其阻塞项
+  - 后续修订 [19](../issues/data-sync/19-scope-menu-project-submenu.md)：Scope 菜单的项目收进各设备的子菜单
 - [远程连接（SSH / WSL / Docker）交互与视觉体验优化](../issues/remote-connection-ux/01-remote-connection-ux-optimization.md)
   - 实施票 [02](../issues/remote-connection-ux/02-connection-log-and-error-contract.md)～[14](../issues/remote-connection-ux/14-visual-polish-and-accessibility.md)，编号按依赖先后排列，每张票写明其阻塞项
+- [3.16.2 远程（SSH）会话卡顿：根因与优化方案](../issues/remote-performance-3-16/01-remote-session-lag-analysis.md)
+- [3.16.2 Source Server 启动阶段失败：工单分诊与修复记录](../issues/remote-startup-failures-3-16/01-source-server-startup-failure-triage.md)
+  - 已修复 [02](../issues/remote-startup-failures-3-16/02-service-registration-failure-fallback.md)、[03](../issues/remote-startup-failures-3-16/03-corrupted-release-recovery.md)（损坏 release 可由「重新安装远端服务」修复，损坏来源仍未知）；未决项 [04](../issues/remote-startup-failures-3-16/04-shared-home-across-hosts.md)～[06](../issues/remote-startup-failures-3-16/06-legacy-lock-pid-reuse-after-upgrade.md)：需要产品决定或用户补充材料
+- [3.16.2 远程连接工单分诊（2026-10-22 批次）](../issues/remote-tickets-3-16-2-1022/01-ticket-triage.md)
+  - 已修复 [02](../issues/remote-tickets-3-16-2-1022/02-startup-reconnect-cancel-hangs-ssh-flight.md)、[03](../issues/remote-tickets-3-16-2-1022/03-install-confirm-drops-ssh-password.md)；未决项 [04](../issues/remote-tickets-3-16-2-1022/04-wsl-stale-failure-handoff-and-profile-split.md)～[09](../issues/remote-tickets-3-16-2-1022/09-remote-devices-settings-typography.md)：需要产品/设计决定或用户补充材料
+- [在设备卡上停止和重启远端服务](../issues/remote-daemon-lifecycle/01-stop-restart-remote-service.md)：CLI `stop --wait` / 整棵进程树 `restart`、Host 生命周期操作 flight 与设备卡「更多」菜单入口
+  - 实施票 [02](../issues/remote-daemon-lifecycle/02-prefactor-stop-wait-and-lifecycle-flight.md)～[05](../issues/remote-daemon-lifecycle/05-confirm-running-tasks-and-impact.md)：02 预备重构可立即开始；03 停止依赖 02；04 重启依赖 02、03；05 确认弹窗依赖 03、04
+  - 后续 [06](../issues/remote-daemon-lifecycle/06-online-error-shown-as-failed.md)：生命周期操作失败但连接仍在时显示“连接失败”（needs-triage）

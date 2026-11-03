@@ -36,6 +36,7 @@ interface DesktopCall {
   workspaceKey: string;
   workspacePath: string;
   command?: Record<string, unknown>;
+  controlScopeId?: string;
 }
 
 function textResult(text: string): ModelResult {
@@ -77,7 +78,29 @@ describe("dwf 子代理的 Browser Use（真 app 装配）", () => {
         workspacePath: p.workspacePath,
         ...(p.command === undefined ? {} : { command: p.command }),
       });
-      return method.endsWith("browserList") ? { browsers: [] } : { ok: true, elapsedMs: 0 };
+      if (method.endsWith("browserList"))
+        return {
+          browsers: [
+            {
+              id: IAB_BROWSER_ID,
+              generation: IAB_GENERATION,
+              type: "iab",
+              name: "Browser",
+              capabilities: { browser: [], tab: [] },
+              metadata: { controlScopes: "1" },
+            },
+          ],
+        };
+      return {
+        ok: true,
+        elapsedMs: 0,
+        ...(p.command?.method === "openScope"
+          ? { scope: { id: p.controlScopeId, state: "open" } }
+          : {}),
+        ...(p.command?.method === "releaseScope"
+          ? { scope: { id: p.controlScopeId, state: "released" } }
+          : {}),
+      };
     });
     const sessions = new Map<string, unknown>();
     const context = {
@@ -110,6 +133,7 @@ describe("dwf 子代理的 Browser Use（真 app 装配）", () => {
               String(session.id).startsWith(ACTOR_SESSION_PREFIX),
             )?.id;
             // node_repl 的那一跳：actor 自己的 session_id 进进程级实例。
+            await nodeReplPort.list({ sessionId: String(actorSessionId) });
             actorBrowserResult = await nodeReplPort.execute({
               browserId: IAB_BROWSER_ID,
               browserGeneration: IAB_GENERATION,
@@ -136,7 +160,7 @@ describe("dwf 子代理的 Browser Use（真 app 装配）", () => {
 
       await vi.waitFor(
         () => {
-          expect(desktopCalls.some((call) => call.command?.method === "closeSession")).toBe(true);
+          expect(desktopCalls.some((call) => call.command?.method === "releaseScope")).toBe(true);
         },
         { timeout: SETTLE_TIMEOUT_MS, interval: 50 },
       );
@@ -144,16 +168,19 @@ describe("dwf 子代理的 Browser Use（真 app 装配）", () => {
       expect(actorSessionId).toMatch(new RegExp(`^${ACTOR_SESSION_PREFIX}`));
       expect(actorBrowserResult).toMatchObject({ ok: true });
       expect(
-        desktopCalls.map((call) => ({ method: call.command?.method, sessionId: call.sessionId })),
+        desktopCalls
+          .filter((call) => call.command)
+          .map((call) => ({ method: call.command?.method, sessionId: call.sessionId })),
       ).toEqual([
+        { method: "openScope", sessionId: actorSessionId },
         { method: "newTab", sessionId: actorSessionId },
         { method: "turnEnded", sessionId: actorSessionId },
-        { method: "closeSession", sessionId: actorSessionId },
+        { method: "releaseScope", sessionId: actorSessionId },
       ]);
       // tab 归属是 actor 自己的会话；workspace 是父会话的。
       expect(desktopCalls.every((call) => call.workspaceKey === root)).toBe(true);
       expect(desktopCalls.every((call) => call.workspacePath === root)).toBe(true);
-      expect(desktopCalls.at(-1)?.command).toEqual({ method: "closeSession", closeTabs: true });
+      expect(desktopCalls.at(-1)?.command).toEqual({ method: "releaseScope", closeTabs: true });
       // dispose 之后登记已撤销：迟到的 actor 请求与从未登记的一样被拒。
       await expect(nodeReplPort.list({ sessionId: String(actorSessionId) })).rejects.toThrow(
         `Session is not active: ${actorSessionId}`,

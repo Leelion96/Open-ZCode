@@ -130,6 +130,17 @@ describe("memory extraction gate", () => {
       evaluateMemoryExtraction(snapshot([oldWrite, prose]), createMessageId("missing-cursor")),
     ).toEqual({ decision: "run", messageCount: 2 });
   });
+
+  it("counts only conversation messages, not hidden announcement records", () => {
+    const cursor = userMessage("cursor-hidden", ["already extracted"]);
+    const announcement = hiddenReminder("env-announcement", "environment");
+    const prose = userMessage("prose-hidden", ["remember the durable preference"]);
+    const marker = hiddenReminder("interrupt", "interrupt_marker");
+    // 隐藏公告不是对话消息，不计入 "~N messages"；中断标记是普通 user 文本，计入。
+    expect(
+      evaluateMemoryExtraction(snapshot([cursor, announcement, prose, marker]), cursor.info.id),
+    ).toEqual({ decision: "run", messageCount: 2 });
+  });
 });
 
 describe("memory extraction scheduler", () => {
@@ -362,6 +373,24 @@ function userMessage(
       text,
     })),
   };
+}
+
+function hiddenReminder(id: string, source: string): MessageWithParts {
+  const message = userMessage(id, [`<system-reminder>${source}</system-reminder>`], {
+    synthetic: true,
+    visibility: "model-only",
+  });
+  message.info.semantics = {
+    origin: "agent_runtime",
+    kind: "system_reminder",
+    source,
+    uiVisibility: "hidden",
+    providerVisibility: "visible",
+    transcriptVisibility: "hidden",
+  };
+  // 与 buildRuntimeReminderMessage 写入的形状一致：类型记在 metadata.runtimeMessage，没有顶层 source。
+  message.info.metadata = { runtimeMessage: { source }, source, visibility: "model-only" };
+  return message;
 }
 
 function assistantToolMessage(

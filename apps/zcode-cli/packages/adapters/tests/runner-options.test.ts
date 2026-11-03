@@ -579,3 +579,80 @@ describe("createStreamTextOptions", () => {
     },
   );
 });
+
+describe("x-zcode-session-features attribution header", () => {
+  const SESSION_FEATURES_HEADER = "x-zcode-session-features";
+
+  function optionsWith(
+    createOptions: typeof createGenerateTextOptions | typeof createStreamTextOptions,
+    input: { features?: readonly string[]; headers?: Record<string, string> },
+  ) {
+    return createOptions({
+      includeModelIO: false,
+      request: { messages: [{ role: "user", content: "hi" }] },
+      resolved: resolved({
+        ...(input.headers ? { headers: input.headers } : {}),
+        model: {} as ResolvedAiSdkModel["model"],
+        providerId: "test",
+        modelId: "model-a",
+        providerKind: "openai-compatible",
+        baseURL: "https://api.example.test/v1",
+      }),
+      statusContext: {
+        model: { providerId: "test", modelId: "model-a" },
+        modelRequestSessionType: "main",
+        ...(input.features ? { modelRequestSessionFeatures: input.features } : {}),
+        providerKind: "openai-compatible",
+        requestId: "req_features",
+        sessionId: "sess_features",
+        traceId: "trace_features",
+      } as never,
+    });
+  }
+
+  it.each([createGenerateTextOptions, createStreamTextOptions])(
+    "%s 按字典序去重写出标签",
+    (createOptions) => {
+      const options = optionsWith(createOptions, {
+        features: ["workflow_cmd", "workflow_auto", "workflow_cmd"],
+      });
+      expect(options.headers?.[SESSION_FEATURES_HEADER]).toBe("workflow_auto,workflow_cmd");
+    },
+  );
+
+  it.each([undefined, []])("没有标签时不发送（features=%j）", (features) => {
+    const options = optionsWith(createGenerateTextOptions, features ? { features } : {});
+    expect(options.headers).not.toHaveProperty(SESSION_FEATURES_HEADER);
+  });
+
+  it.each([
+    ["大写", ["Workflow_cmd"]],
+    ["短横线", ["workflow-cmd"]],
+    ["注入换行", ["workflow_cmd\r\nx-injected: yes"]],
+    ["空串", [""]],
+    ["单个标签超长", ["a".repeat(65)]],
+    ["总长超过 256", Array.from({ length: 5 }, (_, index) => `${String(index)}${"a".repeat(63)}`)],
+  ])("值不合法时整头省略：%s", (_label, features) => {
+    const options = optionsWith(createGenerateTextOptions, {
+      features: ["workflow_cmd", ...features],
+    });
+    expect(options.headers).not.toHaveProperty(SESSION_FEATURES_HEADER);
+  });
+
+  it.each([createGenerateTextOptions, createStreamTextOptions])(
+    "%s 剔除 provider 静态同名 header（不区分大小写）",
+    (createOptions) => {
+      const headers = { "X-ZCode-Session-Features": "spoofed", "x-static-marker": "kept" };
+      const withFeatures = optionsWith(createOptions, { features: ["workflow_cmd"], headers });
+      expect(withFeatures.headers).toMatchObject({
+        [SESSION_FEATURES_HEADER]: "workflow_cmd",
+        "x-static-marker": "kept",
+      });
+      expect(withFeatures.headers).not.toHaveProperty("X-ZCode-Session-Features");
+
+      const withoutFeatures = optionsWith(createOptions, { headers });
+      expect(withoutFeatures.headers).not.toHaveProperty("X-ZCode-Session-Features");
+      expect(withoutFeatures.headers).not.toHaveProperty(SESSION_FEATURES_HEADER);
+    },
+  );
+});

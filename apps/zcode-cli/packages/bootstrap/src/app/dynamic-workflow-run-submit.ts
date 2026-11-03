@@ -61,6 +61,7 @@ import { createWorkflowRunControl } from "./workflow-run-control.js";
  * 路径上按当下并发探测算出的上界（resume 沿用 journal 记录里的 caps，不经它）。
  */
 export interface DynamicWorkflowRunEntryContext {
+  assertOpen(): void;
   deps: DynamicWorkflowRunServiceDeps;
   runs: Map<string, RunRegistryEntry>;
   escalations: WorkflowEscalationRegistry;
@@ -371,6 +372,8 @@ function startNewRun(ctx: DynamicWorkflowRunEntryContext, input: StartNewRunInpu
     // 真正的结算 promise 在下面替换；先占位以满足类型（同步可见）。
     settlement: Promise.resolve<RunSettlement>({ status: "stopped", reason: "user" }),
   };
+  // amend/resume 可能已经跨过 await；关闭后禁止在旧 owner 上登记新引擎。
+  ctx.assertOpen();
   runs.set(runId, entry);
 
   // fire-and-forget：绝不在 submit 里 await 结算。submit 的契约是「启动并交出 runId」。
@@ -533,6 +536,8 @@ export async function resumeDynamicWorkflowRun(
     ...(resumedPhaseNames === undefined ? {} : { phaseNames: resumedPhaseNames }),
     settlement: Promise.resolve<RunSettlement>({ status: "stopped", reason: "user" }),
   };
+  // amend/resume 可能已经跨过 await；关闭后禁止在旧 owner 上登记新引擎。
+  ctx.assertOpen();
   runs.set(runId, entry);
 
   entry.settlement = ctx.trackSettlement(

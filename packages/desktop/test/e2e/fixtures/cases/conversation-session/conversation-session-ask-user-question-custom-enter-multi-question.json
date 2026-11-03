@@ -9,6 +9,13 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-ask-user-question-custom-enter-multi-question-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "隔离回放抓包确认标题旁路缺少响应；为本例提供非流式 JSON 标题，避免 Missing Fixture 或依赖共享旧池。"
+    },
+    {
       "id": "upstream-conversation-ask-user-question-custom-enter-multi-question-call",
       "kind": "main",
       "source": "synthetic",

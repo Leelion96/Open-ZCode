@@ -7,7 +7,7 @@
 - App 通过子进程 stdio 与 Agent 通信，协议为 `@zcode/protocol`。
 - Main 只负责窗口/native dialog、进程 fork、广播中转、日志接收，以及远控鉴权/配对/心跳、payload 透传和 host attachment 调度；session/task、stream、queue、snapshot 业务状态保留在业务 owner。
 - 每个 BrowserWindow 有且只有一个 window-scoped Local Host，通过 MessagePort 直连 renderer。同一窗口的多个本地 workspace tab 共用该 Host，服务按 workspaceKey 隔离；不要把 workspace service scope 变成独立 Host 进程。
-- Local Host 通过 `createLocalServices({ parentPort })` 承载 file/system/terminal/setting/credential/broadcast，并按 workspaceKey 管理本地 Agent CLI。
+- Local Host 通过 `createLocalServices({ parentPort })` 承载 file/system/terminal/setting/credential/broadcast。Agent 选择统一由 ProcessManager 管理：本地无项目 workspace 共用 chat CLI，项目与远端继续独立；workspaceKey 仍用于业务隔离。活跃归属固定到进程退出，详见[共享 CLI](../shared-task-cli.md)。
 - SSH/WSL/Docker/Server 工作区由同一 Local Host 的 `RemoteConnectionRegistry` 创建或复用连接，作为逻辑 tab/session 打开；不创建独立 Desktop Remote Host，broadcast 仍属桌面本地行为。
 - 手机 `/remote` 通过 shared-host attachment 连接桌面已有 local host 或 remote workspace session host。为手机另建独立 runtime、local host 或 SSH/WSL/Docker session 属于架构变化，需先沟通、更新架构文档并完成桌面/手机回归。
 - 外部 relay 仅承担鉴权、配对、心跳和 `rpc-frame`/app payload 透传，不持有业务状态。
@@ -30,6 +30,10 @@ warmup / createSession / sendText → workspace startup Promise → ready → �
 
 此状态只控制 runtime 启动，不接管 CLI CommandInbox；桌面 continuous 与手机 replayable
 继续使用各自可信 clientMode、原有 owner/lease 和同一个 shared-host runtime。
+
+共享 CLI 的进程启动在物理进程层合并；配置快照、能力初始化与消息归属仍按逻辑工作区准备，
+只读订阅与发送共用准备屏障。释放预热草稿仅关闭对应 deferred session，不回收共享进程。
+显式进程重建或进程退出对全部绑定工作区发布失效，进程树清理完成后才允许下一次分配。
 
 ## 工作区身份
 

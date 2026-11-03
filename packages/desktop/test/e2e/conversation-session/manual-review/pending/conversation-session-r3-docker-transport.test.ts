@@ -15,22 +15,26 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { parseRemoteWorkspaceIdentity } from "@zcode/shared";
 import { TID_DOCKER_CONTAINER_INPUT, TID_REMOTE_KIND_DOCKER } from "@zcode/shared/test-ids";
-import { ApiKeyAccessConfig, ProviderApiConfig, ProviderConfig } from "@zcode/provider";
-import { NodePersonalProviderConfigRepository } from "@zcode/provider-node";
-import {
-  clearAppData,
-  clickTestIdByDom,
-  getE2EAppDataPaths,
-} from "../../../helpers/desktop-app.js";
-import { refreshSeededOpenAIProvidersThroughSettings } from "../../../helpers/custom-openai-provider.js";
+import { clearAppData, clickTestIdByDom } from "../../../helpers/desktop-app.js";
 import {
   selectUpstreamProviderModelById,
   selectUpstreamThoughtLevelValue,
 } from "../../../helpers/upstream-provider.js";
-import { getUpstreamRequestRecordCount } from "../../../helpers/conversation-session-network.js";
+import {
+  getUpstreamRequestRecordCount,
+  countUpstreamRequests,
+  waitForUpstreamRequest,
+} from "#e2e/helpers/conversation-session-network";
+import {
+  createSSHLifecycleProvider,
+  SSH_LIFECYCLE_MODEL_ID,
+  SSH_LIFECYCLE_THOUGHT_LEVEL,
+  type SSHLifecycleProvider,
+} from "#e2e/helpers/ssh-remote-lifecycle";
 import {
   clickLastEnabledSSHDialogButton,
   readHostProcesses,
+  readSSHRuntimeConfig,
   readRemoteTabSnapshot,
 } from "../../../helpers/ssh-remote-p0.js";
 import {
@@ -44,10 +48,6 @@ const CASE_MARKER = "E2E_R3_DOCKER_TRANSPORT";
 const artifactDir = resolve(
   process.env.ZCODE_E2E_ARTIFACT_DIR ?? ".e2e-artifacts/r3-docker-transport",
 );
-const LIVE_PROVIDER_ID = "e2e-r3-docker-live-zapi";
-const LIVE_PROVIDER_NAME = "R3 Docker Live ZAPI";
-const LIVE_MODEL_ID = "GLM-5.3";
-const USER_ZAPI_PROVIDER_ID = "84916fff-3839-4e1c-a59d-64923669a665";
 const run = promisify(execFile);
 
 async function dockerSh(container: string, command: string): Promise<string> {
@@ -59,64 +59,9 @@ async function dockerSh(container: string, command: string): Promise<string> {
   }
 }
 
-/** 与 LIVE-01 同源：只从本机正式 Personal 配置读取 ZAPI（内存），容器无法访问本机回放服务，首发用真实模型。 */
-async function seedLiveZapiProvider(): Promise<{ baseURL: string }> {
-  const sourcePath = process.env.R3_LIVE_PERSONAL_CONFIG?.trim();
-  if (!sourcePath) throw new Error(`${CASE_MARKER}: 需设置 R3_LIVE_PERSONAL_CONFIG`);
-  // 0911 修复（与 r3-live-zapi 同源）：本机配置已迁移新 schema（schemaVersion:1,
-  // config.providerConfigRules），旧手读 raw.providers[<id>] 得 undefined → TypeError。
-  // 改走正式 repository.read() 归一新旧 schema；材料缺失时报可读错误。
-  const sourceRepository = new NodePersonalProviderConfigRepository({
-    filePath: sourcePath,
-    pollingIntervalMs: false,
-  });
-  let sourceApiKey: string | undefined;
-  let sourceBaseUrl: string | undefined;
-  let sourceApiType: string | undefined;
-  try {
-    const snapshot = await sourceRepository.read();
-    const rule = snapshot.providers.getRule(USER_ZAPI_PROVIDER_ID);
-    // access 是 api-key / zhipu-account 联合类型，只有 api-key 形态才有 apiKey；
-    // snapshot 字段可能为 null（显式清空），统一归一成 undefined 走下方缺失判定。
-    const access = rule?.config.access;
-    sourceApiKey = access?.type === "api-key" ? (access.apiKey ?? undefined) : undefined;
-    sourceBaseUrl = rule?.config.api?.baseUrl ?? undefined;
-    sourceApiType = rule?.config.api?.type ?? undefined;
-  } finally {
-    sourceRepository.dispose();
-  }
-  if (!sourceApiKey || sourceApiType !== "anthropic-messages" || !sourceBaseUrl) {
-    throw new Error(
-      `${CASE_MARKER}: 本机 ZAPI provider（${USER_ZAPI_PROVIDER_ID}, anthropic-messages）配置不可用——live 材料缺失，需在本机 Personal 配置中导入 ZAPI provider`,
-    );
-  }
-  const repository = new NodePersonalProviderConfigRepository({
-    filePath: getE2EAppDataPaths().configFile,
-    pollingIntervalMs: false,
-  });
-  try {
-    await repository.update((current) => ({
-      ...current,
-      providers: current.providers.setRule({
-        providerId: LIVE_PROVIDER_ID,
-        providerName: LIVE_PROVIDER_NAME,
-        config: new ProviderConfig({
-          group: "standard-personal",
-          access: new ApiKeyAccessConfig({ apiKey: sourceApiKey }),
-          api: new ProviderApiConfig({ type: "anthropic-messages", baseUrl: sourceBaseUrl }),
-          personalModelIds: [LIVE_MODEL_ID],
-        }),
-      }),
-      models: current.models,
-    }));
-  } finally {
-    repository.dispose();
-  }
-  return { baseURL: sourceBaseUrl };
-}
-
 async function connectDockerTargetUntilReady(
   container: string,
+  workspacePath = process.env.ZCODE_E2E_SSH_WORKSPACE_PATH,
 ): Promise<{ identity: string; remoteSessionId: string; kind: string | null }> {
   // Composer 的旧远程入口已退役；与 SSH 一样从项目创建进入 transport 选择。
   await openRemoteProjectSelection();
@@ -129,7 +74,6 @@ async function connectDockerTargetUntilReady(
   await input.setValue(container);
   await clickLastEnabledSSHDialogButton(CASE_MARKER);
   await waitForSSHDirectoryStep(CASE_MARKER);
-  const workspacePath = process.env.ZCODE_E2E_SSH_WORKSPACE_PATH;
   if (!workspacePath) throw new Error(`${CASE_MARKER}: 缺少 Docker 项目目录`);
   await selectSSHRemoteDirectory(workspacePath, CASE_MARKER);
   const tab = await waitForRemoteTab({ caseMarker: CASE_MARKER, expectedPath: workspacePath });
@@ -142,17 +86,105 @@ async function connectDockerTargetUntilReady(
 
 describe(`${CASE_MARKER}: Desktop Docker transport 首装、首发与关闭重连`, () => {
   const facts: Record<string, unknown> = {};
+  let provider: SSHLifecycleProvider | undefined;
 
   after(async () => {
     await mkdir(artifactDir, { recursive: true });
     await writeFile(resolve(artifactDir, "docker-transport.json"), JSON.stringify(facts, null, 2));
+    await provider?.tunnel.close();
     await browser.electron.restoreAllMocks();
     await clearAppData();
   });
 
+  it("R3A-TRN-01-UID 数字 UID 无 passwd 条目仍可首装并打开 Docker 项目", async function () {
+    this.timeout(15 * 60_000);
+    const container = `zcode-e2e-numeric-uid-${process.pid}`;
+    const fixtureHome = "/tmp/zcode-uid-home";
+    const workspacePath = `${fixtureHome}/project`;
+    try {
+      await run("docker", [
+        "run",
+        "--detach",
+        "--name",
+        container,
+        "--user",
+        "10001:10001",
+        "--env",
+        `HOME=${fixtureHome}`,
+        "--workdir",
+        "/tmp",
+        "node:22.16.0-bookworm-slim",
+        "sh",
+        "-c",
+        `mkdir -p ${workspacePath} && exec sleep infinity`,
+      ]);
+      const readIdentity = async () =>
+        JSON.parse(
+          (
+            await run("docker", [
+              "exec",
+              container,
+              "node",
+              "-e",
+              `const { readFile } = require("node:fs/promises");
+              readFile("/etc/passwd", "utf8").then(passwd => console.log(JSON.stringify({
+                uid: process.geteuid(),
+                hasPasswd: passwd.split("\\n").some(line => line.split(":")[2] === String(process.geteuid()))
+              }))).catch(error => { console.error(error); process.exitCode = 1; });`,
+            ])
+          ).stdout,
+        ) as { uid: number; hasPasswd: boolean };
+      expect(await readIdentity()).toEqual({ uid: 10001, hasPasswd: false });
+      await prepareV4ConversationE2E({ skipProvider: true });
+      const ready = await connectDockerTargetUntilReady(container, workspacePath);
+      expect(ready.kind).toBe("docker");
+      const identity = parseRemoteWorkspaceIdentity(ready.identity);
+      expect(identity?.kind).toBe("server");
+      const result = await run("docker", [
+        "exec",
+        container,
+        "node",
+        "-e",
+        `const { readFile } = require("node:fs/promises");
+        async function main() {
+          const root = process.env.HOME + "/.zcode/server/run/";
+          const status = JSON.parse(await readFile(root + "status.json", "utf8"));
+          const token = (await readFile(root + "ingress-token", "utf8")).trim();
+          const response = await fetch("http://127.0.0.1:" + status.port + "/api/server-info", {
+            headers: { authorization: "Bearer " + token }
+          });
+          const info = await response.json();
+          console.log(JSON.stringify({ state: status.state, serverId: info.serverId, identity: info.identity }));
+        }
+        main().catch(error => { console.error(error); process.exitCode = 1; });`,
+      ]);
+      const serverInfo = JSON.parse(result.stdout) as {
+        state: string;
+        serverId: string;
+        identity: { osUser: string };
+      };
+      expect(serverInfo.state).toBe("ready");
+      expect(serverInfo.identity.osUser).toBe("uid:10001");
+      expect(serverInfo.serverId).toBe(identity?.sourceServerId);
+      expect(await readIdentity()).toEqual({ uid: 10001, hasPasswd: false });
+      facts.numericUid = { ready, serverInfo };
+      await mkdir(artifactDir, { recursive: true });
+      await browser.saveScreenshot(resolve(artifactDir, "numeric-uid-project.png"));
+    } finally {
+      try {
+        await clearAppData();
+      } finally {
+        await run("docker", ["rm", "--force", container]).catch(() => undefined);
+      }
+    }
+  });
+
   it("R3A-TRN-01 独立 Docker 容器：Docker 入口安装、Provisioning、真实首发、断开后重连", async function () {
     this.timeout(30 * 60_000);
-    const container = process.env.R3_DOCKER_TARGET?.trim();
+    // 本机 runner 已把同一 SSH / Docker 目标写入 ZCODE_E2E_SSH_CONTAINER；旧用例只读服务器队列
+    // 的别名，尚未执行产品操作就报缺变量。保留显式目标优先，否则复用 runner 创建的隔离容器。
+    const container =
+      process.env.R3_DOCKER_TARGET?.trim() || process.env.ZCODE_E2E_SSH_CONTAINER?.trim();
     if (!container) throw new Error(`${CASE_MARKER}: 需设置 R3_DOCKER_TARGET`);
     facts.container = container;
     facts.containerUser = (
@@ -163,8 +195,10 @@ describe(`${CASE_MARKER}: Desktop Docker transport 首装、首发与关闭重�
     ).trim();
     await prepareV4ConversationE2E({ skipProvider: true });
     const initialHosts = await readHostProcesses();
-    const seeded = await seedLiveZapiProvider();
-    await refreshSeededOpenAIProvidersThroughSettings([LIVE_PROVIDER_NAME]);
+    // 旧用例误把容器不可达宿主回放当成必须使用个人账号；专用隧道只转发模型 HTTP，产品控制面仍走 Docker。
+    provider = await createSSHLifecycleProvider(readSSHRuntimeConfig(CASE_MARKER), CASE_MARKER, {
+      tunnelUsername: "tunnel",
+    });
 
     const ready = await connectDockerTargetUntilReady(container);
     facts.ready = ready;
@@ -182,16 +216,16 @@ describe(`${CASE_MARKER}: Desktop Docker transport 首装、首发与关闭重�
     facts.remoteAfterConnect = installState.split("\n").filter(Boolean).slice(0, 8);
     expect(installState).toContain("archiveSha256");
     expect(installState).toContain('"state":"ready"');
-    expect(installState).toContain(LIVE_PROVIDER_NAME);
+    expect(installState).toContain(provider.name);
     expect(await readHostProcesses()).toEqual(initialHosts);
 
-    // 真实首发：容器内 Agent 直连 ZAPI。
-    await selectUpstreamProviderModelById(LIVE_MODEL_ID, {
+    // 容器内真实 Agent 经 Provider HTTP 隧道首发，响应由本例 fixture 提供。
+    await selectUpstreamProviderModelById(SSH_LIFECYCLE_MODEL_ID, {
       includePlainModelFallback: false,
-      providerId: LIVE_PROVIDER_ID,
-      providerName: LIVE_PROVIDER_NAME,
+      providerId: provider.id,
+      providerName: provider.name,
     });
-    await selectUpstreamThoughtLevelValue("low");
+    await selectUpstreamThoughtLevelValue(SSH_LIFECYCLE_THOUGHT_LEVEL);
     // 复用 Docker 项目草稿，保留当前机器与模型归属。
     const replayBefore = await getUpstreamRequestRecordCount();
     await sendV4PromptAndWaitAccepted(
@@ -219,13 +253,20 @@ describe(`${CASE_MARKER}: Desktop Docker transport 首装、首发与关闭重�
     );
     const text = (await getV4Messages("assistant")).map((message) => message.text ?? "").join("\n");
     expect(text).toMatch(/DOCKER\s*1/u);
-    expect(await getUpstreamRequestRecordCount()).toBe(replayBefore);
+    const requestMatch = {
+      lastUserMessageIncludes: [`${CASE_MARKER}_FIRST`],
+      excludes: ["Generate a concise title"],
+    };
+    await waitForUpstreamRequest(requestMatch, `${CASE_MARKER}: 容器首发未到达回放服务`, 30_000, {
+      afterIndex: replayBefore - 1,
+    });
+    expect(await countUpstreamRequests(requestMatch, { afterIndex: replayBefore - 1 })).toBe(1);
     const remoteRequests = await dockerSh(
       container,
       'F=$(ls -t ~/.zcode/cli/log/*.jsonl | head -n1); grep -c "model.network.completed" "$F" || true; grep -o "\\"baseURL\\":\\"[^\\"]*\\"" "$F" | sort | uniq -c',
     );
     facts.remoteModelNetwork = remoteRequests.trim().split("\n");
-    expect(remoteRequests).toContain(seeded.baseURL);
+    expect(remoteRequests).toContain(provider.tunnel.baseURL);
 
     // 关闭重连：设备断开 → 重连 → 新 remoteSessionId、Host 不变、容器内 daemon 仍在。
     const sourceId = parsed?.sourceServerId;

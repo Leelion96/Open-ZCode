@@ -195,6 +195,7 @@ export async function finishModelStepWithoutToolCalls(
   if (await drainInlineGuideForNextRequest(this, state)) {
     // 正常 text-only 是可续跑边界：assistant 已持久化，guide 以 user role 进入历史，
     // 保持同一 active turn 继续下一次 provider request，不改投 future queue。
+    state.inputAttachmentCollectionPending = true;
     state.turnMachine = new TurnMachineImpl(state.turnMachine.aggregateResults());
     return "continue";
   }

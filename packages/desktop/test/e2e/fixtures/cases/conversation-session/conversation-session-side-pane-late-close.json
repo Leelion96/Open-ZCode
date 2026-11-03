@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-side-pane-late-close",
+  "spec": "./test/e2e/conversation-session/conversation-session-side-pane-late-close.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-side-pane-late-close.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "side-pane-late-close-existing-session",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "A fixed reply creates a persisted task so WelcomeScreen remounts can return to the same side pane owner. Model output quality is outside this lifecycle regression."
+    }
+  ]
+}

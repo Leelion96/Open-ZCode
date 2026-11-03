@@ -12,15 +12,11 @@ edge phase#1@1 -> ask#1@1 fork
 edge phase#1@1 -> phase#2@1 next
 edge ask#1@1 -> phase#3@1 join via=return
 edge phase#2@1 -> ask#2@1 fork
-edge phase#2@1 -> phase#3@1 next
 edge ask#2@1 -> phase#3@1 join via=return
 edge phase#3@1 -> ask#3@1 fork
-edge phase#3@1 -> sink jump via=return
 edge ask#3@1 -> sink join via=return
 phase-edge entry -> phase#1 next
 phase-edge phase#1 -> phase#2 next
 phase-edge phase#1 -> phase#3 join via=return
 phase-edge phase#2 -> phase#3 join via=return
-phase-edge phase#2 -> phase#3 next
 phase-edge phase#3 -> sink join via=return
-phase-edge phase#3 -> sink jump via=return

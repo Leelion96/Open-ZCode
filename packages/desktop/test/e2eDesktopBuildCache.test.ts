@@ -95,6 +95,11 @@ describe("desktop E2E build cache", () => {
       for (const match of source.matchAll(
         /\b(?:process\.env|env|runtimeEnv)\.([A-Z][A-Z0-9_]*)/gu,
       )) {
+        // Vite 配置同时包含 serve/build；Scan 仅用于 serve，不应让生产构建缓存失效。
+        // 只排除此文件的开发开关，build 分支不装配 Scan 由 viteRendererConfig.test.ts 验证。
+        if (configPath === "packages/desktop/vite.config.ts" && match[1] === "ZCODE_REACT_SCAN") {
+          continue;
+        }
         referencedEnvNames.add(match[1]);
       }
     }
@@ -102,6 +107,21 @@ describe("desktop E2E build cache", () => {
     expect(E2E_DESKTOP_BUILD_ENV_NAMES).toEqual(
       expect.arrayContaining([...referencedEnvNames].sort()),
     );
+  });
+
+  it("keeps the bundle fingerprint unchanged when the development Scan switch changes", () => {
+    const fingerprint = (env: Record<string, string>) =>
+      createE2EDesktopBuildFingerprint({
+        env,
+        gitHead: "head-a",
+        inputPaths: [],
+        repoRoot: ROOT,
+      });
+    const base = fingerprint({});
+
+    for (const value of ["", "0", "1"]) {
+      expect(fingerprint({ ZCODE_REACT_SCAN: value })).toBe(base);
+    }
   });
 
   it("invalidates when a workspace dependency or production env file changes", () => {

@@ -4,37 +4,87 @@
   "spec": "./test/e2e/conversation-session/conversation-session-goal-resume-stale-target.test.ts",
   "fixtures": [
     {
-      "id": "upstream-goal-resume-stale-seed-final",
-      "description": "M07k stale target 恢复前 seed task 固定回复。",
+      "id": "conversation-session-goal-resume-stale-target-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "goal-resume-stale-controlled-goal",
+      "description": "真实 Goal 运行期间入队，随后通过 Stop 暂停目标并保留队列。",
       "metadata": {
         "kind": "main",
-        "timingPolicy": "fast-text",
+        "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "seed 只需要形成 completed task，后续通过 sqlite 注入 stale target 状态。"
+        "syntheticReason": "用受控流维持真实 active Goal，测试通过 UI Stop 取消，不写 renderer 状态。"
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GOAL_RESUME_STALE_SEED"
-        ],
+        "bodyIncludes": ["E2E_GOAL_RESUME_STALE_OBJECTIVE"],
         "bodyExcludes": [
+          "E2E_GOAL_RESUME_STALE_SEND_NOW",
           "Generate a concise title",
+          "Verify whether the active session goal",
           "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_GOAL_RESUME_STALE_SEED"
         ]
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "upstream-e2e-goal-resume-stale-seed-final",
-          "inputTokens": 128,
-          "outputTokens": 12,
-          "text": "upstream-e2e-ok"
-        }
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "releaseAfterChunks": 3,
+        "chunks": [
+          {
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-sidebar-stop-status-race\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"deep\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"seek-e2e-ok\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":120,\"output_tokens\":12,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "offsetMs": 0,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
       }
     },
     {
@@ -44,61 +94,20 @@
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "核心断言是 queued item 能出队并发起新一轮请求，响应只需稳定完成。"
+        "syntheticReason": "真实队列项立即发送后必须只产生一次新请求并完成，不恢复 Goal verifier。"
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GOAL_RESUME_STALE_SEND_NOW"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_GOAL_RESUME_STALE_SEND_NOW"
-        ]
+        "bodyIncludes": ["E2E_GOAL_RESUME_STALE_SEND_NOW"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_GOAL_RESUME_STALE_SEND_NOW"]
       },
       "response": {
         "statusCode": 200,
         "text": {
           "id": "upstream-e2e-goal-resume-stale-send-now-final",
-          "inputTokens": 128,
-          "outputTokens": 12,
-          "text": "upstream-e2e-ok"
-        }
-      }
-    },
-    {
-      "id": "upstream-goal-resume-stale-objective-contract",
-      "description": "M07k stale target objective 合同占位；objective 通过 sqlite/renderer 注入，不直接请求 provider。",
-      "metadata": {
-        "kind": "main",
-        "timingPolicy": "fast-text",
-        "source": "synthetic",
-        "syntheticReason": "该 marker 表示被注入的 stale objective，本身不应作为 provider 用户输入发送。"
-      },
-      "maxMatches": 0,
-      "match": {
-        "method": "POST",
-        "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GOAL_RESUME_STALE_OBJECTIVE"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_GOAL_RESUME_STALE_OBJECTIVE"
-        ]
-      },
-      "response": {
-        "statusCode": 200,
-        "text": {
-          "id": "upstream-e2e-goal-resume-stale-objective-should-not-send",
           "inputTokens": 128,
           "outputTokens": 12,
           "text": "upstream-e2e-ok"

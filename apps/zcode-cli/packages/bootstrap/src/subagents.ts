@@ -116,8 +116,13 @@ export function loadPluginAgentTemplates(
     if (!plugin.enabled) continue;
     const agents = plugin.components.find((group) => group.kind === "agent")?.items ?? [];
     for (const agent of agents) {
-      const filePath = join(plugin.rootPath, "agents", `${agent.name}.md`);
-      const result = parsePluginAgentProfile({ filePath, logger: input.logger, plugin });
+      // 名称可能来自 frontmatter，不能还原文件位置；只读取发现阶段保留的源路径。
+      if (!agent.path) continue;
+      const result = parsePluginAgentProfile({
+        filePath: agent.path,
+        logger: input.logger,
+        plugin,
+      });
       if (result.diagnostic) diagnostics.push(result.diagnostic);
       if (result.parsed) parsedProfiles.push(result.parsed);
     }

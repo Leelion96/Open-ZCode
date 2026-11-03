@@ -15,6 +15,7 @@ type ScriptWorkflowFacade = Pick<
 >;
 
 interface ScriptWorkflowBridge extends ScriptWorkflowFacade {
+  closeScriptWorkflowRuns(): Promise<void>;
   workflowPort: ReturnType<typeof createScriptWorkflowToolPort>;
 }
 
@@ -22,10 +23,7 @@ type ScriptWorkflowBridgeDeps = Omit<ScriptWorkflowRuntimeDeps, "runtime"> & {
   getRuntime: () => ScriptWorkflowRuntimeDeps["runtime"];
 };
 
-type ScriptWorkflowRuntimeOptions = Pick<
-  SubmitPromptOptions,
-  "abortSignal" | "traceContext"
-> & {
+type ScriptWorkflowRuntimeOptions = Pick<SubmitPromptOptions, "abortSignal" | "traceContext"> & {
   onEvent?: (event: unknown) => void | Promise<void>;
 };
 
@@ -35,30 +33,50 @@ export function createScriptWorkflowBridge(deps: ScriptWorkflowBridgeDeps): Scri
     runtime ??= new ScriptWorkflowRuntime({ ...deps, runtime: deps.getRuntime() });
     return runtime;
   };
+  const workflowPort = createScriptWorkflowToolPort({
+    fileSystemPort: deps.fileSystemPort,
+    getRuntime,
+    logger: deps.logger,
+    sessionId: deps.sessionId,
+    sessionStore: deps.sessionStore,
+    storageRoot: deps.storageRoot,
+    traceContext: deps.traceContext,
+    workingDirectory: deps.workingDirectory,
+  });
+  let closed = false;
+  const assertOpen = () => {
+    if (closed) throw new Error("Workflow bridge closed");
+  };
   return {
     listScriptWorkflows: (input) => getRuntime().list(input),
-    resumeWorkflowScript: (input, options) => getRuntime().resume(input, toRuntimeOptions(options)),
-    runWorkflowScript: (input, options) => getRuntime().run(input, toRuntimeOptions(options)),
+    resumeWorkflowScript: async (input, options) => {
+      assertOpen();
+      return getRuntime().resume(input, toRuntimeOptions(options));
+    },
+    runWorkflowScript: async (input, options) => {
+      assertOpen();
+      return getRuntime().run(input, toRuntimeOptions(options));
+    },
     scriptWorkflowStatus: (input) => getRuntime().status(input),
     validateWorkflowScript: (input) => getRuntime().validate(input),
-    workflowPort: createScriptWorkflowToolPort({
-      fileSystemPort: deps.fileSystemPort,
-      getRuntime,
-      logger: deps.logger,
-      sessionId: deps.sessionId,
-      sessionStore: deps.sessionStore,
-      storageRoot: deps.storageRoot,
-      traceContext: deps.traceContext,
-      workingDirectory: deps.workingDirectory,
-    }),
+    workflowPort,
+    async closeScriptWorkflowRuns() {
+      closed = true;
+      const results = await Promise.allSettled([workflowPort.close(), runtime?.close()]);
+      const errors = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (errors.length) throw new AggregateError(errors, "Script workflow cleanup failed");
+    },
   };
 }
 
 function createScriptWorkflowFacade(runtime: ScriptWorkflowRuntime): ScriptWorkflowFacade {
   return {
     listScriptWorkflows: runtime.list.bind(runtime),
-    resumeWorkflowScript: (input, options) => runtime.resume(input, toRuntimeOptions(options)),
-    runWorkflowScript: (input, options) => runtime.run(input, toRuntimeOptions(options)),
+    resumeWorkflowScript: async (input, options) =>
+      runtime.resume(input, toRuntimeOptions(options)),
+    runWorkflowScript: async (input, options) => runtime.run(input, toRuntimeOptions(options)),
     scriptWorkflowStatus: runtime.status.bind(runtime),
     validateWorkflowScript: runtime.validate.bind(runtime),
   };

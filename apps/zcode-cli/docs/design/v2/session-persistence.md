@@ -19,6 +19,19 @@ Timeline 的展示 label 单独保留，不混入严格的 Selection 契约。
 显式旧会话导入脚本也属于写入入口：User 必须补旧 Reader 所需的最小 `model` 对象；
 它不是第二份当前选择，当前 Reader 仍忽略它。Assistant 等无需兼容写入的字段不扩大双写。
 
+## 旧版本读取新数据（降级规则）
+
+用户可能回退版本，或在同一个 `~/.zcode` 上运行旧版 App。旧版本读新版本写的会话时，不能打不开会话、
+丢失正文或报错；显示内容、上下文顺序可以退化，退化要写进对应 spec。按旧版本怎样解析来分三类：
+
+| 旧版本的解析方式                     | 规则                                   | 例子                                                                                                                   |
+| ------------------------------------ | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 解析失败就拒收整个会话或整条协议消息 | 不加字段，不加枚举值                   | user 消息顶层 `info.source`（App 在 strict 的 user info schema 里按封闭列表校验）；`compactBoundary` payload           |
+| 忽略未知成员                         | 新数据放这里                           | `info.metadata`、`part.metadata`（例：隐藏提醒的类型写在 `metadata.runtimeMessage.source`）；`CompactionPart.metadata` |
+| `safeParse`，失败时按原样显示        | 可以加字段；在 spec 里写明旧版本的退化 | `BashOutputSchema` 是 strict：新增 `timedOutAfterMs` 后，旧版本解析失败，工具卡退回 JSON 文本显示                      |
+
+新 Reader 也要接受缺失或非法的新数据、悬空 id，不抛错（旧版本 fork 会原样复制 metadata）。
+
 ## 结论
 
 这一版保持精简，不做额外的 operation journal、checkpoint 表、tool call 表、event store 表。
@@ -153,8 +166,8 @@ order by time_created, id;
 | `model.providerID` | provider ID。 |
 | `model.modelID` | model ID。 |
 | `model.variant?` | model 变体。 |
-| `system?` | 当次请求额外 system 文本。 |
-| `tools?` | 当次可用工具开关，`toolName -> enabled`。 |
+| `system?` | 当次请求额外 system 文本。隐藏提醒不写，理由同 `tools?`。 |
+| `tools?` | 当次可用工具开关，`toolName -> enabled`。只写在用户输入记录上（真实输入、guide、排队输入、workflow 启动）；隐藏提醒、合成通知和 compact 摘要不写，避免每条记录重复保存整份工具名单。 |
 
 ### `MessageInfo.Assistant`
 
@@ -400,6 +413,7 @@ project 级权限规则。第一版只做 project scope，不做 session/global 
 - 流式文本更新要 debounce，例如 250-500ms 或达到固定字符阈值再写。
 - tool 输出运行中不持续写完整 stdout；完成时一次写 `completed.output`。
 - message 与 part 的同一阶段写入放进事务。
+- 事务体（`begin immediate` 到 `commit` / `rollback`）只调用同步写入，不得 `await`：一个进程的所有 session 共用一个连接，`await` 让出执行权后，其他写入会混入本事务（随回滚静默丢失）或撞上嵌套事务报错。仓库层为此提供 `*Sync` 版本，原有 async 函数不变。
 - 停止、崩溃、进程退出前强制 flush 当前 message / part。
 
 ## 恢复策略
@@ -548,6 +562,18 @@ fork 不需要复制复杂状态。
 - message/part 是否复制取决于产品行为：如果 fork 后要独立编辑历史，就复制到新 session；如果只是引用父历史，就由 context builder 读取父链。
 
 第一版建议复制 message/part，简单、可离线、好理解。
+
+### 彻底删除（项目数据删除）
+
+普通删除只写 `time_deleted`。用户在设置 → 项目里勾选「同时删除 ZCode 数据」时，Host 经 `v4/storage/sessionData/purge` 交来会话 ID 与目录（产品规格：`docs/superpowers/specs/2026-10-24-project-management.md`「彻底删除数据」）：
+
+- 后代只沿附属会话展开：`parent_id` 且 `task_type ∈ {selection_side_chat, workflow_child, subagent_child, nested_workflow_child}`，加 `session_task_link` 子会话。fork 的 `parent_id` 也指向源会话，但它是独立任务，不展开。
+- 本进程已加载且忙（在途 turn、待交互、排队命令、residency blocking work）的会话整棵保留；空闲的按 `deleteSession` 执行面同序释放，但只释放运行态、不发布 `session.removed`：文件或行删除失败时会话仍是存活事实，Host 不能先把它当作已删除。
+- 附件仍被本次不删除的未删除会话引用时整棵保留（`kept.reason = "referenced"`）。fork、回退、工作流转录按值复制 part，`zcode-artifact://<源会话>/<id>` 仍指向源会话的 `artifacts/<sid>`；引用按 part 内容中的 URI 判定（不依赖 fork 谱系，任何复制路径都覆盖），已软删除会话的引用不计。保留一棵后，被它引用的树也变成「本次不删除」的引用方，迭代到不动点。
+- 先删 `cli/{artifacts,exec,agents,sessions}/<sid>` 与 `cli/{debug,rollout}/model-io-<sid>.jsonl`，成功后一个事务删行：`input_history`、`dwf_run`、`workflow_run` 没有级联外键，显式删除；其余经外键级联。文件失败则不删行。
+- 目录的记忆整个删除 `memories/projects/<slug>-<hash>`（与运行时同一解析函数）。
+- 文件与行都删除成功后，才从所有 sessions-index 投影移除，防止下次快照把会话带回。
+- 库 `auto_vacuum = none`，删除行不收缩文件；返回的字节数只统计删除的文件。
 
 ### 崩溃恢复
 

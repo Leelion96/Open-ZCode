@@ -30,6 +30,7 @@ import {
   ISkillSyncService,
   IMcpSyncService,
   IPluginSyncService,
+  IUserConfigSyncService,
   IPluginsService,
   IPluginManagementService,
   ISubagentsService,
@@ -93,6 +94,7 @@ export const REMOTE_WORKSPACE_RPC_REGISTRATIONS = [
   ["skillSyncService", ISkillSyncService],
   ["mcpSyncService", IMcpSyncService],
   ["pluginSyncService", IPluginSyncService],
+  ["userConfigSyncService", IUserConfigSyncService],
   ["pluginsService", IPluginsService],
   ["pluginManagementService", IPluginManagementService],
   ["subagentsService", ISubagentsService],
@@ -233,6 +235,7 @@ export function createServerRemoteWorkspaceServiceCollection(params: {
     // Bug 原因：RPC 合同已经要求 plugin-sync，但旧全转发集合漏注册，远端插件同步会在 Host
     // 二次暴露时变成 Unknown channel。全转发集合必须与合同逐项一致。
     .register(IPluginSyncService, params.connectionServices.pluginSyncService)
+    .register(IUserConfigSyncService, params.connectionServices.userConfigSyncService)
     .register(IPluginsService, params.connectionServices.pluginsService)
     .register(IPluginManagementService, params.connectionServices.pluginManagementService)
     .register(ISubagentsService, params.connectionServices.subagentsService)

@@ -1,0 +1,87 @@
+join join#1 "join" @13:28 order=0 type="string[]"
+fan-out fan-out#1 "fan-out" @13:32 order=1 count=2 type="string[]"
+ask ask#1 "ask" head="f0-" @13:93 order=2 within=fan-out#1 type="string"
+actor actor#1 head="f0-" @13:76 order=3 within=fan-out#1
+join join#2 "join" @14:28 order=4 type="string[]"
+fan-out fan-out#2 "fan-out" @14:32 order=5 count=2 type="string[]"
+ask ask#2 "ask" head="f1-" @14:93 order=6 within=fan-out#2 type="string"
+actor actor#2 head="f1-" @14:76 order=7 within=fan-out#2
+ask ask#3 "m0" @15:51 order=8 type="string"
+actor actor#3 "m0" @15:39 order=9
+ask ask#4 "n1" @18:60 order=10 type="string"
+actor actor#4 "n1" @18:48 order=11
+ask ask#5 "m1" @19:24 order=12 type="string"
+actor actor#5 "m1" @19:12 order=13
+fact ask-data ask#1 <- fan-out#1 exact
+fact ask-data ask#2 <- fan-out#2 exact
+fact ask-data ask#5 <- ask#1 inexact
+fact ask-data ask#5 <- ask#2 inexact
+fact ask-data ask#5 <- ask#3 inexact
+fact ask-data ask#5 <- ask#5 inexact
+fact ask-data ask#5 <- ask#4 inexact
+fact ask-actor ask#1 <- actor#1 exact
+fact ask-actor ask#2 <- actor#2 exact
+fact ask-actor ask#3 <- actor#3 exact
+fact ask-actor ask#4 <- actor#4 exact
+fact ask-actor ask#5 <- actor#5 exact
+fact join-in join#1 <- fan-out#1 exact
+fact join-in join#1 <- ask#1 inexact
+fact join-in join#1 <- ask#2 inexact
+fact join-in join#1 <- ask#3 inexact
+fact join-in join#1 <- ask#5 inexact
+fact join-in join#1 <- ask#4 inexact
+fact join-in join#2 <- fan-out#2 exact
+fact join-in join#2 <- ask#1 inexact
+fact join-in join#2 <- ask#2 inexact
+fact join-in join#2 <- ask#3 inexact
+fact join-in join#2 <- ask#5 inexact
+fact join-in join#2 <- ask#4 inexact
+fact return <- join#1 exact
+fact return <- join#2 exact
+fact return <- fan-out#1 exact
+fact return <- fan-out#2 exact
+fact return <- ask#1 inexact
+fact return <- ask#2 inexact
+fact return <- ask#3 inexact
+fact return <- ask#5 inexact
+fact return <- ask#4 inexact
+region seq#1 seq entered
+region fanout#1 fanout parent=seq#1 @13:32 label="map" strand
+region call#1 call parent=fanout#1 @13:53 entered label="limited" strand
+region call#2 call parent=call#1 @8:16 entered strand
+region fanout#2 fanout parent=seq#1 @14:32 label="map" strand
+region call#3 call parent=fanout#2 @14:53 entered label="limited" strand
+region call#4 call parent=call#3 @8:16 entered strand
+region call#5 call parent=seq#1 @15:16 entered label="limited" strand
+region call#6 call parent=call#5 @8:16 entered strand
+region call#7 call parent=seq#1 @17:9 entered label="limited" strand
+region call#8 call parent=call#7 @8:16 entered strand
+region call#9 call parent=call#8 @18:25 entered label="limited" strand
+region call#10 call parent=call#9 @8:16 entered strand
+spawn actor#1 in=seq#1>fanout#1>call#1>call#2
+issue ask#1 in=seq#1>fanout#1>call#1>call#2 phase=unphased
+settle ask#1 in=seq#1>fanout#1>call#1 joins=call#2
+jump return call#1 in=seq#1>fanout#1>call#1 phase=unphased
+settle ask#1 in=seq#1 joins=fanout#1,call#1
+spawn actor#2 in=seq#1>fanout#2>call#3>call#4
+issue ask#2 in=seq#1>fanout#2>call#3>call#4 phase=unphased
+settle ask#2 in=seq#1>fanout#2>call#3 joins=call#4
+jump return call#3 in=seq#1>fanout#2>call#3 phase=unphased
+settle ask#2 in=seq#1 joins=fanout#2,call#3
+spawn actor#3 in=seq#1>call#5>call#6
+issue ask#3 in=seq#1>call#5>call#6 phase=unphased
+settle ask#3 in=seq#1>call#5 joins=call#6
+jump return call#5 in=seq#1>call#5 phase=unphased
+settle ask#3 in=seq#1 joins=call#5
+spawn actor#4 in=seq#1>call#7>call#8>call#9>call#10
+issue ask#4 in=seq#1>call#7>call#8>call#9>call#10 phase=unphased
+settle ask#4 in=seq#1>call#7>call#8>call#9 joins=call#10
+jump return call#9 in=seq#1>call#7>call#8>call#9 phase=unphased
+settle ask#4 in=seq#1>call#7>call#8 joins=call#9
+spawn actor#5 in=seq#1>call#7>call#8
+issue ask#5 in=seq#1>call#7>call#8 phase=unphased
+jump return call#8 in=seq#1>call#7>call#8 phase=unphased
+settle ask#4,ask#5 in=seq#1>call#7 joins=call#8
+jump return call#7 in=seq#1>call#7 phase=unphased
+settle ask#4,ask#5 in=seq#1 joins=call#7
+jump return seq#1 in=seq#1 phase=unphased

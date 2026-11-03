@@ -260,3 +260,5 @@ sequenceDiagram
 ### 基线更新记录
 
 本轮先按要求拉取并快进到 `origin/staging` 的 `2772217134`（原基线 `c9f959050b`，增加 672 个提交）。上游已占用 Todo153，本条及全部索引顺延为 Todo154，保留上游 Todo153。实施在 `start-plan-independent-provider` 分支进行；freshness／git status 检查后先补预期测试再实现。讨论阶段的 17 项测试与旧行号只作历史调查，不作为最终完成证据。
+
+E2E 推荐回归使用个人/团队及 Start 均支持的 GLM-5.3 与 high 档位。旧 GLM-5.2 的关闭思考兼容由 R95C 单独覆盖，不能依赖它创建已移除的思考菜单选项。自动化通过独立项目 Select 选择执行项目。

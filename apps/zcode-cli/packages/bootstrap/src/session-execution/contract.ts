@@ -9,6 +9,8 @@ export type ModelExecutionInput = NonNullable<CommandPayloadMap["sendText"]["mod
 export type ModelExecutionContext = NonNullable<SendInputOptions["modelExecution"]>;
 
 export interface SessionExecutionContract {
+  /** 取消执行后等待原实例全部在途收尾退出，不以时间推测完成。 */
+  waitForSessionResidencyFinalization(owner: SessionResidencyFinalizationOwner): Promise<void>;
   /** 拷贝并冻结本轮请求鉴权，不持久化凭证。 */
   createModelExecutionContext(input: ModelExecutionInput): ModelExecutionContext;
   /** 同步增加原 record 计数，返回幂等释放函数。 */

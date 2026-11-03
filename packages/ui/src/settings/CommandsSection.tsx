@@ -81,7 +81,7 @@ export function CommandsSection({
     currentWorkspaceTab?.remoteSessionId,
     currentWorkspaceTab?.workspaceIdentity ?? workspaceIdentity,
     currentWorkspaceTab?.remoteTarget,
-    { unscopedServices, forceUnscoped: Boolean(cacheAuthorityKey) },
+    { unscopedServices, forceUnscoped: Boolean(cacheAuthorityKey || unscopedServices) },
   );
   const { commandsService, pluginManagementService, settingsSyncService } =
     listServiceResolution.services;
@@ -97,8 +97,12 @@ export function CommandsSection({
     deleteCommand,
     toggleCommand,
   } = useCommands({
-    workspacePath: workspacePath ?? undefined,
-    workspaceIdentity,
+    // 用户视图只列用户目录与插件命令；workspacePath 只是服务锚点（远端为 home，本机为任一项目）。
+    // Bug 原因：锚点被当作项目路径查询时，同一 ~/.zcode/commands 先被归为 project，按名称去重后
+    // 又被用户视图过滤，远端用户命令列表为空；锚点项目的同名命令也会遮住用户命令。
+    workspacePath: scopeFilter === "user" ? undefined : (workspacePath ?? undefined),
+    workspaceIdentity: scopeFilter === "user" ? undefined : workspaceIdentity,
+    cacheAuthorityKey,
     commandsService,
     enabled: listServiceResolution.rpcReady,
   });
@@ -119,7 +123,7 @@ export function CommandsSection({
     formServiceTarget?.remoteTarget,
     {
       unscopedServices: formTargetWorkspace ? undefined : unscopedServices,
-      forceUnscoped: Boolean(cacheAuthorityKey && !formTargetWorkspace),
+      forceUnscoped: Boolean((cacheAuthorityKey || unscopedServices) && !formTargetWorkspace),
     },
   );
   const formServices = formServiceResolution.services;

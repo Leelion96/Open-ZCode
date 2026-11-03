@@ -14,7 +14,15 @@
       "kind": "common",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "E2E_DWF_SAVE_WINDOW_BOUNDS 首发会触发默认 title sidecar；固定 case-local 标题响应。"
+      "syntheticReason": "E2E_DWF_SAVE_WINDOW_BOUNDS 首发会触发默认 title sidecar；固定 case-local 标题响应，并用该首发 marker 隔离跨 case 匹配。"
+    },
+    {
+      "id": "dwf-save-window-skill",
+      "description": "先加载工作流 Skill，满足 SaveWorkflow 的真实授权前置。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "旧夹具跳过 Skill 加载，被工具校验拒绝且不会显示保存窗；通过真实 Skill 工具建立前置。"
     },
     {
       "id": "dwf-save-window-save-call",
@@ -22,7 +30,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "保存确认窗只由模型调用 SaveWorkflow 打开；超长载荷是被测条件本身。"
+      "syntheticReason": "保存确认窗只由模型调用 SaveWorkflow 打开；超长载荷是被测条件本身，录制回放给不出确定的长度。"
     },
     {
       "id": "dwf-save-window-final",
@@ -30,7 +38,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "拒绝后不写盘，终态文本确认 turn 收口。"
+      "syntheticReason": "拒绝后不写盘，模型据 tool_result 给出终态文本，spec 以此确认 turn 收口。"
     }
   ]
 }

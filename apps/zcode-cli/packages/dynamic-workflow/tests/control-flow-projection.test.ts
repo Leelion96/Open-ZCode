@@ -129,18 +129,18 @@ describe("strands", () => {
       "phase#3@1",
       "ask#3@1",
     ]);
-    // A's and B's asks reach C's marker by a `join`, not by the sequential line: the
-    // spawner walked straight from marker to marker while they ran.
+    // A's and B's asks reach C's marker by a `join`: the spawner walked straight from marker
+    // to marker while they ran, and the barrier that joins both gives up the fork point it
+    // was standing on (phase#2@1), so C follows the strands' exits, not B's marker. Likewise
+    // the script returns after C's fan-out, never straight from C's marker.
     expect(edgeLines(flow)).toEqual([
       "entry -> phase#1@1 next",
       "phase#1@1 -> ask#1@1 fork",
       "phase#1@1 -> phase#2@1 next",
       "ask#1@1 -> phase#3@1 join via=return",
       "phase#2@1 -> ask#2@1 fork",
-      "phase#2@1 -> phase#3@1 next",
       "ask#2@1 -> phase#3@1 join via=return",
       "phase#3@1 -> ask#3@1 fork",
-      "phase#3@1 -> sink jump via=return",
       "ask#3@1 -> sink join via=return",
     ]);
   });
@@ -290,13 +290,118 @@ describe("strands", () => {
         '  .finally(() => log("done"));\n' +
         "return settled;\n",
     );
+    // The `.finally` body's entry placeholder stands for `ask#1@1`; its prologue barrier
+    // joins both `.then` strands, which were forked from that very node, so the placeholder is
+    // consumed and nothing passes through. The script cannot return straight from the draft.
     expect(edgeLines(flow)).toEqual([
       "entry -> ask#1@1 next",
       "ask#1@1 -> ask#2@1 branch",
       "ask#1@1 -> ask#3@1 branch",
-      "ask#1@1 -> sink jump via=return",
       "ask#2@1 -> sink join",
       "ask#3@1 -> sink join",
+    ]);
+  });
+});
+
+/**
+ * A barrier that joins a strand for certain gives up the control the spawner was standing on
+ * when it forked (docs/analysis.md, "The control-flow graph", the `settle` leaf). Before this
+ * rule the fork point stayed on the main line for good, so `n` sequential `await helper()`
+ * calls drew `n(n+1)/2` edges: from the entry and from every earlier call into every later one.
+ */
+describe("a certain join consumes the spawner's control", () => {
+  const STEP = 'async function step(x: string): Promise<string> { return agent("w").ask<string>(x); }\n';
+
+  it("chains sequential helper calls instead of fanning every earlier one into every later one", () => {
+    const { flow } = analyze(STEP + 'const a = await step("a");\nconst b = await step(a);\nconst c = await step(b);\nreturn c;\n');
+    expect(edgeLines(flow)).toEqual([
+      "entry -> ask#1@1 fork",
+      "ask#1@1 -> ask#1@2 join via=return",
+      "ask#1@2 -> ask#1@3 join via=return",
+      "ask#1@3 -> sink join via=return",
+    ]);
+  });
+
+  it("keeps the graph linear in the number of sequential helper calls", () => {
+    const n = 300;
+    let script = STEP + "const out: string[] = [];\n";
+    for (let i = 0; i < n; i += 1) script += `out.push(await step("s${i}"));\n`;
+    script += "return out;\n";
+    const started = Date.now();
+    const { flow } = analyze(script);
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(flow.nodes).toHaveLength(n);
+    // One fork in, one join out per call: n + 1 edges, where the closure drew n(n+1)/2 = 45,150.
+    expect(flow.edges).toHaveLength(n + 1);
+  });
+
+  it("chains sequential fan-outs the same way", () => {
+    const { flow } = analyze(
+      IDS +
+        "const first = await Promise.all(ids.map(async (i) => agent(`a-${i}`).ask<string>(\"a\")));\n" +
+        "const second = await Promise.all(ids.map(async (i) => agent(`b-${i}`).ask<string>(first.join(\",\"))));\n" +
+        "return second;\n",
+    );
+    // Expression-bodied callbacks have no `return` statement, so no `via` on the joins.
+    expect(edgeLines(flow)).toEqual([
+      "entry -> ask#1@1 fork",
+      "ask#1@1 -> ask#2@1 join",
+      "ask#2@1 -> sink join",
+    ]);
+  });
+
+  it("keeps the path that skips the barrier when the join sits in one arm", () => {
+    // Only the arm waits for the strand; past the skipped arm the spawner's control runs on.
+    const { flow } = analyze(
+      STEP +
+        'const flag = (await agent("f").ask<string>("f")) === "y";\n' +
+        'const p = step("a");\n' +
+        "if (flag) {\n  await p;\n}\n" +
+        'return await agent("t").ask<string>("t");\n',
+    );
+    expect(edgeLines(flow)).toEqual([
+      "entry -> ask#2@1 next",
+      "ask#2@1 -> ask#1@1 fork",
+      "ask#2@1 -> ask#3@1 branch",
+      "ask#1@1 -> ask#3@1 join via=return",
+      "ask#3@1 -> sink jump via=return",
+    ]);
+  });
+
+  it("keeps the spawner's control when the join is only a may-claim", () => {
+    // `ps[n % 2]` is an opaque awaited position: the walk lifts both strands on a may-claim,
+    // so the barrier may not have waited for either, and the control before it stands.
+    const { core, flow } = analyze(
+      STEP +
+        'const ps = [step("a"), step("b")];\n' +
+        'const n = (await agent("n").ask<string>("which")).length;\n' +
+        "const first = await ps[n % 2];\n" +
+        "return first;\n",
+    );
+    const lifted = core.trace.events.filter((event) => event.at === "settle" && event.maybeJoins !== undefined);
+    expect(lifted.map((event) => (event.at === "settle" ? event.maybeJoins : []))).toEqual([["call#1", "call#2"]]);
+    expect(edgeLines(flow)).toContain("ask#2@1 -> sink jump via=return");
+    expect(edgeLines(flow)).toContain("ask#1@1 -> sink join via=return");
+    expect(edgeLines(flow)).toContain("ask#1@2 -> sink join via=return");
+  });
+
+  it("keeps the spawner's control when control can pass through the strand without a node", () => {
+    // `return x` meets no node: on that path there is nothing to wait for, so the barrier
+    // leaves the spawner's source standing beside the strand's exit.
+    const { flow } = analyze(
+      "async function maybeStep(x: string): Promise<string> {\n" +
+        '  if (x.length > 3) return agent("w").ask<string>(x);\n' +
+        "  return x;\n}\n" +
+        'const seed = await agent("s").ask<string>("seed");\n' +
+        "const r = await maybeStep(seed);\n" +
+        'return await agent("t").ask<string>(r);\n',
+    );
+    expect(edgeLines(flow)).toEqual([
+      "entry -> ask#2@1 next",
+      "ask#2@1 -> ask#1@1 fork",
+      "ask#2@1 -> ask#3@1 next",
+      "ask#1@1 -> ask#3@1 join via=return",
+      "ask#3@1 -> sink jump via=return",
     ]);
   });
 });

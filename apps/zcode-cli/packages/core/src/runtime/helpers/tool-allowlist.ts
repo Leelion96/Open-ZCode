@@ -2,10 +2,13 @@ import {
   AMEND_WORKFLOW_TOOL_NAME,
   CREATE_WORKFLOW_TOOL_NAME,
   FILL_WORKFLOW_HOLE_TOOL_NAME,
+  GET_WORKFLOW_RUN_TOOL_NAME,
+  LIST_WORKFLOW_RUNS_TOOL_NAME,
   RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
   RESPOND_TO_COORDINATOR_TOOL_NAME,
   RESUME_WORKFLOW_RUN_TOOL_NAME,
   SAVE_WORKFLOW_TOOL_NAME,
+  type SessionTaskType,
 } from "@zcode/contracts";
 import { EXPLORE_AGENT_ALLOWED_TOOLS } from "../../subagent/explore-tools.js";
 import type { AgentRuntimeConfig } from "../types.js";
@@ -30,7 +33,7 @@ const WORKFLOW_CHILD_DISALLOWED_TOOLS = [
   AMEND_WORKFLOW_TOOL_NAME,
   // SaveWorkflow 因**同一个**根因入列：它也声明了 alwaysAsk，所以在 child 里同样会发出一个
   // 父界面看不到的确认请求并挂到超时。ListSavedWorkflows 不在列——那条禁令的理由是无窗可弹，
-  // 只读查询不适用（与两个 run 内省工具同理）。
+  // 只读查询不适用（两个 run 内省工具另有根因，见下面的 RUN_INTROSPECTION_TOOLS）。
   SAVE_WORKFLOW_TOOL_NAME,
   // **结构性禁用**——child 内不得再编排。恢复 = 重新执行整块脚本（完结节点 replay、未完结
   // 重派发），与 CreateWorkflow 新启是同一能力档；纵使免确认后「无窗可弹」的技术问题消失，
@@ -51,6 +54,24 @@ const WORKFLOW_CHILD_DISALLOWED_TOOLS = [
 ] as const;
 
 /**
+ * 子 runtime 不注册的 run 内省工具。
+ *
+ * 根因与上面那份名单不同：它们只读、无 gate，但要经 dwf run 端口读取，而端口只在 app 顶层
+ * runtime——子 runtime 按不变式不得持有（`bootstrap/src/app/dynamic-workflow-run-progress-sink.ts`：
+ * 持有了，子会话发起的 run 会把事件投进父会话的 transcript）。所以它们在子 runtime 里只会报
+ * `workflow_introspection_unavailable`（线上 2026-10-20：workflow child 调用 155 次，全部失败）。
+ * 不注册，模型就不会去调一个必然失败的工具。
+ */
+const RUN_INTROSPECTION_TOOLS = [LIST_WORKFLOW_RUNS_TOOL_NAME, GET_WORKFLOW_RUN_TOOL_NAME] as const;
+
+/** 不持有 dwf run 端口的子 runtime（docs/dynamic-workflow/launch.md「workflow child sessions」）。 */
+const CHILD_TASK_TYPES_WITHOUT_RUN_PORT: ReadonlySet<SessionTaskType> = new Set<SessionTaskType>([
+  "subagent_child",
+  "workflow_child",
+  "nested_workflow_child",
+]);
+
+/**
  * 运行时最终的工具禁用名单：turn 级 `toolDisallowlist` 叠加按 taskType 推导出的结构性禁用。
  * 放在这里而不是各个 child runtime 的构造点，是因为构造点有两个
  * （`workflow-facade.ts` 与 `script-workflow-child-runtime.ts`），两份名单必然漂移。
@@ -58,10 +79,16 @@ const WORKFLOW_CHILD_DISALLOWED_TOOLS = [
 export function resolveRuntimeDisallowedTools(
   config: AgentRuntimeConfig,
 ): readonly string[] | undefined {
-  if (config.taskType !== "workflow_child") return config.toolDisallowlist;
+  const structural = [
+    ...(config.taskType === "workflow_child" ? WORKFLOW_CHILD_DISALLOWED_TOOLS : []),
+    ...(config.taskType !== undefined && CHILD_TASK_TYPES_WITHOUT_RUN_PORT.has(config.taskType)
+      ? RUN_INTROSPECTION_TOOLS
+      : []),
+  ];
+  if (structural.length === 0) return config.toolDisallowlist;
 
   const disallowed = new Set(config.toolDisallowlist ?? []);
-  for (const toolName of WORKFLOW_CHILD_DISALLOWED_TOOLS) disallowed.add(toolName);
+  for (const toolName of structural) disallowed.add(toolName);
   return [...disallowed];
 }
 

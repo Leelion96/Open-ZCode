@@ -1,14 +1,7 @@
-/* off-peak（闲时任务）排队协议的适配层特判。
-   语义只对 Model Config 显式声明 off-peak-queue 协议的请求生效——业务码 3105/3102
-   在其它 bigmodel API 可能另有含义，禁止写进全局 failure-provider-business-codes 映射表。
-
-   - 429（含业务码 3105）= 排队应答：单次等待 min(Retry-After, 5min) 钳制 × 无限幂等探测；
-     调用方冻结 attempt 预算（否则默认 11 次后被误判为 API 失败，D24 规则 2）；abort 贯穿 sleep。
-   - 400/3102 = 票据不可用（active 3h 到期 / ready 废票）：立即以稳定标记落败，
-     desktop 端识别标记改走"同 task_id 重取号 → resume 续跑"（§4.6），不是普通失败。
-   - D24 规则 1（首派弃派）不在适配层实现：首派挂网关时 ready 5min TTL 到期自然触发
-     3102 → 续跑回队，等待上界 ≈ TTL + 一次钳制探测 ≤ 10min，满足规则意图且少一套状态
-     （该简化已回写 tech-design §4.3）。 */
+/* off-peak 排队协议只对显式声明 off-peak-queue 的请求生效。
+   429/3105 等待不消耗普通重试预算；3102 过号、3106 运行超时均携带过期标记，
+   由 Host 结束本次任务，不自动补号。其他 provider 不采用这些业务码语义。 */
+import { isOffPeakTicketExpiredCode } from "@zcode/shared";
 import type { ClassifiedModelFailure } from "./failure-classifier.js";
 import { isProviderBusinessError } from "./model-execution.js";
 
@@ -39,8 +32,8 @@ export function resolveOffPeakFailureDecision(params: {
   const businessCode = isProviderBusinessError(params.error)
     ? params.error.providerCode
     : undefined;
-  // 服务端最新契约使用 3102；保留 3001 兼容滚动发布期间的旧网关响应。
-  if (businessCode === "3102" || businessCode === "3001") {
+  // 3102/3106 按新契约区分；3001 仅保留旧网关兼容，不将新的 3104 无效票据归为过期。
+  if (isOffPeakTicketExpiredCode(businessCode) || businessCode === "3001") {
     return { kind: "ticketExpired" };
   }
   // 排队真实信号 = HTTP 429（3105 带 Retry-After）；无业务码的裸 429 同样按排队处理。

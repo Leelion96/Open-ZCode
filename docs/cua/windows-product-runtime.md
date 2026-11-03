@@ -193,7 +193,7 @@ staging manifest（未签名字节 hash）
 - Windows 现有 30 工具 source/live smoke 不回退。
 
 仓库级门禁保持 `pnpm typecheck` 与 `pnpm lint`。当前分支既有、与 CUA 无关的
-`test:unit:affected` 失败必须单独列出，不得把它们伪装成 CUA 回归。
+`test:engineering:affected` 失败必须单独列出，不得把它们伪装成 CUA 回归。
 
 ## 本地产品验收记录（2026-07-29）
 

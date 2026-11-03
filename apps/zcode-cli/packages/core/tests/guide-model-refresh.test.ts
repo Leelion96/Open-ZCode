@@ -183,4 +183,54 @@ describe("Guide refresh versus model switching", () => {
       runtime.beginShutdown();
     }
   });
+
+  it("同一边界一起取出两条 Guide 时，后一条的选择生效", async () => {
+    const eventStore = createTestSessionEventStore();
+    const requestModels: string[] = [];
+    const runtime = createTestAgentRuntime(
+      createSessionId("guide-refresh-together"),
+      { mode: "build", modelSelection: selection, workingDirectory: "/fixture" },
+      {
+        eventStore,
+        modelFactory: createTestModelFactory({
+          async generateText(request, observation) {
+            requestModels.push(String(observation.model.modelId));
+            if (requestModels.length === 1) {
+              for (const modelId of ["first-guide", "second-guide"]) {
+                const result = await runtime.steerTurn({
+                  expectedTurnId: runtime.getActiveTurnInfo()?.turnId,
+                  input: `GUIDE_${modelId}`,
+                  delivery: "guide",
+                  intent: {
+                    sourceCommandId: modelId,
+                    kind: "sendText",
+                    requestedDelivery: "guide",
+                    admittedDelivery: "guide",
+                    modelSelection: { ...selection, modelId },
+                  },
+                });
+                expect(result.kind).toBe("queued");
+              }
+            } else {
+              const text = JSON.stringify(request.messages);
+              expect(text.indexOf("GUIDE_first-guide")).toBeLessThan(
+                text.indexOf("GUIDE_second-guide"),
+              );
+            }
+            return { text: "step complete", finishReason: "stop", usage: {} };
+          },
+        }),
+      },
+    );
+    try {
+      await runtime.executeTurn("start guide fixture");
+      expect(requestModels).toEqual(["original", "second-guide"]);
+      expect(runtime.getSessionModelSelection()).toMatchObject({ modelId: "second-guide" });
+      const events = await eventStore.getEvents(runtime.sessionId);
+      // 两条在同一边界取出（中间没有模型请求），各自一个 drained 事件。
+      expect(events.filter((e) => e.type === SessionEventType.TurnSteerDrained)).toHaveLength(2);
+    } finally {
+      runtime.beginShutdown();
+    }
+  });
 });

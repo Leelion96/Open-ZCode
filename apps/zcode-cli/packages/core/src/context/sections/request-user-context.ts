@@ -61,9 +61,6 @@ function buildRequestUserContextContent(input: {
   }
 
   return [
-    // 聚合字段标题不能绑定到 AGENTS.md，否则仅有 Project Memory 时缺少标题。
-
-    "# agentsMd",
     "Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.",
     "",
     sections.join("\n\n"),
@@ -93,7 +90,7 @@ function buildInstructionContent(instructions: ResolvedUserInstructions): string
   return sections.length > 0 ? sections.join("\n\n") : null;
 }
 
-function normalizedInstructionSources(
+export function normalizedInstructionSources(
   instructions: ResolvedUserInstructions,
 ): ResolvedUserInstructionSource[] {
   if (instructions.sources && instructions.sources.length > 0) {
@@ -130,5 +127,7 @@ function buildInstructionSourceContent(source: ResolvedUserInstructionSource): s
 }
 
 function formatInstructionSourceScope(scope: ResolvedUserInstructionSource["scope"]): string {
-  return scope === "user" ? "user default instructions" : "workspace instructions";
+  return scope === "user"
+    ? "user's private global instructions for all projects"
+    : "project instructions, checked into the codebase";
 }

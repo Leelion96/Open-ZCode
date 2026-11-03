@@ -730,6 +730,11 @@ function createTarget(ctx, binding) {
         to: bindTarget(binding, to, "drag to"),
         app_ref: binding.appRef,
         ...(options?.modifiers ? { modifiers: options.modifiers } : {}),
+        // Bug 原因（2026-10-27）：文档 DragOptions 声明了 strategy，broker 的 drag
+        // handler 也早已按 strategy==="event" 跳过后台中间级走前台 SendInput，但
+        // 此前 SDK 只透传 modifiers —— 调用方显式选 event 被静默吞成 auto，前台
+        // 拖拽从 SDK 层不可达。与 click/pressKey/scroll 同形透传。
+        ...(options?.strategy ? { strategy: options.strategy } : {}),
       });
     },
 
@@ -861,7 +866,10 @@ const KEY_ALIASES = Object.freeze({
   shift_l: "shift", shift_r: "shift", shift: "shift",
   escape: "esc", esc: "esc",
   prior: "pageup", next: "pagedown",
-  period: ".", comma: ",", greater: ">", slash: "/", minus: "-", equal: "=",
+  // 曾有 greater: ">"——输出 ">" 从未通过工具层白名单（S2 前后均如此），是端到端
+  // 死路径，且会让组合契约测试（sdk-key-chord-contract.node-test.mjs）被迫开
+  // 豁免口，故移除。需要输出 ">" 时应先给工具层 canonical 集补该 token。
+  period: ".", comma: ",", slash: "/", minus: "-", equal: "=",
 });
 
 function normalizeKeyChord(chord, platform) {
@@ -1063,19 +1071,19 @@ export async function setupComputerUseRuntime({ globals }) {
     Object.defineProperty(app, "elements", {
       enumerable: false,
       value: async () => {
-        // 与 getScreenshot 同档的静默观察（见 createTarget 的 observe）：结果只回给 JS、
-        // 不 emit 任何东西，所以两条声明都必须给。
+        // 与 getScreenshot 不同档（2026-10-25 修正）：返回值（含 index 的元素表）
+        // 回给了模型所写的 JS——els[3].index 直接进 click 参数，这张表就是模型
+        // 选目标的信息来源，构成「模型可见」。2026-09-16 评审按「不 emit」把它
+        // 与 bindApp/getScreenshot 一刀切标 false，掩盖了本质差异（那两条的
+        // 返回值不含树）；false 的真实后果是位移台账只剩更旧的树，模型用
+        // elements() 的新鲜索引点击时被拿旧树对照新树，element_index_shifted
+        // 假阳性（真位移同时拦不住）。记账后 producer 台账与模型实际所见一致。
         //
-        // Bug 原因（2026-09-16 评审）：这里过去两条都没给。
-        // 1. 漏 tree_shown_to_model=false ⇒ producer 默认按「模型看过」记账
-        //    （observation.ts 的 `treeShownToModel !== false`），索引位移台账被一棵模型
-        //    没看过的树覆盖，校验退化成当前树跟当前树自比，静默点错元素的保护失效。
-        // 2. 这次 capture 还把 Helper 的 diff 基线推到了这棵未展示的树上，而 binding.treeSeen
-        //    仍是 true ⇒ 下一次 getAXState 会拿到相对未展示树的增量，SKILL 承诺的
-        //    「diff 只相对本 cell 展示过的树」就成了假话。清 treeSeen 让它强制整树。
+        // diff 基线问题不受影响：binding.treeSeen 仍清空（treeSeen 管的是 emit
+        // 展示面的整树承诺，与记账正交），下一次 getAXState 照旧强制整树。
         const fresh = appStateOf(
           "get_app_state",
-          await call("get_app_state", { app_ref: appRef, tree_shown_to_model: false }),
+          await call("get_app_state", { app_ref: appRef, tree_shown_to_model: true }),
         );
         binding.stateId = fresh.state_id;
         binding.elements = fresh.elements;
@@ -1199,4 +1207,4 @@ export async function setupComputerUseRuntime({ globals }) {
   return cua;
 }
 
-export { COMPUTER_METHOD_NAMES, PLATFORM_EXCLUDED_METHODS, ComputerUseError, normalizeKeyChord };
+export { COMPUTER_METHOD_NAMES, PLATFORM_EXCLUDED_METHODS, ComputerUseError, normalizeKeyChord, KEY_ALIASES };

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-streaming-history-performance",
+  "spec": "./test/e2e/conversation-session/conversation-session-streaming-history-performance.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-streaming-history-performance.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "streaming-history-main",
+      "description": "PERF04: 合成长历史后通过真实 provider/CLI/Host 连续发送 thinking 与正文。",
+      "kind": "main",
+      "timingPolicy": "recorded-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定 30ms SSE 节奏用于同环境修复前后性能比较，不代表用户现场真实 token 节奏。"
+    }
+  ]
+}

@@ -274,6 +274,12 @@ through the app-level `listMcpServers()` interface:
 - `/mcp connect <server>` and `/mcp disconnect <server>` remain the command
   surface for state changes; the sidebar only reflects the resulting status.
 
+## Stdio Runtime Fallback
+
+When the agent runs on Electron Node (desktop), stdio servers that start `node`, `npm` or `npx`
+fall back to Electron Node and a bundled npm if the machine has none. The user's own commands win.
+See [mcp-node-fallback.md](mcp-node-fallback.md) for the shim directory, env contract and limits.
+
 ## Error Handling
 
 - A failed server connection marks only that server as `failed`; other servers may still connect.

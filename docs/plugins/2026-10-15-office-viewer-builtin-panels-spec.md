@@ -12,6 +12,7 @@
 
 - 四个插件统一升到 0.2.0，在原有生产技能之外新增一个查看技能（`docx-viewer`、`pdf-viewer`、`pptx-viewer`、`xlsx-viewer`）、一个 stdio MCP server 和一个 `availability: "session"` 的 UI surface。
 - 面板实现放在共享包 `@zcode/office-runtime`（`apps/zcode-cli/packages/office-runtime`）。每个插件在 package.json 的 `office` 字段声明面板标题与格式，`build` 脚本调用 `../office-runtime/scripts/build.mjs`，只打包该格式的解析器与查看器。
+- `read_document`、`search_document` 服务面板里的讨论：返回的位置是面板使用的锚点，可直接交给 `show_in_viewer`；PDF 文字与面板文字层经过同一套归一（§6.3），可作为 `quote` 高亮。Excel 例外：没有缓存结果的公式在 server 文字里没有值，面板会计算并显示（见 `xlsx-viewer` 技能）。工具描述写明这一用途，要求先 `open_document`，并把面板之外的提取与处理指向同格式的生产技能（`docx` / `xlsx` / `pptx` / `pdf`）。server 不校验文件是否已在面板打开：未打开的工作区文件照常可读，没有面板的环境（见各查看技能）也依赖这一点。
 - 生产技能、视觉评审 Agent 与许可证（Apache-2.0）保持不变；面板与 server 代码随 office-runtime 的 MIT 许可写入 `dist/LICENSE`。
 
 ## 2. 构建与产物
@@ -39,13 +40,13 @@ office-runtime/scripts/build.mjs（插件名取自 .zcode-plugin/plugin.json）
 
 | 位置                                                  | 内容                                                                                                                     |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `bootstrap/src/app/official-plugin-definitions.ts`    | 版本 0.2.0（pdf 0.2.1，按插件各自声明）；`requiredSeedPaths` 增加 viewer skill 与 `OFFICIAL_OFFICE_VIEWER_RUNTIME_PATHS` |
-| `cli/scripts/sea-official-plugin-assets.mjs`          | 版本 0.2.0（pdf 0.2.1）；`requiresRuntime: true`，`requiredRuntimePaths` 为面板产物                                      |
+| `bootstrap/src/app/official-plugin-definitions.ts`    | 版本 0.2.1（pdf 0.2.2，按插件各自声明）；`requiredSeedPaths` 增加 viewer skill 与 `OFFICIAL_OFFICE_VIEWER_RUNTIME_PATHS` |
+| `cli/scripts/sea-official-plugin-assets.mjs`          | 版本 0.2.1（pdf 0.2.2）；`requiresRuntime: true`，`requiredRuntimePaths` 为面板产物                                      |
 | `desktop/scripts/prepare-agent-node-bundle.mjs`       | `requiresRuntime: true`，`runtimeBuildScript` 指向 office-runtime 构建脚本                                               |
 | `scripts/build-desktop-agent-cli.mjs`                 | dev 链路构建四个插件并校验 `dist/server.mjs`                                                                             |
 | `server/src/remote/zcodeAgentOfficialPluginAssets.ts` | 远端必需资产加入 viewer skill 与面板产物                                                                                 |
 | `docker/plugin-eval/Dockerfile`                       | 评测镜像在 stage 前构建四个插件                                                                                          |
-| 各插件 `package.json` / `.zcode-plugin/plugin.json`   | 版本 0.2.0（pdf 0.2.1）                                                                                                  |
+| 各插件 `package.json` / `.zcode-plugin/plugin.json`   | 版本 0.2.1（pdf 0.2.2）；MCP server 声明 `"isolation": "workspace"`（§8）                                                |
 
 `requiredSeedPaths` 缺项时 seed 只拒绝该插件并回退到可用旧缓存，不影响其他插件；因此未构建的开发环境会看到这四个插件停留在旧缓存或缺失，而不是全部插件失败。
 
@@ -133,5 +134,62 @@ Chrome / Skia 打印出的 PDF 常把部分汉字的 ToUnicode 写成部首兼�
 
 - 宿主仅下发完整作用域的 SHA-256 恢复键，不下发路径或 sessionId。窗口恢复与最近文件共用窗口级缓存，最多保留 128 个最近使用窗口；超出后最旧窗口回到空状态。
 - report_view 携带 viewId，DocumentOwner 按窗口保存。get_view 可指定 viewId；多个窗口且未指定时返回窗口清单及歧义提示，不任选最后上报者。页面正常离开时释放视图；异常退出的旧视图最多造成保守的歧义提示，不串答。Agent 定位继续打开专用 surface，工具文案明确该行为。
-- 导入由服务端串行管理；新导入准入前清理超过 10 分钟没有数据的未完成导入。服务端启动只清扫过期的 `.partial`，保留成品和近期其他进程导入。并发 begin 不突破 4 槽上限，失败与退出清理不产生未处理 rejection。资源过期只用于回收，不用来决定页面同步顺序。
+- 导入由服务端串行管理；新导入准入前清理超过 10 分钟没有数据的未完成导入。服务端启动只清扫过期的 `.partial`，保留成品和近期其他进程导入。并发 begin 不突破每 session 4 槽的上限（§8.2），失败与退出清理不产生未处理 rejection。资源过期只用于回收，不用来决定页面同步顺序。
 - 覆盖：恢复键隐私、窗口缓存上限与隔离、多视图歧义、并发上限、超时回收、启动清扫及完成副本保留。
+
+## 8. 工作区共享 server
+
+每个文档插件在同一工作区只起一个 MCP server 进程，供该工作区全部 session 共用（四个插件即每工作区四个进程）；此前每个 session 各起一份。面板、工具与交互不变。
+
+### 8.1 宿主
+
+- 插件 manifest 的 stdio / http MCP server 可声明 `"isolation": "workspace"`。插件 MCP 解析（`adapters/src/plugins/mcp.ts`）只对官方市场（`zcode-plugins-official`）插件透传该字段；其他插件的声明被忽略，保持 session isolation（`docs/mcp-platform-boundary.md`）。
+- 连接池沿用 node_repl 的共享规则：键为 server 名 + workspaceKey + 解析后的配置（`adapters/src/mcp/pool.ts`），每个 session 持有一个 lease，最后一个 lease 释放后按既有 grace 关闭。`${ZCODE_PROJECT_DIR}` 不同的 session 配置不同，仍各起一份。
+- 官方插件运行时 manifest 重写（`official-plugin-runtime.ts`）保留 `isolation`。
+- 四个插件升版（0.2.1，pdf 0.2.2）：同版本缓存目录里的旧 `dist/server.mjs` 不区分 session，不能在新 manifest 下被共享。
+
+### 8.2 server 状态按 session 划分
+
+宿主给每次 `tools/call` 写入 `_meta.session_id`：Agent 调用来自执行工具的 session，面板调用（`mcp/uiCallTool`）来自面板所属 session（`adapters/src/mcp/index.ts` 的 `mcpRequestMeta`）。subagent 与工作流子代理的调用另带 `_meta.root_session_id`，即派生它的顶层 session（trace context 的 `rootSessionId`，在派生处写入、随子 trace 继承）。server 按 `root_session_id ?? session_id` 划分状态，所以 subagent 与父 session 的面板共用同一份查看状态，和改造前同进程时一致。session 只用来划分查看状态，不作授权依据：调用方只有宿主，面板不能自填 `_meta`。
+
+```text
+session 1 Agent ─ open_document(a) ──┐  _meta.session_id = s1
+session 1 面板  ─ load / report_view ─┤
+                                     ├──► 共享 server ── DocumentOwner
+session 2 Agent ─ open_document(b) ──┤                    ├─ 解析缓存（共享，按路径 + size/mtime）
+session 2 面板  ─ load / report_view ─┘  session_id = s2   ├─ s1：current、views、revealSeq、文件句柄
+                                                          └─ s2：current、views、revealSeq、文件句柄
+文件分块（resources/read）不带 session：按 load_document 发出的不可猜 token 查找
+```
+
+| 状态                                         | 归属                                                                                                     |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| 解析缓存                                     | 全 server 共享，上限 6 个文档                                                                            |
+| `current`（get_viewer）、reveal 序号         | 每 session                                                                                               |
+| 视图上报（report_view / get_view / release） | 每 session；get_view 只列本 session 的窗口                                                               |
+| 文件句柄                                     | 每 session 最多 4 个，超出淘汰本 session 最旧的；面板读完最后一块即释放；token 全局唯一，分块按 token 查 |
+| 导入                                         | 每 session 4 槽（§7 的上限与回收规则改为按 session 计）                                                  |
+
+- 缺少 `session_id`（旧宿主、直接 stdio 启动的 smoke / e2e）时归入同一个默认 session，行为等同改造前的单 session 进程。
+- server 收不到 session 关闭：session 状态按最近使用保留最多 32 个，超出时淘汰最久未用的 session 及其句柄；不用超时回收。被淘汰的 session 再次调用时从空状态开始，面板按 §5 的窗口恢复重新加载。
+- 文件句柄只用于把字节交给面板：面板在 `load_document` 后立即按序读完全部分块并自留字节，server 送出最后一块即删除句柄。常驻字节因此只取决于进行中的加载，不取决于历史 session 数；面板读到一半消失时，句柄由本 session 的 4 个上限或 session 淘汰回收。
+- `load_document` 解析期间所属 session 被淘汰时，不再登记句柄，返回 `invalid_token`，面板显示既有的重新加载入口。
+- 导入槽位按 session 计：一个 session 放弃的导入不占其他 session 的槽位；10 分钟空闲回收不变。
+
+### 8.3 行为变化
+
+- server 崩溃影响该工作区所有 session 的同一面板；下次调用由连接池重连，面板显示既有错误态与重新加载入口。
+- 进程生命周期随工作区内任一 session 的 lease 延续。
+
+### 8.4 覆盖
+
+| 场景                                                     | 覆盖位置                                                                                                                                                |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 官方插件透传 isolation，非官方忽略                       | adapters/tests/plugin-mcp-isolation.test.ts                                                                                                             |
+| session 间 current / 视图 / 句柄隔离、缓存共享、LRU 淘汰 | office-runtime/src/app/sessions.test.ts                                                                                                                 |
+| 工具从 `_meta.session_id` 取 session                     | office-runtime/src/adapters/server.test.ts（内存传输）                                                                                                  |
+| 两个 session 共用真实 stdio server                       | office-runtime/scripts/smoke.mjs                                                                                                                        |
+| subagent 调用带 root_session_id，server 按它划分         | adapters/tests/mcp.test.ts；office-runtime/src/adapters/server.test.ts                                                                                  |
+| 句柄读完最后一块即释放；淘汰中的加载不登记句柄           | office-runtime/src/app/sessions.test.ts                                                                                                                 |
+| 导入槽位按 session 计                                    | office-runtime/src/adapters/files.test.ts                                                                                                               |
+| 桌面多 session 真机                                      | macOS 开发实例人工验收通过（agent 日志中多个 session 的 `mcp.pool.lease.acquired` 指向同一 `mcpTransportPid`）；桌面 E2E、Windows/Linux、远程工作区待补 |

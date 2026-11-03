@@ -151,7 +151,7 @@ describe(`${CASE_MARKER}: 激活远端 workspace 时模型设置连通性测试�
     await clearAppData();
   });
 
-  it("R3A-PRV-17 有本地 workspace 时在本地执行（回放收到请求、远端日志无）；无本地页签与记忆路径时明确不可用；Linux 路径不交给本机 Agent", async function () {
+  it("R3A-PRV-17 有本地 workspace 时在本地执行（回放收到请求、远端日志无）；无本地页签与记忆路径时用本机对话目录在本地执行；Linux 路径不交给本机 Agent", async function () {
     this.timeout(25 * 60_000);
     const prepared = await prepareSSHLifecycle(CASE_MARKER, { tunnelUsername: "tunnel" });
     provider = prepared.provider;
@@ -284,8 +284,11 @@ describe(`${CASE_MARKER}: 激活远端 workspace 时模型设置连通性测试�
         Number.parseInt(remoteLogAfter2.stdout.trim() || "0", 10) -
         Number.parseInt(remoteLogAfter.stdout.trim() || "0", 10),
     };
-    expect(withoutLocal.toast).toMatch(/本地工作区不可用|不可用/u);
-    expect(requestsAfter2 - requestsBefore2).toBe(0);
+    // ZCT-2112556538453495808：只开远程项目时旧逻辑报“本地工作区不可用”；现在由本机 Host
+    // 的对话目录承接测试，请求仍只到本机回放，远端没有模型请求。
+    expect(withoutLocal.clicked).toBe(true);
+    expect(withoutLocal.toast).toMatch(/连接成功/u);
+    expect(requestsAfter2 - requestsBefore2).toBeGreaterThanOrEqual(1);
     expect(
       (facts.withoutLocalWorkspace as { remoteModelNetworkDelta: number }).remoteModelNetworkDelta,
     ).toBe(0);

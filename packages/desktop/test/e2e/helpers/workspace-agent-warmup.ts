@@ -88,9 +88,13 @@ export async function assertStableAgentSelection(
 
 /** 旧组织模式入口退场后，所有项目型用例统一选择项目视图。 */
 export async function selectTaskOrganizeMode(_labels: string[]): Promise<void> {
+  // 断开后紧接重连曾在菜单关闭动画中再次点开关，导致菜单被反向关闭；已是项目视图无需重复选择。
+  if (await $('[data-testid="project-section"]').isDisplayed()) return;
   await $('[data-testid="sidebar-view-menu"]').click();
-  await $('[role="menuitemradio"][data-state]') .waitForExist();
   const item = $('[role="menuitemradio"][data-testid="sidebar-view-projects"]');
+  // 菜单状态属性属于组件实现；等待真实项目选项可操作，避免依赖已移除的 data-state。
+  await item.waitForClickable();
   await item.click();
+  await item.waitForExist({ reverse: true });
   await $('[data-testid="project-section"]').waitForDisplayed();
 }

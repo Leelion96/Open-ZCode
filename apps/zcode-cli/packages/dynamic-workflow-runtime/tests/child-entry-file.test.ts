@@ -94,7 +94,7 @@ describe("child entry file", () => {
     // 保留是裁决：目录兼作每次 run 实际执行体的存档。
     const text = await readFile(entryPath, "utf8");
     expect(text).toContain("// zcode dynamic workflow run dwfrun-1234");
-    expect(text).toContain('export const payload = {"lowered":"return __host.args.x;","args":{"x":7},"maxOldSpaceSizeMb":256}');
+    expect(text).toContain('export const payload = {"lowered":"return __host.args.x;","args":{"x":7},"run":{"id":"dwfrun-1234"},"maxOldSpaceSizeMb":256}');
     expect(text).toContain("export const start = ");
     // 只由 harness 写一份 `*`，绝不碰项目自己的 .gitignore。
     await expect(readFile(join(cwd, ".zcode", "workflow-runs", ".gitignore"), "utf8")).resolves.toBe("*\n");

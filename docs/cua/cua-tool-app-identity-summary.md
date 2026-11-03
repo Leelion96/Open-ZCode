@@ -19,7 +19,7 @@ producer 统一 wrapper 附加 _meta["zcode.cua/app-associations-v1"].primary
   { appKey, displayName?, icon? }
         |
         v  broker 响应（沙箱不可见）
-node-repl-host CUA bridge —— 唯一可信记录点
+node-repl-host 主线程 CUA broker —— 唯一可信记录点（本次调用的账本）
         |
         v  run 结果的可信槽位
 node_repl 工具结果 _meta["zcode/nodeReplCuaApp"] = { appKey, displayName? }
@@ -31,7 +31,9 @@ Core display `node_repl_images.app`
 Node REPL 工具卡 leading icon -> IPlatformService.getApplicationIcon(locator)
 ```
 
-- **信任边界**：身份只能由 node-repl-host 的 CUA bridge 在收到 broker 响应时记录。
+- **信任边界**：身份只能由 node-repl-host 主线程的 CUA broker 在拿到 runtime 结果时记入本次调用的账本
+  （[node_repl 调用账本](../../apps/zcode-cli/docs/design/v2/tool/20-node-repl-call-ledger.md)）。原来由 Worker
+  里的 bridge 记录，cell 可以经 `worker_threads` 冒充 Worker 的结果消息伪造它，所以记录点移出了 Worker。
   `nodeRepl.setResponseMeta` 与 `nodeRepl.emitStructuredResult` 都挂在模型可见的 sandbox
   globals 上，因此经这两条通道到达的 `zcode.cua/app-associations-v1` 一律**丢弃**，不得参与展示
   （同 `zcode/nodeReplBrowserScreenshotContentIndices` 的既有处置）。宿主自己写的

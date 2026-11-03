@@ -4,8 +4,8 @@
 //
 // 子代理的工具面必须落到 child runtime 的工具注册上，否则实盘 transcript
 // 里裁判 actor 也拿到了整套交互工具。两类风险：
-//   1. 悬挂：AskUserQuestion / EnterPlanMode 在 headless child 里没有人可问，turn 永远不结束；
-//      2026-09-23 起 AskUserQuestion 经父会话送达用户，已还给子代理（见减法表注释）；
+//   1. 悬挂与越级：EnterPlanMode 在 headless child 里没有人可审批；AskUserQuestion 让子代理绕过
+//      主代理直接问用户（见减法表注释）；
 //   2. 越权与递归：CreateWorkflow 让 actor 能再提交一条工作流，ReadSessionContext 越界读父会话。
 // 本模块是那个缺失的映射，由 driver 侧的 runtime 工厂在造 AgentRuntime 时展开。
 //
@@ -14,6 +14,7 @@
 // 只读靠提示）。
 
 import {
+  ASK_USER_QUESTION_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME,
   EXIT_PLAN_MODE_TOOL_NAME,
   READ_SESSION_CONTEXT_TOOL_NAME,
@@ -29,11 +30,15 @@ interface WorkflowActorToolPolicy {
  * 从全集里减掉的工具：plan 两件套——子代理不做待批准的计划；CreateWorkflow 会让 actor 递归
  * 提交工作流；ReadSessionContext 越界读父会话。其余（Bash / Edit / Write / 搜索 / web）照常
  * 保留——actor 就是要干活的。
- *
- * AskUserQuestion 不在表里：它走 PermissionRequested，经父 runtime 派生的 broker 与父会话镜像
- * 送达确认窗（docs/dynamic-workflow/launch.md「Permissions inside a run」），不再悬挂。
  */
 const ACTOR_DISALLOWED_TOOLS: readonly string[] = [
+  // 子代理不问人（2026-10-19 起再次移除；2026-09-23 曾经父会话送达确认窗还给子代理）。
+  // 问题：系统提示（core/src/context/sections/workflow-actor.ts）一直写着「没有向人提问的工具」，
+  // 工具面却有 AskUserQuestion，模型行为取决于它信哪一边；并行的 N 个子代理还会各自弹窗，
+  // 用户收到的是一串互不相干的问题，主代理也不知道发生过什么。
+  // 修法：以提示为准，只留一条通道——子代理用 `escalate` 把问题交给主代理，由主代理决定是否
+  // 问用户（docs/dynamic-workflow/launch.md「Permissions inside a run」）。
+  ASK_USER_QUESTION_TOOL_NAME,
   ENTER_PLAN_MODE_TOOL_NAME,
   EXIT_PLAN_MODE_TOOL_NAME,
   "CreateWorkflow",

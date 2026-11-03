@@ -25,10 +25,11 @@ export {
  * | 安全校验拒绝   | 3007 | 403  | 客户端无法完成安全校验，提示联系支持 |
  * | 模型并发上限   | 3010 | 429  | Start Plan 下走升级横幅 |
  * | 请求过频       | 3002/429 | 429 | 限流提示，稍后重试 |
- * | 闲时票据不可用 | 3102 | 400  | 单段运行时间到顶，提示新建闲时任务续跑 |
+ * | 闲时票据过期 | 3102 | 400  | 过号或旧版过期，提示手动新建任务 |
+ * | 闲时运行超时 | 3106 | 400  | 单次运行时间到顶，提示手动新建任务 |
  * | 上游 HTTP 异常 | 2007 | 500  | 可重试；刷新配额，勿本地扣额度 |
  */
-import { isOffPeakTicketExpiredError } from "@zcode/shared";
+import { isOffPeakTicketExpiredError, OFF_PEAK_TICKET_EXPIRED_MARKER } from "@zcode/shared";
 
 export const PROVIDER_BUSINESS_ERROR_CODES = [
   "1006",
@@ -41,6 +42,7 @@ export const PROVIDER_BUSINESS_ERROR_CODES = [
   "3010",
   "3002",
   "3102",
+  "3106",
   "2007",
   "429",
 ] as const;
@@ -66,6 +68,7 @@ export const PROVIDER_BUSINESS_ERROR_MESSAGE_IDS: Record<ProviderBusinessErrorCo
   "3009": "zcode.error.providerBusiness.3009",
   "3010": "zcode.error.providerBusiness.3010",
   "3102": "zcode.error.providerBusiness.3102",
+  "3106": "zcode.error.providerBusiness.3106",
   "2007": "zcode.error.providerBusiness.2007",
   "429": "zcode.error.providerBusiness.429",
 };
@@ -96,8 +99,9 @@ const PROVIDER_BUSINESS_ERROR_UI_ACTIONS: Record<
   "3009": "upgrade",
   "3010": "upgrade",
   "3002": "retry-later",
-  // 3102 闲时票据不可用：只能新建闲时任务续跑，横幅里的重试/切模型都救不回来。
+  // 过号和运行超时都需要新票，横幅重试或切模型不能恢复原票。
   "3102": null,
+  "3106": null,
   "2007": "retry-later",
   "429": "retry-later",
 };
@@ -112,6 +116,9 @@ export function isProviderBusinessErrorCode(
 }
 
 export function getProviderBusinessErrorMessageId(code: string | undefined): string | undefined {
+  if (code === OFF_PEAK_TICKET_EXPIRED_MARKER) {
+    return "zcode.error.offPeakTicketExpired";
+  }
   if (!isProviderBusinessErrorCode(code)) {
     return undefined;
   }
@@ -272,19 +279,17 @@ export function shouldRefreshQuotaOnProviderBusinessRetry(code: string | undefin
 }
 
 /**
- * 闲时票据不可用（上游 3102：票据失效或过期）。
- * 适配层会把该业务码包成 `off-peak-ticket-expired: <上游原文>` 落到 turn 错误里，
- * 外层 code 被压成 PROVIDER_BUSINESS_ERROR 等包装码时靠稳定标记兜底，
- * 否则横幅会把 "off peak ticket is invaliad or expired" 原文直接怼给用户。
+ * 只有明确的 3102 才能提示额度返还；历史标记也包含运行超时，不能当成 3102。
  */
 export function resolveOffPeakTicketExpiredBusinessCode(
   code: string | undefined,
   message: string | undefined,
-): "3102" | undefined {
-  if (code?.trim() === "3102") {
-    return "3102";
+): "3102" | "3106" | typeof OFF_PEAK_TICKET_EXPIRED_MARKER | undefined {
+  const normalized = code?.trim();
+  if (normalized === "3102" || normalized === "3106") {
+    return normalized;
   }
-  return isOffPeakTicketExpiredError(message) ? "3102" : undefined;
+  return isOffPeakTicketExpiredError(message) ? OFF_PEAK_TICKET_EXPIRED_MARKER : undefined;
 }
 
 export function isSuspiciousEmptyModelResultMessage(message: string | undefined): boolean {

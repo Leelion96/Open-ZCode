@@ -9,6 +9,13 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-ask-user-question-auto-resolution-setting-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "upstream-ask-auto-resolution-setting-first-controlled-stream",
       "kind": "main",
       "source": "synthetic",
@@ -34,7 +41,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "最终回复证明新注册问题恢复自动继续，详细时序由 fake-clock 单测覆盖。"
+      "syntheticReason": "最终回复只证明新注册问题恢复五分钟规则，详细计时由 fake-clock 单测覆盖。"
     }
   ]
 }

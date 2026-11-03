@@ -95,8 +95,11 @@ export function SlashCommandPlugin({
   const activeTokenRef = useRef<ActivePromptInputTokenSnapshot | null>(null);
   const commandSuggestions = useMemo(() => {
     const excluded = new Set((excludedCommandNames ?? []).map(normalizeSlashCommandValue));
+    const recoveryNames = new Set(
+      appCommands?.filter((command) => command.recovery).map((command) => command.value),
+    );
     const cliSuggestions = buildSlashSuggestions(commands).filter(
-      (item) => !excluded.has(item.value),
+      (item) => !excluded.has(item.value) && !recoveryNames.has(item.value),
     );
     // App 层命令追加在 CLI catalog 之后展示；CLI 已提供同名命令时以 CLI 为准，避免遮蔽。
     const cliValues = new Set(cliSuggestions.map((item) => item.value));

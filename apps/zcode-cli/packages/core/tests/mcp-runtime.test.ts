@@ -277,6 +277,7 @@ describe("AgentRuntime MCP integration", () => {
     const eventStore = createTestSessionEventStore();
     let modelCallCount = 0;
     let mcpCallCount = 0;
+    let admissionRefreshes = 0;
     let permissionRequestCount = 0;
 
     const permissionBroker: PermissionBrokerPort = {
@@ -290,6 +291,9 @@ describe("AgentRuntime MCP integration", () => {
     };
 
     const mcpPort = createMockMcpPort({
+      refreshWorkspaceTrustAdmission: async () => {
+        admissionRefreshes++;
+      },
       connectConfiguredServers: async () => ({
         statuses: {
           local: {
@@ -393,6 +397,133 @@ describe("AgentRuntime MCP integration", () => {
     expect(result.response).toBe("done");
     expect(mcpCallCount).toBe(1);
     expect(permissionRequestCount).toBe(0);
+    expect(modelCallCount).toBe(2);
+    expect(admissionRefreshes).toBe(1);
+    await runtime.executeTurn("next user prompt");
+    expect(admissionRefreshes).toBe(2);
+  });
+
+  it.each([
+    ["user_steer", false],
+    ["user_steer", true],
+    ["coordinator_steer", false],
+    ["coordinator_steer", true],
+  ] as const)(
+    "refreshes admission only for user guide: %s, attachment: %s",
+    async (inputPresentation, withAttachment) => {
+      const toolStarted = deferred<void>();
+      const releaseTool = deferred<void>();
+      let refreshes = 0;
+      let modelSteps = 0;
+      const runtime = createTestAgentRuntime(
+        createSessionId(`mcp-admission-${inputPresentation}`),
+        {
+          mode: "plan",
+          mcp: { enabled: true, servers: { local: { type: "stdio", command: "node" } } },
+        },
+        {
+          eventStore: createTestSessionEventStore(),
+          mcpPort: createMockMcpPort({
+            refreshWorkspaceTrustAdmission: async () => {
+              refreshes++;
+            },
+            connectConfiguredServers: async () => ({
+              statuses: {},
+              tools: [
+                {
+                  serverName: "local",
+                  toolName: "ping",
+                  inputSchema: { type: "object" },
+                  annotations: { readOnlyHint: true },
+                },
+              ],
+            }),
+            callTool: async () => {
+              toolStarted.resolve();
+              await releaseTool.promise;
+              return { content: [{ type: "text", text: "pong" }] };
+            },
+          }),
+          modelFactory: createTestModelFactory({
+            generateText: async () => {
+              modelSteps++;
+              return {
+                finishReason: modelSteps === 1 ? "tool-calls" : "stop",
+                text: modelSteps === 1 ? "checking" : "done",
+                toolCalls:
+                  modelSteps === 1
+                    ? [{ id: "ping", name: "mcp__local__ping", input: {} }]
+                    : undefined,
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+              };
+            },
+          }),
+        },
+      );
+      const turn = runtime.executeTurn("start");
+      try {
+        await toolStarted.promise;
+        const result = await runtime.steerTurn({
+          input: "follow up",
+          delivery: "guide",
+          inputPresentation,
+          ...(withAttachment
+            ? { attachments: [{ type: "file" as const, content: "note", path: "note.txt" }] }
+            : {}),
+        });
+        expect(result.kind).toBe("queued");
+      } finally {
+        releaseTool.resolve();
+      }
+      await turn;
+      expect(modelSteps).toBe(2);
+      expect(refreshes).toBe(inputPresentation === "user_steer" ? 2 : 1);
+    },
+  );
+
+  it("refreshes admission for new user input, not model-only or coordinator continuations", async () => {
+    let refreshes = 0;
+    let failRefresh = false;
+    const runtime = createTestAgentRuntime(
+      createSessionId("mcp-admission-user-boundary"),
+      { mode: "build", mcp: { enabled: true, servers: {} } },
+      {
+        eventStore: createTestSessionEventStore(),
+        modelFactory: createTestModelFactory({
+          generateText: async () => ({
+            finishReason: "stop",
+            text: "done",
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          }),
+        }),
+        mcpPort: createMockMcpPort({
+          refreshWorkspaceTrustAdmission: async () => {
+            refreshes++;
+            if (failRefresh) throw new Error("admission read failed");
+          },
+        }),
+      },
+    );
+
+    await runtime.executeTurn("first user prompt");
+    expect(refreshes).toBe(1);
+    await runtime.executeTurn("continue goal", undefined, {
+      inputSource: "goal-continuation",
+      inputVisibility: "model-only",
+    });
+    await runtime.executeTurn("background result", undefined, {
+      inputSource: "background_task",
+      inputVisibility: "model-only",
+    });
+    await runtime.executeTurn("coordinator message", undefined, {
+      inputPresentation: "coordinator_input",
+    });
+    expect(refreshes).toBe(1);
+    await runtime.executeTurn("second user prompt");
+    expect(refreshes).toBe(2);
+    failRefresh = true;
+    await expect(runtime.executeTurn("keep chatting on read failure")).resolves.toBeDefined();
+    expect(refreshes).toBe(3);
   });
 
   it("denies destructive MCP tools in plan mode before calling the MCP server", async () => {

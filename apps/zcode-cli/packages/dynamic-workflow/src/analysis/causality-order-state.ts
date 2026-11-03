@@ -7,8 +7,13 @@ import {
   type PhaseMarkerSite,
   type SiteTable,
 } from "./sites.js";
-import type { ApplicationVia } from "./state.js";
+import type { ApplicationVia, ParamRef } from "./state.js";
 import { UNPHASED_ID, type JumpKind, type TraceRegionKind } from "./constants.js";
+import {
+  collectRecursiveActivations,
+  resolveApplications,
+  type Activation,
+} from "./causality-order-bindings.js";
 import type {
   ControlFact,
   OrderEvent,
@@ -16,12 +21,8 @@ import type {
   OrderRegion,
   PhaseInfo,
 } from "./causality-order-types.js";
-import {
-  asScriptFunction,
-  collectRecursiveFunctions,
-  type ScriptFunction,
-} from "./causality-order-functions.js";
-import { innermostOpenStrand, type Frame, type StrandRecord } from "./causality-order-strands.js";
+import type { ScriptFunction } from "./causality-order-functions.js";
+import { noteIssuedInStrand, type Frame, type StrandRecord } from "./causality-order-strands.js";
 
 // causality-order.ts 顶到 oxlint max-lines 上限（400 行），把 traceOrder 原本以
 // 闭包共享的走查状态拆到本文件：一个显式的 {@link TraceState} 对象（输入索引 + 可变累加器）、
@@ -47,12 +48,26 @@ export interface TraceState {
   readonly candByCall: ReadonlyMap<ts.Node, IterationCandidate>;
   /** Their inline literals (an iteration construct for the admission test). */
   readonly candByCallback: ReadonlyMap<ts.Node, IterationCandidate>;
+  /** `for...of` candidates by their STATEMENT node (the loop region opens there). */
+  readonly candByForOf: ReadonlyMap<ts.Node, IterationCandidate>;
+  /** Every site's call node (asks, reads, actors, holes, joins, fan-out calls): a visit is noted. */
+  readonly siteCalls: ReadonlySet<ts.Node>;
+  /** Region id -> the iteration candidate it was opened for (fan-outs and `for...of` loops). */
+  readonly candidateByRegion: Map<string, number>;
+  /**
+   * Per site call (or `for...of` statement), the candidates enclosing each visit of it,
+   * innermost first — what `within` is minted from (docs/analysis.md "Sites").
+   */
+  readonly iterationsBySite: Map<ts.Node, number[][]>;
   /**
    * A function applied per element at a candidate call (`xs.map(review)`) encloses its
    * steps in an iteration exactly as an inline callback literal does.
    */
   readonly eachCallbackFns: ReadonlySet<ts.Node>;
-  readonly recursive: ReadonlySet<ts.Node>;
+  /** Activation keys that can reach themselves (causality-order-bindings.ts): the `loop` regions. */
+  readonly recursive: ReadonlySet<string>;
+  /** Each body's references to outer parameters, cached for the activation key. */
+  readonly outerRefsCache: Map<ts.Node, ParamRef[]>;
   /**
    * Only real steps can be ordered. An occurrence set may also carry join and fan-out
    * labels, which are relays, not things that take time.
@@ -76,6 +91,9 @@ export interface TraceState {
   /** Every strand the walk spawned, in spawn order; `joined` is the ones already awaited. */
   readonly strands: StrandRecord[];
   readonly joined: Set<string>;
+  /** The first strand spawned on each region, and the strands that issued each step. */
+  readonly strandByRegion: Map<string, StrandRecord>;
+  readonly strandsByStep: Map<string, Set<StrandRecord>>;
   /** Which strands a variable may hold the promise of — the syntactic half of the join. */
   readonly strandsBySymbol: Map<ts.Symbol, Set<string>>;
   // --- Jump-target bookkeeping (control-flow projection) ----------------------------
@@ -85,8 +103,8 @@ export interface TraceState {
   readonly returnTargets: string[];
   readonly throwTargets: string[];
   readonly regionByStatement: Map<ts.Node, string>;
-  /** decl -> the `loop` region its SCC entry opened; where a re-entrant call `recur`s to. */
-  readonly sccLoopByDecl: Map<ts.Node, string>;
+  /** activation key -> the `loop` region its entry opened; where a re-entrant call `recur`s to. */
+  readonly sccLoopByKey: Map<string, string>;
   /**
    * Which steps a variable may hold the answer of. The syntactic half of the control
    * relation: it catches implicit flows the taint oracle cannot see, because a condition
@@ -94,7 +112,8 @@ export interface TraceState {
    */
   readonly stepsBySymbol: Map<ts.Symbol, Set<string>>;
   readonly walkedFns: Set<ts.Node>;
-  readonly fnStack: ts.Node[];
+  /** The open inlined bodies, outermost first, each with what its call bound to its parameters. */
+  readonly activations: Activation[];
   // --- Phase state: the author's grouping, threaded through the walk ----------------
   // The extent of `phase("gate")` is REST-OF-BLOCK, so the state is one mutable
   // "current phase" plus a save/restore around every statement list (`walkStatements`).
@@ -117,19 +136,37 @@ export interface TraceState {
   readonly walk: (node: ts.Node, chain: readonly string[]) => void;
 }
 
-/** The script functions the oracle says `node` applies, by `via`, in recording order. */
+/**
+ * The script functions `node` applies, by `via`, in recording order — with every function the
+ * oracle attributes to a parameter swapped for what the activation being inlined bound to it
+ * (docs/analysis.md "Inlining"). With no open activations this is the merged record.
+ */
 export function applicationsAt(
-  state: Pick<TraceState, "oracle" | "scriptFile">,
+  state: Pick<TraceState, "oracle" | "scriptFile" | "activations" | "candByCallback" | "outerRefsCache">,
   node: ts.Node,
   via: ApplicationVia,
 ): ScriptFunction[] {
-  const out: ScriptFunction[] = [];
-  for (const [fn, how] of state.oracle.applications.get(node) ?? []) {
-    if (how !== via) continue;
-    const decl = asScriptFunction(fn, state.scriptFile);
-    if (decl !== undefined) out.push(decl);
+  return resolveApplications(state, state.scriptFile, node, via);
+}
+
+/** Note that the walk reached a site at `chain`: the candidates enclosing it, innermost first. */
+export function noteSiteVisit(
+  state: Pick<TraceState, "candidateByRegion" | "iterationsBySite">,
+  node: ts.Node,
+  chain: readonly string[],
+): void {
+  const orders: number[] = [];
+  for (let i = chain.length - 1; i >= 0; i -= 1) {
+    const order = state.candidateByRegion.get(chain[i] as string);
+    if (order !== undefined) orders.push(order);
   }
-  return out;
+  let visits = state.iterationsBySite.get(node);
+  if (visits === undefined) {
+    visits = [];
+    state.iterationsBySite.set(node, visits);
+  }
+  const seen = orders.join(",");
+  if (!visits.some((visit) => visit.join(",") === seen)) visits.push(orders);
 }
 
 export function openRegion(
@@ -174,16 +211,27 @@ export function createTraceState(
   const openHoles = table.holes.filter((site) => site.body === undefined);
   const candByCall = new Map<ts.Node, IterationCandidate>();
   const candByCallback = new Map<ts.Node, IterationCandidate>();
+  const candByForOf = new Map<ts.Node, IterationCandidate>();
   for (const cand of table.iterations) {
     if (cand.call !== undefined) candByCall.set(cand.call, cand);
     if (cand.callback !== undefined) candByCallback.set(cand.callback, cand);
+    if (cand.form === "for-of") candByForOf.set(cand.body.parent, cand);
   }
+  const siteCalls = new Set<ts.Node>([
+    ...table.asks.map((site) => site.call),
+    ...table.worldReads.map((site) => site.call),
+    ...table.actors.map((site) => site.call),
+    ...table.holes.map((site) => site.call),
+    ...table.joins.map((site) => site.call),
+    ...candByCall.keys(),
+  ]);
+  const outerRefsCache = new Map<ts.Node, ParamRef[]>();
   const eachCallbackFns = new Set<ts.Node>();
   for (const call of candByCall.keys()) {
-    for (const fn of applicationsAt({ oracle, scriptFile }, call, "argument"))
-      eachCallbackFns.add(fn);
+    const merged = { activations: [], candByCallback, oracle, outerRefsCache, scriptFile };
+    for (const fn of applicationsAt(merged, call, "argument")) eachCallbackFns.add(fn);
   }
-  const recursive = collectRecursiveFunctions(scriptFile, checker, oracle.applications);
+  const recursive = collectRecursiveActivations(oracle, scriptFile, checker, body, candByCallback, outerRefsCache);
   const realSteps = new Set<string>([
     ...table.asks.map((site) => site.id),
     ...table.worldReads.map((site) => site.id),
@@ -206,12 +254,15 @@ export function createTraceState(
   const root = openRegion({ counters, regions }, "seq", undefined, { entered: true });
 
   const state: TraceState = {
+    activations: [],
     actorByCall,
     askByCall,
     body,
     callByStep,
     candByCall,
     candByCallback,
+    candByForOf,
+    candidateByRegion: new Map<string, number>(),
     checker,
     controls: [],
     counters,
@@ -219,15 +270,16 @@ export function createTraceState(
     eachCallbackFns,
     events: [],
     fillStack: [],
-    fnStack: [],
     frames: [{ region: root, settled: new Set<string>() }],
     holeByCall,
     holePhases: new Set<string>(),
     issued: new Set<string>(),
     iterationAncestorCache: new Map<ts.Node, Set<ts.Node>>(),
+    iterationsBySite: new Map<ts.Node, number[][]>(),
     joined: new Set<string>(),
     markerByStatement,
     oracle,
+    outerRefsCache,
     phaseIdByName: new Map<string, string>(),
     phases: [],
     program,
@@ -238,10 +290,13 @@ export function createTraceState(
     regions,
     returnTargets: [],
     root,
-    sccLoopByDecl: new Map<ts.Node, string>(),
+    sccLoopByKey: new Map<string, string>(),
     scriptFile,
+    siteCalls,
     stepsBySymbol: new Map<ts.Symbol, Set<string>>(),
+    strandByRegion: new Map<string, StrandRecord>(),
     strands: [],
+    strandsByStep: new Map<string, Set<StrandRecord>>(),
     strandsBySymbol: new Map<ts.Symbol, Set<string>>(),
     throwTargets: [],
     toScriptLoc,
@@ -263,7 +318,7 @@ export function issue(state: TraceState, step: string, chain: readonly string[])
   state.issued.add(step);
   // The strand this issue happened in owns the step for the LIFT rule: awaiting a promise
   // that carries this step's label is evidence that that activation has completed.
-  innermostOpenStrand(state)?.issued.add(step);
+  noteIssuedInStrand(state, step);
   state.events.push({ at: "issue", phase: state.currentPhase, regions: chain, step });
 }
 

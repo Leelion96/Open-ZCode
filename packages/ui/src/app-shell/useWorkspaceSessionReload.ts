@@ -1,3 +1,5 @@
+import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useCallback, useRef, useState } from "react";
 import type { IServiceAccessor } from "@zcode/services";
 import type { ZCodeProvider } from "@zcode/shared";
@@ -181,4 +183,58 @@ export function useWorkspaceSessionReload({
     reloadSessionPending,
     handleReloadSession,
   };
+}
+
+/** 两个 UI 入口只提交意图；操作合并与生命周期事实由 CLI 管理。 */
+export function useSessionRuntimeRestart(
+  workspacePath: string,
+  sessionId: string | null | undefined,
+  remoteSessionId?: string | null,
+  workspaceIdentity?: string,
+) {
+  const services = useWorkspaceServices(
+    workspacePath,
+    remoteSessionId ?? undefined,
+    workspaceIdentity,
+  );
+  const { intl } = useZCodeIntl();
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const key = `${workspaceIdentity || workspacePath}\0${sessionId ?? ""}`;
+  const flight = useRef<{ key: string; promise: Promise<boolean> } | null>(null);
+  const restart = useCallback((): Promise<boolean> => {
+    if (!sessionId) return Promise.resolve(false);
+    if (flight.current?.key === key) return flight.current.promise;
+    setPendingKey(key);
+    const request = services.zcodeAgentService
+      .restartSessionRuntime({
+        workspacePath,
+        sessionId,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+      })
+      .then(
+        () => true,
+        (error: unknown) => {
+          logger.warn("[session-lifecycle] 任务重启失败", { sessionId, error });
+          toast(
+            intl.formatMessage({
+              id:
+                error instanceof Error &&
+                error.message.includes("fault.sessionLifecycle.unsupported")
+                  ? "taskList.restartUnsupported"
+                  : "taskList.restartFailed",
+            }),
+          );
+          return false;
+        },
+      )
+      .finally(() => {
+        if (flight.current?.promise === request) {
+          flight.current = null;
+          setPendingKey(null);
+        }
+      });
+    flight.current = { key, promise: request };
+    return request;
+  }, [key, services.zcodeAgentService, workspacePath, workspaceIdentity, sessionId, intl]);
+  return { restart, pending: pendingKey === key };
 }

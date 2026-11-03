@@ -25,11 +25,16 @@ const initial: RuntimeMessageEntry = {
 
 describe("incoming reminder delimiter boundary", () => {
   it.each([true, false])(
-    "wraps an entire new-turn task batch once with MCS=%s without changing history or identity",
+    "wraps each notification of a new-turn task batch on its own with MCS=%s without changing history or identity",
     (mcs) => {
-      const batch = `${raw}\n\n<task-notification>second task</task-notification>`;
       const input: RuntimeMessageEntry = {
-        message: { role: "user", content: batch },
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: raw },
+            { type: "text", text: "<task-notification>second task</task-notification>" },
+          ],
+        },
         metadata: { source: "legacy_synthetic", inputPresentation: "task_notification" },
       };
       const entries: RuntimeMessageEntry[] = [
@@ -40,13 +45,18 @@ describe("incoming reminder delimiter boundary", () => {
       const before = structuredClone(entries);
       const options = { entries, useMidConversationSystem: mcs };
       const result = buildProviderRequestMessages(options);
-      const expected = fixture.expected.task_notification.replace(
-        "{body}",
-        `${escaped}\n\n<task-notification>second task</task-notification>`,
-      );
+      // 每块各自带标题和一对标签，除最后一块外末尾一个 "\n"；正文里的标签仍只被转义，不会提前闭合。
+      const wrapped = (body: string) =>
+        `<system-reminder>\n${fixture.expected.task_notification.replace("{body}", body)}\n</system-reminder>`;
       expect(result.messages.at(-1)).toEqual({
         role: "user",
-        content: `<system-reminder>\n${expected}\n</system-reminder>`,
+        content: [
+          { type: "text", text: `${wrapped(escaped)}\n` },
+          {
+            type: "text",
+            text: wrapped("<task-notification>second task</task-notification>"),
+          },
+        ],
       });
       expect(result.diagnostics.latestRealUserMessageIndex).toBe(0);
       expect(result.sourceEntries.at(-1)).toBe(input);
@@ -56,7 +66,7 @@ describe("incoming reminder delimiter boundary", () => {
   );
 
   for (const presentation of presentations) {
-    it.each(["non-MCS", "text-only", "position-fallback", "legal-MCS"] as const)(
+    it.each(["non-MCS", "text-only", "position-fallback", "legal-MCS", "later-user"] as const)(
       `${presentation}: %s keeps payload inside its presentation boundary`,
       (mode) => {
         const input: RuntimeMessageEntry = {
@@ -66,13 +76,27 @@ describe("incoming reminder delimiter boundary", () => {
             inputPresentation: presentation,
           },
         };
-        const entries = [
+        // 中途消息只在模型步之后 drain，前面总有 assistant。
+        const toolRound: RuntimeMessageEntry[] = [
+          {
+            message: {
+              role: "assistant",
+              content: "",
+              toolCalls: [{ id: "read-1", name: "Read", input: {} }],
+            },
+          },
+          { message: { role: "tool", content: "one", toolCallId: "read-1", toolName: "Read" } },
+        ];
+        const entries: RuntimeMessageEntry[] = [
           initial,
           ...(mode === "text-only"
             ? [{ message: { role: "assistant" as const, content: "working" } }]
-            : []),
+            : toolRound),
           input,
           ...(mode === "position-fallback"
+            ? [{ message: { role: "system" as const, content: "later system" } }]
+            : []),
+          ...(mode === "later-user"
             ? [
                 {
                   message: { role: "user" as const, content: "later user" },
@@ -85,21 +109,21 @@ describe("incoming reminder delimiter boundary", () => {
         const options = { entries, useMidConversationSystem: mode !== "non-MCS" };
         const result = buildProviderRequestMessages(options);
         const index = result.sourceEntries.indexOf(input);
-        const content = fixture.expected[presentation].replace(
-          "{body}",
-          mode === "legal-MCS" ? raw : escaped,
-        );
+        const human = presentation === "user_steer";
+        // 中途消息（含人类 guide）在 MCS 合法落点为 system，否则整组降级包装。
+        const plain = mode === "legal-MCS" || mode === "later-user";
+        const content = fixture.expected[presentation].replace("{body}", plain ? raw : escaped);
         expect(result.messages[index]).toEqual({
-          role: mode === "legal-MCS" ? "system" : "user",
-          content:
-            mode === "legal-MCS" ? content : `<system-reminder>\n${content}\n</system-reminder>`,
+          role: plain ? "system" : "user",
+          // 不传合并能力：补换行只在合并相邻 user 内容的协议上，这里不补。
+          content: plain ? content : `<system-reminder>\n${content}\n</system-reminder>`,
         });
         expect(entries).toEqual(before);
         expect(buildProviderRequestMessages(options)).toEqual(result);
         expect(result.diagnostics.latestRealUserMessageIndex).toBe(
-          mode === "position-fallback"
-            ? result.messages.length - 1
-            : presentation === "user_steer"
+          mode === "later-user"
+            ? result.messages.findIndex((message) => message.content === "later user")
+            : human
               ? index
               : 0,
         );

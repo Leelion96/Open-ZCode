@@ -43,6 +43,8 @@ Agent 发起模型请求时，adapter 层已经会把 `TraceContext.traceId` 写
 
 `x-zcode-session-type` 表示请求所属会话的类型，`x-zcode-query-source` 表示本次请求的用途，
 两者独立。不能根据 `sessionId` 前缀、`querySource` 或 telemetry 的 `actorKind` 反推会话类型。
+会话用过哪些能力是第三个独立维度，由 `x-zcode-session-features` 承载，见
+`apps/zcode-cli/docs/design/v2/model/session-features-header.md`。
 runtime 在 `createRuntimeModel` 创建模型句柄时统一绑定分类，调用层只声明用途；绑定后的
 `generateText`、`streamText`、`bind` 均保留分类，标题、Memory、工具内部请求不再覆写为 `other`。
 

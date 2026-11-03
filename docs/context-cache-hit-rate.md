@@ -96,15 +96,23 @@ outputTokens / ((durationMs - timeToFirstContentMs) / 1000)
 ```
 
 Both durations come from the same provider request clock. First content is the first non-empty
-text, reasoning or tool-argument output observed by the adapter. The end is that model request's
-completion, not the end of the user turn or tool execution. The numerator is the provider's
+text, reasoning or tool-argument output received in a complete SSE frame at the provider fetch
+boundary, before compatibility rewriting, SDK processing and retry-safe event buffering. Headers,
+heartbeats, metadata, empty block starts and empty deltas do not start this clock. Each physical
+attempt owns its timestamp; retries and concurrent requests cannot reuse another attempt's timing.
+The existing retry buffer and its commit/retry decisions remain unchanged. The end is that model
+request's completion, not the end of the user turn or tool execution. The numerator is the provider's
 `outputTokens`, without adding reasoning tokens again. Missing output/timing, non-finite values
 or a non-positive generation duration display `—`; an observed zero output with valid timing
 displays zero. The column tooltip explains the denominator.
 
 Acceptance: live requests populate a panel opened before or after completion; 120 output tokens,
 5 seconds total and 2 seconds to first content yield 40 TPS; duplicates, failed retries and
-sidecars cannot inflate the summary; missing timing never uses request duration as a fallback;
-workspace/task switching, desktop/mobile widths and light/dark themes preserve isolation and
-readability. Read-only protocol tests and browser integration evidence remain separate from
+sidecars cannot inflate the summary; missing timing never uses request duration as a fallback.
+Wire-level regressions must cover delayed tool-call release, text compatibility buffering,
+reasoning, empty/metadata frames, retries and concurrent requests. A tool-argument delta received
+at 300 ms, released at 900 ms and completed at 1000 ms uses 700 ms, even though business-visible
+output lasts only 100 ms. Missing wire timing stays unknown; SDK synthetic start and event release
+times are not fallbacks. Workspace/task switching, desktop/mobile widths and light/dark themes
+preserve isolation and readability. Read-only protocol tests and browser integration evidence remain separate from
 formal desktop E2E admission.

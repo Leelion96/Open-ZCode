@@ -176,6 +176,106 @@
       }
     },
     {
+      "id": "upstream-running-guide-batch-title",
+      "description": "M06f title request returns immediately without competing with the main batch requests.",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于 M06f guide 时序，只需稳定返回，避免后台重试给 provider 记录引入噪声。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "Generate a concise title",
+          "E2E_GUIDE_BATCH_BASE"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-running-guide-batch-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Guide Batch E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "upstream-running-guide-batch-initial-read",
+      "description": "M06f: delay the initial Read tool_use so both guides are admitted before the tool result batch.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "两条 guide 必须都在首轮 active request 内进入等待，再在同一个 Read tool result batch 后一起 drain。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_GUIDE_BATCH_BASE"
+        ],
+        "bodyExcludes": [
+          "E2E_GUIDE_BATCH_GUIDE_ONE",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Verify whether the active session goal"
+        ],
+        "lastUserMessageIncludes": [
+          "E2E_GUIDE_BATCH_BASE"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 8000,
+        "toolUse": {
+          "id": "toolu_e2e_running_guide_batch_read",
+          "messageId": "msg_e2e_running_guide_batch_read",
+          "name": "Read",
+          "input": {
+            "file_path": "{{e2eRuntimeRoot}}/shared/readonly-tool.txt"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-running-guide-batch-final-text",
+      "description": "M06f: the request after the Read batch carries both guides and completes the turn.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "只在同一请求同时带两条 guide 与 Read 结果时返回最终回答；逐条 drain 不会命中。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_GUIDE_BATCH_GUIDE_ONE",
+          "E2E_GUIDE_BATCH_GUIDE_TWO",
+          "E2E_READONLY_TOOL_FILE_CONTENT"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Verify whether the active session goal"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-running-guide-batch-final",
+          "inputTokens": 200,
+          "outputTokens": 16,
+          "text": "guide-batch-final-assistant-ok"
+        }
+      }
+    },
+    {
       "id": "upstream-running-guide-steer-base-slow-stream",
       "description": "M06: guide 模式普通 running steer 的基础慢流。",
       "metadata": {

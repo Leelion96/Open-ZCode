@@ -66,6 +66,7 @@ function queryContainsWorkspace(
   query: ZCodeTaskListQuery,
   address: WindowHostControllerTaskRow["address"],
 ): boolean {
+  if (query.workspaceScopes === "host") return !address.sourceServerId && !address.remoteSessionId;
   const workspaceKey = address.workspaceIdentity?.trim() || address.workspacePath;
   return query.workspaceScopes.some(
     (scope) => (scope.workspaceIdentity?.trim() || scope.workspacePath) === workspaceKey,
@@ -205,6 +206,7 @@ export function getWindowControllerTaskListRegistry(
             // 因此对当前 workspace 保守失效，避免 timeline/active 留下陈旧项。
             if (
               !previous ||
+              cached.query.kind === "all" ||
               matchesTaskListMembershipKind(previous.membership, cached.query.kind) ||
               (next && matchesTaskListMembershipKind(next.membership, cached.query.kind))
             ) {
@@ -261,6 +263,9 @@ export function getWindowControllerTaskListRegistry(
       );
     },
     list(queryKey, version, query) {
+      // 未打开工作区不在 Controller 的 source 订阅中，不能用它的 delta 保证全局缓存有效。
+      // 搜索每次读取 Host；hook 只订阅目录变化，流式 activity 不触发全库搜索。
+      if (query.workspaceScopes === "host") return controller.listTaskList(query);
       const versionKey = cacheVersionKey(version);
       const cached = queryCache.get(queryKey);
       if (cached?.versionKey === versionKey) return cached.promise;

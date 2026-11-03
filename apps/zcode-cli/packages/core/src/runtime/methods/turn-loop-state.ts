@@ -23,6 +23,8 @@ export type PendingStreamRecoveryRequest = ModelStreamRecoveryStatus;
 export const RAPID_REFILL_TOOL_TURN_THRESHOLD = 3;
 export const MAX_CONSECUTIVE_RAPID_REFILLS = 3;
 export const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
+/** 执行轮自暂停工具；只在 loop 带 Host 准入注入的 automationId 时可见，不属于 mutation 列表。 */
+export const AUTOMATION_SELF_PAUSE_TOOL_NAME = "CronPauseSelf";
 const AUTOMATION_QUERY_ID_PREFIX = "automation-";
 /**
  * 闲时派发轮隐藏的工具；OffPeakList 只读保留。
@@ -115,6 +117,10 @@ export interface RegularTurnLoopState {
   /** 当前 query 已成功写入 provider 可见持久历史的 assistant/compact 产物数量。 */
   historyRoundCount: number;
   completedRealToolResultBatch: boolean;
+  /** 下一次 loop 迭代要收集输入附件：轮首、完整工具批次之后、文本回复后续上 guide 时置位。 */
+  inputAttachmentCollectionPending: boolean;
+  /** 工具批次结算时本轮已被停止；决定中断标记用工具阶段的文字。 */
+  interruptedDuringToolBatch?: boolean;
   reactiveCompactAttemptedInCurrentModelStep: boolean;
   repeatedToolCallSignature?: string;
   repeatedToolCallStreakCount: number;
@@ -192,6 +198,7 @@ export function recordCompactSuccess(
 }
 
 export function recordCompletedToolBatch(state: RegularTurnLoopState): void {
+  state.inputAttachmentCollectionPending = true;
   // 旧 guard 活在整个用户 turn，完整工具批次结束后仍保持 used，导致后续真实 overflow 无法再次 reactive compact。
   state.reactiveCompactAttemptedInCurrentModelStep = false;
   if (state.compactTracking) {

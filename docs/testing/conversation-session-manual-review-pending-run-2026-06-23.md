@@ -36,7 +36,7 @@ ZCODE_E2E_MANUAL_REVIEW=1 ZCODE_E2E_SPEC='./test/e2e/conversation-session/manual
 人工干扰后复跑确认的 pending spec：
 
 ```bash
-ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-compact-interrupted.test.ts'
+ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-compact-interrupted.test.ts'
 ```
 
 - Summary: `packages/desktop/.e2e-artifacts/desktop-e2e-20260623-163701-534/summary.md`
@@ -75,7 +75,7 @@ pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conve
 Turn steer 探针转正后默认路径复跑：
 
 ```bash
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-turn-steer-probe.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-turn-steer-probe.test.ts'
 ```
 
 - Summary: `packages/desktop/.e2e-artifacts/desktop-e2e-20260624-070258-617/summary.md`

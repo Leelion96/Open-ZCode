@@ -19,22 +19,20 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "tge07-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"Changes Unresolved Path E2E\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"tge07-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Changes Unresolved Path E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {
       "id": "tge07-write-controlled-stream",
-      "description": "TGE07 streams Write content before file_path.",
+      "description": "两个连续 Write 先发送 content 再发送同一 file_path，覆盖当前 Changes 父分组门槛与单文件摘要。",
       "metadata": {
         "kind": "main",
         "source": "synthetic",
         "timingPolicy": "controlled-stream",
-        "syntheticReason": "稳定保留 file_path 尚未到达的观察窗口，验证 Changes 不显示 0 files 且展开保留 Writing。"
+        "syntheticReason": "在无路径预览与完整工具输入结束两个语义边界显式放行；输入结束刷新合法节流缓冲，最终 message_stop 仍被阻塞，父组仍处于进行中。"
       },
       "maxMatches": 1,
       "match": {
@@ -56,30 +54,59 @@
             "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_tge07_write\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":100,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
           },
           {
-            "offsetMs": 100,
-            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_tge07_write\",\"name\":\"Write\",\"input\":{}}}\n\n"
+            "offsetMs": 1,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
           },
           {
-            "offsetMs": 300,
-            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"content\\\":\\\"export const app = true;\\\\n\\\"\"}}\n\n"
+            "offsetMs": 2,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"E2E_CHANGES_GROUP_PREVIEW\"}}\n\n"
           },
           {
-            "offsetMs": 10000,
-            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\",\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-changes-group-unresolved-path/App.tsx\\\"}\"}}\n\n"
-          },
-          {
-            "offsetMs": 10400,
+            "offsetMs": 3,
             "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
           },
           {
-            "offsetMs": 10500,
+            "offsetMs": 4,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_tge07_write\",\"name\":\"Write\",\"input\":{}}}\n\n"
+          },
+          {
+            "offsetMs": 5,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"content\\\":\\\"export const app = true;\\\\n\\\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 6,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":2,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_tge07_write_second\",\"name\":\"Write\",\"input\":{}}}\n\n"
+          },
+          {
+            "offsetMs": 7,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"content\\\":\\\"export const app = true;\\\\n\\\"\"}}\n\n"
+          },
+          {
+            "offsetMs": 8,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\",\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-changes-group-unresolved-path/App.tsx\\\"}\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 9,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":2,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\",\\\"file_path\\\":\\\"{{e2eRuntimeRoot}}/conversation-session-changes-group-unresolved-path/App.tsx\\\"}\\n\"}}\n\n"
+          },
+          {
+            "offsetMs": 10,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":1}\n\n"
+          },
+          {
+            "offsetMs": 11,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":2}\n\n"
+          },
+          {
+            "offsetMs": 12,
             "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":100,\"output_tokens\":24,\"service_tier\":\"standard\"}}\n\n"
           },
           {
-            "offsetMs": 10600,
+            "offsetMs": 13,
             "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
           }
-        ]
+        ],
+        "releaseAfterChunks": [8, 12]
       }
     },
     {
@@ -95,13 +122,13 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_CHANGES_GROUP_UNRESOLVED_PATH",
-          "toolu_tge07_write"
-        ],
+        "bodyIncludes": ["E2E_CHANGES_GROUP_UNRESOLVED_PATH", "toolu_tge07_write"],
         "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
-      "response": { "statusCode": 200, "text": "upstream-e2e-ok" }
+      "response": {
+        "statusCode": 200,
+        "text": "upstream-e2e-ok"
+      }
     },
     {
       "id": "tge07-compact-after-write",
@@ -116,7 +143,11 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_CHANGES_GROUP_UNRESOLVED_PATH", "toolu_tge07_write", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyIncludes": [
+          "E2E_CHANGES_GROUP_UNRESOLVED_PATH",
+          "toolu_tge07_write",
+          "CRITICAL: Respond with TEXT ONLY"
+        ],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {

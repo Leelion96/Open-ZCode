@@ -9,6 +9,13 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-plan-session-switch-restore-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "upstream-conversation-plan-session-switch-enter",
       "description": "首轮请求返回 EnterPlanMode，进入计划模式。",
       "kind": "main",

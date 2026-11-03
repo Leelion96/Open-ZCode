@@ -290,7 +290,7 @@ Required coverage:
 
 ## Project Access Token 提前刷新容错
 
-沿用共享 PAT owner。HTTP adapter 仅把结构化 network_error/timeout 和 HTTP 429/5xx 标记为临时故障；提前刷新遇到这些故障时，允许在原 expiresAt 内复用未被拒绝的 PAT，5 秒退避，并记录脱敏事件。取消、401/403/404、畸形响应及未知错误不降级。模型 401 恢复携带的拒绝指纹先清除匹配 PAT，不会因此重用失败凭据。退出/账号切换必须拒绝迟到结果；不回退 API Key。验收覆盖临时故障、取消、过期、明确拒绝、并发及两 family 的成功码 0/200/字符串兼容。
+沿用共享 PAT owner。HTTP adapter 仅把结构化 network_error/timeout 和 HTTP 429/5xx 标记为临时故障；其他非 2xx 状态以结构化 HTTP 状态失败上报，2xx 但正文不是 JSON 记为 `project_token_invalid_response`，最终错误码按 `docs/model-provider-project-access-token.md`「换证失败错误码」映射，不携带响应体或 Token；提前刷新遇到这些故障时，允许在原 expiresAt 内复用未被拒绝的 PAT，5 秒退避，并记录脱敏事件。取消、401/403/404、畸形响应及未知错误不降级。模型 401 恢复携带的拒绝指纹先清除匹配 PAT，不会因此重用失败凭据。退出/账号切换必须拒绝迟到结果；不回退 API Key。验收覆盖临时故障、取消、过期、明确拒绝、并发及两 family 的成功码 0/200/字符串兼容。
 
 Z.AI 前置业务 JWT 的 `ZaiBusinessTokenCache` 采用相同的临时故障分类与 5 秒退避，降级结果必须属于共享 pending。仅在 JWT exp / 响应 TTL 的最早期限内、同一登录且未被 invalidate 时复用旧值；无有效期元数据不降级。保留旧对象身份，确保迟到的 401 仍能将其标记为拒绝；clear/切账号拒绝在途结果。降级只记录固定 `project_token_business_login_refresh_deferred` 事件，不包含 JWT、OAuth 或响应内容。验收覆盖并发、退避恢复、原有效期边界、未知有效期、认证拒绝、取消及在途 clear/invalidate/换账号。
 

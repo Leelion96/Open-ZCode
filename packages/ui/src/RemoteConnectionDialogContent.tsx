@@ -10,13 +10,7 @@ import type {
   SSHConfigAliasOption,
   WSLDistro,
 } from "@zcode/shared";
-import type {
-  IMcpSyncService,
-  IPluginSyncService,
-  IServiceAccessor,
-  ISkillSyncService,
-  IZCodeAgentService,
-} from "@zcode/services";
+import type { IServiceAccessor } from "@zcode/services";
 import { TID_SSH_CONFIG_IMPORT } from "@zcode/shared/test-ids";
 import {
   AlertTriangleIcon,
@@ -48,10 +42,11 @@ import { ensureSourceServerBoundaryAcknowledged } from "@/lib/sourceServerBounda
 import { logger } from "@/logger.js";
 import { type AppSettingsConversationWorkspaceMap } from "@/remote/remoteWorkspaceProjection.js";
 import {
-  RemoteSyncDialogs,
-  RemoteSyncDropdownButton,
-  shouldShowRemoteSyncActions,
-} from "@/settings/RemoteSyncActions.js";
+  DataSyncEntryDropdownButton,
+  isDataSyncEntryRemoteTarget,
+  useDataSyncDeviceOnline,
+  useDataSyncEntry,
+} from "@/data-sync/index.js";
 export { RemoteConnectionConnectingStep } from "@/remote-connection/RemoteConnectionConnectingStep.js";
 
 /** 旧字段包含展示即已读，且扩到 3 会破坏回滚；只在有效确认后写新介绍标记。 */
@@ -449,23 +444,13 @@ export function RemoteConnectionDirectoryStep({
   onDirectoryPathChange,
   services,
   remoteTarget,
-  localSkillSyncService,
-  remoteSkillSyncService,
-  localMcpSyncService,
-  remoteMcpSyncService,
-  localPluginSyncService,
-  remotePluginSyncService,
-  localZCodeAgentService,
-  remoteZCodeAgentService,
+  sourceServerId,
   localWorkspacePath,
   selecting = false,
   onSelect,
   onBack,
   onCancel,
   onChooseLater,
-  onSkillsSynced,
-  onMcpSynced,
-  onPluginsSynced,
   deviceName,
   profileName,
   deviceVersion,
@@ -477,23 +462,14 @@ export function RemoteConnectionDirectoryStep({
   onDirectoryPathChange?: (path: string) => void;
   services: IServiceAccessor | null;
   remoteTarget?: RemoteTarget | null;
-  localSkillSyncService?: ISkillSyncService;
-  remoteSkillSyncService?: ISkillSyncService | null;
-  localMcpSyncService?: IMcpSyncService;
-  remoteMcpSyncService?: IMcpSyncService | null;
-  localPluginSyncService?: IPluginSyncService;
-  remotePluginSyncService?: IPluginSyncService | null;
-  localZCodeAgentService?: IZCodeAgentService;
-  remoteZCodeAgentService?: IZCodeAgentService | null;
+  /** 刚连接设备的 sourceServerId；识别出设备前不显示「一键同步」。 */
+  sourceServerId?: string | null;
   localWorkspacePath?: string;
   selecting?: boolean;
   onSelect: (path: string) => void;
   onBack: () => void;
   onCancel: () => void;
   onChooseLater?: () => void;
-  onSkillsSynced?: () => Promise<void> | void;
-  onMcpSynced?: () => Promise<void> | void;
-  onPluginsSynced?: () => Promise<void> | void;
   deviceName?: string;
   /** 线路名（原型成功横幅「线路 linux-arm64-dev」段）。 */
   profileName?: string;
@@ -511,29 +487,17 @@ export function RemoteConnectionDirectoryStep({
   const setSelectedPath = onDirectoryPathChange ?? setLocalPath;
   const [renameStatus, setRenameStatus] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [deviceNameDraft, setDeviceNameDraft] = useState(deviceName ?? "");
-  const [remoteSkillSyncOpen, setRemoteSkillSyncOpen] = useState(false);
-  const [remoteMcpSyncOpen, setRemoteMcpSyncOpen] = useState(false);
-  const [remotePluginSyncOpen, setRemotePluginSyncOpen] = useState(false);
   useEffect(() => {
     setDeviceNameDraft(deviceName ?? "");
   }, [deviceName]);
-  const canShowRemoteSyncActions = shouldShowRemoteSyncActions({
-    remoteSessionId: remoteTarget ? "directory-step" : null,
-    remoteTarget,
-    clientMode: "desktop-continuous",
-    hasLocalSourceService: Boolean(
-      localSkillSyncService || localMcpSyncService || localPluginSyncService,
-    ),
-  });
-  const canSyncRemoteSkills = Boolean(
-    canShowRemoteSyncActions && localSkillSyncService && remoteSkillSyncService,
-  );
-  const canSyncRemoteMcp = Boolean(
-    canShowRemoteSyncActions && localMcpSyncService && remoteMcpSyncService,
-  );
-  const canSyncRemotePlugins = Boolean(
-    canShowRemoteSyncActions && localPluginSyncService && remotePluginSyncService,
-  );
+  // 「一键同步」打开数据同步弹窗，定位到刚连接的设备；选了目录时 MCP 按该目录做 workspace 映射。
+  const dataSync = useDataSyncEntry();
+  const dataSyncSourceServerId =
+    dataSync.available && sourceServerId && isDataSyncEntryRemoteTarget(remoteTarget)
+      ? sourceServerId
+      : null;
+  const dataSyncDeviceOnline = useDataSyncDeviceOnline(dataSyncSourceServerId);
+  const targetWorkspacePath = selectedPath.trim();
   const quickOpenGroups = [
     {
       label: "remote.recentDirectories",
@@ -606,15 +570,25 @@ export function RemoteConnectionDirectoryStep({
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <RemoteSyncDropdownButton
-              canSyncSkills={canSyncRemoteSkills}
-              canSyncMcp={canSyncRemoteMcp}
-              canSyncPlugins={canSyncRemotePlugins}
-              mcpDisabled={!selectedPath.trim()}
-              onOpenSkillSync={() => setRemoteSkillSyncOpen(true)}
-              onOpenMcpSync={() => setRemoteMcpSyncOpen(true)}
-              onOpenPluginSync={() => setRemotePluginSyncOpen(true)}
-            />
+            {dataSyncSourceServerId ? (
+              <DataSyncEntryDropdownButton
+                disabled={!dataSyncDeviceOnline}
+                onSelect={(category) =>
+                  dataSync.open({
+                    sourceServerId: dataSyncSourceServerId,
+                    category,
+                    ...(targetWorkspacePath && localWorkspacePath
+                      ? {
+                          workspace: {
+                            sourceWorkspacePath: localWorkspacePath,
+                            targetWorkspacePath,
+                          },
+                        }
+                      : {}),
+                  })
+                }
+              />
+            ) : null}
           </div>
         </div>
         {onRenameDevice ? (
@@ -750,40 +724,7 @@ export function RemoteConnectionDirectoryStep({
           )}
         </Button>
       </div>
-      <RemoteSyncDialogs
-        canSyncSkills={canSyncRemoteSkills}
-        canSyncMcp={canSyncRemoteMcp}
-        canSyncPlugins={canSyncRemotePlugins}
-        skillOpen={remoteSkillSyncOpen}
-        mcpOpen={remoteMcpSyncOpen}
-        pluginOpen={remotePluginSyncOpen}
-        onSkillOpenChange={setRemoteSkillSyncOpen}
-        onMcpOpenChange={setRemoteMcpSyncOpen}
-        onPluginOpenChange={setRemotePluginSyncOpen}
-        localSkillSyncService={localSkillSyncService}
-        remoteSkillSyncService={remoteSkillSyncService}
-        localMcpSyncService={localMcpSyncService}
-        remoteMcpSyncService={remoteMcpSyncService}
-        localPluginSyncService={localPluginSyncService}
-        remotePluginSyncService={remotePluginSyncService}
-        localZCodeAgentService={localZCodeAgentService}
-        remoteZCodeAgentService={remoteZCodeAgentService}
-        remoteTarget={remoteTarget}
-        skillWorkspacePath=""
-        mcpWorkspacePath={selectedPath.trim()}
-        pluginWorkspacePath={selectedPath.trim()}
-        pluginLocalWorkspacePath={localWorkspacePath}
-        mcpLocalWorkspacePath={localWorkspacePath}
-        onSkillsSynced={async () => {
-          await onSkillsSynced?.();
-        }}
-        onMcpSynced={async () => {
-          await onMcpSynced?.();
-        }}
-        onPluginsSynced={async () => {
-          await onPluginsSynced?.();
-        }}
-      />
+      {dataSync.dialog}
     </div>
   );
 }

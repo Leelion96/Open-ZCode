@@ -34,12 +34,8 @@ function mapRuntimeStatusToUi(snapshot: ZCodeMcpServerStatusSnapshot): MappedMcp
     case "disabled":
       return { status: "unknown", error: snapshot.error };
     case "untrusted":
-      return {
-        status: "unknown",
-        error: snapshot.error ?? "Project MCP server requires explicit connection before use.",
-        failureKind: snapshot.failureKind ?? "status_unavailable",
-        serverRequestId: snapshot.serverRequestId,
-      };
+      // 未授权是明确状态，不能降为状态未知或提示用户重启 Agent。
+      return { status: "untrusted" };
   }
 }
 
@@ -75,6 +71,7 @@ export function mergeMcpServerStatusSnapshots(
       failureKind: mapped.failureKind,
       serverRequestId: mapped.serverRequestId,
       toolCount: snapshot.toolCount,
+      workspaceTrust: server.scope === "workspace" ? snapshot.workspaceTrust : undefined,
       changed: false,
       lastConnected:
         mapped.status === "connected" ? new Date(snapshot.updatedAt) : server.lastConnected,

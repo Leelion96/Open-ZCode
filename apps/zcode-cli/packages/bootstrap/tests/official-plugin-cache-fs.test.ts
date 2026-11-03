@@ -13,6 +13,8 @@ describe("official plugin cache fs helpers", () => {
     }
 
     expect(isTransientOfficialPluginCacheFsError(errno("ENOENT"))).toBe(false);
+    // overlay 下层目录的 EXDEV 不会因重试消失；它由 seed 的删除后替换路径和降级协议处理。
+    expect(isTransientOfficialPluginCacheFsError(errno("EXDEV"))).toBe(false);
     expect(isTransientOfficialPluginCacheFsError(new Error("invalid manifest"))).toBe(false);
   });
 

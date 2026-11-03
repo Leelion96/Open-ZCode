@@ -173,11 +173,13 @@ describe("BOT-E2E-TP-04/05 real topic worker", () => {
       };
       collect(captured);
       const mentions = strings
-        .filter((value) => value.includes("Trusted native mention references"))
+        .filter((value) => value.includes("Trusted ordered message content"))
         .join("\n");
       expect(mentions).toContain('"name":"Assistant","channel":"feishu","isCurrentBot":true');
       expect(mentions).toContain('"name":"Assistant","channel":"feishu","isCurrentBot":false');
       expect(mentions).not.toContain("ou_recipient");
+      expect(mentions).not.toContain("ReplyToChannel");
+      expect(mentions).not.toContain('"refId"');
       const positioned = strings
         .filter((value) => value.includes("Trusted ordered message content"))
         .join("\n");

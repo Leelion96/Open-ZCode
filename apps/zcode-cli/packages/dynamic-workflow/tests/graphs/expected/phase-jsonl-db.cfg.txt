@@ -25,9 +25,6 @@ edge phase#1@1 -> world-read#2@1 next
 edge world-read#2@1 -> world-read#3@1 branch
 edge world-read#2@1 -> abort throw
 edge world-read#3@1 -> world-read#1@1 branch
-edge world-read#3@1 -> phase#2@1 branch
-edge world-read#3@1 -> phase#5@1 exit
-edge world-read#3@1 -> phase#6@1 exit
 edge world-read#3@1 -> abort throw
 edge world-read#1@1 -> phase#2@1 join via=return
 edge world-read#1@1 -> phase#5@1 join via=return
@@ -35,13 +32,8 @@ edge world-read#1@1 -> phase#6@1 join via=return
 edge phase#2@1 -> ask#1@1 next
 edge ask#1@1 -> phase#3@1 next
 edge phase#3@1 -> world-read#4@1 next
-edge world-read#4@1 -> phase#2@1 loop
 edge world-read#4@1 -> phase#2@1 loop via=continue
 edge world-read#4@1 -> world-read#1@2 branch
-edge world-read#4@1 -> phase#4@1 branch
-edge world-read#4@1 -> phase#5@1 exit
-edge world-read#4@1 -> phase#5@1 loop
-edge world-read#4@1 -> phase#6@1 exit
 edge world-read#1@2 -> phase#2@1 loop
 edge world-read#1@2 -> phase#4@1 join via=return
 edge world-read#1@2 -> phase#5@1 join via=return
@@ -62,22 +54,16 @@ edge ask#2@1 -> phase#6@1 exit
 edge phase#6@1 -> world-read#7@1 next
 edge world-read#7@1 -> sink jump via=return
 phase-edge entry -> phase#1 next
-phase-edge phase#1 -> phase#2 branch
 phase-edge phase#1 -> phase#2 join via=return
-phase-edge phase#1 -> phase#5 exit
 phase-edge phase#1 -> phase#5 join via=return
-phase-edge phase#1 -> phase#6 exit
 phase-edge phase#1 -> phase#6 join via=return
 phase-edge phase#1 -> abort throw
 phase-edge phase#2 -> phase#3 next
 phase-edge phase#3 -> phase#2 loop
 phase-edge phase#3 -> phase#2 loop via=continue
-phase-edge phase#3 -> phase#4 branch
 phase-edge phase#3 -> phase#4 join via=return
-phase-edge phase#3 -> phase#5 exit
 phase-edge phase#3 -> phase#5 join via=return
 phase-edge phase#3 -> phase#5 loop
-phase-edge phase#3 -> phase#6 exit
 phase-edge phase#3 -> phase#6 join via=return
 phase-edge phase#4 -> phase#2 loop
 phase-edge phase#4 -> phase#5 exit

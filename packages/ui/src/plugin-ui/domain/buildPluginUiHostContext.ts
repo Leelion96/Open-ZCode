@@ -59,9 +59,35 @@ function resolveTimeZone(): string {
 export function appAllowsDisplayMode(
   capabilities: McpUiAppCapabilities | undefined,
   mode: McpUiDisplayMode,
+  preferredDisplayMode?: McpUiDisplayMode,
 ): boolean {
   const declared = capabilities?.availableDisplayModes;
-  return !declared || declared.includes(mode);
+  if (declared && !declared.includes(mode)) return false;
+  // fullscreen 工具曾在关侧栏后回到 inline；能力支持两种不代表这次呈现应回到对话。
+  return !(
+    mode === "inline" &&
+    preferredDisplayMode === "fullscreen" &&
+    (!declared || declared.includes("fullscreen"))
+  );
+}
+
+/** 注册能力是硬边界；偏好和锚点更新都不能重新引入页面未支持的模式。 */
+export function constrainPluginUiDisplayModes(
+  context: McpUiHostContext,
+  capabilities: McpUiAppCapabilities | undefined,
+  preferredDisplayMode?: McpUiDisplayMode,
+): McpUiHostContext {
+  const availableDisplayModes = (context.availableDisplayModes ?? ["inline", "fullscreen"]).filter(
+    (mode) => mode !== "pip" && appAllowsDisplayMode(capabilities, mode, preferredDisplayMode),
+  );
+  const current = context.displayMode ?? "inline";
+  return {
+    ...context,
+    availableDisplayModes,
+    displayMode: availableDisplayModes.includes(current)
+      ? current
+      : (availableDisplayModes[0] ?? current),
+  };
 }
 
 /** 内联实例收到 `ui/request-display-mode`：只在宿主可用集合内切换，`pip` 与不可用的模式如实回当前模式。 */

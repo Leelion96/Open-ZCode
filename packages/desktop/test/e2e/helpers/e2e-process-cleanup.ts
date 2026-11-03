@@ -392,3 +392,15 @@ function hasCommandBoundary(char: string | undefined) {
 function uniqueStrings(values: string[]) {
   return [...new Set(values.filter(Boolean))];
 }
+
+/**
+ * E2E runner 里被 await 的等待（等待残留进程退出、重试删除 HOME）。
+ *
+ * Bug 根因：原实现（wdio.conf.ts 的 delay）给计时器 unref。onComplete 强杀残留 Electron 时，进程里
+ * 只剩这个计时器，事件循环为空，Node 在等待中途直接以 0 退出：summary 没写、退出看门狗没装、
+ * WDIO 也没按失败结果退出，本机 Docker runner 因此把失败的 spec 报成 PASS。
+ * 修法：被等待的计时器保持 ref。等待本身有界（调用方的超时循环），兜底退出仍由 onComplete 看门狗负责。
+ */
+export function waitE2EDelay(ms: number): Promise<void> {
+  return new Promise<void>((resolveDelay) => setTimeout(resolveDelay, Math.max(ms, 0)));
+}

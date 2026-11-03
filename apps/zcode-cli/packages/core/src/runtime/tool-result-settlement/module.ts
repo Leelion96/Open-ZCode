@@ -4,7 +4,7 @@
  */
 export const toolResultSettlementModule = {
   id: "tool-result-settlement",
-  requires: ["zcode-cli"],
+  requires: ["zcode-cli", "session-features"],
   provides: ["tool-result-settlement"],
   publicEntrypoints: ["../methods/tool-result-settlement.ts", "contract.ts"],
 } as const;

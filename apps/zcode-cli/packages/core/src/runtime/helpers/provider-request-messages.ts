@@ -1,6 +1,10 @@
 import {
   ProviderEntryOrigins,
+  isMidTurnInput,
   isPresentedInput,
+  isReminderMessage,
+  isUserInputMessage,
+  isUserTurnInput,
   projectIncomingMessageEntries,
 } from "./provider-entry-origins.js";
 import {
@@ -17,6 +21,7 @@ import {
   cloneModelMessageContent,
   isKnownSystemReminderSource,
   isRuntimeAttachmentEntry,
+  systemReminderAttachmentEntry,
 } from "../../agent/message-history.js";
 import {
   getSystemReminderDescriptor,
@@ -52,6 +57,8 @@ export function buildProviderRequestMessages(input: {
   applyCacheControl?: boolean;
   skipCacheWrite?: boolean;
   useMidConversationSystem?: boolean;
+  /** 由模型请求能力决定；不传时不折叠、不补换行（OpenAI 兼容协议、估算与 microcompact）。 */
+  foldRemindersIntoToolResults?: boolean;
   loadedToolCallIds?: ReadonlySet<string>;
 }): ProviderRequestMessageProjectionResult {
   const useMidConversationSystem = input.useMidConversationSystem !== false;
@@ -62,14 +69,39 @@ export function buildProviderRequestMessages(input: {
   const midSystemProjection = useMidConversationSystem
     ? projectMidConversationSystemEntries(reorderResult.entries, origins)
     : { entries: reorderResult.entries };
-  const projectedEntries = moveLegacySystemRemindersAfterToolResultRun(midSystemProjection.entries);
+  const projectedEntries = deriveGenUiStates(
+    moveLegacySystemRemindersAfterToolResultRun(midSystemProjection.entries),
+    origins,
+  );
   // media-budget 在 provider-clean messages 上运行，必须在剥离 metadata 前记录
   // latest real user 的 projection 后索引，避免用户 literal system-reminder 被误当成 meta。
-  const latestRealUserMessageIndex = findLatestRealUserEntryIndex(projectedEntries, origins);
+  const latestRealUserMessageIndex = origins.latestRealUserIndex(projectedEntries, input.entries);
   const renderedMessages = projectedEntries.map(renderProjectedEntryToModelMessage);
+  // Tool loaded. 在并入和补换行之前插入：紧跟搜索批次的提醒排在它之后，不并入 tool result；
+  // 后面的 user 输入前照常补换行。
+  const appended = appendToolSearchSuccessMessages(renderedMessages, input.loadedToolCallIds);
+  const appendedEntries = representativeEntries(appended.indexMap, projectedEntries);
+  // 并入 tool result 与补换行来自同一个协议事实：相邻 user 内容会合成一条消息。
+  const mergesAdjacentUserContent = input.foldRemindersIntoToolResults === true;
+  const folded = mergesAdjacentUserContent
+    ? foldRemindersIntoToolResults(appended.messages, appendedEntries)
+    : identityMergeResult(appended.messages);
+  // 换行在并入之后判断，上一块是 tool_result 时不补：先补再并入会把 "\n" 留在
+  // 数组形态的 tool result 里。
+  // 修复原因：补换行模拟的是合并相邻 user 内容时的分隔。OpenAI 兼容协议不合并 user，
+  // 补了只会改写上一次请求的最后一块，读不到前缀缓存；所以只在合并的协议上补。
+  const foldResult = composeIndexMap(appended.indexMap, {
+    messages: mergesAdjacentUserContent
+      ? separateUserTextBeforeUserInput(
+          folded.messages,
+          representativeEntries(folded.indexMap, appendedEntries),
+        )
+      : folded.messages,
+    indexMap: folded.indexMap,
+  });
   const mergeResult = ENABLE_MCS_ADJACENT_USER_MERGE
-    ? mergeAdjacentUserMessages(renderedMessages)
-    : appendToolSearchSuccessMessages(renderedMessages, input.loadedToolCallIds);
+    ? composeIndexMap(foldResult.indexMap, mergeAdjacentUserMessages(foldResult.messages))
+    : foldResult;
   const messages = mergeResult.messages;
   const sourceEntries: Array<RuntimeMessageEntry | undefined> = Array.from({
     length: messages.length,
@@ -79,8 +111,14 @@ export function buildProviderRequestMessages(input: {
     const entry = projectedEntries[projectedIndex];
     if (entry) sourceEntries[mergedIndex] = origins.representative(entry);
   }
-  const finalLatestRealUserMessageIndex =
+  const mappedLatestRealUserMessageIndex =
     latestRealUserMessageIndex >= 0 ? (mergeResult.indexMap[latestRealUserMessageIndex] ?? -1) : -1;
+  // 纯文本 steer 并入 tool result 后不再是独立的用户消息；指向 tool 消息会让媒体预算
+  // 把工具图片当作当前用户附件保护。steer 本身没有媒体，取 -1 与并入前的保护范围相同。
+  const finalLatestRealUserMessageIndex =
+    messages[mappedLatestRealUserMessageIndex]?.role === "tool"
+      ? -1
+      : mappedLatestRealUserMessageIndex;
   const cacheControlIndex =
     input.applyCacheControl === true
       ? finalizeLatestNonSystemMessageCacheControl(messages, {
@@ -105,6 +143,39 @@ export function buildProviderRequestMessages(input: {
   };
 }
 
+// 页面状态挂在所属输入上，排序全部结束后才在输入旁派生，不参与冒泡和 MCS 合并。
+// 修复原因：状态曾是紧跟输入的独立附件，中途消息冒泡时状态留在原位，和所属 guide 被隔开。
+// 输入并入 MCS system 时状态留在 user 侧、排在这条 system 之前（[状态][system]），其余为 [输入][状态]。
+function deriveGenUiStates(
+  entries: readonly ProjectedRuntimeMessageEntry[],
+  origins: ProviderEntryOrigins,
+): ProjectedRuntimeMessageEntry[] {
+  return entries.flatMap((entry) => {
+    const states = origins.get(entry).flatMap((origin) => {
+      const body = origin.metadata?.genUiState;
+      return body ? [systemReminderAttachmentEntry("gen_ui_state", body)] : [];
+    });
+    if (states.length === 0) return [entry];
+    return !isRuntimeAttachmentEntry(entry) && entry.message.role === "system"
+      ? [...states, entry]
+      : [entry, ...states];
+  });
+}
+
+// 派生消息（Tool loaded.）没有对应 entry，对应位置为 undefined。
+function representativeEntries(
+  indexMap: readonly number[],
+  entries: readonly (ProjectedRuntimeMessageEntry | undefined)[],
+): Array<ProjectedRuntimeMessageEntry | undefined> {
+  const result: Array<ProjectedRuntimeMessageEntry | undefined> = [];
+  for (const [index, mergedIndex] of indexMap.entries()) result[mergedIndex] ??= entries[index];
+  return result;
+}
+
+function identityMergeResult(messages: ModelInputMessage[]): MessageMergeResult {
+  return { messages, indexMap: messages.map((_, index) => index) };
+}
+
 interface AttachmentReorderResult {
   entries: RuntimeMessageEntry[];
   bubbledAttachmentEntryCount: number;
@@ -124,14 +195,19 @@ function reorderAttachmentLikeEntries(
       continue;
     }
 
-    if (
-      (isPresentedInput(entry) ||
-        (!isRuntimeAttachmentEntry(entry) && isBubbleStop(entry.message))) &&
-      pending.length > 0
-    ) {
+    // 停止点是 assistant / system / tool result；普通 user 输入不是停止点（中途消息例外，见下）。
+    if (!isRuntimeAttachmentEntry(entry) && isBubbleStop(entry.message) && pending.length > 0) {
       result.push(...pending);
       bubbledAttachmentEntryCount += pending.length;
       pending.length = 0;
+    }
+    // 中途消息不越过普通 user 输入：它和之后生成的 attachment 留在输入之后，之前生成的继续冒泡。
+    // 修复原因：send-now 在被抢占轮次没有任何输出时开新一轮，user_steer 冒泡到被抢占的 prompt
+    // 之前，模型最后读到的是已被取代的旧指令。pending 是倒序，最后一条中途消息生成得最早。
+    if (isUserTurnInput(entry)) {
+      const staying = pending.splice(0, pending.findLastIndex(isMidTurnInput) + 1);
+      result.push(...staying);
+      bubbledAttachmentEntryCount += staying.length;
     }
     result.push(entry);
   }
@@ -146,6 +222,9 @@ function reorderAttachmentLikeEntries(
 }
 
 function isAttachmentLikeUserEntry(entry: RuntimeMessageEntry): boolean {
+  // 中途消息按 attachment 处理，随其他 attachment 冒泡并保持生成顺序；
+  // 输入不作为停止点，后来的公告也不会越过它。
+  if (isMidTurnInput(entry)) return true;
   if (isPresentedInput(entry)) return false;
   if (isRuntimeAttachmentEntry(entry)) {
     const source = entry.metadata.source;
@@ -218,9 +297,113 @@ function renderProjectedEntryToModelMessage(
   return message;
 }
 
+// 相邻 user 消息合并规则：user 输入消息前紧挨的 user 文本以换行结尾；
+// attachment 并入前一条时不补。按位置补换行，与前一块的来源无关；tool result 不是文本，不补。
+// 已以换行结尾时不再补，保持投影对自身输出幂等。
+function separateUserTextBeforeUserInput(
+  messages: ModelInputMessage[],
+  entries: readonly (ProjectedRuntimeMessageEntry | undefined)[],
+): ModelInputMessage[] {
+  for (let index = 1; index < messages.length; index++) {
+    const previous = messages[index - 1]!;
+    const entry = entries[index];
+    if (!entry || !isUserInputMessage(entry) || !startsWithText(messages[index]!.content)) continue;
+    if (previous.role !== "user" || isToolResultUserMessage(previous)) continue;
+    messages[index - 1] = { ...previous, content: appendNewlineToLastText(previous.content) };
+  }
+  return messages;
+}
+
+function startsWithText(content: ModelMessageContent): boolean {
+  return typeof content === "string" || content[0]?.type === "text";
+}
+
+function appendNewlineToLastText(content: ModelMessageContent): ModelMessageContent {
+  if (typeof content === "string") return content.endsWith("\n") ? content : `${content}\n`;
+  const last = content.at(-1);
+  if (last?.type !== "text" || last.text.endsWith("\n")) return content;
+  return [...content.slice(0, -1), { ...last, text: `${last.text}\n` }];
+}
+
 interface MessageMergeResult {
   messages: ModelInputMessage[];
   indexMap: number[];
+}
+
+function composeIndexMap(first: readonly number[], second: MessageMergeResult): MessageMergeResult {
+  return { messages: second.messages, indexMap: first.map((index) => second.indexMap[index]!) };
+}
+
+// 紧跟 tool result 的 user 侧提醒并入这组最后一个 tool result 的内容。
+// MCS 只决定哪些提醒留在 user 侧，不改变这条规则。遇到第一条不折叠的消息即停止。
+function foldRemindersIntoToolResults(
+  messages: readonly ModelInputMessage[],
+  entries: readonly (ProjectedRuntimeMessageEntry | undefined)[],
+): MessageMergeResult {
+  const result: ModelInputMessage[] = [];
+  const indexMap: number[] = [];
+  for (const [index, message] of messages.entries()) {
+    const previous = result.at(-1);
+    const entry = entries[index];
+    const content =
+      previous?.role === "tool" && entry && isFoldableReminder(entry, message)
+        ? foldIntoToolResultContent(previous.content, message.content)
+        : undefined;
+    if (previous && content) {
+      const cacheControl = message.cacheControl ?? previous.cacheControl;
+      result[result.length - 1] = {
+        ...previous,
+        content,
+        ...(cacheControl ? { cacheControl: { ...cacheControl } } : {}),
+      };
+      indexMap.push(result.length - 1);
+      continue;
+    }
+    indexMap.push(result.length);
+    result.push(message);
+  }
+  return { messages: result, indexMap };
+}
+
+// 中途消息按 attachment 处理，同样并入；带媒体的中途消息不并入。
+// MCS 降级块不经过折叠；legacy_synthetic 还承载旧后台通知与 compact 摘要，同样不折叠。
+function isFoldableReminder(
+  entry: ProjectedRuntimeMessageEntry,
+  message: ModelInputMessage,
+): boolean {
+  if (message.role !== "user" || isToolResultUserMessage(message)) return false;
+  if (typeof message.content !== "string" && message.content.some((b) => b.type !== "text")) {
+    return false;
+  }
+  if (isRuntimeAttachmentEntry(entry)) return true;
+  if (isPresentedInput(entry)) return false;
+  return isReminderMessage(entry);
+}
+
+function foldIntoToolResultContent(
+  toolContent: ModelMessageContent,
+  reminder: ModelMessageContent,
+): ModelMessageContent | undefined {
+  const reminderBlocks = modelContentToMergeBlocks(reminder);
+  if (typeof toolContent === "string") {
+    return [
+      toolContent,
+      ...reminderBlocks.map((block) => (block.type === "text" ? block.text : "")),
+    ]
+      .map((text) => text.trim())
+      .filter(Boolean)
+      .join("\n\n");
+  }
+  if (toolContent.some((block) => block.type === "tool_reference")) return undefined;
+  return [...appendNewlineToLastTextBlock(toolContent), ...reminderBlocks];
+}
+
+function appendNewlineToLastTextBlock(
+  content: ModelMessageContentBlock[],
+): ModelMessageContentBlock[] {
+  const last = content.at(-1);
+  if (last?.type !== "text") return content;
+  return [...content.slice(0, -1), { ...last, text: `${last.text}\n` }];
 }
 
 function mergeAdjacentUserMessages(messages: readonly ModelInputMessage[]): MessageMergeResult {
@@ -314,13 +497,6 @@ function modelContentToMergeBlocks(content: ModelMessageContent): ModelMessageCo
     return [{ type: "text", text: content }];
   }
   return cloneModelMessageContent(content) as ModelMessageContentBlock[];
-}
-
-function findLatestRealUserEntryIndex(
-  entries: readonly ProjectedRuntimeMessageEntry[],
-  origins: ProviderEntryOrigins,
-): number {
-  return entries.findLastIndex((entry) => origins.hasRealUser(entry));
 }
 
 function finalizeLatestNonSystemMessageCacheControl(

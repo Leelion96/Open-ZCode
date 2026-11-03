@@ -4,6 +4,73 @@ Status: ready-for-agent
 
 Issue-Tracker: local-markdown
 
+## 生产本地诊断（2026-10）
+
+桌面本地 continuous 发送默认记录本地 TTFT，不依赖灰度、OTLP 配置或上传成功。
+复用本节以下的观测事实和关联，不改变已接纳输入、排队、请求重试或内容投影。
+新增日志只写本机；既有云端开关仅控制原有遥测，发送起点冻结该决定。
+本地采集开启不得顺带开启云端上传，也不得将新增的渲染诊断送入云端。
+
+```text
+有效提交 → Renderer 准备 → Host 就绪/配置/上下文 → CLI 收到/受理
+ → 等待执行 → Context/Hooks/持久化/Compact/MCP/请求组装
+ → 模型槽位等待 → attempt → 首有效内容 → 实际帧 → Store
+ → 正文 DOM 提交 → 绘制机会估计
+```
+
+- 起点为有效提交处理开始，保留门禁前的本次处理时间；输入法确认、换行、未通过发送门禁不产生成功样本。
+- `observationId` 关联一次发送，`commandId/queryId` 关联执行；`sessionId/turnId/productTurnId`
+  隔离会话和轮次，`requestId/attempt` 区分物理请求。重试不得重置提交起点。
+- Renderer 记录发送、首次内容、首次正文及阶段检查点；Host 记录命令收到、runtime 就绪、
+  envelope 准备、provider 同步、浏览器上下文和 CLI 往返的开始/结束。
+  CLI 复用已有准备阶段事实，补充模型槽位等待、attempt 和首个非空内容的本地日志。
+- `model_first_content` 的旧遥测允许空 block start；新增本地有效内容日志必须过滤空开始，
+  不修改旧遥测口径。SDK 首事件不代表网络首字节；模型等待不能进一步臆断成 DNS/TLS/推理时间。
+- 前端只给与实际 online 首正文匹配的行记录 Store 应用、DOM 提交和绘制机会；
+  重放、其他 session/turn、重复帧和历史行不产生样本。首思考/工具与首正文分别记录。
+  DOM 提交不等于绘制；两次 animation frame 后的观测明确标作 `paint_estimate`，
+  并记录文档前后台与元素可见性，不声称像素已经呈现。
+- 每个边界、准备子阶段开始/结束、请求 attempt 各记录一次，不逐 token 记录。
+  Renderer 首输出后仅补充首正文及其渲染观测；CLI 每个主请求和压缩请求保留固定数量的
+  生命周期事件。失败、取消、拒绝、未收口保留已等待时长。
+- App 日志使用 `[ttft]` 标记，CLI JSONL 使用 `ttft.*` event；沿用原日志目录、
+  日期切分、导出与保留期。日志仅包含关联 ID、阶段、计时、状态、版本和模型标识。
+  不包含正文、附件内容、原始路径、请求 Header/Body 或凭据。
+- TTFT 写入使用有界异步队列；磁盘错误、丢弃、强杀导致的尾部缺失不能阻断发送。
+  记录事件发生时刻，不能使用落盘时刻计算耗时。跨进程沿用现有时钟校准，
+  缺失或失效时保留同进程耗时和质量标记，不强行相减。
+- 本次边界仍为桌面本地；远程工作区、手机/Web 不建立本地提交观测。
+- 按原职责登记四个 TTFT 模块：共享合同、Renderer 观测、Desktop 装配、CLI 事实记录。
+  仅移动原 TTFT 文件并保持公共包导出，避免把整个旧模块纳入此次迁移；业务 owner 不变。
+
+验证：生产日志门控；云端关闭/不可用仍落盘；正文、思考先到、失败取消、排队/重试归属；
+渲染记录去重和跨会话隔离；异步日志写入故障不影响业务；真实 Electron Enter 发送后检查
+最终 App/CLI 文件和对应 DOM。沿用 pending E2E，不自动晋升。
+
+### 本地排查入口
+
+App 日志默认在 `~/.zcode/v2/logs/YYYY-MM-DD.log`，CLI 日志默认在
+`~/.zcode/cli/log/zcode-YYYY-MM-DD.jsonl`；自定义数据目录和测试环境沿用已有路径配置。
+先搜索 App 的 `[ttft]`，按 `observationId` 找到一次发送，再用其 `requestId`
+查询 CLI 的 `ttft.model.*`。同一输入的重试保持 observationId，通过 commandId 和
+requestId/attempt 区分命令与物理请求。关联到日志后按 `at` 查看事件发生时间。
+
+| 观察到的间隔或字段                                                              | 排查方向                                               |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `start` → `dispatch` / `renderer_prepare`                                       | 输入准备、附件和发送前检查                             |
+| `host.runtime/provider_sync/browser_context` 的开始到结束                       | 进程就绪、配置同步、浏览器上下文                       |
+| CLI `receivedAt` → `admittedAt` → `executionAt`                                 | 命令受理与执行排队                                     |
+| `ttft.phase` 的 context/hooks/persistence/compaction/mcp/tools/request_assembly | 执行前准备子阶段                                       |
+| 模型 `queued` → `admitted`，`queuedMs`                                          | 模型并发槽位                                           |
+| `fetch_started` → `response_headers` → `first_provider_event` → `first_content` | 网络请求及模型流等待；不能据此断言服务端内部耗时       |
+| `output_return`                                                                 | CLI 首内容事实到 Renderer 实际帧接收，使用已有时钟校准 |
+| `first_text` → `text.projected` → `text.committed` → `text.paint_estimate`      | Store、React 与浏览器绘制机会                          |
+
+`durationMs` 是该事件说明的耗时；正文渲染事件的 `durationMs` 从提交起算，
+`sinceReceivedMs` 从 Renderer 首正文接收起算。只有 `visible/foreground` 为 true 的
+绘制估计才适合前台排查。Host ACK、准备子阶段和模型 attempt 可能重叠，不能全部相加。
+质量缺失、后台、时钟异常或 `ttft.log.dropped` 出现时，保留不确定性，不把缺段当作零耗时。
+
 ## Problem Statement
 
 用户需要深入分析从点击发送一条消息到客户端收到第一个有效输出之间，经过了哪些链路阶段、每个阶段花了多久，并通过各阶段的 P50、P95 和单条慢消息瀑布图定位瓶颈。

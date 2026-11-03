@@ -44,7 +44,8 @@ export const ProjectTaskRow = memo(function Row({
   const organizationActions = useMemo(() => <TaskGroupTaskMenu task={task} />, [task]);
   // 原因：会话行复用项目详情会在浏览任务时重复弹层；远程身份详情只由项目入口承载。
   return (
-    <div>
+    // 每行独立渲染 TaskList，外层留白避免选中和悬停背景粘连。
+    <div className="py-px">
       <TaskList
         organizationActions={organizationActions}
         workspacePath={task.workspacePath}
@@ -89,13 +90,14 @@ export function ProjectTaskRows({
   showEmptyState = true,
 }: {
   showEmptyState?: boolean;
-  kind?: "project" | "pinned" | "timeline";
+  kind?: "project" | "pinned" | "timeline" | "unread";
   tasks: ProjectTask[];
   onSelect: ProjectSidebarProps["onSelectTask"];
   refresh(): Promise<void>;
 }) {
   const { intl, locale } = useZCodeIntl();
-  const pageSize = kind === "timeline" ? 20 : 5;
+  const chronological = kind === "timeline" || kind === "unread";
+  const pageSize = chronological ? 20 : 5;
   const [limit, setLimit] = useState(pageSize);
   const [showAll, setShowAll] = useState(false);
   const ordered = useMemo(
@@ -105,14 +107,13 @@ export function ProjectTaskRows({
   const visible =
     kind === "pinned" ? (showAll ? ordered : ordered.slice(0, 20)) : ordered.slice(0, limit);
   const hasMore = kind === "pinned" ? ordered.length > 20 : ordered.length > limit;
-  const headings =
-    kind === "timeline"
-      ? timelineDateHeadings(
-          visible.map((task) => task.updatedAt),
-          Date.now(),
-          locale,
-        )
-      : [];
+  const headings = chronological
+    ? timelineDateHeadings(
+        visible.map((task) => task.updatedAt),
+        Date.now(),
+        locale,
+      )
+    : [];
   // 原因：逐行复用 TaskList 后，空数组不再挂载旧空态；列表 owner 统一展示一次。
   if (!tasks.length)
     return kind === "pinned" || !showEmptyState ? null : (
@@ -120,17 +121,19 @@ export function ProjectTaskRows({
         className="px-8.5 py-2 text-ui-base text-foreground-subtlest"
         data-testid="project-no-tasks"
       >
-        {intl.formatMessage({ id: "taskList.noTasks" })}
+        {intl.formatMessage({
+          id: kind === "unread" ? "taskList.noUnreadTasks" : "taskList.noTasks",
+        })}
       </div>
     );
   return (
     <div
-      className={kind === "pinned" || kind === "timeline" ? "px-2" : undefined}
+      className={kind === "pinned" || chronological ? "px-2" : undefined}
       data-testid={
         kind === "pinned"
           ? "project-pinned-tasks"
-          : kind === "timeline"
-            ? "project-timeline-tasks"
+          : chronological
+            ? `project-${kind}-tasks`
             : undefined
       }
     >
@@ -161,7 +164,7 @@ export function ProjectTaskRows({
             task={task}
             onSelect={onSelect}
             refresh={refresh}
-            variant={kind === "timeline" ? "timeline" : "default"}
+            variant={chronological ? "timeline" : "default"}
             showFiles={kind === "pinned"}
           />
         </Fragment>

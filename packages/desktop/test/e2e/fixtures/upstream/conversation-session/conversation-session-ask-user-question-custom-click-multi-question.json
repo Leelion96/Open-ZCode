@@ -4,6 +4,29 @@
   "spec": "./test/e2e/conversation-session/conversation-session-ask-user-question-custom-click-multi-question.test.ts",
   "fixtures": [
     {
+      "id": "conversation-session-ask-user-question-custom-click-multi-question-title-sidecar",
+      "description": "多题问答的独立标题响应，正文与答案断言保持不变。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "隔离回放抓包确认标题旁路缺少响应；为本例提供非流式 JSON 标题，避免 Missing Fixture 或依赖共享旧池。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_ASK_USER_QUESTION_CUSTOM_CLICK_MULTI"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
       "id": "upstream-conversation-ask-user-question-custom-click-multi-question-call",
       "description": "AskUserQuestion custom mouse click: 首轮返回三题合法问答工具调用。",
       "metadata": {

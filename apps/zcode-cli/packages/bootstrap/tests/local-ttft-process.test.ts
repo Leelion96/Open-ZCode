@@ -12,7 +12,7 @@ it.skipIf(process.platform === "win32")(
       stdin: {
         resolveDir: fileURLToPath(new URL(".", import.meta.url)),
         contents: `
-    import { LocalTtftRecorder } from "../src/zcode-protocol-v4/local-ttft.ts";
+    import { LocalTtftRecorder } from "../src/zcode-protocol-v4/local-ttft/contract.ts";
     const recorder = new LocalTtftRecorder(undefined, undefined, (fact) => process.send({ fact }));
     recorder.receive({ commandId: "process-input", clientId: "client", sessionId: "session", type: "sendText", payload: {}, issuedAt: Date.now(), ttft: { version: 1, observationId: "e0b15fc2-3a50-4d73-854d-61fa148cbfd0" } }, false);
     recorder.admitted("process-input");

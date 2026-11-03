@@ -3,6 +3,10 @@
 话题输入材料的新实现以 [话题输入材料重构](bots-topic-input-materials.md) 为准；
 下文历史记录中的正文拼接引用与 bot_topic_context 自动注入将由标准引用和文本附件替代。
 
+架构登记沿用两个既有边界：`conversation-quote-context` 只生成模型可见引用和可信来源说明；
+`window-topic-resource-relay` 绑定物理连接与 logical session，委托已有资源转发通道执行校验、读取与取消。
+登记不改变 canonical 输入、Bot 投递 owner 或默认停用渠道发送入口的行为。
+
 ## Identity and activation
 
 One enabled group has one default conversation, plus independent topic conversations.
@@ -657,6 +661,17 @@ modelId 和 options.reasoningLevel；不得从 model 配置菜单或 task.model 
 
 ## 原生 mention 节点与渠道回复（2026-09-23）
 
+2026-10-21 当前入口：ReplyToChannel 的默认注册、Host 默认发送接线和模型调用提示仅注释停用，
+权限、协议、发送实现和测试材料完整保留，未来插件尚未实现。下述主动渠道回复与按名字提及
+不再由默认 Agent 暴露。原生输入节点、分工识别、UI 展示、普通最终回复自动回传继续保留；
+模型分工材料不再携带发送用 refId，原提示源码保留为注释。
+
+```text
+Bot 输入 → 持久化来源 → 模型分工上下文 → 最终回复 → Bot 自动回传
+ReplyToChannel 默认注册 / Host 发送接线 / 模型调用提示：注释停用
+ReplyToChannel handler / 权限 / 协议 / Bot 发送实现：完整保留
+```
+
 本次不增加避让规则。可信飞书 mention 在 BotGroupInputSource.contentParts 中按原顺序保存，
 合批逐条保存；appId 与既有 botId/chatId/threadId/messageId 一起界定应用与会话。
 text 仍是兼容投影，必须等于节点拼接结果；客户端只根据可信节点渲染，不从 @name 文本恢复身份。
@@ -807,6 +822,7 @@ Provider 使用原生 mentions 和卡片中的有序 at 节点恢复可信 menti
 逐条输入 → 停止屏障 → 全批次有效性判断 → 保留原始消息提交
 原生 mention targetId + 当前 bot openId → isCurrentBot → 模型分工
 ```
+
 当前授权、Host 持久化 owner、CLI 单一 admission、desktop continuous/mobile replayable 不变。
 
 模型身份定位补充：除 mention 清单外，逐条输入投影有序 text/channelMention 节点，

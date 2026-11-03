@@ -37,7 +37,12 @@ export const rootSchema = z
   .object({ rootPath: text, position: z.number().int().nonnegative(), isPrimary: z.boolean() })
   .strict();
 export const cacheSchema = z
-  .object({ projectId: text, name: text, roots: z.array(rootSchema) })
+  .object({
+    projectId: text,
+    name: text,
+    roots: z.array(rootSchema),
+    deleted: z.boolean().optional(),
+  })
   .strict()
   .refine(
     ({ roots }) =>

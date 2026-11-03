@@ -108,6 +108,47 @@ export function canUpdatePluginItem(
   return Boolean(item && !item.orphaned && isPluginUpdatePending(item.installedMeta?.updateStatus));
 }
 
+/**
+ * 「全部更新」每轮读 store 判断是否仍需更新：updateStatus 要等 loadInto 结束才变 none，
+ * 行内更新已发出但未结束时只能靠 activeOperations 识别，否则同一插件会并发两次 plugins/update。
+ */
+export function needsPluginUpdate(
+  state: {
+    installedPlugins: readonly Pick<ZCodeInstalledPluginSummary, "id" | "updateStatus">[];
+    activeOperations: readonly { id: string }[];
+  },
+  pluginId: string,
+): boolean {
+  if (state.activeOperations.some((operation) => operation.id === `plugin:update:${pluginId}`)) {
+    return false;
+  }
+  return isPluginUpdatePending(
+    state.installedPlugins.find((plugin) => plugin.id === pluginId)?.updateStatus,
+  );
+}
+
+/**
+ * 「全部更新」：逐个等待单插件更新，单个失败（含抛错）不中断后续插件。
+ * guard 读 store 当前状态：批量耗时较长，期间用户可能切换 Scope 或在行内先更新了某个插件。
+ * 上下文变化即中止，且不计入切换期间完成的那一个（runWorkspaceOperation 此时返回 false，但可能已落盘）。
+ */
+export async function updatePluginsSerially(
+  pluginIds: readonly string[],
+  update: (pluginId: string) => Promise<boolean>,
+  guard: { isCurrent: () => boolean; needsUpdate: (pluginId: string) => boolean },
+): Promise<{ succeeded: string[]; failed: string[]; aborted: boolean }> {
+  const succeeded: string[] = [];
+  const failed: string[] = [];
+  for (const pluginId of pluginIds) {
+    if (!guard.isCurrent()) return { succeeded, failed, aborted: true };
+    if (!guard.needsUpdate(pluginId)) continue;
+    const ok = await update(pluginId).catch(() => false);
+    if (!guard.isCurrent()) return { succeeded, failed, aborted: true };
+    (ok ? succeeded : failed).push(pluginId);
+  }
+  return { succeeded, failed, aborted: false };
+}
+
 export function resolveLocalizedList(
   locale: string,
   base: string[] | undefined,

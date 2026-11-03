@@ -8,7 +8,26 @@
   ],
   "fileFixtures": [],
   "requests": [
-    { "id": "subagent-team-scope-parent-agent", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "固定父 Agent。" },
-    { "id": "subagent-team-scope-parent-final", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "父 continuation。" }
+    {
+      "id": "conversation-session-subagent-team-scope-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "subagent-team-scope-parent-agent",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "父 tool_use 由真实 runtime 处理 child provider 资格校验。"
+    },
+    {
+      "id": "subagent-team-scope-parent-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证 child 失败不拖垮父会话。"
+    }
   ]
 }

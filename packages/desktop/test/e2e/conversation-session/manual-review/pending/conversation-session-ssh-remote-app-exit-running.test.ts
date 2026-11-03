@@ -16,6 +16,7 @@ import {
 import { runSSHCommand, waitForRemoteTab } from "#e2e/helpers/ssh-remote-p0";
 import {
   getV4Messages,
+  selectV4TaskById,
   sendV4Prompt,
   waitForV4ConversationState,
   waitForV4Pane,
@@ -37,7 +38,7 @@ describe(`${MARKER}: 完整退出 Desktop 后远端回合继续`, () => {
     await browser.electron.restoreAllMocks();
     await clearAppData();
   });
-  it("SSH-GUIDE-EXIT 旧 Main、Host 与 Renderer 全部退出期间回合完成，重开恢复同任务且只执行一次", async function () {
+  it("SSH-GUIDE-EXIT 旧 Main、Host 与 Renderer 全部退出期间回合完成，重开草稿后手动打开原任务且只执行一次", async function () {
     this.timeout(15 * 60_000);
     const prepared = await prepareSSHLifecycle(MARKER, {
       apiType: "anthropic-messages",
@@ -106,6 +107,9 @@ describe(`${MARKER}: 完整退出 Desktop 后远端回合继续`, () => {
     });
     expect(tab.remoteSessionId).not.toBe(task.remoteSessionId);
     task.remoteSessionId = tab.remoteSessionId!;
+    // 旧断言误把冷启动当作原地重连；冷启动进入草稿，历史由用户显式打开。
+    await waitForV4Pane((state) => state.sessionId === "draft", "冷启动没有进入项目草稿");
+    await selectV4TaskById(task.taskId, 60_000);
     await waitForV4TimelineContaining("SSH_EXIT_STREAMING");
     await waitForV4ConversationState(
       (state) => state.taskId === task.taskId && state.state === "idle",

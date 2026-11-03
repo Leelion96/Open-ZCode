@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium } from "playwright-core";
+import { TID_AUTOMATIONS_OPEN, TID_TASK_NEW_BUTTON } from "@zcode/shared/test-ids";
 import { createDeviceSwitchDesktopBridge } from "./remote-device-switch.helpers.mjs";
 import { setup, mixedDevices, assertEventually } from "./remote-login-v2.helpers.mjs";
 
@@ -130,19 +131,22 @@ try {
           const waitForHome = async (name) => {
             const button = page.getByRole("button", { name: buttonName(), exact: true });
             const onboarding = page.getByTestId("onboarding-page");
-            const welcome = page.getByRole("dialog", { name: /欢迎使用 ZCode|Welcome to ZCode/ });
-            // home-only 空设置必定触发职业引导；等待其异步判定落定，避免测试中途覆盖菜单。
-            if (mode === "home-only") await onboarding.waitFor();
-            else await button.or(onboarding).or(welcome).first().waitFor();
+            const startupDialog = page.getByRole("dialog");
+            // 首启可能显示职业引导、欢迎页或迁移提示，不能假定 home-only 必定进入职业引导。
+            await button.or(onboarding).or(startupDialog).first().waitFor();
             if (await onboarding.isVisible()) {
               await onboarding.getByRole("button", { name: /退出引导|Exit onboarding/ }).click();
             }
-            await button.or(welcome).first().waitFor();
-            if (await welcome.isVisible())
-              await welcome.getByRole("button", { name: /^(Close|关闭)$/ }).click();
+            await button.or(startupDialog).first().waitFor();
+            if (await startupDialog.isVisible())
+              await startupDialog.getByRole("button", { name: /^(Close|关闭)$/ }).click();
             await button.waitFor();
             await button.getByText(name, { exact: true }).waitFor();
             const navigation = page.getByTestId("sidebar-primary-navigation");
+            // RSNAV01：远控不承载这两个主视图；初次连接、切换设备和刷新都不能露出无效入口。
+            assert.equal(await navigation.getByTestId(TID_AUTOMATIONS_OPEN).count(), 0);
+            assert.equal(await navigation.getByTestId("plugin-store-sidebar-open").count(), 0);
+            assert.equal(await navigation.getByTestId(TID_TASK_NEW_BUTTON).isVisible(), true);
             assert.equal(
               await navigation.evaluate(
                 (node, label) => node.firstElementChild?.ariaLabel === label,
@@ -163,7 +167,7 @@ try {
           try {
             const url = new URL("/remote/v4?app_version=3.13.0&sid=e2e-device&mid=e2e-mid", origin);
             url.searchParams.set("name", longName);
-            await page.goto(url.href);
+            await page.goto(url.href, { waitUntil: "domcontentloaded" });
             const button = await waitForHome(longName);
             assert.equal(h.traffic.lists, 0, "扫码连接不先请求账号设备列表");
             if (mode === "bridge") assert.equal(await hasBridgeSession("e2e-device"), true);
@@ -208,7 +212,8 @@ try {
               assert.equal(await hasBridgeSession("second"), true);
             }
             assert.equal(await page.getByText(`E2E_DEVICE_e2e-device`, { exact: true }).count(), 0);
-            await page.reload();
+            // 应用就绪由下方真实首页断言确认，不等待外部字体等非关键资源的 load。
+            await page.reload({ waitUntil: "domcontentloaded" });
             await waitForHome("Workstation");
             assert.equal(connections.at(-1).sid, "second");
             assert.equal(h.traffic.lists, 2, "刷新按新 SID 直连，不重新选设备");
@@ -222,6 +227,7 @@ try {
               screenshot: filename,
             });
           } catch (error) {
+            console.error(error);
             await page.screenshot({ path: resolve(artifacts, "failure.png"), fullPage: true });
             console.error(await page.locator("body").innerText(), h.errors);
             throw error;

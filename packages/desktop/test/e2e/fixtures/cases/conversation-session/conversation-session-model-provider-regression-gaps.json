@@ -9,18 +9,25 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-model-provider-regression-gaps-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实回放中标题包含原提示的 E2E marker，被正文 matcher 接管而返回 SSE；显式标题 matcher 优先并返回非流式 JSON。"
+    },
+    {
       "id": "model-provider-regression-gaps-main",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "目录缺口用例需要确定性的 provider/model 请求和完成态。"
+      "syntheticReason": "请求模型和会话状态由 E2E 断言，响应只负责稳定完成。"
     },
     {
       "id": "model-provider-regression-gaps-slow",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "退出和 Queue 用例需要稳定的在途请求窗口。"
+      "syntheticReason": "请求仍在途时才可执行退出和 Queue 操作。"
     }
   ]
 }

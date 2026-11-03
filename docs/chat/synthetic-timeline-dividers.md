@@ -32,3 +32,9 @@
 - 桌面端仍走 `desktop-continuous` direct realtime。
 - 手机远控仍走 `web-remote-replayable` snapshot / gap 恢复。
 - relay、main process 不新增 task/session 业务状态。
+
+## 模型名称读取稳定性（SSV02）
+
+同一 Host 的模型选择 View 因 selection 变化重新读取时，历史 model-change divider 使用现有 hook 保留的同 owner catalog 解析 Provider 名称。完整 View 的 effectiveSelection 和发送校验仍只消费 ready 状态；跨 Host/服务切换不沿用旧目录。真正缺失或已删除的 Provider 仍展示其 ID，不把暂时 loading 当作 Provider 消失。
+
+已有会话配置尚未恢复时，工具栏不得借用新任务默认模型。模型菜单的展示与滚动动画按 workspace/session 隔离；配置首次恢复直接显示当前名称，不把恢复当作用户切换模型来播放旧、新名称并存的动画。已知草稿选择可继续展示，真实空选择和读取失败仍保留现有修复入口。

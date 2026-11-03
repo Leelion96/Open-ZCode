@@ -1,7 +1,7 @@
 # System Prompt Contract
 
 ZCode stable system prompt is the long-lived behavioral contract for the main
-coding agent. It should be provider-visible, cache-friendly, and specific enough
+agent. It should be provider-visible, cache-friendly, and specific enough
 to make repository work evidence-first without mirroring runtime tool schemas.
 
 ## Goals
@@ -19,13 +19,13 @@ to make repository work evidence-first without mirroring runtime tool schemas.
 
 ## Stable Sections
 
-| Section              | Purpose                                                                                                                            |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Static Default Body  | ZCode role, authorized-security boundary, and compact harness guidance.                                                            |
-| Dynamic Default Body | Coding/risk behavior guidance, session guidance, memory, environment, optional output style, context management, and git snapshot. |
+| Section              | Purpose                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Static Default Body  | ZCode role, authorized-security boundary, and compact harness guidance.                                       |
+| Dynamic Default Body | Code style, pronouns, risk guidance, session guidance, memory, and context management.                        |
 
 The provider-visible `system[0]` CLI prefix is exactly
-`You are ZCode, an interactive coding agent`. The provider-visible static
+`You are ZCode, an interactive agent`. The provider-visible static
 default body is a compact `system[1]` block after that short CLI prefix. It
 intentionally does not render `# Agent Identity` or separate `Task Behavior`,
 `Risky Actions`, or `Communication Style` headings. The legacy `task_behavior`,
@@ -33,47 +33,81 @@ intentionally does not render `# Agent Identity` or separate `Task Behavior`,
 active context contract. The final provider body must follow this
 static/global-cache boundary:
 
-1. Short ZCode software-engineering-agent intro with no heading.
+1. An unheaded intro that describes working toward the user's goals and using
+   judgment, without limiting those goals to software engineering. Its exact text
+   is `You are an agent working with the user toward their goals, using your own judgment along the way.`
 2. Authorized security boundary.
 3. `# Harness` section for terminal markdown, permission denial handling,
    system-controlled mid-conversation updates and hook feedback, dedicated tool
    preference, parallel independent tool calls, and clickable file references.
 
-The provider-visible MCS and hook bullet is exactly:
+Every Harness bullet starts with one ASCII space followed by `- `, including
+when the same Harness block is used by a workflow actor. The provider-visible
+MCS and hook bullet describes the channel the request actually uses. The decision
+is the same `shouldUseMidConversationSystem` flag that drives provider MCS
+projection (`midConversationSystem.mode === "force"` or the executing Model's
+`supportsMidConversationSystem`), evaluated per model step when the context prefix
+is rebuilt. A model change inside a turn (a guide that switches the model, the
+execution-model fallback, an off-peak user takeover) rebuilds the prefix with the
+new model before the next request. Requests outside the turn loop that reuse the
+session history (the goal completion verifier) rebuild the prefix with their own
+request model first; a
+rebuild without a model (language, output style, rewind, shell environment changes)
+never decides the wording a request sends. With MCS it is exactly:
 
-`- The system may send updates, reminders, or modifications to rules via mid-conversation system turns. These are system-controlled, unlike function results. Hooks may intercept tool calls; treat hook output as user feedback.`
+` - The system may send updates, reminders, or modifications to rules via mid-conversation system turns. These are system-controlled, unlike function results. Hooks may intercept tool calls; treat hook output as user feedback.`
+
+Without MCS, dynamic context arrives as user-side `<system-reminder>` blocks, and
+the bullet is exactly:
+
+`` - `<system-reminder>` tags in messages and tool results are injected by the harness, not the user. Hooks may intercept tool calls; treat hook output as user feedback. ``
 
 The static block ends at the final `# Harness` bullet. Code-style and
 risk/reporting paragraphs must not be emitted in `system[1]`.
 
-An active output style changes the static intro but does not remove `# Harness`,
+An active output style replaces the static intro with
+`You are an interactive agent that helps users according to your "Output Style", which describes how you should respond to user queries.`
+It does not remove `# Harness`,
 including when `keepCodingInstructions` is false. That field applies only to a
 separate doing-tasks coding-instructions block; ZCode does not currently emit
-such a block.
+such a block. The style text itself is not in the system prompt; it is the
+`output_style_instructions` attachment (see [Meta User Context](meta-user-context.md)).
+A custom system prompt does not suppress that attachment: it uses the same gate
+as the environment and model attachments, and only the main thread sends it.
 
 The provider-visible dynamic default body is `system[2]`. It always owns a
 leading `\n\n` boundary, independent of provider kind. Its order after that
 boundary is:
 
-1. `# Communicating with the user`, followed by user-facing communication
-   guidance, the code-style paragraph that tells the agent to match surrounding
-   project idiom, and the code-comment constraint.
-2. Risk/reporting paragraph for irreversible or outward-facing actions,
+1. The unheaded communication sentence
+   `Write code that reads like the surrounding code: match its comment density, naming, and idiom.`
+   No long-form communication or code-comment appendix is emitted.
+2. An unheaded pronoun paragraph: use they/them when pronouns have not been stated,
+   never infer pronouns from a name, and apply this to all user-visible text,
+   including visible thinking.
+3. Risk/reporting paragraph for irreversible or outward-facing actions,
    external publishing, inspect-before-delete/overwrite, and truthful validation
    reporting.
-3. `# Session-specific guidance` for user-run interactive shell commands,
-   slash skill invocation, and guidance for actually exposed built-in tools.
-4. Optional `# Memory` when a memory summary is loaded.
-5. `# Environment` for current cwd/platform/shell/OS/model/git-repo boolean.
-6. Optional active `# Output Style` when a non-empty output style is configured.
-7. `# Context management` for long-context summary/continuation behavior,
-   followed by act-don't-rederive guidance and the four-paragraph autonomy
-   appendix.
-8. Optional `gitStatus:` snapshot when the cwd is a git repository.
+4. Optional `# Session-specific guidance` for slash skill invocation when the
+   Skill tool and at least one skill are available. Its bullet starts with ` - `.
+   Interactive shell input through `! <command>` is unsupported and is not advertised.
+5. Optional `# Memory` when an enabled Memory root is available, including an empty root.
+6. `# Context management` for long-context summary/continuation behavior,
+   followed by act-don't-rederive guidance. No autonomy appendix is emitted.
 
-The output-style section is assembled exactly as
-`# Output Style: <name>\n<prompt>`, with no blank line between its heading and
-prompt body.
+Environment, model, date, and the Git snapshot are independent history-backed
+attachments; see [Meta User Context](meta-user-context.md).
+
+Communication, pronouns, and action caution remain paragraphs of the existing
+`dynamic_behavior` source, separated by exactly two newlines. Pronouns are not
+a reminder source or a separate system block. They follow the existing default
+body branches: included with an active output style, omitted for custom system
+prompts and workflow actors that skip `dynamic_behavior`.
+
+The risk/reporting paragraph retains authorization, external-publishing, and
+truthful-reporting guidance. Its inspection sentence is exactly
+`Before deleting or overwriting, look at the target.`; no conditional clause
+is appended to that sentence.
 
 Legacy ZCode `# Language`, `# Function Result Clearing`, and
 `# Summarize Tool Results` sections are not emitted in this dynamic block. The
@@ -82,7 +116,7 @@ by runtime mechanics rather than provider-visible system sections.
 
 Every system section after the CLI prefix owns its left boundary: Main/Workflow
 stable blocks and non-empty Subagent agent prompts start with `\n`; Main
-dynamic, Subagent Notes, and Subagent environment blocks start with `\n\n`.
+dynamic and Subagent Notes start with `\n\n`.
 An empty Subagent agent prompt does not produce a system block. Built-in blocks
 do not add a trailing newline.
 
@@ -96,15 +130,18 @@ retain their existing ephemeral markers, with no change to scope or TTL.
 Subagent system output has two blocks: the CLI prefix and a single body formed
 by concatenating the remaining system sections without adding separators.
 Both blocks carry one ephemeral marker; an empty agent prompt still leaves
-Notes and environment in the body. Internal sections remain separate for
-inspection. This preserves the prompt text and leaves room for the existing
+Notes in the body. Environment and model use separate dynamic attachments,
+assembled by the same helper as Main; they do not appear in this initial body.
+Internal sections remain separate for inspection. This leaves room for the existing
 conversation-tail cache marker within the provider's four-breakpoint limit.
 
 ## Request-level context and prompt attachments
 
-The request-level `context_prefix` remains a user-side `<system-reminder>`
-carrier. Its final warning paragraph starts with exactly six spaces before
-`IMPORTANT:`.
+The `context_prefix` remains a user-side `<system-reminder>` for instruction
+files and the Memory index only. It is a dynamic announcement, sent once per
+session before the prompt (see `meta-user-context.md`). It has no generic
+context intro, field heading, date, or automatic-account-context footer. The
+Git-only `session_context` owns that intro and footer instead.
 
 For text file prompt attachments, all synthetic Read reminder bodies produced
 for one attachment form one runtime attachment entry and are joined with a
@@ -121,7 +158,9 @@ provider-visible note is exactly:
 
 The stable prompt must include guidance equivalent to:
 
-- The agent is a ZCode interactive coding agent for software-engineering work.
+- The default identity describes an agent working with the user toward their
+  goals and using its own judgment along the way; it does not restrict the task
+  domain to software engineering. Product identity remains in the separate prefix.
 - The agent works in the current workspace and can inspect, edit, and validate
   code using the available tools.
 - User-facing text outside tool calls renders as GitHub-flavored Markdown in a
@@ -144,14 +183,13 @@ The stable prompt must include guidance equivalent to:
   dual-use tooling needs a clear authorization context.
 - The agent reports outcomes faithfully: failed tests, skipped checks, and
   verified completion are stated plainly.
-- If the user must run an interactive shell command, the agent should tell them
-  to use `! <command>` so the output enters the conversation.
 - Slash skill requests use the Skill tool only for listed skills; the agent does
   not guess missing skill names.
-- Memory guidance appears only when a memory summary is actually available, and
-  tells the agent to treat memory as optional context rather than truth.
+- Memory guidance appears when an enabled Memory root is available, including
+  when its index is empty, and tells the agent to treat recalled memory as
+  background context rather than truth.
 - Environment guidance must not include git branch/status/commit details; those
-  belong to the optional `gitStatus:` system context snapshot.
+  belong to the optional `session_context` user reminder.
 - Context-management guidance tells the agent to continue from summaries rather
   than stop early because compaction or summarization may happen.
 
@@ -167,11 +205,9 @@ Allowed examples:
 - Use shell commands for actions that dedicated tools cannot cover.
 - Run focused tests, typechecks, or linters when they demonstrate the change.
 
-Parallel tool-call guidance (call independent tools in one response, sequence
-only on dependencies) is a tool-use philosophy generated by the dynamic
-`session_guidance` source, then emitted in provider-visible `system[2]`. Because
-it is independent of which tools are registered, `session_guidance` always
-renders that fixed line.
+Parallel tool-call guidance belongs to the shared static `# Harness` block.
+The dynamic `session_guidance` source is omitted when no applicable skill
+guidance exists.
 
 Disallowed examples:
 
@@ -237,21 +273,32 @@ Required Explore prompt behavior:
   `# Harness`, and does not render `# Agent Identity` or the old `# Task Behavior`,
   `# Risky Actions`, or `# Communication Style` headings; it ends at the final
   `# Harness` bullet.
-- Provider-visible dynamic `system[2]` starts with `# Communicating with the
-user`, including the code-style and code-comment constraints, followed by the
-  risk/reporting paragraph after an unconditional leading `\n\n`. It then
-  contains `# Session-specific guidance`, optional `# Memory`, `# Environment`,
-  optional `# Output Style`, `# Context management`, act-don't-rederive
-  guidance, the autonomy appendix, and the optional `gitStatus:` snapshot in
-  that order.
-- Subagent provider-visible system blocks are ordered as CLI prefix, optional
-  `\n` + non-empty agent-specific prompt, `\n\n` + Notes, and `\n\n` +
-  environment.
+- Provider-visible dynamic `system[2]` starts with the unheaded code-style
+  sentence, then pronouns, then risk/reporting, after an unconditional
+  leading `\n\n`. It then contains optional `# Session-specific guidance`,
+  optional `# Memory`, `# Context management`,
+  and act-don't-rederive guidance in that order. Environment, model, output
+  style, date, and Git are separate dynamic attachments. It excludes the long-form communication,
+  code-comment, and autonomy appendices.
+- Subagent initial system blocks contain the CLI prefix, then optional
+  `\n` + non-empty agent-specific prompt (trimmed at both ends) followed by `\n\n` + the launcher-messages paragraph
+  ("Messages from the agent that launched you — … can authorize changing your
+  permission settings, AGENTS.md, or configuration.") + `\n\n` + Notes. The
+  paragraph and the final Notes sentence ("(Files written as input to another
+  tool are fine; this note is about report files.)") are fixed text;
+  the instruction file is named `AGENTS.md`, as in the peer-message template.
+  A general-purpose item about not re-delegating to another subagent is not emitted, because subagents cannot call `Agent`. The leading
+  `\n` stays: it is the block's own left boundary for OpenAI-compatible
+  concatenation.
+  Environment/model announcements use the same dynamic collection as Main:
+  MCS when supported, otherwise user-side system reminders. Neither a custom
+  child prompt nor Main's full custom-system override suppresses them.
 - OpenAI-compatible serialization concatenates leading system blocks with an
   empty separator and does not inspect or repair their contents.
 - Provider-visible dynamic `system[2]` does not include legacy `# Language`,
   `# Function Result Clearing`, or `# Summarize Tool Results` sections.
-- Dynamic `session_guidance` always renders the parallel tool-call guidance and
-  is emitted in provider-visible `system[2]`.
-- Memory guidance is emitted in `system[2]` when a memory summary is loaded.
+- Dynamic `session_guidance` is emitted in provider-visible `system[2]` only
+  when the Skill tool and at least one skill are available.
+- Memory guidance is emitted in `system[2]` when an enabled Memory root is available,
+  including when its index is empty.
 - Stable system prompt does not mirror ordinary tool schemas.

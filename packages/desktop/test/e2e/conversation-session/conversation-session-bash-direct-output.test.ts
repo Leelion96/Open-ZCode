@@ -9,9 +9,9 @@ import {
   statfs,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
-import { clearAppData, DEFAULT_WORKSPACE, getE2EAppDataPaths } from "../helpers/desktop-app.js";
-import { resolveE2ERuntimePath } from "../helpers/e2e-runtime-paths.js";
+import { dirname, join } from "node:path";
+import { clearAppData, DEFAULT_WORKSPACE } from "../helpers/desktop-app.js";
+import { findE2EBashOutputPath, resolveE2ERuntimePath } from "../helpers/e2e-runtime-paths.js";
 import {
   getLatestUpstreamToolResultByToolCallId,
   countUpstreamRequests,
@@ -93,13 +93,8 @@ async function result(id: string) {
 async function outputPath(id: string) {
   const sessionId = (await getV4PaneSnapshot()).sessionId;
   expect(sessionId).not.toBe("draft");
-  const path = join(
-    getE2EAppDataPaths().storageRoot,
-    "cli",
-    "exec",
-    sessionId!,
-    `${id}-stdout.log`,
-  );
+  const path = await findE2EBashOutputPath(sessionId!, id);
+  if (!path) throw new Error(`Bash 未保留预期输出文件: ${sessionId}/${id}`);
   outputs.add(path);
   return path;
 }
@@ -204,7 +199,10 @@ describe("Bash 直接文件输出补充 E2E", () => {
     await done("E2E_BDO_SMALL");
     expect((await result("toolu_bdo_small")).content).toBe("BDO_中文_STDOUT|中文_STDERR");
     expect((await result("toolu_bdo_empty_error")).content).toContain("Exit code 7");
-    expect(await stat(await outputPath("toolu_bdo_small")).catch(() => null)).toBeNull();
+    // 小输出应清理实际临时文件；检查当前 session/tool 的所有候选，而不是旧 HOME 路径。
+    expect(
+      await findE2EBashOutputPath((await getV4PaneSnapshot()).sessionId!, "toolu_bdo_small"),
+    ).toBeNull();
   });
 
   it("BDO02: 超过 64 MiB 的前台输出保留完整文件，详情只展示正文", async function () {
@@ -532,7 +530,9 @@ describe("Bash 直接文件输出补充 E2E", () => {
     await release("read-failure.release");
     await done("E2E_BDO_READ_FAILURE");
     expect((await result("toolu_bdo_read_failure")).content).toContain("bash output unavailable");
-    const blocked = await outputPath("toolu_bdo_open_failure");
+    // 故障注入必须沿用本 session 已发布的实际输出目录，不能在退役 HOME 根创建障碍。
+    const blocked = join(dirname(path), "toolu_bdo_open_failure-stdout.log");
+    outputs.add(blocked);
     await mkdir(blocked, { recursive: true });
     await prompt("E2E_BDO_OPEN_FAILURE", false);
     await done("E2E_BDO_OPEN_FAILURE");

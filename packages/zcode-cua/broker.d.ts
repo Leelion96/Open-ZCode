@@ -1,3 +1,5 @@
+export { HELPER_GHOST_CURSOR_OVERLAY_ARG } from "./broker-helper-constants.js";
+
 export declare const BROKER_SOCKET_ENV: string;
 export declare const BROKER_UNAVAILABLE_ENV: string;
 

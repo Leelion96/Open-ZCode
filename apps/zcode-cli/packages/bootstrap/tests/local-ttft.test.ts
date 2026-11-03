@@ -1,5 +1,7 @@
 import { it, expect, afterEach } from "vitest";
-import { LocalTtftRecorder } from "../src/zcode-protocol-v4/local-ttft.js";
+import { LocalTtftRecorder } from "../src/zcode-protocol-v4/local-ttft/contract.js";
+// CLI 测试入口只扫描 tests/；在这里执行模块公共合同用例。
+import "../src/zcode-protocol-v4/local-ttft/contract.test.js";
 
 const recorders: LocalTtftRecorder[] = [];
 function createRecorder(...args: ConstructorParameters<typeof LocalTtftRecorder>) {
@@ -10,6 +12,35 @@ function createRecorder(...args: ConstructorParameters<typeof LocalTtftRecorder>
 afterEach(() => {
   for (const recorder of recorders) recorder.clear();
   recorders.length = 0;
+});
+
+it("本地诊断在 admission 等待前保留收到命令的检查点", () => {
+  const facts: unknown[] = [];
+  const recorder = createRecorder(
+    () => 100,
+    undefined,
+    (fact) => facts.push(fact),
+  );
+  recorder.receive(
+    {
+      commandId: "input",
+      clientId: "client",
+      sessionId: "session",
+      type: "sendText",
+      payload: {},
+      issuedAt: 90,
+      ttft: { version: 1, observationId: "e0b15fc2-3a50-4d73-854d-61fa148cbfd0", localOnly: true },
+    },
+    false,
+  );
+  expect(facts).toEqual([
+    expect.objectContaining({
+      commandId: "input",
+      receivedAt: 100,
+      localOnly: true,
+    }),
+  ]);
+  expect(facts[0]).not.toHaveProperty("admittedAt");
 });
 
 it("执行边界沿 TurnStarted 携带原始时钟，前置 hooks 不得算排队", () => {

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-deleted-project-new-task",
+  "spec": "./test/e2e/conversation-session/conversation-session-deleted-project-new-task.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-deleted-project-new-task.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "deleted-project-session",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "Fixed response creates a real session before deleting its project; assertions cover navigation and retained project membership, not model output quality."
+    }
+  ]
+}

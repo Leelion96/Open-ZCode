@@ -4,8 +4,31 @@
   "spec": "./test/e2e/conversation-session/conversation-session-auto-drain.test.ts",
   "fixtures": [
     {
+      "id": "conversation-session-auto-drain-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
       "id": "upstream-auto-drain-running-controlled-stream",
-      "description": "Auto drain 首轮短慢流，稳定制造 running 中 queue=1 且 autoDrain=true 的窗口。",
+      "description": "Auto drain 首轮显式受控流，确认 queue=1 后由用例放行自然完成。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "controlled-stream",
@@ -16,16 +39,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_AUTO_DRAIN_RUNNING"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_AUTO_DRAIN_RUNNING"
-        ]
+        "bodyIncludes": ["E2E_AUTO_DRAIN_RUNNING"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_AUTO_DRAIN_RUNNING"]
       },
       "response": {
         "statusCode": 200,
@@ -34,41 +50,35 @@
           "cache-control": "no-cache",
           "content-type": "text/event-stream; charset=utf-8"
         },
-        "events": [
+        "releaseAfterChunks": 3,
+        "chunks": [
           {
-            "sequence": 0,
-            "offsetMs": 0,
-            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-auto-drain-running\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":118,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-auto-drain-running\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":118,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n",
+            "delayMs": 0
           },
           {
-            "sequence": 1,
-            "offsetMs": 250,
-            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
           },
           {
-            "sequence": 2,
-            "offsetMs": 4500,
-            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"deep\"}}\n\n"
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"upstream-\"}}\n\n",
+            "delayMs": 0
           },
           {
-            "sequence": 3,
-            "offsetMs": 5000,
-            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"seek-e2e-ok\"}}\n\n"
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"e2e-ok\"}}\n\n",
+            "delayMs": 0
           },
           {
-            "sequence": 4,
-            "offsetMs": 5100,
-            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
           },
           {
-            "sequence": 5,
-            "offsetMs": 5200,
-            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":118,\"output_tokens\":12,\"service_tier\":\"standard\"}}\n\n"
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":118,\"output_tokens\":12,\"service_tier\":\"standard\"}}\n\n",
+            "delayMs": 0
           },
           {
-            "sequence": 6,
-            "offsetMs": 5300,
-            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
           }
         ]
       }
@@ -86,16 +96,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_AUTO_DRAIN_QUEUED"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_AUTO_DRAIN_QUEUED"
-        ]
+        "bodyIncludes": ["E2E_AUTO_DRAIN_QUEUED"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_AUTO_DRAIN_QUEUED"]
       },
       "response": {
         "statusCode": 200,

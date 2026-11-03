@@ -50,7 +50,7 @@ export interface PluginUiHostBridge {
     params: Record<string, never>,
     options?: { timeout?: number; signal?: AbortSignal },
   ): Promise<unknown>;
-  /** `initialized` 之后可读；页面声明的 availableDisplayModes 决定宿主能否切它到 fullscreen。 */
+  /** `initialized` 之后可读；页面声明的 availableDisplayModes 约束宿主所有展示模式。 */
   getAppCapabilities(): McpUiAppCapabilities | undefined;
   notification(notification: { method: string; params?: Record<string, unknown> }): Promise<void>;
   /** App-Provided Tools：宿主发现页面工具、把模型调用交给页面执行。 */

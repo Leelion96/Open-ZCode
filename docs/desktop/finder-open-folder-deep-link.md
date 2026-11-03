@@ -4,6 +4,22 @@
 
 系统文件管理器的文件夹右键菜单需要提供一个入口，把用户当前选中的本地文件夹交给 ZCode。该入口语义等同于主界面输入框上方空态菜单里的 `Open folder`：跳过目录选择弹窗，直接把指定目录作为 workspace 打开。
 
+## 项目归属（2026-10-22 修复）
+
+- 桌面端显式打开本地目录时，复用包含该 root 的未删除本地项目；没有则以目录名创建单 root 项目。
+- 多个项目包含同一 root 时，优先以该目录为主要目录的项目，再按项目 position、ID 稳定选择。不修改已有项目的名称、roots、主要目录或顺序，不恢复已删除项目。
+- Host 通过 `saveProject({ roots: [path], reuseExistingRoot: true })` 在同一写事务内查找或创建；该选项只用于无 ID 的本地单目录打开，不改变普通项目保存行为。沿用 Host 的目录 normalize 规则。
+- 冷启动、运行中 IPC 和跨窗口激活均先取得项目 ID，再把指定目录及明确的项目归属交给草稿；不以旧草稿缓存决定归属。目录仍是用户选中的目录。
+- UI 沿用导航序号拒绝迟到结果；失败保留原会话并显示错误。普通启动恢复、renderer reload、显式 task、Web、手机与远程工作区保持原有规则。
+
+```text
+系统目录入口 → Host 校验目录 → 写事务：查找项目 / 创建项目
+                                      ↓
+                         projectId → 激活目录 → 项目草稿
+```
+
+回归用例：OFP01 冷启动创建；OFP02 运行中创建与重复打开复用；OFP03 已有项目复用并覆盖旧草稿归属；OFP04 重复打开去重、已删/跨 Host 排除和失败/迟到导航。Electron 候选位于 `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-system-open-folder-project.test.ts`；存储与 hook 单测补充边界。系统右键入口不适用于手机，手机初始化保留原回归。
+
 ## 范围
 
 - 触发点在 macOS Finder 的文件夹右键菜单服务，不在 ZCode App 内新增 UI。

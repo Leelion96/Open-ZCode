@@ -86,11 +86,10 @@ global:
   maxContractLines: 20
 `;
 
-const FIVE = (id, requires = []) => ({
+const ARTIFACTS = (id, requires = []) => ({
   [`packages/${id}/src/module.ts`]: `export const m = { id: "${id}", requires: [${requires.map((r) => `"${r}"`).join(", ")}] } as const;\n`,
   [`packages/${id}/src/contract.ts`]: "export type T = string;\n",
   [`packages/${id}/src/contract.example.ts`]: "export {};\n",
-  [`packages/${id}/src/contract.test.ts`]: "export {};\n",
   [`packages/${id}/src/CONTRACT.md`]: "# c\n",
 });
 
@@ -102,8 +101,8 @@ test("workspace package specifiers resolve through package.json exports and deep
       "packages/alpha/package.json": '{"name":"@fixture/alpha"}\n',
       "packages/beta/package.json":
         '{"name":"@fixture/beta","exports":{".":"./src/index.ts","./contract":"./src/contract.ts"}}\n',
-      ...FIVE("alpha"),
-      ...FIVE("beta"),
+      ...ARTIFACTS("alpha"),
+      ...ARTIFACTS("beta"),
       "packages/beta/src/index.ts": "export const beta = 1;\n",
       "packages/beta/src/internal.ts": "export const secret = 1;\n",
       // 首版只解析 ./ ../，下面三种导入全部不建边：
@@ -132,9 +131,9 @@ test("tsconfig paths and package imports aliases resolve inside a module", async
         '{"name":"@fixture/alpha","imports":{"#src/*":"./src/*"},"scripts":{"dev":"watch .cache-*/**"}}\n',
       "packages/alpha/tsconfig.json":
         '{\n  /* 真正的注释 */\n  "compilerOptions": { "paths": { "@/*": ["./src/*"], },\n  }, // 行尾注释\n  "include": ["src/**/*.ts", "src/**/*.tsx"],\n}\n',
-      ...FIVE("alpha"),
+      ...ARTIFACTS("alpha"),
       "packages/beta/package.json": '{"name":"@fixture/beta"}\n',
-      ...FIVE("beta"),
+      ...ARTIFACTS("beta"),
       "packages/alpha/src/ui/view.ts": "export const view = 1;\n",
       // domain 通过两种别名依赖更高的 ui 层：首版因为不建边而漏报 layer-direction
       "packages/alpha/src/domain/rule.ts":
@@ -158,8 +157,8 @@ test("conditional dist exports map back to src and type-only node imports are no
       "packages/alpha/package.json": '{"name":"@fixture/alpha"}\n',
       "packages/beta/package.json":
         '{"name":"@fixture/beta","exports":{".":{"types":"./dist/index.d.ts","import":"./dist/index.js"}}}\n',
-      ...FIVE("alpha", ["beta"]),
-      ...FIVE("beta"),
+      ...ARTIFACTS("alpha", ["beta"]),
+      ...ARTIFACTS("beta"),
       "packages/beta/src/index.ts": "export const beta = 1;\n",
       "packages/alpha/src/domain/pure.ts":
         'import type { Stats } from "node:fs";\nimport { beta } from "@fixture/beta";\nexport const pure = (s: Stats) => s.size + beta;\n',
@@ -184,8 +183,8 @@ test("ui layer of any managed module cannot import service or repo implementatio
       "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
       "packages/alpha/package.json": '{"name":"@fixture/alpha"}\n',
       "packages/beta/package.json": '{"name":"@fixture/beta"}\n',
-      ...FIVE("alpha", ["beta"]),
-      ...FIVE("beta"),
+      ...ARTIFACTS("alpha", ["beta"]),
+      ...ARTIFACTS("beta"),
       "packages/beta/src/services/botsService.ts": "export const svc = 1;\n",
       "packages/alpha/src/ui/panel.ts":
         'import { svc } from "@fixture/beta/src/services/botsService.js";\nexport const panel = svc;\n',
@@ -212,7 +211,7 @@ modules:
   await fixture(
     {
       "architecture-policy.yaml": policy,
-      ...FIVE("alpha"),
+      ...ARTIFACTS("alpha"),
       "packages/legacy/src/old.ts": "export const old = 1;\n",
     },
     async (cwd) => {
@@ -248,8 +247,8 @@ test("module.ts requires must agree with policy and reference known modules", as
   await fixture(
     {
       "architecture-policy.yaml": WORKSPACE_POLICY,
-      ...FIVE("alpha"),
-      ...FIVE("beta"),
+      ...ARTIFACTS("alpha"),
+      ...ARTIFACTS("beta"),
       "packages/alpha/src/module.ts":
         'export const m = { id: "alpha", requires: ["beta", "gamma"] } as const;\n',
     },
@@ -318,13 +317,13 @@ test("diff base prefers explicit, then CI, then pre-push stdin, then default bra
   });
 });
 
-test("adopt scaffolds the five artifacts, registers the module and infers requires", async () => {
+test("adopt scaffolds the four artifacts, registers the module and infers requires", async () => {
   await fixture(
     {
       "architecture-policy.yaml": `version: 1\n# 顶部注释要保留\nmodules:\n  - id: beta\n    roots: [packages/beta/src]\n    managed: true\n    requires: []\n    publicEntrypoints: [packages/beta/src/contract.ts]\nglobal:\n  maxFileLines: 400\n`,
       "pnpm-workspace.yaml": "packages:\n  - packages/*\n",
       "packages/beta/package.json": '{"name":"@fixture/beta"}\n',
-      ...FIVE("beta"),
+      ...ARTIFACTS("beta"),
       "packages/alpha/package.json": '{"name":"@fixture/alpha"}\n',
       "packages/alpha/src/index.ts": 'import "@fixture/beta/contract";\nexport const a = 1;\n',
     },
@@ -337,15 +336,14 @@ test("adopt scaffolds the five artifacts, registers the module and infers requir
         owner: "test",
       });
       assert.deepEqual(summary.requires, ["beta"]);
-      for (const file of [
-        "module.ts",
-        "contract.ts",
-        "contract.example.ts",
-        "contract.test.ts",
-        "CONTRACT.md",
-      ]) {
+      for (const file of ["module.ts", "contract.ts", "contract.example.ts", "CONTRACT.md"]) {
         await readFile(join(cwd, "packages/alpha/src", file), "utf8");
       }
+      await assert.rejects(readFile(join(cwd, "packages/alpha/src/contract.test.ts")), {
+        code: "ENOENT",
+      });
+      // 退役只停止生成；再次 adopt 不能破坏已有的独立测试。
+      await writeFile(join(cwd, "packages/alpha/src/contract.test.ts"), "// existing test\n");
       const yaml = await readFile(join(cwd, "architecture-policy.yaml"), "utf8");
       assert.match(yaml, /# 顶部注释要保留/);
       const policy = await loadPolicy(cwd);
@@ -355,6 +353,10 @@ test("adopt scaffolds the five artifacts, registers the module and infers requir
       // 幂等：再跑一次不报错、不重复登记
       await adoptModule({ cwd, id: "alpha", roots: ["packages/alpha/src"], layer: "adapters" });
       assert.equal((await loadPolicy(cwd)).modules.filter((m) => m.id === "alpha").length, 1);
+      assert.equal(
+        await readFile(join(cwd, "packages/alpha/src/contract.test.ts"), "utf8"),
+        "// existing test\n",
+      );
       const result = await checkArchitecture({ cwd });
       assert.equal(result.violations.filter((v) => v.rule === "missing-module-artifact").length, 0);
     },
@@ -369,8 +371,8 @@ test("context package inlines CONTRACT.md and dependency contracts instead of li
         "requires: []\n    publicEntrypoints: [packages/alpha",
         "requires: [beta]\n    publicEntrypoints: [packages/alpha",
       ),
-      ...FIVE("alpha", ["beta"]),
-      ...FIVE("beta"),
+      ...ARTIFACTS("alpha", ["beta"]),
+      ...ARTIFACTS("beta"),
       "packages/alpha/src/CONTRACT.md": "# alpha\n\n不变量：只此一处。\n",
       "packages/beta/src/contract.ts": "export interface BetaPort { ping(): Promise<void>; }\n",
     },
@@ -396,19 +398,32 @@ test("newFilesEnforcedSince grandfathers files first committed before the date; 
       cwd,
       env: { ...process.env, GIT_AUTHOR_DATE: oldDate, GIT_COMMITTER_DATE: oldDate },
     });
+    const boundaryDate = "2025-01-01T00:00:00Z";
+    await writeFile(join(cwd, "boundary.ts"), "export {};\n");
+    await git(cwd, "add", "boundary.ts");
+    await execFileAsync("git", ["-c", "core.hooksPath=", "commit", "-m", "boundary file"], {
+      cwd,
+      env: { ...process.env, GIT_AUTHOR_DATE: boundaryDate, GIT_COMMITTER_DATE: boundaryDate },
+    });
     await writeFile(join(cwd, "fresh.ts"), "export {};\n");
     await git(cwd, "add", "fresh.ts");
     await git(cwd, "-c", "core.hooksPath=", "commit", "-m", "fresh file");
     await writeFile(join(cwd, "untracked.ts"), "export {};\n");
 
     assert.deepEqual((await addedFilesFromGit(cwd, { base })).sort(), [
+      "boundary.ts",
       "fresh.ts",
       "old.ts",
       "untracked.ts",
     ]);
     assert.deepEqual((await addedFilesFromGit(cwd, { base, since: "2025-01-01" })).sort(), [
+      "boundary.ts",
       "fresh.ts",
       "untracked.ts",
     ]);
+    assert.deepEqual(
+      (await addedFilesFromGit(cwd, { base, since: "2025-01-01T08:00:01+08:00" })).sort(),
+      ["fresh.ts", "untracked.ts"],
+    );
   });
 });

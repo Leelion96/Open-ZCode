@@ -1,3 +1,4 @@
+import { HostResponseTypes } from "@zcode/shared";
 import { registerHostToolExecResourceTelemetry } from "./hostToolExecResourceTelemetry.js";
 import { registerHostMcpResourceTelemetry } from "./hostMcpResourceTelemetry.js";
 import type { IDisposable } from "@zcode/rpc";
@@ -12,6 +13,7 @@ interface RegisterHostServiceResourceTelemetryOptions {
   runtimeSurface: ProcessResourceRuntimeSurface;
   /** 本地默认支持；所有远端须按 server-info 能力声明显式传入。 */
   telemetrySupported?: boolean;
+  remoteConversationTelemetrySupported?: boolean;
   /** Host 已哈希的运行环境身份，仅透传给 main 的资源分组，不进入 ARMS。 */
   environmentKey?: string;
   onError?(error: unknown): void;
@@ -47,7 +49,10 @@ export function registerHostServiceResourceTelemetry(
 ): IDisposable {
   // 旧 Server 的未知事件异常发生在对端异步读循环，下面的本地 try/catch 无法保护它；
   // 因此缺能力时必须在获取服务、发送任何 EventListen 之前退出。
-  if (options.telemetrySupported === false) {
+  if (
+    options.telemetrySupported === false &&
+    options.remoteConversationTelemetrySupported !== true
+  ) {
     return NO_TELEMETRY;
   }
   const agentService = options.services.getOptional(IZCodeAgentService);
@@ -56,36 +61,52 @@ export function registerHostServiceResourceTelemetry(
   }
   const registrations: IDisposable[] = [];
   try {
-    registrations.push(
-      registerHostAgentResourceTelemetry({
-        agentService,
-        postMessage: options.postMessage,
-        runtimeSurface: options.runtimeSurface,
-        environmentKey: options.environmentKey,
-      }),
-    );
-    registrations.push(
-      registerHostMcpTelemetry({
-        agentService,
-        postMessage: options.postMessage,
-        runtimeSurface: options.runtimeSurface,
-      }),
-    );
-    registrations.push(
-      registerHostMcpResourceTelemetry({
-        agentService,
-        postMessage: options.postMessage,
-        runtimeSurface: options.runtimeSurface,
-        environmentKey: options.environmentKey,
-      }),
-    );
-    registrations.push(
-      registerHostToolExecResourceTelemetry({
-        agentService,
-        postMessage: options.postMessage,
-        runtimeSurface: options.runtimeSurface,
-      }),
-    );
+    if (
+      options.remoteConversationTelemetrySupported !== false &&
+      typeof agentService.onDynamicRemoteConversationTelemetry === "function"
+    ) {
+      registrations.push(
+        agentService.onDynamicRemoteConversationTelemetry()((event) => {
+          try {
+            options.postMessage({ type: HostResponseTypes.RemoteConversationTelemetry, event });
+          } catch {
+            /* Main 退出不改变执行终态。 */
+          }
+        }),
+      );
+    }
+    if (options.telemetrySupported !== false) {
+      registrations.push(
+        registerHostAgentResourceTelemetry({
+          agentService,
+          postMessage: options.postMessage,
+          runtimeSurface: options.runtimeSurface,
+          environmentKey: options.environmentKey,
+        }),
+      );
+      registrations.push(
+        registerHostMcpTelemetry({
+          agentService,
+          postMessage: options.postMessage,
+          runtimeSurface: options.runtimeSurface,
+        }),
+      );
+      registrations.push(
+        registerHostMcpResourceTelemetry({
+          agentService,
+          postMessage: options.postMessage,
+          runtimeSurface: options.runtimeSurface,
+          environmentKey: options.environmentKey,
+        }),
+      );
+      registrations.push(
+        registerHostToolExecResourceTelemetry({
+          agentService,
+          postMessage: options.postMessage,
+          runtimeSurface: options.runtimeSurface,
+        }),
+      );
+    }
   } catch (error) {
     // 遥测订阅失败不能改变 Host 服务初始化或远程连接结果，也不能留下半条链路。
     disposeAll(registrations);

@@ -256,7 +256,10 @@ describe("AgentRuntime model selection event", () => {
     expect(requests[0]?.text).not.toContain("provider-b/model-b");
     expect(requests[1]).toMatchObject({ providerId: "provider-b", modelId: "model-b" });
     expect(requests[1]?.text).toContain("provider-b/model-b");
-    expect(requests[1]?.text).not.toContain("provider-a/model-a");
+    expect(requests[1]?.text).toContain("provider-a/model-a");
+    expect(requests[1]?.text.indexOf("provider-a/model-a")).toBeLessThan(
+      requests[1]?.text.indexOf("provider-b/model-b") ?? -1,
+    );
   });
 
   it("uses structured ModelSelection as the current Session model fact", () => {
@@ -875,6 +878,79 @@ describe("AgentRuntime model selection event", () => {
       providerId: "user-provider",
       modelId: "user-model",
     });
+  });
+
+  it("rebuilds the context prefix with the fallback model's Harness wording", async () => {
+    const sessionId = createSessionId("runtime-execution-selection-fallback-harness");
+    const highspeedProviderId = "account:zai-highspeed-card";
+    const requests: Array<{ providerId: string; messages: string }> = [];
+    const runtime = createTestAgentRuntime(
+      sessionId,
+      {
+        modelSelection: createTestModelSelection("user-provider/user-model"),
+        titleGeneration: { enabled: false },
+        workingDirectory: "/workspace/project",
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        modelFactory: createTestModelFactory({
+          // 执行模型支持 mid-conversation system，退回的会话模型不支持。
+          properties: (input) => ({
+            supportsMidConversationSystem: input.selection.providerId === highspeedProviderId,
+          }),
+          async generateText(request, observation) {
+            const providerId = String(observation.model.providerId);
+            requests.push({ providerId, messages: JSON.stringify(request.messages) });
+            if (providerId === highspeedProviderId) {
+              throw Object.assign(new Error("highspeed card is invalid"), {
+                code: "invalid_model_request",
+                context: {
+                  providerCode: "3402",
+                  providerId: highspeedProviderId,
+                  modelId: "GLM-5.3",
+                  source: "provider",
+                },
+                name: "AiSdkModelAdapterError",
+              });
+            }
+            return {
+              finishReason: "stop",
+              model: observation.model,
+              text: "continued with the session model",
+              usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+            };
+          },
+        }),
+      },
+    );
+
+    await runtime.executeTurn("continue after expiry", undefined, {
+      inputId: "command-highspeed-harness",
+      intent: {
+        sourceCommandId: "command-highspeed-harness",
+        kind: "sendText",
+        requestedDelivery: "start-now",
+        modelSelection: { providerId: highspeedProviderId, modelId: "GLM-5.3" },
+      },
+      modelExecution: {
+        selectionScope: "execution",
+        selectionFallback: {
+          providerId: highspeedProviderId,
+          rules: [{ reason: "highspeed_card_expired", providerErrorCode: "3402" }],
+        },
+      },
+    });
+
+    expect(requests.map((request) => request.providerId)).toEqual([
+      highspeedProviderId,
+      "user-provider",
+    ]);
+    expect(requests[0]?.messages).toContain("mid-conversation system turns");
+    // 退回请求按退回模型投影：system 不能继续声称 reminder 走 mid-conversation system。
+    expect(requests[1]?.messages).toContain(
+      "tags in messages and tool results are injected by the harness",
+    );
+    expect(requests[1]?.messages).not.toContain("mid-conversation system turns");
   });
 
   it("falls back to the Session Selection on any execution provider failure with a single-attempt budget", async () => {

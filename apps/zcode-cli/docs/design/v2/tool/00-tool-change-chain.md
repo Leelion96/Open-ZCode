@@ -1,5 +1,166 @@
 # Tool Change Chain Spec
 
+工具 schema、顺序与描述是固定字节（tools 段字节进入缓存前缀）：`toToolJsonSchema` 按
+zod v4 toJSONSchema 的 key 顺序输出——`$schema` 在最前，`description`、`default` 在 `type` 前，
+数组的 `minItems`/`maxItems` 在 `type` 前，属性声明顺序不变；ToolSearch 输入 schema 走同一入口。
+SendMessage、ToolSearch 进入按名字排序的工具名单；名单外的工具按注册顺序排在名单之后；
+MCP 工具（名称以 `mcp__` 开头）按名字排序排在最后，顺序与 server 连接顺序无关。名字一律按 en-US 规则比较，
+顺序与进程的语言设置无关（同一会话换语言设置恢复时 tools 段字节不变）。WebSearch
+描述不写真实月份。Bash/Read/Skill/WebFetch/Agent 描述为固定文本，只说明已支持的能力
+（fork/后台/目录作用域 skill、署名行、Jupyter、teammate/cross-session、worktree 等未支持，不出现在描述里）。
+只改请求投影，不改变执行、权限或持久化；升级后第一个请求的 tools 段缓存失效一次。
+
+工具结果文本（2026-10-18）：Read 去重只比较该文件最近一次 Read 视图；空内容警告按读取结果区分；
+部分视图的页长按比例估算，提示改为 `read_truncation_notice` 附件，排在该批 tool result 之后；
+未知工具名统一为 `<tool_use_error>Error: No such tool available: X</tool_use_error>`；
+其他工具错误给模型原文（保留换行，超过 1 万字符保留头尾）；Bash 失败结果头尾截断、不落盘，
+超时转后台的文案说明超时秒数。只改模型可见文本和投影，工具 schema、权限、事件与 UI 不变；
+已发送的历史不改写，只有新产生的结果使用新文本。细节见 01-read.md、04-bash.md。
+SendMessage 的 summary 改为可选、超长截断；Agent 描述的后台一行补上 "Never fabricate or predict a pending agent's results…" 一句
+（ZCode 默认前台运行，后台说明只写这一行）。tools 段升级后缓存失效一次；细节见 07-subagent.md。
+后台 agent 终态通知的文本与 `originMeta.subagentResult` 结构化结果见 07-subagent.md；App 不解析 summary 文本，
+Agent 卡片的“执行失败”hover 仍只显示原文；只影响新产生的通知，已发送的历史不改写。
+运行时校验（2026-10-20）：Bash 超时转后台的 `timedOutAfterMs` 与输入 `timeout` 一样允许小数；
+SendMessage 只有空白的 message 在 hook 与权限之前判为输入错误（child 只收到 message），模型收到 `<tool_use_error>message must not be empty</tool_use_error>`。provider schema 与 tools 段字节不变。
+工具 Hook 上下文（2026-10-21）：`PreToolUse` / `PostToolUse` / `PostToolUseFailure` 返回的 additionalContext
+不再拼进 tool_result。executor 把每条 context 写成 `<Event>:<ToolName> hook additional context: <context>`
+（例如 `PreToolUse:Bash hook additional context: …`），放进 `ToolExecutionResult.hookAdditionalContexts`；
+结算把每条写成一个 `tool_hook_context` 附件，排在这批 tool result 之后、其他批次提示之前，按 tool result 的顺序分组，
+同一工具 Pre 在前，多个 Hook 不合并、多行原样保留。tool_result 只放工具原文：失败时与没有 Hook 时是同一段错误原文，
+Hook 文本也不占 tool result 预算。MCS 下这些附件和同批其他附件合成同一条 system；非 MCS 下按普通 user 侧提醒投影。
+附件持久化，resume 后位置不变。`tool_call_result` 事件和 App 工具卡不再含 Hook 文本；官方 CUA 帧凭据过滤保留。
+Memory 后台循环（Extraction、Dream）用同一个 `toolBatchModelEntries` 生成这批 entries，批次提示照常送达；
+它的 executor 不配置 hooks，所以没有 Hook 上下文（见 [Memory](../memory/README.md)）。
+单条 context 超过 10000 字符时先落盘，附件里只放 `<persisted-output>` 外壳；落盘失败时截到 10000 字符并附原因
+（规则见 hooks.md「聚合规则」）。
+
+## 官方命令环境包装保留 Bash 后台能力（2026-10-28）
+
+Bash handler → `withOfficialCommandEnv` 注入会话环境 → 原执行器
+`runBashWithBackgroundLifecycle` → 原有后台任务登记、输出与完成通知。
+包装层复用 core 公开的能力接口与检测函数，只在底层支持时暴露对应方法；显式后台和超时转后台
+均保留原模式、取消信号、事件回调、结果与错误。后台状态仍由原执行器唯一管理。
+`ExecutionPort` 接口之外的能力有两个，`runBashWithBackgroundLifecycle` 与
+`waitForBackgroundTask`，两者都必须透传：后者缺失时后台追踪退回 1 秒轮询，
+Bash 完成通知会晚于同一轮 tool-loop 的下一次模型请求。
+`env.base: "empty"` 不注入，端点不可用时沿用既有执行策略。
+回归覆盖包装后的真实生命周期入口与后台等待入口。桌面 E2E 复跑：background 26/26 通过，
+background-bash-output 7/7 通过，bash-direct-output 6/8 通过——`BDO05` 的前台与后台 5 GiB
+边界因可用磁盘低于 12 GiB 的前置条件未执行，其中后台变体会经过本链路，仍待在空间充足的机器上补跑。
+日志证据是 Bash 的 `background_task.tracking.started` 恢复为 `hasDirectWaiter: true`。
+不改变工具 schema、权限、模型结果格式或 App 协议。
+
+## Bash sed 只读权限收口（2026-10-28）
+
+`sed` 脚本可执行外部命令或写文件，shell AST 与参数白名单不能单独证明其只读。共享 readonly
+policy 只开放数字行号打印和标准输入替换两个完整脚本子集；复用 AST argv，不重新解析 shell 文本。
+参数、完整脚本和文件参数同时通过白名单后，才授予 `readOnly`、`concurrentSafe` 和免审批能力。
+链路仍为 Bash AST → readonly policy → runtime capability → PermissionService → executor：
+Plan（旧 `mode=plan` 与独立 `planEnabled=true`）按既有规则拒绝非只读 Bash；普通 Build
+默认请求审批，Plan 关闭后的其他模式和显式授权继续遵循原权限规则。管道、命令链和已支持
+wrapper 中的 sed 也必须通过同一白名单，项目 allow 不能解除 Plan 对非只读 Bash 的限制。
+`-e`/`-f`/`-i`、未知参数、执行/写入脚本和脚本后的 option 形参数不自动放行；保留展示层的原地修改识别。
+不改 Bash schema、执行命令、权限事件结构或桌面/手机投影；Plan 拒绝时沿用 PermissionDenied，
+不发 PermissionRequested、不调用 ExecutionPort。文件查看继续优先用 Read。
+回归覆盖安全打印/替换、脚本执行/写入、参数与转义边界、独立 Plan、显式 allow、Build 审批及 cat/grep 放行，
+并通过真实 executor 验证拒绝事件和执行端零调用。运行时验收在临时目录检查文件副作用。
+完整边界见 [Bash](04-bash.md) 与 [AST 权限语义](../../../bash-tool-ast-permission-semantics.md)。
+
+## 会话 ID 兼容（2026-10-28）
+
+普通新建恢复 `sess_${crypto.randomUUID()}`（UUID v4）；已持久化的 `session_` 身份不变。
+Composer session mention → runtime reference reminder → ReadSessionContext schema
+→ 原 ID 的 SessionStore 查询 → 原 ID 的工具结果，兼容两种前缀。
+邮箱目录仍按原 ID 隔离；保留路径安全校验、权限、工具超时与返回结构。
+回归覆盖两种历史后缀、混合引用去重、非法 ID 拒绝、准确读取及完整重启后继续对话。
+完整规格见根目录 `docs/session-context-tool.md` 的 Session identity compatibility。
+
+## 共享 CLI 的工具请求归属（2026-10-27）
+
+定时、闲时工具沿用模型输入、权限、结果和持久化契约。协议 port 从自身 session record
+取得 workspace，经协商的 `sessionWorkspaceRouting` 能力附加到 Host 请求；列表、删除、
+更新和自暂停也必须携带归属，不能使用物理连接首次绑定的目录。缺少自身 workspace 时
+明确失败；旧 Host 未协商能力时保持原参数。Host 用已登记的 session/workspace 校验路由，
+不接受共享连接中的未知归属。工具执行与桌面 continuous、手机 replayable 投影 owner 不变。
+回归包含两类 port 的新旧协议、共享 CLI 的独立审批和真实 Bash cwd 写入；完整设计见
+[共享 CLI](../../../../../../docs/shared-task-cli.md)。
+
+## Read 读取状态与 compaction 文件恢复（2026-10-22）
+
+Read 返回 `file_unchanged` 时不再记录读取状态快照；hydrator 跳过这类结果（含旧数据里已存的快照），
+由之前那次真实读取恢复视图。compaction 文件恢复改为在 summary 之后重读整个当前文件：只选 Read / Write /
+Edit 的记录，不走工具调用流程（无 hook、无工具事件、不弹窗），只跳过读权限 deny 规则：执行器新增
+`areReadsDeniedWithoutPrompt`，与工具调用共用同一个模式与规则判定（`checkStaticToolPermission`），一批文件只加载
+一次规则。规则按原始字符串匹配，所以读取状态另记工具输入的原始写法（`requestedPath`，Read / Write /
+Edit 写读取状态时记下；冷恢复取自 tool part 的输入，不写进快照），补回时它和规范化路径各判定一次，任一命中 deny 就跳过。补回结果写入 live 读取状态表，不落盘。Read 的 schema、权限声明、模型可见结果文本和 UI/V4 投影不变；compaction 后补回附件
+的内容变为文件当前内容，只影响新产生的 compaction，已持久化的不改写。规则见
+[rewind-compact.md](../rewind-compact.md) 与 [17-read-file-state-resume.md](17-read-file-state-resume.md)。
+
+## MCP 手动信任（2026-10-23）
+
+工作区直接 MCP 声明 → bootstrap 当前声明快照 → 用户域逐条信任 → MCP port 准入 →
+连接池/stdio/HTTP/SSE → 工具与资源。未信任不连接、不发凭据、不注册可调用工具；
+每次连接准入重读声明和信任；连接内调用只查 gate 内存。会话内自动重连沿用原授权，撤销或配置变化在新建/重启会话的连接准入时生效。
+桌面和手机设置经同一目标 Host 发送精确摘要，不新增模型可调用授权工具。
+完整合同见根目录 `docs/runtime-tools/mcp-status-list-control-plane.md`「手动信任」。
+显式 default/connect 工作区切换先使旧设置 gate 失效；只读 status 不切换 gate，不清理其他工作区连接。命令、环境变量与隔离字段在审核和执行之间保持一致。
+坏声明逐条拒绝，空 `.zcode` map 沿用 `.agents` fallback；订阅释放不经过执行授权，用户来源由装配层保留。
+工作区 MCP 准入沿用 Hooks 的会话内非阻断提示：gate 重读当前声明 → 会话事件 → V4 快照 → composer 图标弹层；
+设置授权后只刷新同 workspace 的待审核投影，不自动连接。展示与忽略不改变工具执行授权。
+提示读取只在初始化、新用户输入消费、恢复和显式授权变化时发生；普通模型续步与内部续跑不读取提示配置。
+新用户输入包含用户 guide/steer；首输入复用初始化读取。配置加载器保留；提示刷新不改变现有连接的准入结果。
+准入提示更新不计为会话活动；冷恢复和授权通知均不得改写 sessions-index 活动时间。
+
+## node_repl 无进展提示（2026-10-26）
+
+只改 node-repl-host 内部：`tools/call(js)` 按 `session_id + turn_id` 计同码、同结果与本 turn 调用量，
+命中档位时在 `toMcpRunResult` 之后的 content 末尾追加一行「You may end this turn.」提示。
+schema、权限、超时、isError、图片顺序、core 的 model-anomaly 与 UI/V4 投影均不变。
+宿主行为变化，node-repl-host 升到 0.6.2（package、manifest、seed 定义、SEA 清单、serverInfo）。
+合同见根目录 `docs/mcp-stateless-node-repl.md`「无进展提示」。回归：`no-progress-guard.test.ts`
+与 `mcp-server.test.ts` 的 MCP 调用序列。
+
+## 插件 Agent 源文件定位（2026-10-20）
+
+`Agent` 的插件 profile 沿用组件发现结果中的实际源路径：插件目录 / manifest 目录
+→ `PluginComponentItem { name, path }` → `loadPluginAgentTemplates` → 名称空间与裸名别名
+→ Agent 工具执行。frontmatter `name` 与文件名可不同；名称不得重新转换为文件路径。
+缺少路径的描述性组件不加载，源文件不可读保留诊断；不新增路径兜底或独立注册表。
+工具 schema、权限、执行快照和 UI/V4 投影不变。详见 [插件 Agents 规范](../plugin-compat.md#agents)。
+
+## Automation 自暂停工具 CronPauseSelf（2026-10-16）
+
+新增 deferred 内置工具 `CronPauseSelf`，供 automation 执行轮在 prompt 的停止条件满足时暂停
+本轮所属任务。链路：contracts `CronPauseSelfInputSchema`（严格空对象）/
+`CronPauseSelfOutputSchema { paused, id, message }` → `AutomationPort.pause({ id })` → handler →
+bootstrap `automation/pause` → Host `AutomationService.pause`。目标 id 只取
+`ToolExecutionContext.automationId`，由 turn-tools / streaming coordinator / batch runner / call runner
+从 `RegularTurnLoopState.automationId` 透传；模型输入不含 id，缺少身份时 handler 返回
+PermissionDenied 且不调用 port。
+
+```text
+Host admission automationId（仅接受调度派发显式注入；inputId/runId 只是追踪字段，不能恢复权限身份） -> RegularTurnLoopState.automationId
+  -> getTurnTools：无 automationId 时隐藏 CronPauseSelf（provider 工具、ToolSearch 目录与公告同源）
+  -> executor options.automationId -> ToolExecutionContext.automationId
+  -> CronPauseSelf handler -> AutomationPort.pause -> { paused }
+
+busy admission
+  -> PendingTurnInput / TurnSteerQueued 保存同一 automationId
+  -> QueueItem 投影与编辑原样保留
+  -> sendQueuedNow 提升时显式回放 automationId
+  -> 新 RegularTurnLoopState 恢复同一身份；禁止从 inputId/queryId/denylist 重新推断
+```
+
+权限 `automation.pause`、riskLevel low、无需审批、sideEffectScope workspace、非只读、非并发安全；
+复用 Cron 工具的超时、结果预算与取消声明，searchHint 见 [19-tool-search.md](19-tool-search.md)。
+只在 `includeAutomation` 时注册；不加入 `AUTOMATION_MUTATION_TOOL_NAMES`（core / bootstrap /
+services 三处），否则执行轮会隐藏它，旧 Host 的三项 denylist 兜底判据也会失效；不进
+`SORTED_PROVIDER_TOOL_NAMES`。remote workspace 的 session denylist 加入该工具。`CronCreate`
+的 modelInstructions 增加一句：用户给出停止条件时写进 prompt，并要求条件满足时调用 `CronPauseSelf`。
+旧 Host 返回 `-32601` 时按工具错误结束，不回退。暂停的条件写与 scheduler 回写竞态见
+`docs/automation-edit-status.md`（仓库根目录）。测试覆盖 handler 身份来源、无身份拒绝、可见性矩阵、
+executor 透传、ToolSearch 目录与 bootstrap 协议请求。
+
 ## Bash 临时输出路径隔离
 
 主应用及 workflow 子运行时装配 tmp 父目录 → execution adapter 实际准备具名输出文件 →
@@ -18,7 +179,21 @@ Runtime 从当前父轮 Agent definitions 快照派生有效工具，启动配�
 
 合并后登记工具结果结算、渠道回复及留白填充入口的模块边界；复用原契约与公开路径，不改变工具执行和持久化行为。
 
-上游新增的 FillWorkflowHole 与 ReplyToChannel 沿用非常驻内置工具的 deferred 分类。
+FillWorkflowHole 沿用非常驻内置工具的 deferred 分类；ReplyToChannel 不再默认注册。
+
+Local 搜索名称为 `LocalToolSearch`，Native 仍为 `ToolSearch`。contracts 名称常量 →
+单一 handler 的 Registry alias → 请求曝光与结构化历史/公告投影 → 同一 executor/权限/Hook。
+模式切换在每次请求准备时生效，不修改共享 Registry 或持久化身份；旧历史、compact 和冷恢复
+沿用原发现事实。同步包装说明、加载反馈、错误提示与真实 provider wire 回归，详见
+[三种请求投影](19-tool-search.md#local-toolsearch-与三种请求投影)。
+
+UI 按 `ToolSearch` / `LocalToolSearch` 两个名称选择同一搜索卡片，图标、文案与不可展开行为
+完全一致。参数流开始到停止均保留原工具身份；renderer 兼容新名称，避免执行归一化前落入
+通用 JSON 卡片。TS14 受控流使用 `LocalToolSearch`，验证参数占位和停止状态。
+
+ToolSearch / LocalToolSearch 的共用 `Query forms` 说明明确不支持正则，末尾给出
+`shell terminal execute command` 空格分隔关键词示例；query 参数说明同步标明不支持正则。
+仅更新模型可见文案，沿用原搜索算法与输入结构；验证 Native / Local 最终 provider wire。
 
 Local ToolSearch 描述明确搜索后的 `DeferredToolCall {name,input}` 调用方式，只用一个简短的
 TodoWrite 调用示例说明；常驻工具仍直接调用。只经既有曝光入口更新 Local description，
@@ -71,7 +246,9 @@ Local ToolSearch 扩展沿用 [19-tool-search.md](19-tool-search.md) 的真实�
 Todo/microcompact/工具卡复用普通调用判断。重点验证原始参数隔离、调度/权限/Hook/媒体/turn-stop、
 pending 到终态重存、冷恢复/分支、六向模式切换和 Continue/compact 的原有生命周期。
 不保存 schema 快照、不新增 schema reminder、DB migration 或测试专用生产接口。
-流式预览与 Core 事件时序保持原状；展示层不从半截包装参数推测已准入目标。验证无 Scheduled
+Core 事件时序与原始流保持原状；App 共用 render unit 隐藏 inputStreaming 的 DeferredToolCall，
+完整目标身份到达后沿用原卡片和显示设置；直接工具预览及包装失败/停止展示不变。
+展示层不从半截包装参数推测已准入目标。验证无 Scheduled
 的断流恢复、实时与冷恢复身份、普通工具及失效事件隔离、continuous/replayable 的完整行更新。
 请求内的引用过滤与 Local 展开共用一次历史投影；只复制内容实际变化的工具结果，
 同一工具定义在本次请求内只编码一次。发现集合仍先独立扫描，最终 provider render
@@ -102,10 +279,10 @@ Native ToolSearch 的 provider description、参数说明及增删/恢复公告�
 MCP server 分组与 ambient 提示；仅修改模型文案，不扩展 MCP 生命周期或公告状态。
 ToolSearch 的 provider schema 将 query/max_results 都标为 required；执行链仍先通过
 runtime schema 补默认值 5。验证最终 wire required 和省略 max_results 的真实执行结果。
-ToolSearch 的引用块不参与普通文本截断；初次结果与 Hook 追加后的预算投影均保留引用和
-块顺序，仅限制文本。展示内容和字节统计由最终块派生，completed metadata 与冷恢复
+ToolSearch 的引用块不参与普通文本截断；结果的预算投影保留引用和块顺序，仅限制文本
+（Hook 文本是批次后的附件，不进 tool result）。展示内容和字节统计由最终块派生，completed metadata 与冷恢复
 沿用真实结果；覆盖超过 100 KB 的搜索、批量 select、Hook 及 SQLite 恢复，不收紧输入范围。
-Compact 仅在候选工具支持实际启用 ToolSearch 时使用新策略；关闭时保留普通工具数量阈值，覆盖禁用、alwaysLoad 与 100 个工具边界的 Runtime 请求。
+Compact 摘要请求与主循环使用同一份工具目录，不按 ToolSearch 状态另选，也不设工具数量阈值；回归覆盖禁用、alwaysLoad 与超过 100 个工具的 Runtime 请求。
 插件 MCP 的 `.mcp.json`/manifest 经各 transport 配置转换时必须保留 `alwaysLoad`；
 验证插件发现到最终请求 schema 的透传，不改变 MCP 初始化、鉴权或工具权限。
 App MCP 配置转协议 DTO 同样保留布尔 `alwaysLoad`，覆盖 stdio/HTTP/SSE；
@@ -140,6 +317,34 @@ Invalid task ID "<id>". This lookup failure does not mean the task has completed
 查找失败不能证明目标任务已完成或停止；模型应使用启动时返回的完整 `task_id`。
 完整 ID 命中后的停止行为、其他错误、schema、权限、协议与 App 交互保持原样。
 回归覆盖短 ID、未知完整 ID 的失败文案及模型错误标记，并保留成功停止和其他失败分支断言。
+
+## 规划与 Todo 动态提醒
+
+Plan 完整、简短及退出提醒，Todo 提醒与持续静默提醒都从消息历史计数，链路为消息历史 →
+reminder formatter → runtime attachment → provider projection，复用持久化上下文载体和恢复链路。
+细节见 16-plan-mode.md 与 loop/meta-user-context.md。工具 schema、审批、执行、事件和桌面／手机 UI 不变。
+
+## 子 agent 环境与模型上下文共享
+
+普通 child 的环境与执行模型通过和 Main 相同的 section assembler → runtime announcement →
+持久化历史 → provider projection 下发，细节见 loop/meta-user-context.md。Agent schema、description、
+权限、工具集合、结果与桌面/手机展示不变。
+
+## 动态工作流的来源缺失提示
+
+`CreateWorkflow` 与 `EvalWorkflowSnippet` 的字段全部可选，模型发出的参数不是合法 JSON 时，
+adapter 记 `model.tool_input.normalize_failed` 并把它恢复成 `{}`，`{}` 能过这两个工具的 schema，
+随后在 `validateInput` 的「恰好一个来源」上失败。旧文案把「多给」和「没给」并成一句
+「Passing both, or neither, is ambiguous」，写了 `code` 的模型读不出原因，会原样重发。
+
+现在两种情况分开：多给一个来源用 `*_SOURCE_CONFLICT_ERROR`；一个都没有用
+`*_SOURCE_MISSING_ERROR`，尾部接共用的 `WORKFLOW_SOURCE_MISSING_HINT`，说明解析失败的调用
+到达时是空的、常见原因（内联源码里未转义的 `\` 或 `"`）以及改走 `path` 的办法。
+
+链路：`adapter {} 恢复 → executor schema 通过 → validateInput 返回 400 + 文案 → model isError: true`。
+schema、归一化、权限、hook、handler 与 UI 不变；`AmendWorkflow`、`SaveWorkflow`、`FillWorkflowHole`
+有必填字段，空调用先在 schema 失败，不在本次范围。回归覆盖两工具的多给 / 没给 / 只有
+`timeoutMs` 三种入参，并经 executor 断言 `{}` 拿到缺失提示、不弹确认窗。
 
 ## 闲时后台执行（实施中）
 
@@ -308,10 +513,10 @@ canonical 载荷、工具输入/输出、权限审批与主子 Agent 身份不�
 正式主子 Agent 双能力轨迹需携带标签注入载荷，验证降级、compact 和冷恢复仍使用同一包装边界。
 
 新轮后台任务通知（2026-09-12）：共享 provider 投影对 `task_notification` 复用上述包装边界，
-为完整前缀和整批正文添加一次 `<system-reminder>`。Agent/Bash/Workflow 原始结果、通知批处理、
+为完整前缀和正文添加 `<system-reminder>`：整批的每条通知是一个文本块，各自包一次。Agent/Bash/Workflow 原始结果、通知批处理、
 主子工具权限、持久化与 UI 可见性不变；BG25/BG36 在 MCS 与非 MCS 请求中验证 user 包装。
 
-运行中立即发送：纯文本 human 输入实际抢占 Core 前台执行后，复用 `user_steer` 的 provider 投影；工具取消、结果配对、审批、队列提升与执行轮边界不变。MCS 合法位置及 user 包装继续由共享投影裁决，不因新 turn 强行插入 system。具体边界见 [turn steering](../loop/turn-steering.md#运行中立即发送的-human-提示2026-09-12)。
+运行中立即发送：抢占 Core 前台执行后，输入作为普通用户消息开启新 turn，不带 `user_steer`，不并入已发出的 tool_result；工具取消、结果配对、审批、队列提升与执行轮边界不变。具体边界见 [turn steering](../loop/turn-steering.md#运行中立即发送2026-10-26)。
 
 ### 动态工作流子代理的 Browser Use
 
@@ -322,6 +527,16 @@ canonical 载荷、工具输入/输出、权限审批与主子 Agent 身份不�
 2026-10-09：移除「subagent 不能用 Browser Use」的限制。工具定义、schema、权限与 node_repl MCP 进程不变；node-repl-host 的 browser bridge 与 bootstrap node_repl broker 不再按 `runtime_scope: "subagent"` 拒绝（错误 `Browser is not available in subagent` 删除），node-repl-host 随之升到 0.6.1（package、manifest、官方 seed 定义、SEA 清单、serverInfo 版本同步）。core `Agent` 子代理由父 runtime 以 `forChildSession({ childSessionId, parentSessionId, tabOwner: "parent" })` 派生子端口：协议 broker 把子会话请求的 `sessionId` 换成父会话下发（桌面按它判定 tab 归属与面板展开），子代理与当前对话共用 tab，子端口 turnEnded / closeSession 不发往桌面，子代理结束只撤销登记、不关 tab；dwf 子代理保持默认 `tabOwner: "child"`。Computer Use 的 subagent 限制不变。合同见根目录 `docs/browser-use/2026-07-16-subagent-browser-unavailable-spec.md`。
 
 ### Guarded 危险命令单次确认
+
+2026-10-19：额度停止（`stopped(provider)`，kind `quota`）带重置时刻时由宿主到点自动续跑（bootstrap `dynamic-workflow-quota-resume.ts`，见 execution-engine.md「Resuming after a quota reset」）；重置时刻在 Retry-After 缺席时从 provider 原文读出。`ResumeWorkflowRun` 的描述与终态通知改为「不要在重置前恢复」。不改工具 schema 与协议。回归：adapters 原文解析、bootstrap 自动续跑模块与 run service 集成用例、core 终态通知。
+
+2026-10-19：动态工作流 facade 新增值 `run`（`{ id, resumedFrom? }`，两个 facade 都含），与 `args` 同一条标识符级 lowering 与沙箱注入（spawn payload 的 `run` 字段，冻结后挂 `__host.run`）；resume 时 launch 把 journal 里的 lineage 指针递给 harness，脚本两世读到同值。不改工具 schema、协议与 UI；SKILL §16.2 标记块与 `FACADE_DTS` 同步。回归：`facade-dts.test.ts` 降级、`run-identity.test.ts` 沙箱、run service 的 amend → cancel → resume 用例。
+
+2026-10-19：`EvalWorkflowSnippet` 的 `resolveInput` 对内联与 `path` 两条来源都回填 `script`（恒等于归一化后的 `code`），PreToolUse hook、项目权限规则与另外三个工作流工具读同一个字段名。运行时 schema 加 `script`，模型面 JSON schema 不列它（与 `CreateWorkflow.script_line_offset` 同姿态）；`code` 保留给 UI 与已有 hook。回归：`eval-workflow-snippet-tool.test.ts` 的归一化与 executor 级 hook 用例。
+
+2026-10-21：子 runtime 的工具面减掉 run 内省两件套 `ListWorkflowRuns` / `GetWorkflowRun`，范围是 workflow child、nested workflow child 和主代理 `Agent` 工具的 subagent（`resolveRuntimeDisallowedTools` 按 taskType 生效）。根因：这两个工具经 dwf run 端口读取，端口只在 app 顶层 runtime，子 runtime 按不变式不得持有（`bootstrap/src/app/dynamic-workflow-run-progress-sink.ts`），所以在子 runtime 里只会报 `workflow_introspection_unavailable`（线上 10-20：workflow child 调用 155 次，全部失败）。主会话的工具面、两个工具的 schema、权限与协议都不变；ListSavedWorkflows 仍保留。合同见 `docs/dynamic-workflow/launch.md` 的「workflow child sessions」行。回归：`runtime-tool-allowlist.test.ts`。
+
+2026-10-19：动态工作流子代理的工具面再次减掉 `AskUserQuestion`，与 actor 系统提示「没有向人提问的工具」一致；子代理要人判断时只经 `escalate` 交主代理。权限模式继承、权限请求经父会话送达不变；不改 schema、协议与 UI。回归：`workflow-driver.test.ts` 工具面、`script-workflow-child-runtime.test.ts` 调用不产生 PermissionRequested。
 
 2026-09-23（续）：动态工作流子代理改为继承发起会话的完整权限模式（build/edit/yolo/guarded/auto；plan 不带入，旧值 `plan` 记为 build），`run-launched.subagentPermissionMode` 记任意模式，缺席或未知值仍按 YOLO；并把 `AskUserQuestion` 还给子代理——它本就走 PermissionRequested，已由同一条父会话镜像送达确认窗。EnterPlanMode/ExitPlanMode 仍移除。见 `docs/dynamic-workflow/launch.md`「Permissions inside a run」。
 
@@ -451,8 +666,8 @@ MCP 动态 tool 还需要额外确认：
 - 可选超时字段的 provider-visible 描述不能只写字段类型；必须给出模型可执行的决策规则，包括何时必须显式传值、如何为预计执行时间预留开销，以及超过上限时应拆分调用。
 - MCP server 可在 result `_meta` 中声明 namespaced 的 `zcode/errorPresentation: "message-only"`，要求通用 bridge 在 `isError: true` 时直接投影 content，不额外添加 `MCP tool returned an error:` 包装。该能力只控制模型可见文案，不得被当作失败状态本身；失败事实仍以标准 MCP `isError` 为准。`node_repl` 生产端不得声明 `message-only`：它直接把经过脱敏的结构化 `run.error.message` 写入 content，并让通用 bridge 投影稳定的 `MCP tool returned an error:` 前缀，供不读取私有 `_meta` 的分析链路区分成功与失败。错误结果不得混入错误类型、`at ...` 堆栈帧或失败前的 REPL 日志。通用 bridge 禁止按 `serverName` 分支或解析具体错误正文。本调整不修改 `ToolResultPayload`、session event、持久化、UI 或 desktop continuous / web remote replayable 链路。开发态 desktop agent 构建必须同步重建 `@zcode/browser-use-plugin` runtime，确保插件缓存 hash 能感知这类生产端变更。
 - 标准 media result 不应无条件降级成文本占位。`image` block 应进入 provider-neutral `ModelMessageContent`，让 screenshot/visual inspection 类 MCP 能力和内置 `Read` 图片路径一致；不支持的 media 再返回短占位并受 result budget 约束。
-- 官方 CUA 的最终 raster 是坐标输入的一部分，不是普通可优化媒体。只有通过 Host authority 校验的官方 `zcode-cua` descriptor 可以启用该路径；每个 image 必须紧邻精确形态的 `image_ref {frame_id,width,height,actionable}`，bridge 必须校验 canonical base64、PNG/JPEG 文件头、MIME、实际尺寸、200 KiB 上限和单结果 `frame_id` 唯一性，并保持 bytes 与 block 顺序不变。`PostToolUse` hook 只能在受保护媒体对之后追加有界文本，不能替换或重排。任一校验失败时必须原子移除本次结果中的全部 CUA image/image_ref 并返回错误，禁止只留引用、只留图片或退回 artifact/文本占位。第三方同名 MCP 仍走通用 result budget，不能获得豁免。
-- official CUA 结构化结果在 Host 内只由 `modelContentProtection=official_cua_frame_v1` 表示；不要再增加或恢复并行 preserve boolean。`returnedBytes` 是文本与真实媒体载荷的唯一 aggregate，hook 追加只增加新增文本 bytes，不能依赖第二份 `mediaBytes` 镜像状态。
+- 官方 CUA 的最终 raster 是坐标输入的一部分，不是普通可优化媒体。只有通过 Host authority 校验的官方 `zcode-cua` descriptor 可以启用该路径；每个 image 必须紧邻精确形态的 `image_ref {frame_id,width,height,actionable}`，bridge 必须校验 canonical base64、PNG/JPEG 文件头、MIME、实际尺寸、200 KiB 上限和单结果 `frame_id` 唯一性，并保持 bytes 与 block 顺序不变。`PostToolUse` hook 文本是这批 tool result 之后的附件，不进受保护的结果，不能替换或重排媒体对。任一校验失败时必须原子移除本次结果中的全部 CUA image/image_ref 并返回错误，禁止只留引用、只留图片或退回 artifact/文本占位。第三方同名 MCP 仍走通用 result budget，不能获得豁免。
+- official CUA 结构化结果在 Host 内只由 `modelContentProtection=official_cua_frame_v1` 表示；不要再增加或恢复并行 preserve boolean。`returnedBytes` 是文本与真实媒体载荷的唯一 aggregate，hook 文本不进 tool result，不计入它；不能依赖第二份 `mediaBytes` 镜像状态。
 - shared `node_repl` 内的 CUA SDK 不得把 producer 的 legacy MCP 文本 envelope 原样再提交给模型。成功的纯文本 action/metadata 结果只在 Worker 中归一化为 SDK 字段；若还需向 Host 传递 app-display `_meta` 或 action-state，structured sink 必须使用空 `content` 的 sideband projection。只有错误或受保护的 image/`image_ref` 结果可以携带模型可见 `content`。这样同一 cell 末尾的 `nodeRepl.write(state.text)` 是唯一 AX 文本来源，不会与动作回执或 `content`/`text`/`message` 镜像叠加。
 - official CUA plugin-host 恢复 broker token 前只校验真实权威事实：bundled official plugin id、已捕获的 authority/token 和与捕获值完全相等的 socket。`--permission-mode product` / `--backend broker` 从未参与 producer 运行时决策，不得再注入或当作安全凭据；注入 canonical socket 时必须清掉 `--` terminator 之前的旧标签，混版本配置不能继续把伪安全状态传给 producer。任一真实凭据缺失或漂移仍必须在 import 前 fail closed。
 - official CUA 的目标应用图标不得依赖模型重复输出 `bundle_id`，也不得由 Renderer /
@@ -487,6 +702,7 @@ MCP 动态 tool 还需要额外确认：
 
 大内容 tool 需要在自身语义层先限制结果，再让 executor 的 `resultBudget` 作为最后保险。
 
+- formatter 已对某个输出自行限长时，tool 可以声明 `isModelContentBounded(output)`；返回 `true` 的输出不再按 `resultBudget` 落盘或截断。只用于有确定上限的文本，例如 Bash 失败结果的头尾截断；executor 不按 tool 名称判断。
 - `Read` 文本默认规则：未显式传 `limit` 时，如果文件总大小超过 `256KB`，返回稳定错误并提示使用 `offset` / `limit`；显式传 `limit` 时，必须按完整文件的真实行区间读取，而不是先截断头部再切片。
 - 用户提交的文本附件通过合成 `Read` 调用/结果进入模型上下文时，同一附件生成的 reminder body 使用单换行连接，不同附件仍使用双换行；超过默认 `2000` 行上限时，模型可见提示必须明确“first 2000 lines”并提示按需继续读取该文件。
 - `Read` 文本选中内容还需要经过 `25_000` token 输出预算校验；超过时返回稳定错误，让模型缩小 `offset` / `limit` 范围。
@@ -710,6 +926,13 @@ Browser use 虽由 `js` REPL 驱动，但其 capability manifest、模型文档�
 - `sideEffectScope`、`riskLevel`、`needsApproval`。
 - `permission`、`resultBudget`、`timeout`、`cancellation`、`trace`。
 - `handler` 和可选 `formatModelContent`。
+- 可选 `formatBatchNotice`：返回 `{ source, content }` 时，工具批次结算后把它作为该 source 的
+  system-reminder 附件排在这批 tool result 之后（不进 tool_result）。结算代码只调用这个钩子，
+  不按工具名或输出形状特殊处理某个工具；Read 用它发送 `read_truncation_notice`。
+  工具 Hook 的 `tool_hook_context` 附件由同一结算写入，排在这些批次提示之前。
+  "一批结果 → 模型 entries"只有一个函数（`toolBatchModelEntries`，`runtime/helpers/tool-result.ts`），
+  Main 结算和 Memory Agent 循环（Extraction、Dream）都调用它；新增工具结果语义只改这里，
+  所有调用方一起生效。
 - registry `toContracts()` 是否把模型、runtime 或 provider adapter 需要的字段投影出去。
 
 不要只注册 handler；tool 声明是权限、调度、prompt、adapter、executor、UI 和测试共同消费的契约。
@@ -805,6 +1028,8 @@ Browser use 虽由 `js` REPL 驱动，但其 capability manifest、模型文档�
 - permission `patternSources` 是否覆盖路径、命令、domain、toolName、input 或 custom 来源。
 - allow/deny/ask、mode、allowedTools、disallowedTools、plan/read-only 限制是否仍正确。
 - hooks 的 `PreToolUse` / `PermissionRequest` / `PostToolUse` / `PostToolUseFailure` 是否需要看到新增字段，hook 修改 input 后是否重新归一化。
+- 工具 Hook 的 additionalContext 只走工具批次后的 `tool_hook_context` 附件；不得拼回 tool_result、
+  tool result 预算或 `tool_call_result` 事件。单条超过 10000 字符时落盘成 `<persisted-output>` 外壳。
 - `PermissionRequest` hook 与交互 broker 是并发竞速关系（`../permission-responder-race.md`）：
   broker 应答通道必须在确认窗可见后立即建立，hook 卡死/失败只令其退赛，不得阻塞用户应答，
   也不得转成 deny。改动 ask 路径时不得把两者重新串行化。
@@ -845,7 +1070,9 @@ Executor 是 client-side tool 的受控执行入口。`packages/core/src/tool/ex
 - 单个 tool call 编排只负责串起归一化、schema 校验、hook、permission、handler、结果序列化、事件和后台任务追踪。
 - permission flow 只负责 permission service、project rules、broker request、PermissionRequest hook 和 permission update 持久化；不得直接执行 handler。
 - hook flow 只负责构造 hook 输入、解释 hook 输出和 additional context；hook 修改 input 后必须回到 executor 主流程重新归一化与校验。
-- result serialization 只负责 `resultBudget`、artifact 写入、模型可见内容和字节截断；UI diff display、事件投影和日志不应反向解析模型可见文本。
+  工具 Hook 的 additional context 由 hook flow 格式化，executor 放进 `ToolExecutionResult.hookAdditionalContexts`
+  （成功、失败、PreToolUse 拒绝和提前失败都一样），由结算写成附件。
+- result serialization 只负责 `resultBudget`、artifact 写入、模型可见内容和字节截断；不追加 Hook 文本。UI diff display、事件投影和日志不应反向解析模型可见文本。
 - background task tracker 只负责 task polling 和 background task session event；不得影响当前 tool call 的成功/失败结果。
 - batch/schedule 只负责并发组、blocking failure 和 skipped tool result 合成；不得绕过单个 tool call 的 permission、hook、timeout 和 trace 传播。
 
@@ -1489,8 +1716,8 @@ resume 与修订各自重开一次进程内时钟，而同卡的 tokens 是整�
 新增 `ToolInputResolutionContext.hasLoadedSkill?`（core/tool/types.ts）→ `ToolExecutorOptions` /
 `ToolExecutorDeps` → call-runner 的解析上下文；runtime-tools.ts 只在 `deps.skillPort` 在场时注入探针，
 用 `messageHistory.borrowReadOnlyRuntimeEntries()` 回答。判据取历史而不是会话级标志：compaction 用摘要
-替换历史后技能正文已不在模型上下文里，门随之重新关上（与 Edit 要求 Read、compact 后清 readFileState
-同一种语义）；resume / rewind 重建历史即重建答案，无第二套 hydration。输出形状、权限判定、事件、v4
+替换历史后技能正文已不在模型上下文里，门随之重新关上（与 Edit 要求 Read 同一种语义：compact 后
+readFileState 只留补回给模型的文件）；resume / rewind 重建历史即重建答案，无第二套 hydration。输出形状、权限判定、事件、v4
 协议与 UI 零改动。`DYNAMIC_WORKFLOW_SKILL_NAME` 从 bootstrap 迁到 contracts（core 与 bootstrap 共用）。
 测试：`core/tests/workflow-skill-gate.test.ts`（四家 × 未加载拒绝 / 已加载放行 / 无探针放行 + 两条例外）、
 `core/tests/loaded-skills.test.ts`（成功 / 未完成 / 出错 / 别的技能 / 旧 `{name}` 形 / compaction 后）、
@@ -1632,6 +1859,15 @@ TUI 与 headless（`--prompt`、`--target`）没有 Host 下发灰度 mode，改
 - 取代 staging 同期的布尔 `--enable-workflow`（仅 headless、TUI 缺省开启）：该参数已移除，传入即未知参数。
 
 ## ReplyToChannel（2026-09-23）
+
+2026-10-21：暂停内置暴露，后续由插件重新提供（本次不实现插件）。仅注释默认注册及 import、
+Host 默认发送接线和模型调用提示；保留 handler、权限规则、CLI reply port、Host 反向请求处理、
+远端 relay 协议、共享 schema、Bot 发送实现及对应测试。
+模型上下文不再注入工具名、发送 refId、按名字查询或调用后去重指引，原提示源码保留为注释。
+原生 mention 的有序位置、显示名与 isCurrentBot 仍用于判断分工；canonical 输入及其持久化不变。
+普通最终回复继续自动回传。依赖默认入口的 MN-02/FN-01 组合 E2E 和窗口发送接线用例暂时跳过，
+原用例及 fixture 完整保留，待插件接入后恢复；独立实现测试继续执行。
+以下发送合同只描述保留的实现，不代表当前默认产品入口可用。
 
 工具用当前任务绑定会话已确认的 mention refId 发送原生提及，包括客户端续聊引用历史目标；不接收群 ID、应用 ID 或裸用户 ID。
 2026-10-08：新增 mentionName（name、可选 candidateRef），由 Host 在当前授权会话查询真实身份。
@@ -1789,7 +2025,7 @@ interrupted result。修复不改变工具 schema、权限、执行时机、协�
 后续历史只作背景。共享协议沿用严格 botGroupInputSourceSchema，不新增工具或执行队列。
 
 2026-10-09 机器人身份回归：Host 原生来源 → botGroupSource 持久化 → conversation-quotes
-模型投影 → ReplyToChannel。可信 mention 增加由 botIdentity.openId 比对派生的 isCurrentBot，
+模型分工投影。可信 mention 增加由 botIdentity.openId 比对派生的 isCurrentBot，
 区分同名机器人分工；不暴露其他目标 ID，不修改工具 schema、发送授权或 CLI admission。
 
 身份定位补充：conversation-quotes 将原始有序 text/mention 节点逐条映射到模型专用
@@ -1824,3 +2060,32 @@ MCP isError 和历史 hydration 不触发创建。工具执行、权限、原始
 ### 文档插件多窗口视图修复（2026-10-16）
 
 MCP app-only report_view 增加可选 viewId，release_view 释放指定窗口；模型 get_view 可选 viewId，缺省且存在多个上报窗口时返回歧义与清单。状态唯一归属 DocumentOwner，不由页面决定其他窗口的视图；旧客户端缺省 viewId 仍走 legacy 槽。show_in_viewer 保持专用 surface 路由并明确工具描述。导入仍为 app-only workspace 副作用；串行 admission、10 分钟未活动过期与部分文件清扫归 importer，完成副本不清理。覆盖 schema 到真实 MCP/AppBridge 的多窗口回归。
+
+## Session 整体关闭（2026-10-28）
+
+单任务 stop/restart → App.close → 各所属 runner 关闭准入、取消并等待真实执行与清理 → 释放资源。
+Agent/SendMessage/旧 Workflow/动态 workflow 均保留工具 schema、权限与历史展示，后台仅脱离 turn。
+取消结果沿既有工具/任务事件与持久化链返回；不能用 registry terminal 替代资源释放完成。
+详见 ../session-runtime-lifecycle.md「所属工作整体关闭」；桌面与手机复用同一后端事实，无 schema 迁移。
+
+### Session 关闭的执行与资源边界
+
+Agent / Workflow 的执行结果不被浏览器等释放异常覆盖。所属 owner 持有未释放的 child，
+正常后台工作结束后自动释放，主动关闭取消并等待；最终关闭依据当前资源释放结果，不重放模型执行。
+MCP 调用取消归 session，物理共享连接归 pool；详见 [生命周期](../session-runtime-lifecycle.md#关闭契约收口review-修订)。
+
+### 浏览器关闭路由修复（2026-10-29）
+
+Browser js → BrowserControlPort → protocol broker 登记已校验路由 → Host/Main 执行。
+关闭/轮尾/取消使用原控制资源路由，不再依赖活动 session；关闭等待真实结果并传播失败。
+保持工具 schema、权限、会话身份、主标签页保留和子会话临时标签页策略；无协议和持久化迁移。
+
+## Browser control scope 生命周期
+
+node_repl browser-client → protocol broker → 已有 browserExecute 反向协议 → Host → Main owner。
+声明 controlScopes 能力的后端首次使用前建立实例级作用域，内部 openScope/releaseScope 不暴露为模型工具。
+业务命令与模型结果格式不变；作用域的准入、关闭屏障和重试契约见根 docs/session-task-restart.md。
+
+Browser control scope 的 admission 失败可由下一次业务请求用原 ID 重试；未知结果保留释放责任，
+只清除失败 flight。关闭优先于新 admission，不自动重放业务命令。Host ambient 无实例 ID 的
+只读 list 汇总同一会话路由的受控页面；模型 execute、取消、释放仍严格隔离实例。

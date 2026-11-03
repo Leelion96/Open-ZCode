@@ -19,11 +19,40 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "dwf-save-window-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"Save Window Bounds E2E\"}"
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"dwf-save-window-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Save Window Bounds E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "dwf-save-window-skill",
+      "description": "先加载工作流 Skill，满足 SaveWorkflow 的真实授权前置。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "旧夹具跳过 Skill 加载，被工具校验拒绝且不会显示保存窗；通过真实 Skill 工具建立前置。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_DWF_SAVE_WINDOW_BOUNDS"],
+        "bodyExcludes": [
+          "toolu_e2e_dwf_save_window_skill",
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_dwf_save_window_skill",
+          "name": "Skill",
+          "input": {
+            "skill": "dynamic-workflows"
+          }
         }
       }
     },
@@ -39,9 +68,12 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": ["E2E_DWF_SAVE_WINDOW_BOUNDS"],
-        "bodyIncludes": ["E2E_DWF_SAVE_WINDOW_BOUNDS"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyIncludes": ["E2E_DWF_SAVE_WINDOW_BOUNDS", "toolu_e2e_dwf_save_window_skill"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "\"id\":\"toolu_e2e_dwf_save_window\""
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -258,7 +290,8 @@
             "scope": "project"
           }
         }
-      }
+      },
+      "maxMatches": 1
     },
     {
       "id": "dwf-save-window-final",

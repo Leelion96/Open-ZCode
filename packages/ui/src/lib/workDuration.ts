@@ -57,3 +57,22 @@ export function formatWorkDuration(
     .map((part) => `${part.value}${separator}${part.unit}`)
     .join(" ");
 }
+
+/** Round before splitting so a minute never renders with 60.0 seconds. */
+export function formatRunningWorkDuration(
+  durationMs: number,
+  formatMessage: FormatMessage,
+  locale: string,
+): string {
+  const tenths = Math.max(0, Math.round(durationMs / 100));
+  const hours = Math.floor(tenths / 36000);
+  const minutes = Math.floor((tenths % 36000) / 600);
+  const seconds = (tenths % 600) / 10;
+  const separator = workDurationUnitSeparator(locale);
+  const parts: string[] = [];
+  if (hours) parts.push(`${hours}${separator}${formatMessage({ id: UNIT_IDS.hour })}`);
+  if (hours || minutes)
+    parts.push(`${minutes}${separator}${formatMessage({ id: UNIT_IDS.minute })}`);
+  parts.push(`${seconds.toFixed(1)}${separator}${formatMessage({ id: UNIT_IDS.second })}`);
+  return parts.join(" ");
+}

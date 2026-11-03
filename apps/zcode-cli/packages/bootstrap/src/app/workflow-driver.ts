@@ -98,10 +98,7 @@ import {
   schemaEpilogue,
   toWorkflowError,
 } from "./workflow-driver-helpers.js";
-import {
-  makeSessionSubmitPort,
-  type SubmitBridgeHost,
-} from "./workflow-driver-submit-bridge.js";
+import { makeSessionSubmitPort, type SubmitBridgeHost } from "./workflow-driver-submit-bridge.js";
 import {
   countSessionTranscript,
   journalAskMessageBoundary,
@@ -142,7 +139,7 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
   private readonly stallClock: RunStallClock;
   /**
    * 会话静默账（workflow-driver-quiescence.ts）：dispose 那一刻每个会话还有没有在写的 turn。
-   * 唯一的读者是 amend——接续前驱的在飞 ask 之前它要确认那个会话已经写完了。
+   * amend 查询 turn 静默；App.close 则通过 drain 等待完整的 actor 释放。
    */
   private readonly quiescence: ActorSessionQuiescenceLedger;
 
@@ -203,7 +200,24 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
     }
   }
 
-  async createActorSession(
+  createActorSession(
+    actor: ActorRef,
+    persona: PersonaSpec,
+    seed?: ActorSessionSeed,
+  ): Promise<SessionRef> {
+    if (this.disposed) return Promise.reject(new Error("Workflow driver is closed"));
+    const creation = this.createOwnedActorSession(actor, persona, seed);
+    // 工厂异步持久化时 dispose 也必须看得见它，避免新 actor 落在关闭快照之外。
+    this.quiescence.trackRelease(
+      creation.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return creation;
+  }
+
+  private async createOwnedActorSession(
     actor: ActorRef,
     persona: PersonaSpec,
     seed?: ActorSessionSeed,
@@ -289,9 +303,6 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
         ? {}
         : { modelRequestAdmission: modelActivity.admission }),
     });
-    if (seed !== undefined) {
-      await seedActorSession(this.deps, { journaledSessionId: journaled, runtime, seed, sessionId });
-    }
     state = {
       ref,
       sessionId,
@@ -308,9 +319,24 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
       actorName: effectiveActorName(persona),
       transientAttempts: 0,
     };
-    modelActivity.observe(runtime, sessionId);
-    this.sessions.set(sessionId, state);
-    return ref;
+    try {
+      if (seed !== undefined) {
+        await seedActorSession(this.deps, {
+          journaledSessionId: journaled,
+          runtime,
+          seed,
+          sessionId,
+        });
+      }
+      if (this.disposed) throw new Error("Workflow driver closed during actor creation");
+      modelActivity.observe(runtime, sessionId);
+      this.sessions.set(sessionId, state);
+      return ref;
+    } catch (error) {
+      // 创建尚未登记时也属于本 driver；种子恢复失败或关闭抢先到达，都必须释放已创建实例。
+      await releaseActorSessions(this.deps, [state], this.quiescence);
+      throw error;
+    }
   }
 
   startAsk(session: SessionRef, instance: InstanceRef, message: AskMessage): void {
@@ -457,7 +483,15 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
    * 只剩"会话与 turn 的编排"这一件事，而 op 元数、上限执行、git 的固定 argv 集中在一处。
    */
   async executeWorldRead(op: WorldReadOp, args: unknown[]): Promise<unknown> {
-    return await executeWorldRead(this.deps, op, args);
+    if (this.disposed) throw new Error("Workflow driver is closed");
+    const work = executeWorldRead(this.deps, op, args);
+    this.quiescence.trackRelease(
+      work.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return await work;
   }
 
   /**
@@ -470,7 +504,15 @@ class AgentRuntimeWorkflowDriver implements WorkflowDriver {
    * 「方法在不在」这条第二条通道再表达一次（两条通道会给同一件事两种失败形态）。
    */
   async executeArtifactPublish(request: ArtifactPublishRequest): Promise<ArtifactVersionRecord> {
-    return await executeArtifactPublish(this.deps, request);
+    if (this.disposed) throw new Error("Workflow driver is closed");
+    const work = executeArtifactPublish(this.deps, request);
+    this.quiescence.trackRelease(
+      work.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return await work;
   }
 
   // ——————————————————————————————— 内部：turn 编排 ———————————————————————————————

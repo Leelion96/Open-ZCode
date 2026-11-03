@@ -23,3 +23,12 @@ Status: ready-for-human
 
 本项对应 [R3A-UI-03](../../testing/r3-remote-automation-case-matrix.md) 的焦点可用要求。
 证据位于上述批次 `uipairwise` 的 `ui-pairwise.json`、失败录像和日志。
+
+## 2026-10-20 最新 staging 复验
+
+基线 `52cd1bc1d3`，批次 `r3-server-pending-52cd-b-pending-uipairwise` 再次复现。
+首先修正旧 E2E 的原生设备 `title` 断言，按 RDUX-12 检查可见设备名和真实悬停详情；
+完整设备名、远端路径与无操作按钮均通过，项目菜单也正常显示。
+随后点击 Edit project，仍在 5 秒焦点断言失败，`ui-pairwise.json`
+记录 `focusFailure={tag:"BODY",testId:null}`。没有强制 focus 或增加延时，
+中文浅色及离线重连步骤仍未到达。

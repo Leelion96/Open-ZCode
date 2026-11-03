@@ -81,3 +81,14 @@ DOM click 未触发 Radix 菜单，整体 FAIL 被保留。按已有 SSH helper 
 作用域仅为桌面连接管理 UI；`SettingsPage` 的 `isDesktop` 门禁使手机 replayable 路径不使用
 该面板。未改协议、身份持久化、Host/CLI 或数据迁移规则。回滚仅需撤销本次 UI 修复；不会产生
 需要回迁的数据格式变化，但会重新暴露原确认入口缺失问题。
+
+## 2026-10-20 新基线回放
+
+staging `52cd1bc1d3` 的 `r3-server-pending-52cd-a-isolated-identity-replacement` 已完成取消、
+新身份确认和旧线路归档，随后因测试进入空白“新建连接”表单、查找已退役的保存设备卡而失败。
+`uninstall.json` 保存了身份替换事实，失败录像显示空白连接表单。这次失败不是本文的确认入口缺陷复发。
+
+测试改为复用 `openSSHSourceDirectory`，从项目表单选择未归档线路对应的新设备，不重新填写连接、
+不删除旧设备。`r3-server-pending-52cd-b-{isolated,default}-{uninstall,identity-replacement}`
+四轮均 1/1 通过，无跳过或框架重试。新环境为空、旧历史保存在封存目录、新 session 与新安装身份一致，
+原保留数据重装分支也通过；业务实现保持基线不变。

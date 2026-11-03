@@ -87,6 +87,8 @@ export function normalizeMcpAppResourceMeta(meta: unknown): McpAppResourceMeta |
   const showInline =
     readBoolean(ui?.showInline) ?? readBoolean(root["openai/widgetShowCodexWidgetInline"]);
   if (showInline !== undefined) result.showInline = showInline;
+  const backgroundRetention = readBoolean(ui?.backgroundRetention);
+  if (backgroundRetention !== undefined) result.backgroundRetention = backgroundRetention;
   const cspRelaxations = normalizeMcpAppCspRelaxations(meta);
   if (cspRelaxations) result.cspRelaxations = cspRelaxations;
   const permissions = normalizeMcpAppResourcePermissions(ui?.permissions);

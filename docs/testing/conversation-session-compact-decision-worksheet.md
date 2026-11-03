@@ -1,5 +1,78 @@
 # Conversation Session Compact Decision Worksheet
 
+## 手动压缩固定提交模型（2026-10-20）
+
+用户确认：会话使用 A，在菜单选择 B 后直接 `/compact`，摘要必须使用 B。
+本次覆盖原 N08「沿用会话 A」的裁决。修改层级为提交副作用与队列恢复，
+模型候选、布局、自动压缩、工具、模式与权限不变。
+
+### 状态与时序
+
+```mermaid
+sequenceDiagram
+  participant UI as Composer 草稿
+  participant CLI as CLI CommandInbox / QueueItem
+  participant Core as Core ModelFactory
+  UI->>UI: 选择 B
+  UI->>CLI: compact(modelSelection=B)，固定 commandId 与接纳序号
+  UI->>UI: 后续可选择 C
+  CLI->>CLI: 空闲立即执行；忙碌或 held 时保留 FIFO
+  CLI->>Core: 使用原 intent 中的 B 创建模型
+  Core-->>UI: compact timeline 终态
+```
+
+桌面 continuous 与手机 replayable 都提交同一命令到同一 CLI owner；
+重连只恢复命令及其原参数，不从恢复时的 Composer 重建 B。
+workspaceIdentity、sessionId、commandId 与 admissionSeq 沿用原隔离和去重契约。
+
+### 入口与实现计划
+
+| 入口/层                | 现状与修改                                                         | 权威归属与边界                                                                      |
+| ---------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| 输入框 `/compact`      | 使用发送前已经捕获的 Submission.modelSelection                     | Composer 仅持有未提交草稿；不附带模式、Plan 或加速凭据                              |
+| 上下文用量面板压缩按钮 | 点击时通过既有 Composer builder 捕获选择；缺少有效选择时不发空命令 | 与输入框共用 dispatchSlashCommand                                                   |
+| V4 compact schema      | 增加可选 modelSelection，复用严格模型选择 schema                   | 旧发送端无字段时，在 CLI 接收边界固定当前会话选择                                   |
+| compact handler        | 先构造包含选择的 canonical intent，再立即执行或入队                | 使用现有 inputIntentMetadata 与 resolveSubmittedExecutionState，只取 modelSelection |
+| queue promotion        | 由原 QueueItem 恢复 intent，传入 startManualCompact                | 自动消费及 sendQueuedNow 共用；不改写其他排队项                                     |
+| Core                   | 复用已存在的 intent.modelSelection → Active Model 路径             | 当前已开始的 A 不变；旧序号压缩不得覆盖较新输入的续跑选择                           |
+
+必须检查：两个 UI 入口、schema、compact handler、queue promotion、持久队列恢复。
+相邻回归：停止、重复 compact、模型不可用、冷恢复就绪检查、稀疏 reasoning 选择。
+只保持不变量：自动 compact、Goal、Subagent、自动化模型、跨工作区选择。
+codegraph 在本次环境无可用工具；依据以上文件的直接调用关系核对两层，
+不把测试可达性当作产品依赖。功能图补充模型选择到手动压缩提交的关系。
+
+### 接受的验证场景
+
+| 编号         | 前置/操作                                  | 断言                                                      | 证据                                                   |
+| ------------ | ------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------ |
+| N08          | A 历史，菜单选 B，立即 `/compact`          | 实际摘要请求 model=B，选中 options 随请求传递，stream-first 保持 | UI 单测、bootstrap 单测、既有模型切换 compact E2E 抓包 |
+| N08-panel    | 相同前置，点击上下文面板压缩               | 与 `/compact` 携带同一选择；选择无效时不发命令            | desktop/mobile 参数化组件测试                          |
+| N08-queue    | A 忙碌或 held，选 B 提交 compact，之后选 C | 入队与提升均持有 B，A 不变，不消费 C 草稿                 | bootstrap 入队/提升测试、运行时选择测试、held queue E2E                |
+| N08-recovery | 持久队列项带 B，恢复后会话选择为 C         | 以原 B 执行，不以 C 重建意图                              | 恢复形态 QueueItem 的提升测试                          |
+| N08-legacy   | 老客户端不带选择，在就绪检查期间会话变化   | 接收时固定的模型不变                                      | bootstrap deferred gate 测试                           |
+| N08-invalid  | 模型字段非法或 B 无法创建                  | schema 拒绝或原模型创建错误；不静默回退 A                 | schema 与 Core 创建失败回归                            |
+
+剪枝：不将每个 provider、语言、主题和操作系统做笛卡尔积，因为本次不改 UI 呈现、
+文件 I/O 或 provider adapter；选跨模型代表。桌面/手机分别验证命令 payload；
+真实 Electron E2E 验证摘要请求，不能以组件测试替代整条链路。
+没有新增待确认产品问题：按用户已确认的 B 语义，队列顺序与恢复复用现有规则。
+
+实施顺序：先更新 N08、覆盖矩阵与功能图；先写失败回归；接通协议/CLI/UI；
+再运行 focused 单测、CLI 检查、根 typecheck/lint/architecture、affected 测试与对应 E2E。
+E2E 复用既有 case-local synthetic fixture，由真实 App/CLI 产生请求并抓包。
+不新建模型缓存、同步屏障、队列或数据库 migration。
+
+### 本次验证证据
+
+- 先运行失败回归：协议 schema 丢失选择、桌面/手机两入口未携带 B；接通后 focused App 134 项、CLI 77 项通过。
+- 受影响根单测：525 文件、7111 通过、5 跳过。覆盖 CLI runtime 的实际 ModelFactory 请求，证明旧 B 不覆盖较新 C。
+- Electron 立即压缩：`desktop-e2e-20261020-031645-300`，1/1 通过，实际请求包含 B、所选思考档位、历史内容及 SSE。
+- Electron held queue：`desktop-e2e-20261020-031840-277`，1/1 通过，入队后改选 A，提升仍请求 B，其他队列项保持 held。
+- 根类型检查、lint、架构检查通过；两个既有 E2E 的 fixture 检查通过。CLI 完整类型检查（32 个 Turbo task）及 lint 通过。
+- 环境记录：首次并发类型检查被 8 GiB 容器内存限制终止，串行重跑通过；Electron 改用容器启动参数并重建产物后通过。诊断包装只增加失败时 DOM/截图采集，不修改断言。
+- 边界：真实手机远控、Windows/macOS 未实跑；手机共享提交路径由参数化组件测试验证，未改变传输、持久化和操作系统适配。
+
 ## `/compact` 队列裁决（2026-07-13）
 
 用户确认 running 输出过程中 `/compact` 不能丢弃，必须进入队列；随后确认 goal verifier

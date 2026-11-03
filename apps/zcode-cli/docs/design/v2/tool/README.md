@@ -23,6 +23,7 @@
 13. [Workflow](15-workflow.md)
 14. [EnterPlanMode / ExitPlanMode](16-plan-mode.md)
 15. [ToolSearch](19-tool-search.md)
+16. [node_repl 调用账本：结果里的可信事实](20-node-repl-call-ledger.md)
 
 ## 公共 tool 形态
 

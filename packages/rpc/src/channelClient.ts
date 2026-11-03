@@ -99,6 +99,7 @@ export class ChannelClient implements IChannelClient, IDisposable {
                 "taskId",
                 "traceId",
                 "retryable",
+                "profileId",
               ] as const;
               for (const key of passthroughKeys) {
                 const value = response.data[key];
@@ -170,7 +171,18 @@ export class ChannelClient implements IChannelClient, IDisposable {
     });
 
     this.handlers.set(id, (response) => {
-      emitter.fire((response as { data: any }).data);
+      if (response.type === ResponseType.EventFire) {
+        emitter.fire(response.data);
+      } else if (response.type === ResponseType.EventError) {
+        // 订阅失败必须结束其监听器，不能把错误对象写入终端等正常事件流，也不能继续保留旧请求。
+        this.handlers.delete(id);
+        this.activeRequests.delete(emitter);
+        emitter.dispose();
+        const error = new Error(response.data.message);
+        error.name = response.data.name;
+        if (response.data.stack) error.stack = response.data.stack.join("\n");
+        console.error(`RPC event subscription failed: ${channelName}.${name}`, error);
+      }
     });
 
     return emitter.event;
@@ -208,9 +220,11 @@ export class ChannelClient implements IChannelClient, IDisposable {
   }
 
   private onBuffer(message: VSBuffer): void {
+    // 修复原因：同一 protocol 上还有反向 ChannelServer（host ↔ 远端 WebSocket 两端都是），对方发来的
+    // 请求也会到这里。原来先解码消息体再判断类型，每条请求都被完整解码两次，大请求（例如数据同步的
+    // 归档）白白多花一倍 CPU。修法：先读消息头，只解码属于本端的响应体。
     const reader = new BufferReader(message);
     const header = deserialize(reader);
-    const body = deserialize(reader);
     const type = header[0] as ResponseType;
 
     switch (type) {
@@ -220,11 +234,12 @@ export class ChannelClient implements IChannelClient, IDisposable {
       case ResponseType.PromiseSuccess:
       case ResponseType.PromiseError:
       case ResponseType.EventFire:
+      case ResponseType.EventError:
       case ResponseType.PromiseErrorObj:
         this.onResponse({
           type,
           id: header[1],
-          data: body,
+          data: deserialize(reader),
         } as IRawResponse);
         return;
     }

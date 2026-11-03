@@ -1,9 +1,17 @@
+// 统一 runner 与旧手工入口均使用隔离 HOME；不能因 runId 前缀不同拒绝安全夹具。
 import { DatabaseSync } from "node:sqlite";
 import { join, basename } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { waitForWorkspaceApp, DEFAULT_WORKSPACE } from "../../../helpers/desktop-app.js";
+import { restartIntoWorkspacePreservingProfile } from "#e2e/helpers/model-provider-restart-runtime";
 import { loginWithApiKey } from "#e2e/helpers/v4-conversation";
 import { TID_AUTOMATIONS_OPEN } from "@zcode/shared/test-ids";
+import { ServiceChannels } from "@zcode/shared";
+import {
+  installHandoffRpcProbe,
+  callHandoffHost,
+  restoreHandoffProbes,
+} from "#e2e/helpers/remote-project-handoff-probe";
 
 const projectId = "e2e-project-behavior";
 const name = "E2E_PROJECT_BEHAVIOR";
@@ -18,11 +26,39 @@ declare global {
 }
 
 describe("虚拟项目旧产品体验", () => {
+  afterEach(async function () {
+    if (this.currentTest?.state !== "failed") return;
+    const state = await browser.execute(() => ({
+      body: document.body.innerText.slice(-3500),
+      dialogs: [...document.querySelectorAll('[role="dialog"]')].map((el) => el.textContent),
+      projects: [...document.querySelectorAll("[data-project-id]")].map((el) => ({
+        id: el.getAttribute("data-project-id"),
+        text: el.textContent?.slice(0, 160),
+      })),
+      focused: document.activeElement?.outerHTML.slice(0, 300),
+    }));
+    await writeFile(
+      join(
+        process.env.ZCODE_E2E_ARTIFACT_DIR!,
+        `project-behavior-${this.currentTest?.title.replace(/[^a-z0-9]+/gi, "-")}.json`,
+      ),
+      JSON.stringify(
+        { state, navigation: await readNavigation().catch((error) => String(error)) },
+        null,
+        2,
+      ),
+    );
+  });
   before(async function () {
     this.timeout(60_000);
     await waitForWorkspaceApp(DEFAULT_WORKSPACE, 45_000);
     const home = process.env.ZCODE_E2E_HOME_DIR;
-    if (!home || !basename(home).startsWith("zcode-project-behavior-e2e-"))
+    if (
+      !home ||
+      ![".e2e-home-", "zcode-project-behavior-e2e-"].some((prefix) =>
+        basename(home).startsWith(prefix),
+      )
+    )
       throw new Error("isolated project behavior E2E HOME required");
     const root = join(DEFAULT_WORKSPACE, ".zcode-e2e", "project-behavior");
     await mkdir(root, { recursive: true });
@@ -30,58 +66,66 @@ describe("虚拟项目旧产品体验", () => {
     const taskRoot = join(root, "task-cwd");
     await mkdir(taskRoot, { recursive: true });
     await writeFile(join(taskRoot, "E2E_PINNED_TASK_FILES.txt"), "task cwd file");
-    const db = new DatabaseSync(join(home, ".zcode/v2/tasks-index.sqlite"));
-    try {
-      // 纯列表 fixture：只在隔离库准备已持久化的历史镜像，不声称覆盖模型/CLI 执行。
-      db.prepare(
-        "INSERT INTO projects(project_id,host_id,name,position,created_at,updated_at) VALUES(?,'local',?,0,1,1)",
-      ).run(projectId, name);
-      db.prepare(
-        "INSERT INTO project_roots(project_id,root_path,position,is_primary) VALUES(?,?,0,1)",
-      ).run(projectId, root);
-      for (const [id, label, position] of [
-        ["e2e-empty-a", "E2E_EMPTY_A", 1],
-        ["e2e-empty-b", "E2E_EMPTY_B", 2],
-      ] as const) {
-        db.prepare(
-          "INSERT INTO projects(project_id,host_id,name,position,created_at,updated_at) VALUES(?,'local',?,?,1,1)",
-        ).run(id, label, position);
-      }
-      const insert = db.prepare(
-        "INSERT INTO tasks(workspace_key,workspace_path,task_id,title,provider,created_at,updated_at,host_id,root_path,project_id,pinned,unread_at,cli_title,cli_title_source,cli_created_at,cli_updated_at,cli_last_outcome,cli_deleted) VALUES(?,?,?,?, 'glm',1,1,'local',?,?,?,?,?,'custom',?,?,'completed',0)",
-      );
-      const baselineTime = Date.now() - 100_000;
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      yesterday.setHours(12, 0, 0, 0);
-      for (let i = 0; i < 30; i++) {
-        const title = `E2E_BEHAVIOR_${String(i).padStart(2, "0")}`;
-        const taskPath = i === 7 ? taskRoot : root;
-        insert.run(
-          taskPath,
-          taskPath,
-          `e2e-behavior-${i}`,
-          title,
-          taskPath,
-          projectId,
-          i >= 7 ? 1 : 0,
-          i === 29 ? 10 : null,
-          title,
-          baselineTime + i + 1,
-          i < 18 ? baselineTime + 100 - i : yesterday.getTime() - i,
-        );
-      }
-    } finally {
-      db.close();
-    }
-    await browser.refresh();
-    // 匿名回放夹具在重载后可能显示连接入口；先走真实登录 UI，避免误把欢迎页当成项目丢失。
-    const login = $('[data-testid="login-use-api-key-button"]');
-    await browser.waitUntil(
-      async () => (await login.isDisplayed()) || (await $(rowSelector).isDisplayed()),
-      { timeout: 45_000 },
-    );
-    if (await login.isDisplayed()) await loginWithApiKey();
+    // 运行中写库不发布 Host 快照；非法 meta 还会让归档/置顶命令读不到任务。
+    await restartIntoWorkspacePreservingProfile(DEFAULT_WORKSPACE, {
+      afterElectronProcessExit: async () => {
+        const db = new DatabaseSync(join(home, ".zcode/v2/tasks-index.sqlite"));
+        try {
+          // 纯列表 fixture：只在隔离库准备已持久化的历史镜像，不声称覆盖模型/CLI 执行。
+          db.prepare(
+            "INSERT INTO projects(project_id,host_id,name,position,created_at,updated_at) VALUES(?,'local',?,0,1,1)",
+          ).run(projectId, name);
+          db.prepare(
+            "INSERT INTO project_roots(project_id,root_path,position,is_primary) VALUES(?,?,0,1)",
+          ).run(projectId, root);
+          for (const [id, label, position] of [
+            ["e2e-empty-a", "E2E_EMPTY_A", 1],
+            ["e2e-empty-b", "E2E_EMPTY_B", 2],
+          ] as const) {
+            db.prepare(
+              "INSERT INTO projects(project_id,host_id,name,position,created_at,updated_at) VALUES(?,'local',?,?,1,1)",
+            ).run(id, label, position);
+          }
+          const insert = db.prepare(
+            "INSERT INTO tasks(workspace_key,workspace_path,task_id,title,provider,created_at,updated_at,host_id,root_path,project_id,pinned,unread_at,cli_title,cli_title_source,cli_created_at,cli_updated_at,cli_last_outcome,cli_deleted,meta_json) VALUES(?,?,?,?, 'glm',1,1,'local',?,?,?,?,?,'custom',?,?,'completed',0,?)",
+          );
+          const baselineTime = Date.now() - 100_000;
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          yesterday.setHours(12, 0, 0, 0);
+          for (let i = 0; i < 30; i++) {
+            const title = `E2E_BEHAVIOR_${String(i).padStart(2, "0")}`;
+            const taskPath = i === 7 ? taskRoot : root;
+            insert.run(
+              taskPath,
+              taskPath,
+              `e2e-behavior-${i}`,
+              title,
+              taskPath,
+              projectId,
+              i >= 7 ? 1 : 0,
+              i === 29 ? 10 : null,
+              title,
+              baselineTime + i + 1,
+              i < 18 ? baselineTime + 100 - i : yesterday.getTime() - i,
+              JSON.stringify({
+                taskId: `e2e-behavior-${i}`,
+                traceId: `e2e-behavior-${i}`,
+                title,
+                workspacePath: taskPath,
+                createdAt: baselineTime + i + 1,
+                updatedAt: i < 18 ? baselineTime + 100 - i : yesterday.getTime() - i,
+                mode: "build",
+                provider: "glm",
+                status: "completed",
+              }),
+            );
+          }
+        } finally {
+          db.close();
+        }
+      },
+    });
     await $(rowSelector).waitForDisplayed({ timeout: 45_000 });
   });
 
@@ -108,8 +152,11 @@ describe("虚拟项目旧产品体验", () => {
     });
     const unclassified = await readNavigation();
     await invokeNewTaskMenuShortcut();
-    await browser.waitUntil(async () => (await readNavigation()).path !== unclassified.path);
+    // 新草稿生命周期在首发接纳前复用未归类目录；重复新建只重新聚焦该草稿。
+    await browser.waitUntil(async () => (await readNavigation()).focus > unclassified.focus);
+    expect((await readNavigation()).path).toBe(unclassified.path);
     expect((await readNavigation()).project).toBeNull();
+    expect((await readNavigation()).task).toBeNull();
   });
 
   it("VP24/31：全部项目收起展开不导航，刷新保持且新建按钮右侧对齐", async () => {
@@ -124,7 +171,7 @@ describe("虚拟项目旧产品体验", () => {
       );
     await browser.waitUntil(async () => (await states()).every((value) => value === "false"));
     expect(await readNavigation()).toEqual(before);
-    await browser.refresh();
+    await refreshProjectSidebar();
     await $(rowSelector).waitForDisplayed({ timeout: 45_000 });
     expect((await states()).every((value) => value === "false")).toBe(true);
     await $('[data-testid="virtual-project-toggle-all"]').click();
@@ -167,9 +214,8 @@ describe("虚拟项目旧产品体验", () => {
       const preferences = await browser.execute(() =>
         localStorage.getItem("zcode-project-sidebar-preferences"),
       );
-      const db = new DatabaseSync(
-        join(process.env.ZCODE_E2E_HOME_DIR!, ".zcode/v2/tasks-index.sqlite"),
-      );
+      const activeWorkspace = (await readNavigation()).path;
+      if (!activeWorkspace) throw new Error("缺少活动 workspace");
       try {
         await browser.electron.execute((electron) => {
           electron.BrowserWindow.getAllWindows()
@@ -214,28 +260,52 @@ describe("虚拟项目旧产品体验", () => {
         expect(before.indexOf(targetId)).toBeGreaterThan(0);
         expect(before.indexOf(targetId)).toBeLessThan(before.length - 1);
         expect(orders).toEqual([before, before.filter((id) => id !== targetId)]);
-        await browser.refresh();
+        await refreshProjectSidebar();
         await $(rowSelector).waitForDisplayed({ timeout: 45_000 });
         expect(await target.isExisting()).toBe(false);
       } finally {
         await browser.execute(() => window.__projectDeletionTrace?.stop());
-        // 只恢复本用例的隔离项目 fixture，避免改变后续排序和分页用例。
-        db.prepare("UPDATE projects SET deleted=0 WHERE project_id=?").run(targetId);
-        db.close();
         await browser.execute((saved) => {
           if (saved) localStorage.setItem("zcode-project-sidebar-preferences", saved);
           else localStorage.removeItem("zcode-project-sidebar-preferences");
         }, preferences);
-        await browser.refresh();
+        // 运行中的 Host 不发布直写库事件；等旧进程退出后恢复隔离项目，避免后项仍读删除态。
+        await restartIntoWorkspacePreservingProfile(activeWorkspace, {
+          afterElectronProcessExit: () => {
+            const db = new DatabaseSync(
+              join(process.env.ZCODE_E2E_HOME_DIR!, ".zcode/v2/tasks-index.sqlite"),
+            );
+            try {
+              db.prepare("UPDATE projects SET deleted=0 WHERE project_id=?").run(targetId);
+            } finally {
+              db.close();
+            }
+          },
+        });
         await $(rowSelector).waitForDisplayed({ timeout: 45_000 });
+        await target.waitForDisplayed();
       }
     });
   }
 
   it("VP31：任务分区会话与项目内会话左侧留白一致", async () => {
-    const db = new DatabaseSync(
-      join(process.env.ZCODE_E2E_HOME_DIR!, ".zcode/v2/tasks-index.sqlite"),
-    );
+    const setFixtureProject = async (id: string | null) => {
+      // 前面的导航用例已切换到新目录；重启只恢复活动目录，不能等待无关的默认 workspace。
+      const activeWorkspace = (await readNavigation()).path;
+      if (!activeWorkspace) throw new Error("缺少活动 workspace");
+      await restartIntoWorkspacePreservingProfile(activeWorkspace, {
+        afterElectronProcessExit: () => {
+          const db = new DatabaseSync(
+            join(process.env.ZCODE_E2E_HOME_DIR!, ".zcode/v2/tasks-index.sqlite"),
+          );
+          try {
+            db.prepare("UPDATE tasks SET project_id=? WHERE task_id='e2e-behavior-6'").run(id);
+          } finally {
+            db.close();
+          }
+        },
+      });
+    };
     const task = $('[data-testid="conversation-section"] [data-testid="task-item-e2e-behavior-6"]');
     const layouts: {
       width: number;
@@ -246,9 +316,8 @@ describe("虚拟项目旧产品体验", () => {
       projectTextX: number;
     }[] = [];
     try {
-      // 复用隔离历史 fixture，保留相同样式的项目内任务用于比较整行和文字边缘。
-      db.prepare("UPDATE tasks SET project_id=NULL WHERE task_id='e2e-behavior-6'").run();
-      await browser.refresh();
+      // 热写 SQLite 不会发布 Host 快照；离线准备同一条历史后冷恢复，保留其他项目内任务用于比较。
+      await setFixtureProject(null);
       await task.waitForExist({ timeout: 45_000 });
       await browser.electron.execute((electron) => {
         const window = electron.BrowserWindow.getAllWindows().find((item) => item.isVisible());
@@ -319,9 +388,7 @@ describe("虚拟项目旧产品体验", () => {
         expect(layout.textX).toBeCloseTo(layout.projectTextX, 0);
       }
     } finally {
-      db.prepare("UPDATE tasks SET project_id=? WHERE task_id='e2e-behavior-6'").run(projectId);
-      db.close();
-      await browser.refresh();
+      await setFixtureProject(projectId);
       await $(rowSelector).waitForDisplayed({ timeout: 45_000 });
     }
   });
@@ -473,7 +540,7 @@ describe("虚拟项目旧产品体验", () => {
     );
     const after = await order();
     expect(after).toEqual(before);
-    await browser.refresh();
+    await refreshProjectSidebar();
     await a.waitForExist({ timeout: 45_000 });
     expect(await order()).toEqual(after);
     await $(rowSelector).$('[data-testid="virtual-project-toggle"]').click();
@@ -538,7 +605,7 @@ describe("虚拟项目旧产品体验", () => {
         JSON.stringify({ ...JSON.parse(localStorage.getItem(key) ?? "{}"), sort: "updated" }),
       );
     });
-    await browser.refresh();
+    await refreshProjectSidebar();
     await project.waitForDisplayed({ timeout: 45_000 });
     expect(await project.$(taskSelector).getText()).toContain("E2E_BEHAVIOR_00");
   });
@@ -552,12 +619,26 @@ describe("虚拟项目旧产品体验", () => {
     await $('[role="dialog"] [cmdk-input]').waitForDisplayed();
     await browser.keys("Escape");
     const apple = await browser.execute(() => /Mac|iPhone|iPad/.test(navigator.platform));
-    expect(await search.getText()).toContain(apple ? "⌘ K" : "Ctrl+K");
+    // 搜索入口已改为图标按钮，平台键帽由共享 tooltip 展示。
+    await $('[role="dialog"]').waitForExist({ reverse: true });
+    await $("main").moveTo();
+    await search.moveTo();
+    const tooltip = $('[data-slot="tooltip-content"]');
+    await tooltip.waitForDisplayed();
+    expect(await tooltip.getText()).toContain(apple ? "⌘ K" : "Ctrl+K");
     await browser.keys([apple ? "Meta" : "Control", "k"]);
     await $('[role="dialog"] [cmdk-input]').waitForDisplayed();
     await browser.keys("Escape");
     await $('[data-testid="sidebar-view-menu"]').click();
-    expect(await $$('[role="menuitemradio"]').length).toBe(2);
+    // 视图单选包含未读，图标和勾选沿用同一菜单。
+    expect(
+      await $$('[role="menuitemradio"]').map((item) => item.getAttribute("data-testid")),
+    ).toEqual([
+      "sidebar-view-projects",
+      "sidebar-view-grouped",
+      "sidebar-view-timeline",
+      "sidebar-view-unread",
+    ]);
     expect(await $('[data-testid="sidebar-view-projects"] svg.lucide-folder').isDisplayed()).toBe(
       true,
     );
@@ -574,10 +655,12 @@ describe("虚拟项目旧产品体验", () => {
     expect(await $('[data-testid="project-section"]').isExisting()).toBe(false);
     expect(await timeline.$$(taskSelector).length).toBe(20);
     expect(await timeline.$(taskSelector).getText()).toContain("E2E_BEHAVIOR_00");
-    expect(await timeline.$$("[data-timeline-date-heading]").map((row) => row.getText())).toEqual([
-      "Today",
-      "Yesterday",
-    ]);
+    const dateHeadings = await timeline
+      .$$("[data-timeline-date-heading]")
+      .map((row) => row.getText());
+    expect(dateHeadings).toHaveLength(2);
+    expect(dateHeadings[0]).toMatch(/^(Today|今天)$/);
+    expect(dateHeadings[1]).toMatch(/^(Yesterday|昨天)$/);
     expect(await timeline.$("[data-task-workspace-label]").getText()).toBe("project-behavior");
     expect(await timeline.$('[data-idle-indicator="true"]').isExisting()).toBe(false);
     const rowLayout = await browser.execute(() => {
@@ -605,7 +688,8 @@ describe("虚拟项目旧产品体验", () => {
     try {
       expected = db
         .prepare(
-          "SELECT task_id FROM tasks WHERE project_id=? AND archived=0 ORDER BY cli_updated_at DESC,cli_created_at DESC,task_id DESC",
+          // Host 会先留下未物化草稿行；列表只展示有 CLI 历史且未删除的任务。
+          "SELECT task_id FROM tasks WHERE project_id=? AND archived=0 AND deleted=0 AND coalesce(cli_deleted,0)=0 AND cli_created_at IS NOT NULL ORDER BY cli_updated_at DESC,cli_created_at DESC,task_id DESC",
         )
         .all(projectId)
         .map((row) => String(row.task_id));
@@ -635,7 +719,7 @@ describe("虚拟项目旧产品体验", () => {
     await archived.waitForExist({ reverse: true });
     expect(await timeline.$$(taskSelector).length).toBe(29);
     expect(await readNavigation()).toEqual(before);
-    await browser.refresh();
+    await refreshProjectSidebar('[data-testid="project-timeline-tasks"]');
     await timeline.waitForDisplayed({ timeout: 45_000 });
     expect(await timeline.$$(taskSelector).length).toBe(20);
     expect(await $('[data-testid="task-item-e2e-behavior-6"]').isExisting()).toBe(false);
@@ -654,12 +738,67 @@ describe("虚拟项目旧产品体验", () => {
     expect(await $(rowSelector).$("[data-task-workspace-label]").isExisting()).toBe(false);
   });
 
+  it("SBV07：按未读分页、重载、已读移除与空态，切换不改变导航", async () => {
+    const before = await readNavigation();
+    const root = join(DEFAULT_WORKSPACE, ".zcode-e2e", "project-behavior");
+    const setUnread = (index: number, unread: boolean) =>
+      callHandoffHost(ServiceChannels.WindowController, "mutateTask", [
+        {
+          address: {
+            workspacePath: index === 7 ? join(root, "task-cwd") : root,
+            taskId: `e2e-behavior-${index}`,
+          },
+          mutation: { kind: unread ? "mark-unread" : "mark-read" },
+        },
+      ]);
+    await installHandoffRpcProbe();
+    try {
+      // 使用真实 Host 命令产生未读及失效事件，不修改 UI 投影。
+      for (let index = 7; index < 30; index++) await setUnread(index, true);
+      await $('[data-testid="sidebar-view-menu"]').click();
+      const option = $('[data-testid="sidebar-view-unread"]');
+      expect(await option.$("svg.lucide-bell").isDisplayed()).toBe(true);
+      await option.click();
+      const unread = $('[data-testid="project-unread-tasks"]');
+      await unread.waitForDisplayed();
+      expect(await unread.$$(taskSelector).length).toBe(20);
+      expect(await unread.$(taskSelector).getText()).toContain("E2E_BEHAVIOR_07");
+      expect(await $('[data-testid="project-pinned-tasks"]').isExisting()).toBe(false);
+      await unread.$('[data-task-list-show-more="true"]').click();
+      expect(await unread.$$(taskSelector).map((row) => row.getAttribute("data-testid"))).toEqual(
+        Array.from({ length: 23 }, (_, index) => `task-item-e2e-behavior-${index + 7}`),
+      );
+      expect(await readNavigation()).toEqual(before);
+      await captureLayouts(async () => {
+        await unread.waitForDisplayed();
+      }, "sidebar-unread");
+      await refreshProjectSidebar('[data-testid="project-unread-tasks"]');
+      expect(await unread.$$(taskSelector).length).toBe(20);
+      await $('[data-testid="sidebar-view-menu"]').click();
+      expect(await option.getAttribute("aria-checked")).toBe("true");
+      await browser.keys("Escape");
+      await installHandoffRpcProbe();
+      for (let index = 7; index < 30; index++) await setUnread(index, false);
+      await $('[data-testid="project-no-tasks"]').waitForDisplayed();
+      expect(await $('[data-testid="project-no-tasks"]').getText()).toMatch(
+        /暂无未读任务|No unread tasks/,
+      );
+      expect(await unread.isExisting()).toBe(false);
+      expect(await readNavigation()).toEqual(before);
+    } finally {
+      await setUnread(29, true);
+      await restoreHandoffProbes();
+      await $('[data-testid="sidebar-view-menu"]').click();
+      await $('[data-testid="sidebar-view-projects"]').click();
+    }
+  });
+
   it("VP24：收起项目显示置顶成员未读，刷新记住折叠，展开不切草稿", async () => {
     const project = $(rowSelector);
     const toggle = project.$('[data-testid="virtual-project-toggle"]');
     await toggle.click();
     await project.$('[data-testid="virtual-project-unread"]').waitForDisplayed();
-    await browser.refresh();
+    await refreshProjectSidebar();
     await project.waitForDisplayed({ timeout: 45_000 });
     expect(await toggle.getAttribute("aria-expanded")).toBe("false");
     await project.$('[data-testid="virtual-project-unread"]').waitForDisplayed();
@@ -703,32 +842,19 @@ describe("虚拟项目旧产品体验", () => {
     await first.moveTo();
     const files = first.$('[data-testid="task-files-e2e-behavior-7"]');
     await files.waitForDisplayed();
-    const activeBefore = await browser.execute(
-      () =>
-        (
-          window as Window & { __zcodeTabStoreE2E?: { getState(): { activeTabId: string | null } } }
-        ).__zcodeTabStoreE2E?.getState().activeTabId,
-    );
     await files.click();
-    const taskBack = $(
-      '//aside//button[normalize-space(.)="返回任务" or normalize-space(.)="Back to tasks"]',
+    // 文件入口已迁至右侧独立标签页；跨目录会导航 workspace，不能再查左栏“返回任务”。
+    const fileTree = $(
+      '[role="tabpanel"][data-state="active"] [data-file-manager-pane] [data-testid="workspace-file-tree-panel"]',
     );
-    await taskBack.waitForDisplayed();
+    await fileTree.waitForDisplayed();
     await browser.waitUntil(async () =>
-      (await $("aside").getText()).includes("E2E_PINNED_TASK_FILES.txt"),
+      (await fileTree.getText()).includes("E2E_PINNED_TASK_FILES.txt"),
     );
-    expect(await $("aside").getText()).not.toContain("E2E_TASK_FILES.txt");
-    await taskBack.click();
-    expect(
-      await browser.execute(
-        () =>
-          (
-            window as Window & {
-              __zcodeTabStoreE2E?: { getState(): { activeTabId: string | null } };
-            }
-          ).__zcodeTabStoreE2E?.getState().activeTabId,
-      ),
-    ).toBe(activeBefore);
+    expect(await fileTree.getText()).not.toContain("E2E_TASK_FILES.txt");
+    expect((await readNavigation()).task).toBeNull();
+    await $(rowSelector).waitForDisplayed();
+    await closeActiveFileTab();
     const ordinary = $(rowSelector).$(taskSelector);
     await ordinary.moveTo();
     expect(await ordinary.$('[data-testid^="task-files-"]').isExisting()).toBe(false);
@@ -739,12 +865,10 @@ describe("虚拟项目旧产品体验", () => {
         true,
       );
     await $(rowSelector).$('[data-testid="virtual-project-files"]').click();
-    const back = $(
-      '//aside//button[normalize-space(.)="返回任务" or normalize-space(.)="Back to tasks"]',
-    );
-    await back.waitForDisplayed();
-    expect(await $("aside").getText()).toContain("E2E_TASK_FILES.txt");
-    await back.click();
+    await fileTree.waitForDisplayed();
+    await browser.waitUntil(async () => (await fileTree.getText()).includes("E2E_TASK_FILES.txt"));
+    expect((await readNavigation()).task).toBeNull();
+    await closeActiveFileTab();
     // 更新时间倒序下首个置顶任务是 7；取消后仍在所属项目，可能位于第二页。
     expect(await first.getText()).toContain("E2E_BEHAVIOR_07");
     await first.moveTo();
@@ -770,12 +894,16 @@ describe("虚拟项目旧产品体验", () => {
     await $(rowSelector).$('[data-testid="virtual-project-toggle"]').click();
     await $(rowSelector).$('[data-testid="virtual-project-unread"]').waitForDisplayed();
     await $(rowSelector).scrollIntoView({ block: "end" });
-    await captureLayouts(async () => {
-      const row = $('[data-testid="project-pinned-tasks"]').$(taskSelector);
-      await row.scrollIntoView({ block: "center" });
-      await row.moveTo();
-      await row.$('[data-testid^="task-files-"]').waitForDisplayed();
-    }, "pinned-task-files");
+    await captureLayouts(
+      async () => {
+        const row = $('[data-testid="project-pinned-tasks"]').$(taskSelector);
+        await row.scrollIntoView({ block: "center" });
+        await row.moveTo();
+        await row.$('[data-testid^="task-files-"]').waitForDisplayed();
+      },
+      "pinned-task-files",
+      false,
+    );
   });
 
   it("VP31：41 个项目拖拽启动保持响应，取消不改顺序", async () => {
@@ -789,7 +917,7 @@ describe("虚拟项目旧产品体验", () => {
     } finally {
       db.close();
     }
-    await browser.refresh();
+    await refreshProjectSidebar();
     await $('[data-project-id="e2e-drag-scale-37"]').waitForExist({ timeout: 45_000 });
     await browser.execute(async () => {
       for (const toggle of document.querySelectorAll<HTMLButtonElement>(
@@ -995,6 +1123,13 @@ async function readNavigation() {
   });
 }
 
+async function closeActiveFileTab() {
+  const tab = $('[data-side-pane-tab-id][data-state="active"]');
+  const id = await tab.getAttribute("data-side-pane-tab-id");
+  await tab.$("button").click();
+  await $(`[data-side-pane-tab-id="${id}"]`).waitForExist({ reverse: true });
+}
+
 async function assertDropIndicator(project: string, edge: "before" | "after") {
   await browser.execute(async () => {
     await Promise.all(
@@ -1065,6 +1200,7 @@ async function captureLayouts(
   prefix?: string,
   clearDrag = true,
 ) {
+  const sidebarWasOpen = (await $("aside").getAttribute("aria-hidden")) === "false";
   const original = await browser.execute(() => {
     const actions = (window as Window & { __testActions?: { getTheme(): string } }).__testActions;
     if (!actions) throw new Error("missing E2E theme bridge");
@@ -1101,8 +1237,10 @@ async function captureLayouts(
       await emulate(width);
       await browser.waitUntil(() => browser.execute((value) => innerWidth === value, width));
       if ((beforeCapture || prefix === "sidebar-recent") && width === 390) {
-        if (prefix === "task-section-inset" || prefix === "sidebar-actions") {
-          // 空聊天按内容区宽度在 resize 后自动收起；等这一真实状态结束，再手动展开取图。
+        // 只有聊天视图会在 resize 后自动收起侧栏；商店/定时任务页没有这条策略。
+        // 聊天先等待真实收起结束，避免迟到的收起打断键盘拖拽。
+        const isChat = await $('[data-testid="v4-composer-input"]').isDisplayed();
+        if (isChat) {
           await browser.waitUntil(
             async () => (await $("aside").getAttribute("aria-hidden")) === "true",
           );
@@ -1169,12 +1307,19 @@ async function captureLayouts(
       }
     }
   } finally {
-    if (beforeCapture && clearDrag) {
+    // 循环已取消拖拽；多余 Escape 会关闭手机侧栏，导致后续合法元素不可交互。
+    if (beforeCapture && clearDrag && (await $(indicatorSelector).isExisting())) {
       await browser.keys("Escape");
       await browser.releaseActions();
     }
     await emulate();
     await setTheme(original);
+    if (sidebarWasOpen && (await $("aside").getAttribute("aria-hidden")) === "true") {
+      await $('button[aria-label="Toggle sidebar"], button[aria-label="切换侧边栏"]').click();
+      await browser.waitUntil(
+        async () => (await $("aside").getAttribute("aria-hidden")) === "false",
+      );
+    }
   }
 }
 
@@ -1193,4 +1338,20 @@ async function invokeNewTaskMenuShortcut() {
     // WebDriver 的 DOM 按键不经过原生菜单；验证真实菜单绑定并执行其现有命令入口。
     item.click(undefined as never, window, undefined as never);
   }, url);
+}
+
+async function refreshProjectSidebar(expectedSelector = '[data-testid="project-section"]') {
+  await browser.refresh();
+  // API key 夹具的 renderer 登录态可能随刷新清空；先恢复登录，再验证原项目与排序。
+  const login = $('[data-testid="login-use-api-key-button"]');
+  // 时间线视图不渲染项目分区；等待调用方原视图，不能把正确恢复误判成加载失败。
+  const projects = $(expectedSelector);
+  await browser.waitUntil(
+    async () => (await login.isDisplayed()) || (await projects.isDisplayed()),
+    {
+      timeout: 45_000,
+    },
+  );
+  if (await login.isDisplayed()) await loginWithApiKey();
+  await projects.waitForDisplayed({ timeout: 30_000 });
 }

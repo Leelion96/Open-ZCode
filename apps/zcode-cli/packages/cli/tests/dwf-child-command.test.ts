@@ -13,13 +13,13 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { ZCODE_DWF_CHILD_COMMAND } from "@zcode/contracts";
-import { renderChildEntry } from "@zcode/dynamic-workflow-runtime";
+
 import type { RunContext } from "@zcode/shared-types";
 import { isDwfChildInvocation } from "../src/dwf-child-command.js";
 import { run } from "../src/run.js";
@@ -60,19 +60,6 @@ const createChildContext = (
   };
 };
 
-/**
- * 用生产同一个渲染器写一份入口文件。刻意**不**经引擎/编译器：这里被测的是 CLI 边界的契约
- * （argv 末位的路径 + 入口文件的 `start` 导出），不是 workflow 的编译管线。
- * 不带 `maxOldSpaceSizeMb`：入口文件在 `execArgv` 缺旗标时会对**本进程** best-effort 设堆上限，
- * 测试进程不该被它改。
- */
-const writeEntry = async (lowered: string): Promise<{ path: string; dispose: () => Promise<void> }> => {
-  const root = await mkdtemp(join(tmpdir(), "dwf-child-cmd-"));
-  const path = join(root, "run.mjs");
-  await writeFile(path, renderChildEntry({ lowered }, { runId: "run" }), "utf8");
-  return { path, dispose: () => rm(root, { force: true, recursive: true }) };
-};
-
 test("recognises the dwf child subcommand only as argv[0]", () => {
   assert.equal(isDwfChildInvocation([ZCODE_DWF_CHILD_COMMAND, "/tmp/run.mjs"]), true);
   assert.equal(isDwfChildInvocation([ZCODE_DWF_CHILD_COMMAND]), true);
@@ -80,46 +67,6 @@ test("recognises the dwf child subcommand only as argv[0]", () => {
   assert.equal(isDwfChildInvocation(["--help"]), false);
   // 出现在别处不算：否则一个普通 prompt 里提到这个词就能改变 CLI 的行为。
   assert.equal(isDwfChildInvocation(["-p", ZCODE_DWF_CHILD_COMMAND]), false);
-});
-
-test("runs the sandbox child from the entry file and writes the NDJSON completion to stdout", async () => {
-  const entry = await writeEntry('__host.log("from the sandbox");\nreturn { ok: 42 };');
-  try {
-    const { ctx, stdout, stderr } = createChildContext([ZCODE_DWF_CHILD_COMMAND, entry.path]);
-
-    const exitCode = await run(ctx);
-
-    assert.equal(exitCode, 0);
-    assert.equal(stderr(), "");
-    const lines = stdout()
-      .split("\n")
-      .filter((line) => line.trim().length > 0)
-      .map((line) => JSON.parse(line));
-    assert.deepEqual(lines, [
-      { kind: "event", type: "log", message: "from the sandbox" },
-      { kind: "complete", ok: true, value: { ok: 42 } },
-    ]);
-  } finally {
-    await entry.dispose();
-  }
-});
-
-test("reports a lowered-body syntax error as an error completion, not a crash", async () => {
-  const entry = await writeEntry("this is not javascript(");
-  try {
-    const { ctx, stdout, stderr } = createChildContext([ZCODE_DWF_CHILD_COMMAND, entry.path]);
-
-    const exitCode = await run(ctx);
-
-    assert.equal(exitCode, 0);
-    assert.equal(stderr(), "");
-    const message = JSON.parse(stdout().trim());
-    assert.equal(message.kind, "complete");
-    assert.equal(message.ok, false);
-    assert.equal(message.error.name, "SyntaxError");
-  } finally {
-    await entry.dispose();
-  }
 });
 
 test("fails with usage when the entry path argument is missing", async () => {

@@ -33,6 +33,14 @@ commit/tag
 
 `release:approve` 之前不会调用正式 OSS 上传或 release API。安装包保存在 CI runner 共享目录，approve 放行后先执行 validate，校验通过后才由 upload job 读取。
 
+## 预发布版本边界
+
+带预发布后缀的版本 tag（如 `v3.16.3-preview.1`、`-alpha.1`、`-beta.1`、`-rc.1`，以及其他 `x.y.z-<标识>`）只保留构建和产物通知，不创建正式 `release:approve`、`release:validate`、六个平台上传、CDN 预热、灰度、全量及发版通知 job。规则按 `x.y.z-` 前缀匹配，允许小写 `v` 前缀，不校验后缀是否为合法 SemVer；因此 `v3.16.3-rc.01` 等非法 SemVer tag 也被排除。`x.y.z+build.7` 中的 build metadata 不算预发布后缀。
+
+生产 remote 前端的版本目录与 latest 上传 job 同样不在预发布 tag 流水线中创建，避免引用已被排除的 `release:validate`；测试 remote 前端上传保持现有规则。普通正式 tag、Preview 身份、test tag、sandbox 和 `ci*` 分支保留各自既有边界。
+
+回归使用真实 YAML 的 first-match 规则求值，覆盖上述后缀、自定义与数字后缀、非法 SemVer、build metadata、正式版本和已有隔离场景。桌面发布与 remote 生产上传分别声明独立预期；生产自动上传规则只接受正式版本及 build metadata，不保留被前置排除规则遮蔽的预发布分支。不通过实际上传或发布验证排除规则。
+
 ## release-it 边界
 
 `pnpm release` 只运行 `.release-it.mjs` 中的默认发布能力和 `@release-it/conventional-changelog`：更新版本、维护根目录 `CHANGELOG.md`、创建 release commit/tag 并 push。仓库不再为 release-it 挂载 AI 改写、飞书评审或 `changelogs/vX.Y.Z*.md` 本地生成插件；CI 发布链路也不再消费根目录 `CHANGELOG.md`。

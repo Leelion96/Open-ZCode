@@ -148,6 +148,7 @@ export const zcodeSessionGoalVerificationTimelineSchema = z
 export const zcodeSessionInfoSchema = z
   .object({
     sessionId: nonEmptyString,
+    directorySessionId: nonEmptyString.optional(),
     workspace: zcodeWorkspaceRefSchema,
     parentSessionId: nonEmptyString.optional(),
     traceId: nonEmptyString.optional(),

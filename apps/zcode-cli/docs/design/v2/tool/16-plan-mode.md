@@ -76,7 +76,36 @@ If this plan is relevant to the current work and not already complete, continue 
 
 这样即使 `ExitPlanMode` 后立即 compact，恢复后的下一轮 provider context 仍能拿到完整批准计划。
 
+投影角色：`plan_file_reference` 和其他 compaction 附件一样参与冒泡，附件之间保持生成顺序（文件恢复之后、runtime_mode 之前）。支持 MCS 时它进入 user run 末尾的 mid-conversation system 消息，不留在 user 侧；不支持 MCS 时它是 user 侧 reminder。
+
 当前过渡实现没有新增 plan file retention cleanup。如需按保留天数清理 plans 目录中过期的 `.md`，应作为独立 retention cleanup 改造接入，而不是在 compact/session 时即时删除。
+
+## 规划提醒
+
+主会话完整提醒使用五阶段流程；规划期间仍禁止写文件，不授予 plan file 编辑例外：
+
+1. Initial Understanding：保留 Explore 探索指引，先查找可复用实现，最多并行三个探索任务。
+2. Design：基于探索结果说明背景、文件路径、需求和约束，形成详细方案。当前没有专用 Plan
+   agent 类型，因此由当前 agent 设计，不提示调用不存在的类型。
+3. Review：回看探索中识别的关键文件，核对用户意图，并用 AskUserQuestion 澄清剩余问题。
+4. Final Plan：准备作为 `ExitPlanMode.plan` 参数的完整正文。以 Context 说明动机、问题和预期
+   结果；只给推荐方案；保持易读且可执行；列关键修改路径，重复模式只举代表路径；引用可复用
+   的函数和工具及路径；包含端到端验证方法。模型不创建或编辑计划文件。
+5. Call ExitPlanMode：使用 `plan` 参数提交完整正文；澄清走 AskUserQuestion，计划审批走
+   ExitPlanMode，不用普通文本问题请求批准。
+
+简短提醒对应五阶段；完整／简短提醒仍按现有五次用户输入间隔和每五次公告的周期切换。用户轮次按历史中的普通 user 消息计：真实的新 prompt、开启新一轮的后台通知与 agent 回复、中断标记、compact summary 都计入；轮内插入的中途消息（含人类 steer）不计入间隔（中途消息是 attachment，不是用户轮次）。
+当前轮的 prompt 在模型回应它之前不计入：轮首请求前的收集不计它，该轮工具批次之后的收集才计入。
+所以间隔满五次的那一轮，轮首请求不发提醒，第一个工具批次之后的请求才发；该轮只有文本回复时，
+提醒在下一个 prompt 的轮首请求发出。
+两种计数都只检查最近一次 `plan_mode_exit` 之后的历史。退出边界之前的用户输入和
+规划提醒不参与新一段计划模式的计数；重新进入时立即发完整提醒，之后从该提醒重新
+计算间隔与完整／简短周期。退出提醒的正文和权限行为保持不变。
+完整、简短和退出提醒与其他动态公告一样按隐藏提醒持久化（不写顶层 source），
+`runtimeMessage.source` 保留 `runtime_mode` 或 `plan_mode_exit`。保存成功后才加入
+请求历史并消费退出标记；冷恢复复用现有 hydration，保留原位置、正文和计数边界，
+不因重启额外注入完整提醒。旧会话缺少这些历史记录时，沿用缺少提醒时的首次注入规则。
+批准后的计划持久化和 compact/resume 连续性沿用上节合同。
 
 ## Runtime 和事件
 

@@ -15,6 +15,7 @@ Hooks 的目标不是把业务逻辑散落到用户脚本里，而是在 agent l
 - 完整事件语义，包括 `PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`PermissionRequest`、`UserPromptSubmit`、`SessionStart`、`Stop`、`PreCompact`、`PostCompact` 等。
 - matcher 是事件相关字段的正则。tool 类事件匹配 `tool_name`，session start 匹配 source，compact 匹配 trigger。
 - 执行层支持 per-hook timeout、abort、进度事件、stdout/stderr 捕获、JSON 输出、exit code 2 阻断。
+- 单条 Hook 的 `onError`（`allow` 缺省 / `deny`）：`PreToolUse` Hook 自身失败（其他非零退出、超时、已知字段类型错误）时，`deny` 按 exit code 2 拦截工具调用；契约见 `docs/hooks-runtime-contract.md`「stdout、退出码与事件效果」。
 - 决策有聚合优先级：deny/block 优先，其次 ask，再其次 allow；hook 可以修改 tool input、补充上下文、替换部分工具输出。
 - 独立 hook progress/response 事件、权限 request hook。
 - 类型安全的 hook 名称、input/output 分离、顺序稳定、插件级能力聚合。
@@ -49,10 +50,10 @@ Hooks 的目标不是把业务逻辑散落到用户脚本里，而是在 agent l
 | -------------------- | --------------------------------------------- | ------------------ | --------------------------------- | --------------------------------------------------- |
 | `SessionStart`       | session 创建或 resume 后、首轮 prompt 前      | 否                 | 可追加 session context            | 是，受预算限制                                      |
 | `UserPromptSubmit`   | 用户输入进入 turn 前                          | 是                 | 可追加 context，不改原始用户文本  | 是，受预算限制                                      |
-| `PreToolUse`         | tool input schema 校验后、permission check 前 | 是                 | 可替换完整 tool input             | 可追加 context                                      |
+| `PreToolUse`         | tool input schema 校验后、permission check 前 | 是                 | 可替换完整 tool input             | 可追加 context，批次后附件                          |
 | `PermissionRequest`  | permission service 返回 ask、broker UI 前     | 是                 | 可允许、拒绝或替换完整 input      | 否，除拒绝原因                                      |
-| `PostToolUse`        | tool 成功后、结果序列化给模型前               | 否                 | 可追加 context；P1 再支持替换输出 | 是，受预算限制；Hook stdin 获得完整 `tool_response` |
-| `PostToolUseFailure` | tool 失败后、错误返回模型前                   | 否                 | 可追加 recovery context           | 是，受预算限制                                      |
+| `PostToolUse`        | tool 成功后、结果序列化给模型前               | 否                 | 可追加 context；P1 再支持替换输出 | 是，批次后附件；Hook stdin 获得完整 `tool_response` |
+| `PostToolUseFailure` | tool 失败后、错误返回模型前                   | 否                 | 可追加 recovery context           | 是，批次后附件                                      |
 | `Stop`               | turn 即将 complete 前                         | 是，可要求继续一轮 | 可追加 feedback context           | 是                                                  |
 
 实现状态：
@@ -216,7 +217,17 @@ Tool 执行路径：
 
 - deny/block > ask > allow > passthrough。
 - 多个 `updatedInput` 时按执行顺序应用“最后一个有效完整替代 input”。如果后续校验失败，归因为 hook contract violation，tool 不执行。
-- 多个 `additionalContext` 按 hook 顺序拼接，并受 hook result budget 限制。
+- 工具 Hook 的多个 `additionalContext` 按 hook 顺序保留为多条，不拼接。生命周期 Hook（`SessionStart` / `UserPromptSubmit` / `Stop`）仍把多条合成一条 `hook_context`，每条带 `#n` 编号。
+- 工具 Hook（`PreToolUse` / `PostToolUse` / `PostToolUseFailure`）的每条 context 写成
+  `<Event>:<ToolName> hook additional context: <context>`，作为 `tool_hook_context` 附件排在这批
+  tool result 之后、其他批次提示之前；按 tool result 顺序分组，同一工具 Pre 在前。tool_result 只放工具原文，
+  Hook 文本不占 tool result 预算，也不进 `tool_call_result` 事件。PreToolUse 拒绝、Hook 改写后校验失败、
+  权限拒绝等提前失败同样只带附件。附件随历史持久化，MCS 下与同批附件合成同一条 system。microcompact 只清 tool result，不清 `tool_hook_context` 附件。
+- 工具 Hook 的每条 context 单独计长，上限 10000 字符；生命周期 Hook 不受此限。不超过上限时原样使用。
+  超过时整条写入 session artifact，`<context>` 换成 `<persisted-output>` 外壳：原文大小、完整文件路径、
+  前 2KB 预览（与 Bash 落盘结果同一格式）。写入失败或没有 artifact store 时保留前 10000 字符，后接
+  `\n\n[Hook additionalContext truncated at 10000 chars — persist-to-disk failed: <原因>]`。官方 CUA 帧凭据过滤
+  在落盘之前执行，被过滤的 context 不写文件。
 - `Stop` 最多允许连续续跑 3 次；超过后强制结束并记录 hook diagnostic，避免 hook 配置导致无限循环。
 
 ## 运行时架构
@@ -355,7 +366,7 @@ Phase 2：
 - hook allow 不覆盖 explicit deny rule 和 plan mode。
 - `PermissionRequest` allow 跳过 broker 并执行 tool。
 - `PermissionRequest` deny 不执行 tool，并移除 pending permission。
-- `PostToolUse` additionalContext 进入模型可见 tool result 预算。
+- `PostToolUse` additionalContext 作为工具批次后的附件进入下一次模型请求，不改变 tool result。
 - abort 会取消正在等待的 hook。
 
 Phase 3：
@@ -364,7 +375,7 @@ Phase 3：
 - `UserPromptSubmit continue:false` 在写入用户消息和发起模型请求前阻断。
 - `UserPromptSubmit` / `SessionStart` 的 `additionalContext` 会进入下一次模型请求。
 - `Stop continue:true + additionalContext` 会继续一轮模型请求，并受连续次数上限保护。
-- `PreToolUse additionalContext` 在 tool 成功和失败路径都能进入模型可见 tool result。
+- `PreToolUse additionalContext` 在 tool 成功、失败和拒绝路径都作为工具批次后的附件进入下一次模型请求。
 
 Phase 4：
 

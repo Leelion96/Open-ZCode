@@ -1,8 +1,22 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { PermissionService, type PermissionToolCapability } from "../src/permission/service.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  CoreErrorType,
+  SessionEventType,
+  createSessionId,
+  createToolCallId,
+  type ExecutionPort,
+  type SessionEvent,
+} from "@zcode/contracts";
+import {
+  defaultPermissionConfig,
+  PermissionService,
+  type PermissionToolCapability,
+} from "../src/permission/service.js";
+import { createToolExecutor } from "../src/tool/executor.js";
+import { createToolRegistry } from "../src/tool/registry.js";
 import {
   bashToolEntry,
   isBashInputConcurrencySafe,
@@ -65,7 +79,6 @@ describe("bash runtime permission capability", () => {
       "test -f package.json",
       "tput cols",
       "strings fixture.bin",
-      "sed -n '1,20p' README.md",
       "jq '.scripts' package.json",
       "xargs grep -n foo",
       "sort README.md",
@@ -138,6 +151,224 @@ describe("bash runtime permission capability", () => {
       expect(isBashInputReadOnly({ command }), command).toBe(false);
       expect(isBashInputConcurrencySafe({ command }), command).toBe(false);
     }
+  });
+
+  it.each([
+    "sed -n '1,20p' README.md",
+    "sed -n 'p' README.md",
+    "sed -n '1p; 3p' README.md",
+    "sed -nE '1p' README.md",
+    "sed -En '1p' README.md",
+    "sed --quiet '1p' README.md",
+    "sed --silent '1p' README.md",
+    "sed -nz '1p' README.md",
+    "sed --quiet --regexp-extended --zero-terminated '1p' README.md",
+    "sed --posix -n '1p' README.md",
+    "sed -n -- '1p' README.md",
+    "sed -n '1p' -",
+    "sed 's/foo/bar/g'",
+    "sed -- 's/foo/bar/g'",
+    "sed -E 's/(foo)/\\1/g'",
+    "sed -r 's/foo/bar/2gp'",
+    "sed --posix 's/foo/bar/'",
+    "sed 's/a\\/b/c/'",
+    "sed 's/a/b\\/c/'",
+    "sed 's/\\\\/x/'",
+    "sed 's/foo/\\& bar/g'",
+    "command sed -n '1p' README.md",
+    "LC_ALL=C sed -n '1p' README.md",
+    "cat README.md | sed -n '1p'",
+    "cat README.md | sed 's/foo/bar/g'",
+    "sed -n '1p' README.md && cat README.md",
+  ])("allows only the bounded sed read-only grammar: %s", (command) => {
+    const input = { command };
+    const capability = withRuntimeCapability(input);
+    const service = new PermissionService();
+    expect(isBashInputReadOnly(input)).toBe(true);
+    expect(isBashInputConcurrencySafe(input)).toBe(true);
+    expect(capability).toMatchObject({
+      readOnly: true,
+      needsApproval: false,
+      sideEffectScope: "none",
+    });
+    for (const context of [
+      { mode: "plan" },
+      { mode: "build", planEnabled: true },
+      { mode: "yolo", planEnabled: true },
+      { mode: "guarded", planEnabled: true },
+      { mode: "build" },
+    ] as const) {
+      expect(
+        service.checkPermission(
+          { input, ...context, riskLevel: bashToolEntry.metadata.riskLevel, toolName: "Bash" },
+          capability,
+        ).decision,
+      ).toBe("allow");
+    }
+  });
+
+  it.each([
+    "sed -n -e 'e printf sed-probe' README.md",
+    "sed --expression='e printf sed-probe' README.md",
+    "sed 'e printf sed-probe' README.md",
+    "sed -n 's/.*/printf sed-probe/e' README.md",
+    "sed -n 's/.*/probe/w out.txt' README.md",
+    "sed 's/foo/printf sed-probe/e'",
+    "sed 's/foo/bar/w out.txt'",
+    "sed -e 's/foo/bar/' README.md",
+    "sed -n -e '1p' README.md",
+    "sed -ne '1p' README.md",
+    "sed --expression='1p' README.md",
+    "sed -f script.sed README.md",
+    "sed --file=script.sed README.md",
+    "sed -in '1p' README.md",
+    "sed --in-place -n '1p' README.md",
+    "sed -n '1p' README.md -e 'e printf sed-probe'",
+    "sed -n -- '1p' -e 'e printf sed-probe'",
+    "sed -n '1p' -- README.md",
+    "sed -n '1p; e printf sed-probe' README.md",
+    "sed -n '1p\ne printf sed-probe' README.md",
+    "sed -n '1p\r' README.md",
+    "sed -n '1p\0' README.md",
+    "sed -n '0p' README.md",
+    "sed -n '$p' README.md",
+    "sed -n '/foo/p' README.md",
+    "sed -n '1p;' README.md",
+    "sed -n '' README.md",
+    "sed -n",
+    "sed -n --",
+    "sed 's/foo/bar/g' README.md",
+    "sed -n 's/foo/bar/p'",
+    "sed -z 's/foo/bar/g'",
+    "sed 's/foo/bar/10'",
+    "sed 's/foo/bar/0'",
+    "sed 's/foo/bar/;e printf sed-probe'",
+    "sed 's/foo/bar/\ne printf sed-probe'",
+    "sed 's#foo#bar#g'",
+    "sed 's/foo/bar'",
+    "sed 's/foo/bar\\/'",
+    "sed 's/foo/\\x0a/g'",
+    "sed 's/foo/\\cA/g'",
+    "sed -n '1p' README.md > out.txt",
+    "cat README.md | sed 'e printf sed-probe'",
+    "sed -n '1p' README.md && sed 's/.*/printf sed-probe/e'",
+    "sed --version",
+    "/usr/bin/sed -n '1p' README.md",
+  ])("rejects sed outside the bounded read-only grammar: %s", (command) => {
+    const input = { command };
+    const capability = withRuntimeCapability(input);
+    const service = new PermissionService();
+
+    expect(isBashInputReadOnly(input)).toBe(false);
+    expect(isBashInputConcurrencySafe(input)).toBe(false);
+    expect(capability.readOnly).toBe(false);
+
+    for (const context of [
+      { mode: "plan" },
+      { mode: "build", planEnabled: true },
+      { mode: "edit", planEnabled: true },
+      { mode: "yolo", planEnabled: true },
+      { mode: "guarded", planEnabled: true },
+    ] as const) {
+      expect(
+        service.checkPermission(
+          { input, ...context, riskLevel: bashToolEntry.metadata.riskLevel, toolName: "Bash" },
+          capability,
+        ),
+      ).toMatchObject({ allowed: false, decision: "deny", ruleId: "mode.plan.nonReadOnly" });
+    }
+
+    expect(
+      service.checkPermission(
+        { input, mode: "build", riskLevel: bashToolEntry.metadata.riskLevel, toolName: "Bash" },
+        capability,
+      ).decision,
+    ).toBe("ask");
+  });
+
+  it("keeps sed authorizations subject to Plan while preserving normal execution permissions", () => {
+    const input = { command: "sed 'e printf sed-probe' README.md" };
+    const capability = withRuntimeCapability(input);
+    const service = new PermissionService({
+      ...defaultPermissionConfig,
+      allowedTools: new Set(["Bash"]),
+    });
+    const projectRules = { version: 1 as const, allow: [{ toolName: "Bash" }] };
+
+    for (const context of [
+      { mode: "plan" },
+      { mode: "build", planEnabled: true },
+      { mode: "yolo", planEnabled: true },
+      { mode: "guarded", planEnabled: true },
+    ] as const) {
+      expect(
+        service.checkPermission(
+          { input, ...context, riskLevel: bashToolEntry.metadata.riskLevel, toolName: "Bash" },
+          capability,
+          projectRules,
+        ),
+      ).toMatchObject({ decision: "deny", ruleId: "mode.plan.nonReadOnly" });
+    }
+
+    for (const mode of ["build", "yolo", "guarded"] as const) {
+      expect(
+        service.checkPermission(
+          {
+            input,
+            mode,
+            planEnabled: false,
+            riskLevel: bashToolEntry.metadata.riskLevel,
+            toolName: "Bash",
+          },
+          capability,
+          projectRules,
+        ).decision,
+      ).toBe("allow");
+    }
+  });
+
+  it("denies sed before execution and emits a denial without requesting approval", async () => {
+    const registry = createToolRegistry();
+    registry.register(bashToolEntry);
+    const events: SessionEvent[] = [];
+    const run = vi.fn<ExecutionPort["run"]>(async () => {
+      throw new Error("Plan must not reach the execution port");
+    });
+    const requestPermission = vi.fn(async () => ({
+      decision: "allow" as const,
+      resolvedAt: new Date(),
+    }));
+    const executor = createToolExecutor({
+      registry,
+      permissionService: new PermissionService(),
+      permissionBroker: { requestPermission },
+      executionPort: { run },
+      mode: "plan",
+      workingDirectory: process.cwd(),
+      workspaceRoot: process.cwd(),
+      sessionId: createSessionId("sed-plan-denial"),
+      emitEvent: async (event) => {
+        events.push(event);
+      },
+    });
+    const toolCallId = createToolCallId("sed-plan-call");
+
+    const result = await executor.execute({
+      id: toolCallId,
+      name: "Bash",
+      input: { command: "sed -n -e 'e printf sed-probe' README.md" },
+    });
+
+    expect(run).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: false,
+      error: { type: CoreErrorType.PermissionDenied },
+    });
+    expect(requestPermission).not.toHaveBeenCalled();
+    expect(
+      events.filter((event) => event.type === SessionEventType.PermissionDenied),
+    ).toMatchObject([{ payload: { toolCallId, toolName: "Bash" } }]);
+    expect(events.some((event) => event.type === SessionEventType.PermissionRequested)).toBe(false);
   });
 
   it("allows common read-only inspection Bash commands in plan mode", () => {

@@ -30,13 +30,13 @@
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                         |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I07`                                                                                                                        |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-upstream-workspace-smoke.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-upstream-workspace-smoke.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-upstream-workspace-smoke.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                 |
+| 字段             | 内容                                                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I07`                                                                                                                 |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-upstream-workspace-smoke.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-upstream-workspace-smoke.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-upstream-workspace-smoke.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                          |
 
 ### 测试场景
 
@@ -81,16 +81,16 @@
 
 2026-07-02 已重新执行：
 
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-upstream-workspace-smoke.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-upstream-workspace-smoke.test.ts`
   - 结果：通过。
   - 备注：`upstream-workspace-smoke-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-upstream-workspace-smoke.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-upstream-workspace-smoke.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-upstream-workspace-smoke.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-upstream-workspace-smoke.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-104055-569/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-01-A 到 P0-01-L 均由正式 spec 断言覆盖；运行日志中可见 `model_name=e2e-upstream/deepseek-v4-flash`、`model_provider=e2e-upstream`，最终 `state=idle`、`queueCount=0`。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-upstream-workspace-smoke.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-upstream-workspace-smoke.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-104133-542/summary.md`。
   - 结论：默认 replay 路径下同一组 UI、request、reply、session 终态验证仍有效。
@@ -217,19 +217,21 @@ P0-02 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                              |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I09`                                                                                                                             |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-list-filtering.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-model-provider-list-filtering.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-list-filtering.json`        |
-| 当前状态         | pending；2026-08-25 已按 Provider 重构语义扩充，等待真实 replay、人工 review 与 promotion                                         |
+| 字段             | 内容                                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I09`                                                                                                                      |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-model-provider-list-filtering.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-model-provider-list-filtering.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-list-filtering.json` |
+| 当前状态         | pending；2026-08-25 已按 Provider 重构语义扩充，等待真实 replay、人工 review 与 promotion                                  |
 
 ### 测试场景
 
 桌面端本地默认 workspace 启动时，E2E 种子同时提供可用 provider、隐藏 provider、含隐藏 model 的可见 provider、disabled/incomplete provider，以及真实 `builtin:zai/glm-5.3` 与同身份 Personal Overlay。用户打开聊天框模型列表时，隐藏或不可执行成员不应出现；Built-in 与 Personal 重名时，Built-in 模型仍应保持可选择、可执行，并使用 Overlay 后的 Effective Endpoint 完成真实发送。
 
 这条 case 只覆盖“模型列表可见性过滤 + 可见模型可发送”。它不覆盖设置页新增 provider、provider 保存、remote、queue、stop、edit/fork 或多 session 恢复。
+
+当前 Registry 中 Provider 隐藏用 `visibility=hidden`，模型禁用用 `ModelConfig.enabled=false`。I09 的模型种子必须写入后者；旧 model.visibility 不是正式模型配置字段，不能当作已经设置了不可选条件。
 
 ### 操作步骤
 
@@ -273,22 +275,22 @@ P0-02 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 2026-07-02 已完成新增、promotion 和 replay 验证：
 
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-list-filtering.test.ts --reviewed`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-model-provider-list-filtering.test.ts --reviewed`
   - 结果：dry run 通过。
   - 结论：promotion 只移动本 case spec，生成本 case provider fixture 与 manifest，并识别到 `E2E_MODEL_PROVIDER_LIST_FILTER` marker。
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-list-filtering.test.ts --reviewed --apply`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-model-provider-list-filtering.test.ts --reviewed --apply`
   - 结果：通过。
   - 结论：spec 已从 pending 转入正式 `conversation-session/` 路径。
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-list-filtering.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-model-provider-list-filtering.test.ts`
   - 结果：通过。
   - 备注：`model-provider-list-filtering-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-list-filtering.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-list-filtering.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-list-filtering.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-model-provider-list-filtering.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-105836-007/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-03-A 到 P0-03-J 均由正式 spec 断言覆盖；不可用 provider 负样本没有泄漏到菜单，最终 `state=idle`、`queueCount=0`。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-list-filtering.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-model-provider-list-filtering.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-110012-665/summary.md`。
   - 结论：默认 replay 路径下同一组模型列表过滤、provider 身份、request、reply、session 终态验证仍有效；运行日志中可见 `model_provider=e2e-upstream`，证明可见模型发送链路没有被过滤逻辑破坏。
@@ -299,13 +301,13 @@ P0-02 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                              |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I10`                                                                                                                             |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-draft-model-switch-first-send.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-draft-model-switch-first-send.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-draft-model-switch-first-send.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                      |
+| 字段             | 内容                                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I10`                                                                                                                      |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-draft-model-switch-first-send.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-draft-model-switch-first-send.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-draft-model-switch-first-send.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                               |
 
 ### 测试场景
 
@@ -349,22 +351,22 @@ P0-02 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 2026-07-02 已完成新增、promotion 和 replay 验证：
 
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-draft-model-switch-first-send.test.ts --reviewed`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-draft-model-switch-first-send.test.ts --reviewed`
   - 结果：dry run 通过。
   - 结论：promotion 只移动本 case spec，生成本 case provider fixture 与 manifest，并识别到 `E2E_DRAFT_MODEL_SWITCH_FIRST_SEND` marker。
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-draft-model-switch-first-send.test.ts --reviewed --apply`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-draft-model-switch-first-send.test.ts --reviewed --apply`
   - 结果：通过。
   - 结论：spec 已从 pending 转入正式 `conversation-session/` 路径。
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-draft-model-switch-first-send.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-draft-model-switch-first-send.test.ts`
   - 结果：通过。
   - 备注：`draft-model-switch-first-send-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-draft-model-switch-first-send.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-draft-model-switch-first-send.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-draft-model-switch-first-send.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-draft-model-switch-first-send.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-110339-709/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-04-A 到 P0-04-J 均由正式 spec 断言覆盖；运行日志中可见 `model_name=e2e-upstream/deepseek-v4-pro`、`model_provider=e2e-upstream`，最终 `state=idle`、`queueCount=0`。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-draft-model-switch-first-send.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-draft-model-switch-first-send.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-110404-195/summary.md`。
   - 结论：默认 replay 路径下同一组空草稿态、secondary 模型 currentValue、secondary 思考深度、request、reply、session 终态验证仍有效；请求没有退回 primary `deepseek-v4-flash`。
@@ -375,13 +377,13 @@ P0-04 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Catalog          | `I11`                                                                                                                          |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-new-session-inherits-model.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-new-session-inherits-model.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-new-session-inherits-model.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                   |
+| 字段             | 内容                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I11`                                                                                                                   |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-new-session-inherits-model.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-new-session-inherits-model.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-new-session-inherits-model.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                            |
 
 ### 测试场景
 
@@ -419,22 +421,22 @@ P0-04 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 2026-07-02 已完成新增、promotion 和 replay 验证：
 
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-new-session-inherits-model.test.ts --reviewed`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-new-session-inherits-model.test.ts --reviewed`
   - 结果：dry run 通过。
   - 结论：promotion 生成本 case provider fixture 与 manifest，并识别到 `E2E_NEW_SESSION_INHERITS_MODEL_A/B` marker。
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-new-session-inherits-model.test.ts --reviewed --apply`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-new-session-inherits-model.test.ts --reviewed --apply`
   - 结果：通过。
   - 结论：spec 已从 pending 转入正式 `conversation-session/` 路径。
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-new-session-inherits-model.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-new-session-inherits-model.test.ts`
   - 结果：通过。
   - 备注：`new-session-inherits-model-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-new-session-inherits-model.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-new-session-inherits-model.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-new-session-inherits-model.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-new-session-inherits-model.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-110744-702/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-05-A 到 P0-05-E 均由正式 spec 断言覆盖；A/B 两次请求均使用 `model_name=e2e-upstream/deepseek-v4-pro`，最终 `state=idle`、`queueCount=0`。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-new-session-inherits-model.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-new-session-inherits-model.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-110810-218/summary.md`。
   - 结论：默认 replay 路径下新建空草稿继承 secondary provider/model/thought 的 UI 与 request 断言仍有效。
@@ -445,13 +447,13 @@ P0-05 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                                 |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Catalog          | `I12`                                                                                                                                |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-session-isolation.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-model-provider-session-isolation.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-session-isolation.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                         |
+| 字段             | 内容                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I12`                                                                                                                         |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-model-provider-session-isolation.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-model-provider-session-isolation.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-session-isolation.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                                  |
 
 ### 测试场景
 
@@ -490,22 +492,22 @@ P0-05 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 2026-07-02 已完成新增、promotion 和 replay 验证：
 
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-session-isolation.test.ts --reviewed`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-model-provider-session-isolation.test.ts --reviewed`
   - 结果：dry run 通过。
   - 结论：promotion 生成本 case provider fixture 与 manifest，并识别到 A/B/A-follow/B-follow 四个 marker。
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-session-isolation.test.ts --reviewed --apply`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-model-provider-session-isolation.test.ts --reviewed --apply`
   - 结果：通过。
   - 结论：spec 已从 pending 转入正式 `conversation-session/` 路径。
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-session-isolation.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-model-provider-session-isolation.test.ts`
   - 结果：通过。
   - 备注：`model-provider-session-isolation-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-session-isolation.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-session-isolation.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-provider-session-isolation.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-model-provider-session-isolation.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-111128-713/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-06-A 到 P0-06-G 均由正式 spec 断言覆盖；A/A-follow 使用 primary，B/B-follow 使用 secondary，最终 `state=idle`、`queueCount=0`。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-model-provider-session-isolation.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-model-provider-session-isolation.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-111200-772/summary.md`。
   - 结论：默认 replay 路径下同一组 A/B session provider/model/thought 隔离断言仍有效。退出阶段出现一次 `electron-service:bridge` context id timeout 日志，但 spec 结果为 passed，未影响产品断言。
@@ -516,13 +518,13 @@ P0-06 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                             |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I13`                                                                                                                            |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-same-model-provider-identity.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-same-model-provider-identity.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-same-model-provider-identity.json`        |
-| 当前状态         | 已 promotion 到正式路径，并完成 strict/default replay                                                                            |
+| 字段             | 内容                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I13`                                                                                                                     |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-same-model-provider-identity.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-same-model-provider-identity.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-same-model-provider-identity.json` |
+| 当前状态         | 已 promotion 到正式路径，并完成 strict/default replay                                                                     |
 
 ### 测试场景
 
@@ -533,7 +535,7 @@ P0-06 已满足当前目标中的“详细描述、实际验证、promotion 转�
 ### 操作步骤
 
 1. 启动桌面端本地默认工作区。
-2. 打开聊天框模型列表，选择 alternate provider 下的 `deepseek-v4-pro`。
+2. 打开聊天框模型列表，选择 alternate provider 下的 `deepseek-v4-pro`，并显式选择本 case 要验证的思考档位。
 3. 断言工具栏 currentValue 为 alternate provider + `deepseek-v4-pro` 的 provider-backed value。
 4. 发送带 `E2E_SAME_MODEL_PROVIDER_IDENTITY` marker 的普通文本。
 5. 再次断言工具栏仍保留 alternate provider 身份。
@@ -557,20 +559,20 @@ P0-06 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### 实际验证结论
 
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-same-model-provider-identity.test.ts --reviewed`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-same-model-provider-identity.test.ts --reviewed`
   - 结果：dry-run 通过，pending spec 可 promotion。
-- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-same-model-provider-identity.test.ts --reviewed --apply`
+- `pnpm --filter @zcode/desktop e2e:promote -- --spec ./test/e2e/conversation-session/conversation-session-same-model-provider-identity.test.ts --reviewed --apply`
   - 结果：通过，spec、fixture manifest、provider fixture 已转正式路径。
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-same-model-provider-identity.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-same-model-provider-identity.test.ts`
   - 结果：通过。
   - 备注：`same-model-provider-identity-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-same-model-provider-identity.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-same-model-provider-identity.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-same-model-provider-identity.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-same-model-provider-identity.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-125933-021/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，alternate provider currentValue 精确保持 `e2e-upstream-alt/deepseek-v4-pro`；运行日志显示 `model_name=e2e-upstream-alt/deepseek-v4-pro`、`model_provider=e2e-upstream-alt`，请求 body 由 spec 断言 `model=deepseek-v4-pro`。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-same-model-provider-identity.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-same-model-provider-identity.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-130000-917/summary.md`。
   - 结论：默认 replay 路径下 provider 身份、`deepseek-v4-pro` 请求、assistant 回复和 idle 收口断言仍有效；运行日志同样显示 `model_name=e2e-upstream-alt/deepseek-v4-pro`、`model_provider=e2e-upstream-alt`。
@@ -581,13 +583,13 @@ P0-07 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                   |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `N02`、`I03`                                                                                                           |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-queue.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-model-switch-queue.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-queue.json`        |
-| 当前状态         | 已是正式路径，并按本轮 top10 完成 fixture check 与 strict/default replay                                               |
+| 字段             | 内容                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `N02`、`I03`                                                                                                    |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-model-switch-queue.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-queue.json` |
+| 当前状态         | 已是正式路径，并按本轮 top10 完成 fixture check 与 strict/default replay                                        |
 
 ### 测试场景
 
@@ -622,13 +624,13 @@ P0-07 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### 实际验证结论
 
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-queue.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts`
   - 结果：通过。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-queue.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-queue.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-queue.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts'`
   - 结果：通过，1 个 spec / 2 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-111816-458/summary.md`。
   - 结论：strict replay 下，`running 中 queued text 消费前切模型，auto drain 应使用 secondary 配置` passed；queued turn 使用 secondary model/thought，最终 idle、queue=0。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-queue.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts'`
   - 结果：通过，1 个 spec / 2 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-112016-248/summary.md`。
   - 结论：默认 replay 路径下 auto-drain 切模型断言仍有效。
@@ -639,13 +641,13 @@ P0-08 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                   |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `M07h`、`N02`、`I03`                                                                                                   |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-queue.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-model-switch-queue.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-queue.json`        |
-| 当前状态         | 已是正式路径，并按本轮 top10 完成 fixture check 与 strict/default replay                                               |
+| 字段             | 内容                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `M07h`、`N02`、`I03`                                                                                            |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-model-switch-queue.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-queue.json` |
+| 当前状态         | 已是正式路径，并按本轮 top10 完成 fixture check 与 strict/default replay                                        |
 
 ### 测试场景
 
@@ -682,13 +684,13 @@ P0-08 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### 实际验证结论
 
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-queue.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts`
   - 结果：通过。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-queue.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-queue.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-queue.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts'`
   - 结果：通过，1 个 spec / 2 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-111816-458/summary.md`。
   - 结论：strict replay 下，`stop 后 held queue 切模型再立即发送，应使用 secondary 配置` passed；held marker stop 后未提前请求，点击“立即发送”后使用 secondary model/thought。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-queue.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-model-switch-queue.test.ts'`
   - 结果：通过，1 个 spec / 2 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-112016-248/summary.md`。
   - 结论：默认 replay 路径下 held queue send-now 切模型断言仍有效。
@@ -772,13 +774,13 @@ P0-10 已满足当前目标中的“详细描述、实际验证、promotion 转�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                              |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I14`                                                                                                                             |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-glm52-reasoning-request-shape.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-glm52-reasoning-request-shape.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-glm52-reasoning-request-shape.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                      |
+| 字段             | 内容                                                                                                                       |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I14`                                                                                                                      |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-glm52-reasoning-request-shape.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-glm52-reasoning-request-shape.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                               |
 
 ### 测试场景
 
@@ -833,26 +835,26 @@ P0-10 已满足当前目标中的“详细描述、实际验证、promotion 转�
   - 结论：桌面 E2E 使用 `apps/zcode-cli/packages/cli/dist/zcode.cjs`，必须重建 agent bundle 后 formal replay 才能验证最新 adapter 行为。
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-glm52-reasoning-request-shape.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts`
   - 结果：通过。
   - 备注：`glm52-reasoning-request-shape-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-glm52-reasoning-request-shape.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-glm52-reasoning-request-shape.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-glm52-reasoning-request-shape.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-142931-535/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-11-A 到 P0-11-J 均由正式 spec 断言覆盖；`max` 请求体实际包含 `extra_body.chat_template_kwargs.reasoning_effort=max`，`nothink` 请求体实际包含 `extra_body.chat_template_kwargs.enable_thinking=false` 且未残留 `reasoning_effort=max/high`，两轮最终均回到 `idle` 且 `queueCount=0`。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-glm52-reasoning-request-shape.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-142959-372/summary.md`。
   - 结论：默认 replay 路径下同一组新增 OpenAI-compatible provider、GLM-5.2 provider 身份、`max`/`nothink` 请求字段、assistant 回复和 session 终态验证仍有效。
-- `E2E_SPEC=./test/e2e/conversation-session/manual-review/pending/conversation-session-glm52-reasoning-request-shape.test.ts pnpm run test:e2e:container`
+- `E2E_SPEC=./test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts pnpm run test:e2e:container`
   - 结果：未完成，Docker build 在拉取 `docker.io/docker/dockerfile:1.7` 时 TLS handshake timeout。
   - 结论：这是 Docker Hub 网络问题，按本轮约定忽略；未作为 case 行为失败处理。
 
 #### 当前 direct-field 回归（2026-07-22）
 
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-glm52-reasoning-request-shape.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts`
   - 结果：通过。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-glm52-reasoning-request-shape.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-glm52-reasoning-request-shape.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-glm52-reasoning-request-shape.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-glm52-reasoning-request-shape.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260722-124706-346/summary.md`。
   - 结论：P0-11-A 到 P0-11-J 均由当前 spec 断言覆盖；主请求的 `max` / `nothink`
@@ -866,13 +868,13 @@ P0-11 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                                    |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I15`                                                                                                                                   |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-deepseek-v4-reasoning-request-shape.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                            |
+| 字段             | 内容                                                                                                                             |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I15`                                                                                                                            |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                                     |
 
 ### 测试场景
 
@@ -922,26 +924,26 @@ P0-11 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-deepseek-v4-reasoning-request-shape.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts`
   - 结果：通过。
   - 备注：`upstream-v4-reasoning-request-shape-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-deepseek-v4-reasoning-request-shape.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-143724-458/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-12-A 到 P0-12-M 均由正式 spec 断言覆盖；`high` 请求体实际包含 `reasoning_effort=high` 与 `extra_body.thinking.type=enabled`，`max` 请求体实际包含 `reasoning_effort=max` 与 `extra_body.thinking.type=enabled`，两轮均未误写 GLM-5.2 专属 `extra_body.chat_template_kwargs`，最终均回到 `idle` 且 `queueCount=0`。
-- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-deepseek-v4-reasoning-request-shape.test.ts'`
+- `pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-143753-439/summary.md`。
   - 结论：默认 replay 路径下同一组新增 OpenAI-compatible DeepSeek V4 provider、provider 身份、`high`/`max` 请求字段、assistant 回复和 session 终态验证仍有效。
-- `E2E_SPEC=./test/e2e/conversation-session/manual-review/pending/conversation-session-deepseek-v4-reasoning-request-shape.test.ts pnpm run test:e2e:container`
+- `E2E_SPEC=./test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts pnpm run test:e2e:container`
   - 结果：未完成，Docker build 在拉取 `docker.io/docker/dockerfile:1.7` 时 TLS handshake timeout。
   - 结论：这是 Docker Hub 网络问题，按本轮约定忽略；未作为 case 行为失败处理。
 
 #### 当前 direct-field 回归（2026-07-22）
 
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-deepseek-v4-reasoning-request-shape.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts`
   - 结果：通过。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-deepseek-v4-reasoning-request-shape.test.ts'`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec './test/e2e/conversation-session/conversation-session-deepseek-v4-reasoning-request-shape.test.ts'`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260722-124800-459/summary.md`。
   - 结论：P0-12-A 到 P0-12-L 均由当前 spec 断言覆盖；无 reasoning metadata 的 custom
@@ -955,13 +957,13 @@ P0-12 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I16`                                                                                                                                 |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-claude-anthropic-reasoning-budget.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-claude-anthropic-reasoning-budget.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-claude-anthropic-reasoning-budget.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                          |
+| 字段             | 内容                                                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Catalog          | `I16`                                                                                                                          |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-claude-anthropic-reasoning-budget.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-claude-anthropic-reasoning-budget.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-claude-anthropic-reasoning-budget.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                                   |
 
 ### 测试场景
 
@@ -1006,10 +1008,10 @@ P0-12 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-claude-anthropic-reasoning-budget.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-claude-anthropic-reasoning-budget.test.ts`
   - 结果：通过。
   - 备注：`claude-anthropic-reasoning-budget-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=./test/e2e/fixtures/upstream/common.json,./test/e2e/fixtures/upstream/conversation-session/conversation-session-claude-anthropic-reasoning-budget.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-claude-anthropic-reasoning-budget.test.ts`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=./test/e2e/fixtures/upstream/common.json,./test/e2e/fixtures/upstream/conversation-session/conversation-session-claude-anthropic-reasoning-budget.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec ./test/e2e/conversation-session/conversation-session-claude-anthropic-reasoning-budget.test.ts`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-150003-655/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-13-A 到 P0-13-H 均由正式 spec 断言覆盖；`low` 请求体实际包含 `thinking.type=enabled`、`thinking.budget_tokens=4000`、`output_config.effort=low`，`xhigh` 请求体实际包含 `thinking.budget_tokens=32000`、`output_config.effort=xhigh`，两轮均未误写 OpenAI-compatible 或 GLM 专属字段，最终均回到 `idle` 且 `queueCount=0`。
@@ -1020,13 +1022,13 @@ P0-13 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Catalog          | `I17`                                                                                                                                      |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                               |
+| 字段             | 内容                                                                                                                                |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I17`                                                                                                                               |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                                        |
 
 ### 测试场景
 
@@ -1058,10 +1060,10 @@ P0-13 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts`
   - 结果：通过。
   - 备注：`gpt-openai-compatible-reasoning-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=./test/e2e/fixtures/upstream/common.json,./test/e2e/fixtures/upstream/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=./test/e2e/fixtures/upstream/common.json,./test/e2e/fixtures/upstream/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec ./test/e2e/conversation-session/conversation-session-gpt-openai-compatible-reasoning-effort.test.ts`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-150414-009/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-14-A 到 P0-14-F 均由正式 spec 断言覆盖；`low` 请求体实际包含 `reasoning_effort=low`，`xhigh` 请求体实际包含 `reasoning_effort=xhigh`，两轮均未误写 DeepSeek、GLM 或 Claude 专属字段，最终均回到 `idle` 且 `queueCount=0`。
@@ -1072,13 +1074,13 @@ P0-14 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                                    |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I18`                                                                                                                                   |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-opus47-anthropic-adaptive-reasoning.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.json`        |
-| 当前状态         | 已转正，正式路径 replay case                                                                                                            |
+| 字段             | 内容                                                                                                                             |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I18`                                                                                                                            |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.json` |
+| 当前状态         | 已转正，正式路径 replay case                                                                                                     |
 
 ### 测试场景
 
@@ -1111,10 +1113,10 @@ P0-14 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 - `pnpm --filter @zcode/desktop typecheck:e2e`
   - 结果：通过。
-- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-opus47-anthropic-adaptive-reasoning.test.ts`
+- `pnpm --filter @zcode/desktop e2e:fixture:check -- --spec ./test/e2e/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.test.ts`
   - 结果：通过。
   - 备注：`opus47-anthropic-adaptive-reasoning-title` 没有 E2E marker，符合标题生成 common fixture 的非业务语义。
-- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=./test/e2e/fixtures/upstream/common.json,./test/e2e/fixtures/upstream/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-opus47-anthropic-adaptive-reasoning.test.ts`
+- `E2E_PROVIDER_REPLAY_FIXTURE_PATH=./test/e2e/fixtures/upstream/common.json,./test/e2e/fixtures/upstream/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.json pnpm --filter @zcode/desktop exec wdio run wdio.conf.ts --spec ./test/e2e/conversation-session/conversation-session-opus47-anthropic-adaptive-reasoning.test.ts`
   - 结果：通过，1 个 spec / 1 个 case passed。
   - Artifact：`packages/desktop/.e2e-artifacts/desktop-e2e-20260702-150714-538/summary.md`。
   - 结论：严格只加载 common + case-local fixture 时，P0-15-A 到 P0-15-G 均由正式 spec 断言覆盖；`medium` 请求体实际包含 `thinking.type=adaptive`、`output_config.effort=medium`，`max` 请求体实际包含 `thinking.type=adaptive`、`output_config.effort=max`，两轮均未写入 `thinking.budget_tokens`，也未误写 OpenAI-compatible、DeepSeek 或 GLM 专属字段，最终均回到 `idle` 且 `queueCount=0`。
@@ -1125,13 +1127,13 @@ P0-15 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                                   |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I22`                                                                                                                                  |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-same-model-draft-provider-identity.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-same-model-draft-provider-identity.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-same-model-draft-provider-identity.json`        |
-| 当前状态         | manual-review pending 候选 case                                                                                                        |
+| 字段             | 内容                                                                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I22`                                                                                                                           |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-same-model-draft-provider-identity.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-same-model-draft-provider-identity.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-same-model-draft-provider-identity.json` |
+| 当前状态         | manual-review pending 候选 case                                                                                                 |
 
 ### 测试场景
 
@@ -1141,15 +1143,15 @@ P0-15 已满足当前目标中的“详细描述、实际验证、转正后重�
 
 ### 验证条目
 
-| 编号    | 验证项                                                                                                                        | 有效性说明                                                                | 当前断言位置                             |
-| ------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------- |
-| P0-16-A | `glm-5.2` 与 `deepseek-v4-flash` 各自都有 primary/alternate 两个 case-local provider，且同模型两个 provider 使用不同 Base URL | 复现同 modelId 跨 provider 的触发条件，并让请求 URL 能区分供应商          | `createScenarioProviders()`              |
-| P0-16-B | 每个模型族先用 primary provider 完成首轮并留下 active session                                                                 | 复现 workspace state builder 会看到 active session 的状态                 | `runSameModelProviderIdentityScenario()` |
-| P0-16-C | 新建空草稿后选择 alternate provider 下同名模型                                                                                | 覆盖真实聊天框模型菜单选择路径                                            | `selectUpstreamProviderModelById()`      |
-| P0-16-D | toolbar `data-model-current-value` 保留 alternate provider/model 编码                                                         | 证明 UI 不按裸 modelId 回显到旧 provider                                  | `assertSelectedProviderModel()`          |
-| P0-16-E | 再次打开聊天框模型菜单时 alternate provider 分组和同名模型 item 仍是选中态                                                    | 直接覆盖用户截图中的“模型列表显示上一个模型供应商”问题                    | `assertModelMenuSelectedProvider()`      |
-| P0-16-F | workspace draft configOptions 的 model currentValue 保留 alternate provider/model 编码                                        | 证明协议回包没有把 workspace default 状态改写成 active session 运行态模型 | `assertDraftConfigModelValue()`          |
-| P0-16-G | alternate provider 选择后发送普通文本，真实请求 URL 命中 alternate provider Base URL                                          | 证明不只是 UI 显示正确，runtime 请求也切到了目标供应商                    | `assertProviderRequestUrl()`             |
+| 编号    | 验证项                                                                                                                        | 有效性说明                                                                                                            | 当前断言位置                             |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| P0-16-A | `glm-5.2` 与 `deepseek-v4-flash` 各自都有 primary/alternate 两个 case-local provider，且同模型两个 provider 使用不同 Base URL | 复现同 modelId 跨 provider 的触发条件，并让请求 URL 能区分供应商                                                      | `createScenarioProviders()`              |
+| P0-16-B | 每个模型族先用 primary provider 完成首轮并留下 active session                                                                 | 复现 workspace state builder 会看到 active session 的状态                                                             | `runSameModelProviderIdentityScenario()` |
+| P0-16-C | 新建空草稿后选择 alternate provider 下同名模型                                                                                | 覆盖真实聊天框模型菜单选择路径                                                                                        | `selectUpstreamProviderModelById()`      |
+| P0-16-D | toolbar `data-model-current-value` 保留 alternate provider/model 编码                                                         | 证明 UI 不按裸 modelId 回显到旧 provider                                                                              | `assertSelectedProviderModel()`          |
+| P0-16-E | 再次打开聊天框模型菜单时 alternate provider 分组和同名模型 item 仍是选中态                                                    | 直接覆盖用户截图中的“模型列表显示上一个模型供应商”问题                                                                | `assertModelMenuSelectedProvider()`      |
+| P0-16-F | 同一项目空草稿的 V4 selection 与模型控件均保留 alternate provider/model 身份                                                  | V4 不再写旧 workspace configOptions；Recent 只由 accepted Submission 更新，发送前检查当前草稿，发送后另验真实请求 URL | `assertDraftConfigModelValue()`          |
+| P0-16-G | alternate provider 选择后发送普通文本，真实请求 URL 命中 alternate provider Base URL                                          | 证明不只是 UI 显示正确，runtime 请求也切到了目标供应商                                                                | `assertProviderRequestUrl()`             |
 
 ### Fixture 合同
 
@@ -1188,13 +1190,13 @@ queue、fork、重启、remote、主题或 locale 叉乘；I64 只跑 desktop lo
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                          |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I62`                                                                                                                         |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-openrouter-model-id-colon.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-openrouter-model-id-colon.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-openrouter-model-id-colon.json`        |
-| 当前状态         | manual-review pending 候选 case                                                                                               |
+| 字段             | 内容                                                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I62`                                                                                                                  |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-openrouter-model-id-colon.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-openrouter-model-id-colon.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-openrouter-model-id-colon.json` |
+| 当前状态         | manual-review pending 候选 case                                                                                        |
 
 ### 测试场景
 
@@ -1230,13 +1232,13 @@ queue、fork、重启、remote、主题或 locale 叉乘；I64 只跑 desktop lo
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                          |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Catalog          | `I64`                                                                                                                         |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-provider-registry-prewarm.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-provider-registry-prewarm.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-provider-registry-prewarm.json`        |
-| 当前状态         | manual-review pending 候选 case                                                                                               |
+| 字段             | 内容                                                                                                                   |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `I64`                                                                                                                  |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-provider-registry-prewarm.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-provider-registry-prewarm.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-provider-registry-prewarm.json` |
+| 当前状态         | manual-review pending 候选 case                                                                                        |
 
 ### 测试场景
 
@@ -1275,13 +1277,13 @@ promotion。
 
 ### Case 定义
 
-| 字段             | 内容                                                                                                                           |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Catalog          | `N16`                                                                                                                          |
-| Spec             | `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-running-model-switch-usage.test.ts` |
-| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-running-model-switch-usage.json`           |
-| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-running-model-switch-usage.json`        |
-| 当前状态         | manual-review pending 回归 case                                                                                                |
+| 字段             | 内容                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Catalog          | `N16`                                                                                                                   |
+| Spec             | `packages/desktop/test/e2e/conversation-session/conversation-session-running-model-switch-usage.test.ts`                |
+| Fixture manifest | `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-running-model-switch-usage.json`    |
+| Provider fixture | `packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-running-model-switch-usage.json` |
+| 当前状态         | manual-review pending 回归 case                                                                                         |
 
 ### 测试场景
 

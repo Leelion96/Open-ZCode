@@ -8,6 +8,27 @@
   `optimisticTaskListByTaskId` 不再作为侧栏判断依据
 - `lastActivityAt` 只负责 Updated 排序，不参与未读推导或清除
 
+## 按未读视图（2026-10-20）
+
+- 侧栏筛选新增“按未读”，位于“最近更新”之后，使用 Bell 图标与原单选勾。
+- 未读集合与系统角标共用 Host `ProjectTree` 选择器：只收非归档且有 `unreadAt`
+  的任务；包含跨项目置顶、本地未归类、未删除项目的任务。排除其余孤儿、已删除项目
+  和远端未归类任务。按 `hostId + (workspaceIdentity || workspacePath) + taskId` 去重。
+- 复用最近更新的行、日期标题与 20/+20 分页，按 CLI 更新时间排序，不按未读时间或置顶重排。
+  无结果显示“暂无未读任务”。通知开关只控制系统角标，不影响此列表。
+- 视图偏好沿用现有客户端存储与同源窗口同步；切换不改变当前任务、项目/分组折叠或任务组织态。
+- 打开任务沿用桌面和手机的已读流程。Host 提交后列表自动移除已读行；迟到清除继续遵守
+  `expectedUnreadAt` CAS。当前聊天不因筛选结果消失而关闭。
+
+```text
+Host tasks-index.unreadAt → 共享 ProjectTree → 共同未读选择器 → 按未读列表 / 系统角标
+桌面或手机打开任务 → 原有已读命令（CAS）→ Host 提交 → 共享树刷新 → 列表更新
+```
+
+SBV07：桌面验证菜单、更新时间顺序、分页、重载偏好、已读移除与空态；
+手机 shared-host 验证触摸筛选、打开真实任务清未读、返回后空态，且不增加 Host。
+选择器单测覆盖归档、项目可见性、置顶、远端完整身份与去重；GUI 保持 pending。
+
 ## 关键链路
 
 ### 主动标记未读
@@ -19,7 +40,7 @@
 
 ### 被动标记未读
 
-- 入口：Host 明确携带 `background_terminal` 的实时完成信号；普通 status、历史读取和 replay 不制造未读。
+- 入口：Host 明确携带 `background_terminal` 的实时完成信号；普通 status、历史读取和 replay 不制造未读。仅 `completedSuccess`（且 Goal 已验证/无 Goal）与 `error` 产生该信号；`completedInterrupted` 表示用户主动停止、发新消息打断或新建对话时中断旧执行，不产生未读提醒。
 - 动作：desktop base 的唯一目录 writer 判断查看状态，再经原 mutation 路由写 tasks-index；持久成功后刷新树，不先制造 UI 独有的未读。
 - v4 sessions-index 重构后，后台运行态不再由旧 renderer monitor 持有；host
   `taskIndexSyncer` 只负责把 phase 终态收敛成 `task_status_changed`，不判断某个 renderer
@@ -66,7 +87,7 @@
 ## UI 读取口径
 
 - 任务列表蓝点：task query row 的 joined `membership.unreadAt`
-- Dock badge：`countAllUnreadTasks()`
+- 系统角标与按未读列表：共享 Host `ProjectTree` 未读选择器；角标使用 `countProjectTreeUnreadTasks()`
 
 两个入口最终都只消费 tasks-index `unreadAt`；迁移期间可以复用聚合 helper，但不得回退旧
 `taskUnreadByTaskId` 作为业务事实。

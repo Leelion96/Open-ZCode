@@ -15,7 +15,13 @@ import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import type { EditorInfo, FileStat, OpenInEditorOptions } from "@zcode/shared";
 import type { UIMessage } from "ai";
-import { ChevronLeftIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  PanelRightIcon,
+} from "lucide-react";
 import remarkCjkFriendlyGfmStrikethrough from "remark-cjk-friendly-gfm-strikethrough";
 import type {
   ComponentProps,
@@ -35,6 +41,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { BundledTheme } from "shiki";
@@ -71,7 +78,7 @@ import {
 import { STREAMDOWN_CONTROLS } from "@/components/ai-elements/streamdown-controls.js";
 import { resolveMessageLinkOpenTarget } from "@/embeddedBrowserHelpers.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
-import { persistLastSelectedEditorId, readLastSelectedEditorId } from "@/lib/editorPreference.js";
+import { persistLastSelectedEditorId } from "@/lib/editorPreference.js";
 import {
   FileDisplayIcon,
   FOLDER_FILE_ICON_SRC,
@@ -92,6 +99,9 @@ import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useOptionalPlatform, usePlatform } from "@/hooks/usePlatform.js";
+import { FileApplicationChoices, FileSaveAsMenuItem } from "@/file-menu/index.js";
+import { useFileApplications } from "@/file-menu/index.js";
+import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useFileContextActions } from "@/hooks/useFileContextActions.js";
 import { useWorkspaceOpenInEditorTarget } from "@/hooks/useWorkspaceOpenInEditorTarget.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
@@ -1013,7 +1023,7 @@ function MessageExternalLink({
   const platform = useOptionalPlatform();
   const handleOpen = useCallback(
     (options: { forceExternal?: boolean; forceInApp?: boolean } = {}) => {
-      // 交互语义：本机/私网白名单只决定左键单击的默认目标；右键菜单两项各自强制一个目标。
+      // 交互语义：本机/私网白名单只决定左键单击的默认目标；右键的两个打开动作各自强制一个目标。
       // 菜单「打开」过去复用左键默认行为，公网链接（如飞书文档）两项都会跳系统浏览器。
       const target = resolveMessageLinkOpenTarget({ href, ...options });
       logger.debug("[MessageExternalLink] 打开 Markdown 外链", {
@@ -1045,6 +1055,18 @@ function MessageExternalLink({
     },
     [handleOpen, onClick],
   );
+  const handleCopyLink = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("clipboard-unavailable");
+      }
+      await navigator.clipboard.writeText(href);
+    } catch (error) {
+      logger.warn("[MessageExternalLink] 复制链接失败", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   return (
     <ContextMenu>
@@ -1065,14 +1087,20 @@ function MessageExternalLink({
           {children}
         </button>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-44">
+      <ContextMenuContent className="w-52">
+        {/* 通用“打开”无法说明目标；两个打开动作同组，用文案和图标区分内置与外部浏览器。 */}
         <ContextMenuItem onSelect={() => handleOpen({ forceInApp: true })}>
-          {intl.formatMessage({ id: "common.open" })}
+          <PanelRightIcon className="size-4" />
+          <span>{intl.formatMessage({ id: "chat.message.link.openInZCode" })}</span>
         </ContextMenuItem>
-        <ContextMenuSeparator />
         <ContextMenuItem onSelect={() => handleOpen({ forceExternal: true })}>
           <ExternalLinkIcon className="size-4" />
           <span>{intl.formatMessage({ id: "chat.previewCards.openExternal" })}</span>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => void handleCopyLink()}>
+          <CopyIcon className="size-4" />
+          <span>{intl.formatMessage({ id: "chat.previewCards.copyLink" })}</span>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -1113,58 +1141,109 @@ interface MessageFileLinkProps {
   onOpen: () => void;
 }
 
-function MessageFileLink({ className, fileIconSrc, fileLink, onOpen }: MessageFileLinkProps) {
+function MessageFileLink(props: MessageFileLinkProps) {
+  const services = useOptionalServices();
+  if (!services)
+    return <MessageFileLinkButton {...props}>{props.fileLink.label}</MessageFileLinkButton>;
+  return <ScopedMessageFileLink {...props} />;
+}
+
+function ScopedMessageFileLink({ className, fileIconSrc, fileLink, onOpen }: MessageFileLinkProps) {
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
-  const services = useOptionalServices();
+  const services = useWorkspaceServices(
+    fileLink.workspacePath,
+    fileLink.workspaceRemoteSessionId,
+    fileLink.workspaceIdentity,
+  );
+  const [pathKind, setPathKind] = useState<"file" | "directory" | null>(null);
   const fileActions = useFileContextActions();
   const openInEditorContext = useWorkspaceOpenInEditorTarget({
     workspacePath: fileLink.workspacePath,
     workspaceIdentity: fileLink.workspaceIdentity,
     workspaceRemoteSessionId: fileLink.workspaceRemoteSessionId,
   });
-  const [editors, setEditors] = useState<EditorInfo[]>([]);
-  const [editorsLoaded, setEditorsLoaded] = useState(false);
-  const [loadingEditors, setLoadingEditors] = useState(false);
-  const sortedEditors = useMemo(
-    () =>
-      openInEditorContext.isRemoteWorkspace && !openInEditorContext.remoteTarget
-        ? []
-        : resolveWorkspaceEditorSelection({
-            installedEditors: editors,
-            selectedEditorId: null,
-            remoteTarget: openInEditorContext.remoteTarget,
-          }).availableEditors,
-    [editors, openInEditorContext],
+  const isRemote = Boolean(
+    fileLink.workspaceIdentity ||
+    fileLink.workspaceRemoteSessionId ||
+    openInEditorContext.isRemoteWorkspace,
   );
-  const selectedEditor = useMemo(() => {
-    const selectedEditorId = readLastSelectedEditorId();
-    return (
-      sortedEditors.find((editor) => editor.id === selectedEditorId) ?? sortedEditors[0] ?? null
-    );
-  }, [sortedEditors]);
+  const fileApplications = useFileApplications(
+    { path: fileLink.path, pathKind: "file", workspaceIdentity: fileLink.workspaceIdentity },
+    isRemote,
+  );
+  const [editors, setEditors] = useState<EditorInfo[]>([]);
+  const [loadingEditors, setLoadingEditors] = useState(false);
+  const sortedEditors: Array<EditorInfo & { isDefault?: boolean }> = useMemo(
+    () =>
+      pathKind === "file" && !isRemote
+        ? fileApplications.apps.map((app) => ({ ...app, iconDataUrl: app.iconDataUrl ?? "" }))
+        : isRemote && !openInEditorContext.remoteTarget
+          ? []
+          : resolveWorkspaceEditorSelection({
+              installedEditors: editors,
+              selectedEditorId: null,
+              remoteTarget: openInEditorContext.remoteTarget,
+            }).availableEditors,
+    [editors, openInEditorContext, pathKind, isRemote, fileApplications.apps],
+  );
+  const query = useRef(0);
+  const queryKey = `${fileLink.path}\u0000${fileLink.workspaceIdentity ?? ""}\u0000${fileLink.workspaceRemoteSessionId ?? ""}`;
+  const currentQueryKey = useRef(queryKey);
+  currentQueryKey.current = queryKey;
+  useEffect(() => {
+    setPathKind(null);
+    setEditors([]);
+    setLoadingEditors(false);
+    query.current += 1;
+    return () => {
+      query.current += 1;
+    };
+  }, [queryKey]);
 
   const loadEditors = useCallback(async () => {
-    if (editorsLoaded || loadingEditors) {
-      return;
-    }
-
+    if (loadingEditors) return;
+    const request = ++query.current;
     setLoadingEditors(true);
     try {
+      const stat = await services.fileService.stat({ path: fileLink.path });
+      if (request !== query.current || currentQueryKey.current !== queryKey) return;
+      setPathKind(stat.type);
+      if (stat.type === "file" && !isRemote) {
+        await fileApplications.load();
+        return;
+      }
       const installedEditors = await platform.getInstalledEditors();
-      setEditors(installedEditors);
-      setEditorsLoaded(true);
+      if (request === query.current && currentQueryKey.current === queryKey)
+        setEditors(installedEditors);
     } catch (error) {
       logger.warn("[MessageResponse] 获取 markdown 链接打开方式失败", {
         path: fileLink.path,
         error: error instanceof Error ? error.message : String(error),
       });
     } finally {
-      setLoadingEditors(false);
+      if (request === query.current) setLoadingEditors(false);
     }
-  }, [editorsLoaded, fileLink.path, loadingEditors, platform]);
+  }, [
+    fileLink.path,
+    loadingEditors,
+    platform,
+    services,
+    isRemote,
+    fileApplications.load,
+    queryKey,
+  ]);
+
+  const hasDefaultShortcut =
+    pathKind === "file" &&
+    !isRemote &&
+    Boolean(platform.canOpenLocalFiles && platform.openExternalFile);
 
   const handleOpenInEditor = (editor: EditorInfo) => {
+    if (pathKind === "file" && !isRemote) {
+      void fileApplications.open({ ...editor, isDefault: false });
+      return;
+    }
     if (!services) {
       logger.warn("[MessageResponse] 无法确认 markdown 链接文件类型", {
         editorId: editor.id,
@@ -1214,24 +1293,31 @@ function MessageFileLink({ className, fileIconSrc, fileLink, onOpen }: MessageFi
           {fileLink.label}
         </MessageFileLinkButton>
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-52">
+      <ContextMenuContent className="w-64 max-w-[calc(100vw-1rem)]">
         <ContextMenuItem onSelect={onOpen}>
+          <PanelRightIcon aria-hidden="true" className="size-4" />
           {intl.formatMessage({ id: "common.open" })}
         </ContextMenuItem>
+        {platform.canOpenLocalFiles && (!isRemote || openInEditorContext.remoteTarget) && (
+          <FileApplicationChoices
+            variant="context"
+            applications={sortedEditors}
+            loading={loadingEditors}
+            onOpenDefault={
+              hasDefaultShortcut ? () => void fileApplications.openDefault() : undefined
+            }
+            onSelect={handleOpenInEditor}
+          />
+        )}
         <ContextMenuSeparator />
-        {selectedEditor ? (
-          sortedEditors.map((editor) => (
-            <ContextMenuItem key={editor.id} onSelect={() => handleOpenInEditor(editor)}>
-              <img src={editor.iconDataUrl} alt={editor.name} className="size-4 shrink-0" />
-              <span>{editor.name}</span>
-            </ContextMenuItem>
-          ))
-        ) : (
-          <ContextMenuItem disabled>
-            {intl.formatMessage({
-              id: loadingEditors ? "common.loading" : "chat.previewCards.noOpenApps",
-            })}
-          </ContextMenuItem>
+        {pathKind === "file" && (
+          <FileSaveAsMenuItem
+            variant="context"
+            path={fileLink.path}
+            workspacePath={fileLink.workspacePath}
+            workspaceIdentity={fileLink.workspaceIdentity}
+            workspaceRemoteSessionId={fileLink.workspaceRemoteSessionId}
+          />
         )}
         <ContextMenuSeparator />
         <ContextMenuItem

@@ -44,6 +44,9 @@ export function resolveDynamicWorkflowConfigMockScenario(
   const alwaysOn = specs.some(
     (spec) =>
       spec.includes(ALWAYS_ON_SPEC_FRAGMENT) ||
+      spec.endsWith("conversation-session-dynamic-workflow-holes.test.ts") ||
+      // PLUS05 明确以 catalog 含 workflow 为前置，不能依赖线上灰度值。
+      spec.endsWith("conversation-session-plus-menu.test.ts") ||
       spec.replaceAll("\\", "/").split("/").at(-1) === "automations-workflows-hub.test.ts",
   );
   if (disabled && alwaysOn) {

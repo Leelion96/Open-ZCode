@@ -1,6 +1,6 @@
 # R3 合并后远程自动化实际测试方案
 
-导出边界：`harness/remote/**` 是内部远程测试部署设施，不进入开源树；直接依赖它的 `r3RemoteMobileSite`、`r3RemoteProcess`、`r3RemoteProfiles`、`r3RemoteScheduler`、`r3RemoteSource`、`r3RemoteSpecInventory`、`r3RemoteVpn` 单测同步排除。公共远程实现与独立 E2E 保留，排除合同见 `opensource/README.md`。
+导出边界：`harness/remote/**` 是内部远程测试部署设施，不进入开源树；直接依赖它的 `r3RemoteMobileSite`、`r3RemoteProcess`、`r3RemoteProfiles`、`r3RemoteScheduler`、`r3RemoteSource`、`r3RemoteVpn` 单测同步排除。公共远程实现与独立 E2E 保留，排除合同见 `opensource/README.md`。
 
 当前范围与验收标准。2026-09-07 确认的完整验收目标继续保留；早期分支名、环境准备过程和执行缺口属于历史记录，不能作为当前运行结果。
 执行命令、环境准入和资源隔离由 [harness README](../../harness/remote/README.md)维护；
@@ -27,15 +27,15 @@
 
 ## 2. Feature Summary 与范围发现
 
-| 字段             | 内容                                                                                              |
-| ---------------- | ------------------------------------------------------------------------------------------------- |
-| Operating mode   | implementation-handoff：交付可实施方案与已接受用例，历史规划阶段；当前实现清单由 harness inventory 和覆盖矩阵维护                         |
-| Change layers    | presentation、option-source、draft-default、validation、commit-effect、persistence、recovery      |
-| 主要领域         | 连接/部署/身份；Provider 配置与执行；工作区/对话/设置；跨端恢复                                   |
-| 必须检查         | 首连屏障、重连换代、全转发 RPC、Source 写路由、旧配置与身份迁移、构建实际身份                     |
-| 条件检查         | SSH 平台能力、Docker/WSL、浏览器 relay、模型账号与真实请求、旧版运行与回退                        |
-| 不变量检查       | 本地流程、单 Window Host、CLI 单队列、continuous/replayable、不同 Source 隔离、日志无 secret      |
-| 不扩展的产品范围 | 远端 cron automation、Direct URL 新产品入口、R4 全量 key 清洗、崩溃后自动续跑、任意多窗口角色切换 |
+| 字段             | 内容                                                                                                              |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Operating mode   | implementation-handoff：交付可实施方案与已接受用例，历史规划阶段；当前实现清单由 harness inventory 和覆盖矩阵维护 |
+| Change layers    | presentation、option-source、draft-default、validation、commit-effect、persistence、recovery                      |
+| 主要领域         | 连接/部署/身份；Provider 配置与执行；工作区/对话/设置；跨端恢复                                                   |
+| 必须检查         | 首连屏障、重连换代、全转发 RPC、Source 写路由、旧配置与身份迁移、构建实际身份                                     |
+| 条件检查         | SSH 平台能力、Docker/WSL、浏览器 relay、模型账号与真实请求、旧版运行与回退                                        |
+| 不变量检查       | 本地流程、单 Window Host、CLI 单队列、continuous/replayable、不同 Source 隔离、日志无 secret                      |
+| 不扩展的产品范围 | 远端 cron automation、Direct URL 新产品入口、R4 全量 key 清洗、崩溃后自动续跑、任意多窗口角色切换                 |
 
 实施第一个 gate 必须生成 `change-map.json`：分别扫描 R3 主线、合并增量和后续修复的改动，记录文件/符号、命名的语义关系、权威规格、相关用例 ID。非远程改动填写排除理由；共享 facade、协议、构建和状态 owner 不得因路径未包含 remote/ssh 而排除。未解释的远程相关改动标 `unmapped`，完整覆盖不能验收。静态可达性只提供线索，不把所有 staging 文件机械纳入远程用例。
 
@@ -45,7 +45,7 @@
 | -------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------- |
 | 添加 SSH / 设备连接向导                                        | SSHDialog、Host 连接管理                            | target、安装确认、版本门、首连 Provisioning                    | Connection Manager → Transport → Source daemon → attachment | 凭据不进 tab；确认前无安装；本地下载必须显式选择并断言                |
 | 设备设置页 / sidebar / device picker                           | Controller projection、Source 行                    | Source online、操作状态、identity                              | RemoteWorkspaceController → management/profile 服务         | 三入口共享意图；离线不回落本地                                        |
-| 项目与历史用途隔离                                               | Root history、open membership、TabStore             | Source/realpath/purpose、已有 attachment                       | Source backing workspace、logical session、持久 open set    | 本地/远端同 path、两 Source、项目/聊天互相隔离                        |
+| 项目与历史用途隔离                                             | Root history、open membership、TabStore             | Source/realpath/purpose、已有 attachment                       | Source backing workspace、logical session、持久 open set    | 本地/远端同 path、两 Source、项目/聊天互相隔离                        |
 | 模型设置页                                                     | SettingsPage → Local ServiceProvider                | 本地 Provider draft、Configured Default；本地 connectivity cwd | Local ProviderSettings → 成功保存 → Provisioning source     | 激活远端 tab 仍编辑本地；不出现远端编辑/手动同步入口                  |
 | 对话模型选择 / 无模型横幅                                      | useModelSelectionView、pane draft                   | 目标 Host Registry / selection validation                      | 目标 ModelSelection、CLI 创建 Model                         | remote-waiting 不用本地候选兜底；旧 generation 回包丢弃               |
 | Skills/MCP/Plugins/Hooks/Subagents/Memory/Output/Settings-sync | Source scope 与 workspace scope 的 hooks/attachment | online、user/project scope、目标投影一致                       | 所选 Source 正式配置 / workspace 文件                       | 模型页本地化不能带偏这些设置；手机不开放 Source 管理                  |
@@ -104,15 +104,15 @@ Mobile replayable -------+                 +-> 独立 mobile gap/snapshot
 
 ## 3. 环境、材料与隔离
 
-| 环境      | 本轮用途                                                                    | 真实程度 / 验收边界                                                                                              |
-| --------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| E-SSH     | 当前 macOS Desktop → linux-amd64-dev 的 Linux x64 SSH                       | 密码、真实 sshd、archive、Server/Agent、开发入口；实测该 alias 指向本机 Docker 暴露的 SSH，不能宣称跨机 WAN 验证 |
-| E-ISO-A/B | 新建独立 SSH 容器，两个独立 Source，相同绝对项目路径                        | 配置删除/损坏、版本切换、kill Core/Agent、配额/权限/网络故障；每轮可重建                                         |
-| E-SVC     | 带可用 user service manager 的独立目标                                      | systemd 成功、缺 bus 环境恢复、真实注册失败；当前 E-SSH 仅有 detached 能力                                       |
-| E-DKR     | Desktop Docker transport → 独立 Linux 容器                                  | 真正 Docker proxy-stdio 代表，不用“SSH 到 Docker 容器”替代                                                       |
-| E-MOB     | 移动 viewport 浏览器 + 本地 web + 显式匹配环境的外部 relay + 已有 SSH scope | 真实配对/attachment/恢复；browser 自动化不是 iOS/Android 实机证据                                                |
-| E-WSL     | Windows Desktop + WSL2                                                      | 平台执行包准备，缺 Windows 时 BLOCKED；不降低跨 transport 发布门禁                                               |
-| E-OLD     | 认证的旧 Desktop / Server / 数据 fixture                                    | 三者单独记录版本、来源、SHA、schema 与可运行性                                                                   |
+| 环境      | 本轮用途                                                                    | 真实程度 / 验收边界                                                                                                                     |
+| --------- | --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| E-SSH     | 当前 macOS Desktop → linux-amd64-dev 的 Linux x64 SSH                       | 密码、真实 sshd、archive、Server/Agent、开发入口；实测该 alias 指向本机 Docker 暴露的 SSH，不能宣称跨机 WAN 验证                        |
+| E-ISO-A/B | 新建独立 SSH 容器，两个独立 Source，相同绝对项目路径                        | 配置删除/损坏、版本切换、kill Core/Agent、配额/权限/网络故障；每轮可重建                                                                |
+| E-SVC     | 带可用 user service manager 的独立目标                                      | systemd 成功、缺 bus 环境恢复、真实注册失败；E-SSH 仅有 detached 能力。本机 `run-local-docker.mjs --systemd` 提供该目标，服务器队列尚无 |
+| E-DKR     | Desktop Docker transport → 独立 Linux 容器                                  | 真正 Docker proxy-stdio 代表，不用“SSH 到 Docker 容器”替代                                                                              |
+| E-MOB     | 移动 viewport 浏览器 + 本地 web + 显式匹配环境的外部 relay + 已有 SSH scope | 真实配对/attachment/恢复；browser 自动化不是 iOS/Android 实机证据                                                                       |
+| E-WSL     | Windows Desktop + WSL2                                                      | 平台执行包准备，缺 Windows 时 BLOCKED；不降低跨 transport 发布门禁                                                                      |
+| E-OLD     | 认证的旧 Desktop / Server / 数据 fixture                                    | 三者单独记录版本、来源、SHA、schema 与可运行性                                                                                          |
 
 隔离要求：
 
@@ -157,10 +157,10 @@ ZCODE_E2E_MANUAL_REVIEW=1 pnpm --filter @zcode/desktop test:e2e -- --spec './tes
 
 | 工作包                | 复用                                                  | 需要补齐的能力 / 完成证明                                                                                                 |
 | --------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| H1 运行清单与资源管理 | WDIO runId、SSH helper、CLI verifier                  | alias 标准解析、独占 target、能力探测、build receipt、账号类别与请求记录；缺材料时明确 BLOCKED                                |
+| H1 运行清单与资源管理 | WDIO runId、SSH helper、CLI verifier                  | alias 标准解析、独占 target、能力探测、build receipt、账号类别与请求记录；缺材料时明确 BLOCKED                            |
 | H2 产品连接与生命周期 | SSH dialog、cold reconnect pending                    | 显式选择本地下载、R3 Supervisor/Core PID 身份、断线代理、跨窗口/项目控制；不直接注入“已连接”状态                          |
 | H3 同步与模型 oracle  | case-local replay、SSH reverse tunnel                 | 远端 Store 摘要/Registry readiness、实际 provider/model/body、syncId/generation；barrier 控制流和同步，未匹配 fail-closed |
-| H4 Mobile/live 编排   | dev:web-remote-control、现有 attachment 合同          | 移动 browser 配对、真实 relay、独立断线；实际模型请求含辅助/重试均记录，不设人为消耗上限，鉴权值不进记录            |
+| H4 Mobile/live 编排   | dev:web-remote-control、现有 attachment 合同          | 移动 browser 配对、真实 relay、独立断线；实际模型请求含辅助/重试均记录，不设人为消耗上限，鉴权值不进记录                  |
 | H5 记录与审计         | reporter、Electron window recorder、failure artifacts | 成功代表录像/关键截图、远端日志窗口、每步 JSONL、首次失败保留、前后数据对账、cleanup 审计、HTML/Markdown 汇总             |
 
 H3 通过真实 SSH reverse tunnel 将远端模型请求送到受控响应服务；控制 SSH 连接与模型回放 tunnel 分离。断开 UI SSH 不应意外停止模型响应服务，否则无法证明远端任务独立继续。正式配置同步和远端 Agent 执行必须经过产品链路，禁止直接写目标配置后声称同步通过。

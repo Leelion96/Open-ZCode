@@ -381,6 +381,11 @@ export class AutomationService {
     return this.repo.setEnabled(automationId, enabled, resolveScopeKey(scope));
   }
 
+  /** 执行轮自暂停（CronPauseSelf）：只暂停当前 workspace 内 active 的任务，返回是否生效。 */
+  async pause(automationId: string, scope?: AutomationWorkspaceScope): Promise<boolean> {
+    return this.repo.pause(automationId, resolveScopeKey(scope));
+  }
+
   /** 失败任务手动重跑：回 active、清计数，按 cron 重算下次时间。 */
   async restart(automationId: string, scope?: AutomationWorkspaceScope): Promise<void> {
     const workspaceKey = resolveScopeKey(scope);

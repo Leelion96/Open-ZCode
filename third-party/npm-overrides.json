@@ -479,14 +479,6 @@
     "evidence": "The package does not declare a license field; its license contains the MIT grant and copyright notice."
   },
   {
-    "package": "keyv@4.5.4",
-    "file": "third-party/upstream/6f7e6eae2a2afbaa67b266650f7342e7bf8e82cb57f6ab98148b3d6e0fb4450a.txt",
-    "sha256": "6f7e6eae2a2afbaa67b266650f7342e7bf8e82cb57f6ab98148b3d6e0fb4450a",
-    "source": "https://registry.npmjs.org/keyv/4.5.4",
-    "evidenceKind": "publisher-license-identifier-and-standard-terms",
-    "license": "MIT"
-  },
-  {
     "package": "@arms/rum-browser@0.1.8",
     "file": "third-party/upstream/2c976d327b293bd74c257cd53e9b4ecef97a06b1651baa3b24327c97192cb3de.txt",
     "sha256": "2c976d327b293bd74c257cd53e9b4ecef97a06b1651baa3b24327c97192cb3de",
@@ -539,5 +531,25 @@
     "file": "third-party/upstream/e49e62397b603438476e0d6b5ca3b6e6d4f23a80594e596aff29ac04fa3e1b1c.txt",
     "sha256": "e49e62397b603438476e0d6b5ca3b6e6d4f23a80594e596aff29ac04fa3e1b1c",
     "source": "https://raw.githubusercontent.com/rrweb-io/rrweb/%40rrweb%2Futils%402.0.0/LICENSE"
+  },
+  {
+    "package": "@electron-internal/extract-zip@1.0.5",
+    "repo": "electron/extract-zip",
+    "refs": [
+      "b83e459fd04c53b0a1c8438a6792df8f64be47fc"
+    ],
+    "file": "third-party/upstream/d8a3a14c4ea44385e299f072db9e8a73994e2ff2b344ea5ae5a39c09f11cc984.txt",
+    "sha256": "d8a3a14c4ea44385e299f072db9e8a73994e2ff2b344ea5ae5a39c09f11cc984",
+    "source": "https://registry.npmjs.org/@electron-internal%2fextract-zip/1.0.5",
+    "evidenceKind": "publisher-license-identifier-and-standard-terms",
+    "license": "BSD-2-Clause",
+    "reviewEvidence": {
+      "checkedOn": "2026-10-20",
+      "result": "The versioned npm archive and exact gitHead source tree contain no standalone LICENSE or copyright notice. The publisher BSD-2-Clause identifier and fixed SPDX standard terms are preserved; upstream authorization/copyright material is still required to close this review.",
+      "npmArchiveSha256": "939b4462974f8fa1b339dd4f420c62787ddf06903cc9c61f1f0661f096f5370b",
+      "sourceRevision": "b83e459fd04c53b0a1c8438a6792df8f64be47fc",
+      "sourceTreeUrl": "https://api.github.com/repos/electron/extract-zip/git/trees/b83e459fd04c53b0a1c8438a6792df8f64be47fc?recursive=1",
+      "upstreamLicenseFiles": []
+    }
   }
 ]

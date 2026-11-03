@@ -12,6 +12,7 @@ import { createTestModelProperties } from "./test-model-format.js";
 import type { ZhipuAccountMode } from "@zcode/provider";
 
 type TestModelTextRequest = ModelTextRequest & {
+  modelRequestSessionFeatures?: ModelInvocationContext["modelRequestSessionFeatures"];
   properties?: ModelProperties;
   accountMode?: ZhipuAccountMode;
 };
@@ -68,7 +69,7 @@ function modelRequest(request: ModelTextRequest): ModelRequest {
   };
 }
 
-function invocationContext(request: ModelTextRequest): ModelInvocationContext {
+function invocationContext(request: TestModelTextRequest): ModelInvocationContext {
   return {
     metadata: request.metadata,
     modelCall: request.modelCall,
@@ -76,6 +77,7 @@ function invocationContext(request: ModelTextRequest): ModelInvocationContext {
     modelRequestAdmission: request.modelRequestAdmission,
     modelRetryBudget: request.modelRetryBudget,
     modelRequestSessionType: request.modelRequestSessionType,
+    modelRequestSessionFeatures: request.modelRequestSessionFeatures,
     preserveProviderStreamBoundaries: request.preserveProviderStreamBoundaries,
     refreshRuntimeHeadersBeforeAttempt: request.refreshRuntimeHeadersBeforeAttempt,
     statusSink: request.statusSink,

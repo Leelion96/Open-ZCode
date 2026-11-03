@@ -29,6 +29,6 @@
 - Web 测试集31文件296项通过；桌面/手机 transport 定向回归48项通过；开发启动脚本回归通过。新增挂起迟到 open/ACK、KICKED 跨代 waiting timer 回归均先复现再修复。
 - `pnpm typecheck`、`pnpm lint`（60条既有 warning，0 error）、`pnpm architecture:check --changed` 通过。
 - ML01–ML06 浏览器27项检查通过，24张窄/宽屏×主题×语言截图位于 `.tmp/remote-login-v2-e2e/`；圆角、浅色徽标对比度调整后对应截图已更新，保持 pending。RV01–RV03 浏览器6组配置通过，原有 home-only 动态订阅告警如实保留。
-- 全量 `pnpm test:unit`：17,988通过、12跳过、1失败；失败来自本票未改动的 `packages/desktop/test/e2e/feedback/manual-review/pending/feedback-upload-privacy.test.ts:105` 使用 `/private/tmp`，触发 e2eRuntimePaths 检查。另发现旧 home-only fixture 缺少 location.href 的未处理错误，已补齐并由上述 Web 全集复跑确认消除；未再次全跑无关用例。
+- 全量 `pnpm test:unit`：17,988通过、12跳过、1失败；失败来自本票未改动的 `packages/desktop/test/e2e/feedback/feedback-upload-privacy.test.ts:105` 使用 `/private/tmp`，触发 e2eRuntimePaths 检查。另发现旧 home-only fixture 缺少 location.href 的未处理错误，已补齐并由上述 Web 全集复跑确认消除；未再次全跑无关用例。
 - 按根 AGENTS.md 必要验证失败不自动提交的规则保留工作区；用户原有02–04改动不纳入本票提交。
 - 未触发 OSS 覆盖流水线，未通知同事，未执行真实手机 OAuth 两条路径；需先完成3.13.0 V1使用者协调及测试部署，人工结果写入 relay-v2-pairing.md。

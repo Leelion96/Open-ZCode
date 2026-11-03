@@ -32,7 +32,8 @@ export function ProjectSidebarNavigation({
       {/* Relay V2 远控：当前电脑是项目与任务的上一级，放在导航首行；手机端占用原顶部留白。 */}
       {deviceNavigation ? <WebRemoteControlDeviceHeader navigation={deviceNavigation} /> : null}
       <NewTaskButtonGroup onCreateTask={onCreate} />
-      {props.onOpenAutomations ? (
+      {/* 远控主视图会把自动化和插件市场重置为聊天；入口必须一同隐藏，避免点击无效。 */}
+      {!props.isWebRemoteControl && props.onOpenAutomations ? (
         <Button
           variant="ghost"
           size="lg"
@@ -46,17 +47,19 @@ export function ProjectSidebarNavigation({
           {intl.formatMessage({ id: "workspace.openScheduledSettings" })}
         </Button>
       ) : null}
-      <Button
-        variant="ghost"
-        size="lg"
-        className={`w-full justify-start gap-2 ${props.pluginStoreActive ? "bg-selected text-foreground" : ""}`}
-        aria-pressed={props.pluginStoreActive ?? false}
-        data-testid="plugin-store-sidebar-open"
-        onClick={() => props.onOpenPluginStore?.()}
-      >
-        <Blocks className="size-4" />
-        {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
-      </Button>
+      {!props.isWebRemoteControl ? (
+        <Button
+          variant="ghost"
+          size="lg"
+          className={`w-full justify-start gap-2 ${props.pluginStoreActive ? "bg-selected text-foreground" : ""}`}
+          aria-pressed={props.pluginStoreActive ?? false}
+          data-testid="plugin-store-sidebar-open"
+          onClick={() => props.onOpenPluginStore?.()}
+        >
+          <Blocks className="size-4" />
+          {intl.formatMessage({ id: "workspace.openPluginsSettings" })}
+        </Button>
+      ) : null}
     </div>
   );
 }

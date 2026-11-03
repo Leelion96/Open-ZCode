@@ -5,7 +5,7 @@ description: View and discuss PowerPoint (.pptx) decks with the user in the Pres
 
 # PowerPoint viewer
 
-The Presentations panel renders a workspace deck for the user. You read the same file through tools and point the user at slides and shapes in it. The viewer is read-only: never claim to have edited a file through it. To create or change decks, use the `pptx` skill.
+The Presentations panel renders a workspace deck for the user. You read the same file through tools and point the user at slides and shapes in it. The viewer is read-only: never claim to have edited a file through it. To create or change decks, or to extract their content for other work, use the `pptx` skill.
 
 ## Anchors
 
@@ -38,4 +38,4 @@ When the user clicks a shape or selects text and chooses **Add to chat**, the ne
 - Paths are relative to the workspace; files outside it cannot be opened. Only .pptx opens, not legacy .ppt.
 - The panel renders slides close to, but not exactly like, PowerPoint; fonts missing on the machine fall back to similar ones. Use `capture_view` before you comment on fine layout, and say when a difference may come from the renderer.
 - Do not paste whole decks into the chat; quote briefly and point with `show_in_viewer`.
-- The panel only works in ZCode Desktop local workspaces. Elsewhere, the read and search tools still work; tell the user the visual viewer is unavailable.
+- The panel only works in ZCode Desktop local workspaces. Elsewhere, still open the document with `open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.

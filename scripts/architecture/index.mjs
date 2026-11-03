@@ -85,13 +85,8 @@ export async function checkArchitecture({
         }
       }
     }
-    const required = [
-      "module.ts",
-      "contract.ts",
-      "contract.example.ts",
-      "contract.test.ts",
-      "CONTRACT.md",
-    ];
+    // App 单测已退役；模块边界依靠契约、示例和文档，不再强制测试骨架。
+    const required = ["module.ts", "contract.ts", "contract.example.ts", "CONTRACT.md"];
     for (const artifact of required) {
       // 修复原因：discoverFiles 只收集源码扩展名，CONTRACT.md 永远不在 moduleFiles 里，
       // 首版对每个 managed 模块都会误报缺少 CONTRACT.md（--changed 下被 scope 过滤掉才没暴露）。

@@ -1,0 +1,23 @@
+lane actor#1 name-head="f0-" @13:76 families=fanout#1
+lane actor#2 name-head="f1-" @14:76 families=fanout#2
+lane actor#3 "m0" @15:39
+lane actor#4 "n1" @18:48
+lane actor#5 "m1" @19:12
+region seq#1 seq
+region fanout#1 fanout parent=seq#1 @13:32 label="map"
+region fanout#2 fanout parent=seq#1 @14:32 label="map"
+step ask#1 ask "ask" label-head="f0-" @13:93 lane=actor#1 region=fanout#1 maybe serial
+step ask#2 ask "ask" label-head="f1-" @14:93 lane=actor#2 region=fanout#2 maybe serial
+step ask#3 ask "m0" @15:51 lane=actor#3 region=seq#1 always
+step ask#4 ask "n1" @18:60 lane=actor#4 region=seq#1 always
+step ask#5 ask "m1" @19:24 lane=actor#5 region=seq#1 always
+edge ask#1 -> ask#1 carry maybe
+edge ask#1 -> ask#2 seq maybe
+edge ask#1 -> ask#5 data maybe inexact
+edge ask#2 -> ask#2 carry maybe
+edge ask#2 -> ask#3 seq maybe
+edge ask#2 -> ask#5 data maybe inexact
+edge ask#3 -> ask#4 seq always
+edge ask#3 -> ask#5 data always inexact
+edge ask#4 -> ask#5 data always inexact
+sink ask#5

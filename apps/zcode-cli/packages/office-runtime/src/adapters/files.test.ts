@@ -83,6 +83,17 @@ it("serializes concurrent admission and reclaims expired slots", async () => {
   await importer.close();
   expect(await readFile(join(root, path))).toHaveLength(1);
 });
+it("counts import slots per session", async () => {
+  const { importer } = await fixture();
+  try {
+    for (let i = 0; i < 4; i++) await importer.begin("a.pdf", 1, "s1");
+    await expect(importer.begin("a.pdf", 1, "s1")).rejects.toThrow("Too many pending imports");
+    await expect(importer.begin("b.pdf", 1, "s2")).resolves.toEqual(expect.any(String));
+  } finally {
+    await importer.close();
+  }
+});
+
 it("startup cleans only expired partials, preserves completed and recent imports", async () => {
   const { root, importer } = await fixture();
   const parent = join(root, ".zcode/document-imports");

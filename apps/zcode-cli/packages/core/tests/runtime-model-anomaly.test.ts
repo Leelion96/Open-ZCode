@@ -115,6 +115,55 @@ describe("AgentRuntime model anomaly guards", () => {
     });
   });
 
+  it.each([
+    { finishReason: "other", rawFinishReason: "sensitive" },
+    { finishReason: "content-filter", rawFinishReason: undefined },
+  ])(
+    "fails once without retry when the provider content filter blocks output ($finishReason / $rawFinishReason)",
+    async ({ finishReason, rawFinishReason }) => {
+      const sessionId = createSessionId(`runtime-content-filtered-${finishReason}`);
+      const eventStore = createTestSessionEventStore();
+      let calls = 0;
+
+      const runtime = createTestAgentRuntime(
+        sessionId,
+        {},
+        {
+          eventStore,
+          modelFactory: createTestModelFactory({
+            async generateText() {
+              calls += 1;
+              // GLM 在思考中途触发输出审核：只有 reasoning，无正文、usage 全零。
+              return {
+                finishReason,
+                providerMetadata: rawFinishReason ? { rawFinishReason } : undefined,
+                reasoning: [{ type: "reasoning", text: "Now I'll write the news page." }],
+                text: "",
+                usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+              };
+            },
+          } as never),
+        },
+      );
+
+      await expect(runtime.executeTurn("trigger content filter")).rejects.toMatchObject({
+        message: "Model output was blocked by the provider's content safety filter.",
+        retryable: false,
+        type: CoreErrorType.ModelError,
+      });
+      expect(calls).toBe(1);
+
+      const events = await eventStore.getEvents(sessionId);
+      const turnError = events.find((event) => event.type === SessionEventType.TurnError);
+      expect(turnError?.payload).toMatchObject({
+        error: {
+          attribution: { reason: "content_filter", source: "provider" },
+          message: "Model output was blocked by the provider's content safety filter.",
+        },
+      });
+    },
+  );
+
   it("prefers provider business metadata over suspicious empty when security verification fails", async () => {
     const sessionId = createSessionId("runtime-empty-with-provider-business-metadata");
     const eventStore = createTestSessionEventStore();

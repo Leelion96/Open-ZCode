@@ -28,7 +28,7 @@
 | **任务本质**（D28，取代 D5/D23）          | Automations 体系下的**一次性后台任务**：表单创建、列表管理、派发时新建 session；UI 一切以 Figma 定稿为准，composer 月亮开关/锁定范式作废                                                                        |
 | **排队与并发归服务端**（D18/D20）         | 全局 FIFO、每用户并发额度全在服务端；客户端不承载任何调度策略                                                                                                                                                   |
 | **任务生命周期五接口**（D39）             | availability → 取号 `POST /ticket`(→ticket_id) → 批量 `POST /ticket/status` → `POST /messages` → settle；服务端 ready 写成本地 schedulable；本地 running 在 sendPrompt ACK 后写入，不能与 active 按时间严格等同 |
-| **3h 分段 + 自动续跑**（D26 修正 D3/D15） | 每张 active ticket 最多 3h；到期 `3102` 后交接新票给驻留 CLI，保留原请求与后台结果，不提交续跑 prompt                                                                                                          |
+| **到期停止自动续跑**（2026-10-21） | 每张 active ticket 最多 3h；到期 `3106` 后失败收口，不自动补号；新票仅由用户手动创建、Continue 或重试                                                                                                          |
 | **每请求可重排队**（D19）                 | 排队协议收敛在 idle plan provider 适配层；等待不计失败、不设上限，agent loop 无感                                                                                                                               |
 | **idle plan**（D11/D16/D33/D44）          | 自动派发 turn 精确选择隐藏 Built-in `builtin:offpeak-idle-plan`，通过标准 Registry/ModelFactory 创建 Active Model；permission 在普通 session 内处理且聚合态保持 running，不做批准后中途切 provider              |
 | **计费边界**（D23/D33）                   | 运行时 Session Selection 维护续跑归属；临时闲时选择与凭据不落普通 session entry，接纳用户消息后续跑用用户选择                                     |
@@ -383,7 +383,7 @@ generate/stream runner 调用；只对 `providerId=builtin:offpeak-idle-plan` �
 - **豁免重试预算**：HTTP 429 或业务码 3105 归入 `ModelRetryReason.OffpeakQueued`，
   runner 保持/回退 attempt，使容量等待不消耗普通重试预算；其他 provider 不走该分支。
 - **stream 安全边界**：仅在尚未产生 provider-visible 输出时重试，跨越可见边界后不重放。
-- **首派弃派（规则 1，实现定案改由票据 TTL 兜底）**：不在适配层单独实现弃派逻辑——queued 态首个请求挂网关时，ready 5min TTL 到期自然触发 `400/3102` → 续跑回队（§4.6），等待上界 ≈ TTL + 一次 5min 钳制探测 ≤ 10min，满足规则意图（不空挂 agent loop）且少一套状态机；新票派发到原驻留执行，继续原请求，不重放初始指令或已执行工具。
+- **首派弃派（规则 1，实现定案改由票据 TTL 兜底）**：不在适配层单独实现弃派逻辑——queued 态首个请求挂网关时，ready 5min TTL 到期自然触发 `400/3102` → 失败收口（§4.6），等待上界 ≈ TTL + 一次 5min 钳制探测 ≤ 10min，满足规则意图（不空挂 agent loop）且少一套状态机；不会为该错误自动申请新票。
 - 用户取消任务 → abort 等待中的定时器与在途请求。
 - 请求头注入随 run 作用域 provider 配置带上：`X-Off-Peak-Ticket-ID` / 双凭证（JWT + `X-Coding-Plan-Api-Key`，D23/D26 注入点顺手做）。
 
@@ -412,29 +412,37 @@ run session 的用户输入仍由 CLI CommandInbox 唯一接纳。`modelExecutio
 
 启动路径：scheduler 进程（app 单例，先于任何派发）启动时调用 `OffPeakTaskRepo.recoverInterrupted()` —— `running`/超时认领的任务置回 `queued`（保留 queued_at，天然仍是队首附近）→ 下个 tick 在授权时重新派发 → host `session/resume` 同一 session → 以续跑提示词继续。旧库若存在历史预留值 `awaiting_approval`，Repo 初始化先迁移为 running。续跑提示词（实现定案）：固定英文指令"Continue the previous task from where it left off…do not start over"，不重发原始 prompt（避免从头重做）；首跑与续跑的区分依据 = 行上是否已有 conversationId。
 
-### 4.6 3h 到期自动续跑流（D26）
+### 4.6 票据过期停止自动取号（2026-10-21）
 
-服务端 active 硬顶 3h，长任务必须分段：一段 = 一个 ticket，同一 `task_id` 横跨多段，session 全程复用。
+服务端设计已于 2026-10-21 修订（`zcode-server/main@7e1e1b6`）：`3102` 表示 ready 过号，
+`3106` 表示 active 运行超时，`3104` 表示其他无效票据。未激活便过期或 settle 不占当日额度；
+已激活的票仍计入创建当日额度。客户端据此识别两类过期，但不恢复自动申请新票。自动补号没有远程配置开关；本次直接移除服务层的三处自动触发。
 
 ```mermaid
-flowchart TD
-  A["active 运行中（本段 ticket，3h 窗口）"] --> N{"下一次 /messages"}
-  N -->|admitted| A
-  N -->|"整项无剩余工作"| Done["settle 本 ticket → completed"]
-  N -->|"400/3102 ticket 不可用（active 3h 到期）"| Re["同 task_id 重新取号 POST /ticket<br/>拿新 ticket_id，本地状态回 queued"]
-  Re --> W["批量轮询等 ready（下一个低峰窗口 + 排到）"]
-  W -->|ready| Dispatch["交接新票 → 原请求继续 → active"]
-  Dispatch --> A
-  Re -.->|"用户取消 / 达全局约束"| Cancel["cancelled / failed"]
+flowchart LR
+  Q[排队票 expired 或遗留无票任务] --> F[failed 保留原票和会话]
+  R[运行中 3102 / 3106] --> N[CLI ticket_needed]
+  N --> F
+  F --> C[取消原驻留执行和后台工作]
+  C --> S[沿用 settle outbox 核销原票]
+  F --> U[用户手动重试]
+  U --> T[创建新票]
+  P[paused 的票过期] --> M[等待手动 Continue]
+  M --> T
 ```
 
-要点：
+`OffPeakTaskService` 是本地闲时状态的唯一 owner：先写 `failed`，再通过现有执行控制取消原
+CLI 生命周期，防止迟到 completed 把失败覆盖。失败写入原子核对观测时的票据和状态，
+旧票轮询不得覆盖手动 Continue 已取得的新票。重复到期、后续同步、app 重启均不能补号。
+用户已经接管的执行忽略迟到换票通知；desktop continuous 与 mobile replayable 均复用同一
+Host 服务，无新增 UI 状态、协议字段、持久化或定时器。手动 Continue 的当次补号失败后，
+轮询只能结束失效任务，不能替用户继续取号。
 
-- 触发点是 message 收到 `400/3102`（active 到期，服务端已把 ticket 置 expired），不是客户端本地计时——以服务端为准，避免时钟漂移误判。
-- 重新取号用**同一 `task_id`**（服务端允许多次），换新 `ticket_id`；`server_ticket_id` 列更新，旧 ticket 作废。
-- 续票等待 ready 后交给现有 runtime，不 resume、不 sendPrompt；首次派发仍按 §4.2。
-- 客户端用户可见状态在续跑间隙回落到"等待闲时算力"（running→queued 显示），跑起来再回 running；对用户是一个慢慢跑完的任务。
-- 跨票 session 与本地后台进程保持驻留；不提供跨重启后台恢复。
+客户端 Adapter 与 CLI 生命周期共用过期码判断，`3102` / `3106` 都触发 Host 失败收口；
+`3104` 按无效请求失败，不触发换票。原错误码保留在模型错误中，不归一化成同一个业务码。
+本修复不返还或恢复历史额度。历史 D26/D27 自动续跑规则由本节取代。
+
+聊天横幅收到明确的 `3102` 时，说明设备未在线、额度已返还及重新创建任务的操作；`3106` 仍说明运行超时。只有通用过期标记的历史错误使用独立文案，不映射为 `3102`，避免把已激活任务的运行超时报成额度返还。这里只调整错误展示，额度仍由服务端核算，Host 的 `ticket_needed` 与任务卡片失败状态不变。
 
 ### 4.7 会话内创建流（D49）
 
@@ -593,7 +601,8 @@ stateDiagram-v2
   running --> completed: agent loop 正常终结
   running --> failed: 不可恢复错误
   running --> cancelled: 用户取消
-  running --> queued: app 重启回收 / 400/3102 自动续跑
+  running --> queued: app 重启回收
+  running --> failed: 3102/3106 票据过期
   completed --> [*]
   failed --> [*]
   cancelled --> [*]
@@ -687,7 +696,7 @@ POST /api/v1/off-peak/ticket/status   { "ticket_ids": ["…"] }   # ≤100
 POST /api/v1/off-peak/anthropic/v1/messages
 X-Off-Peak-Ticket-ID: <ticket_id>                # body 原生 Anthropic Messages
 #    429/3105 模型并发满 → 带 Retry-After，按 D24 退避（注意吃 3h active 预算）
-#    400/3102 ticket 不可用（过期/settled/不存在/非本人）→ 触发自动续跑（§4.6）
+#    400/3102 ready 过号、400/3106 active 超时；400/3104 其他无效票据→ 失败收口，不自动补号（§4.6）
 #    400/3006 模型不在 allowed_models；499/3011 客户端取消（预期）；上游状态/SSE 直接透传
 
 # 4. 结算（仅 JWT，无 body）
@@ -716,8 +725,8 @@ flowchart TD
 | 提交                | 先查 availability（仅成功返回 true 放行）→ `POST /ticket`；取号成功才落库           | 生成 ticket 并返回 state/position；服务端额度是权威 | 查询失败/加载中禁入；`429/3103 + next_take_at` → 不落 task，刷新 availability |
 | 批量同步            | 有非终态 ticket 才 `POST /ticket/status`；共享 timer 按 nextPollAfter               | 返回 ticket state + position                        | 失败 10 秒起指数退避；`not_found` 当前不自动 retake                           |
 | 发起执行            | `schedulable=1` 的 task 被 scheduler 认领；host `sendPrompt` ACK 后本地 markRunning | ready ticket 的首个 messages 请求激活为 active      | messages 若 `429/3105`，适配层等待；UI 此时仍显示 running                     |
-| 运行中              | 每次请求携带 ticket id；容量排队不消耗普通重试预算                                  | active 3h 到期后 messages 返回 `400/3102`           | CLI 报 ticket_needed，Host 同 task 换票，控制通道交给驻留执行                        |
-| 终态                | 本地落终态（核销见 7.7/D22）                                                        | 从活跃集合移除、释放额度（显式核销或静默超时回收）  | 客户端崩溃：服务端靠超时回收额度；客户端靠 `recoverInterrupted` 重新排队      |
+| 运行中              | 每次请求携带 ticket id；容量排队不消耗普通重试预算                                  | active 3h 到期后 messages 返回 `400/3106`           | CLI 报 ticket_needed，Host 记录失败并取消原驻留执行，不申请新票                        |
+| 终态                | 本地落终态（核销见 7.7/D22）                                                        | 释放并发占用；仅未激活票不再计入当日取号额度        | 客户端崩溃：服务端靠超时回收并发；客户端靠 `recoverInterrupted` 重新排队      |
 | Permission approval | 无 Off-Peak 专用状态/切换逻辑；批准后同一自动 turn 继续                             | 无额外 ticket 动作                                  | 仍使用同一个 idle Active Model；配额提示未实现                                |
 
 ### 7.6 创建快照、ticket 粗阀与 messages 细阀
@@ -738,7 +747,7 @@ flowchart TD
   D --> G{"POST /anthropic/v1/messages"}
   G -->|"HTTP 429/3105 + Retry-After"| G0["abort-aware 等待；单次 ≤5min<br/>豁免普通 retry budget；本地仍 running"] --> G
   G -->|"2xx/SSE"| R["loop 继续"]
-  G -->|"400/3102"| X["同 task_id 重取号；交接驻留执行"] --> Q
+  G -->|"400/3102 或 3106"| X["failed；取消原驻留执行，不自动取号"]
   R -->|"自然完成"| E["终态 → settle outbox"]
 ```
 
@@ -792,7 +801,7 @@ Ticket FIFO、终态核销与接口形状已落地。仍需关注的契约边界
 
 1. **429/3105 补文档写明返回 `Retry-After`**（口头已确认 2026-07-14，v2 设计文档尚未列出）。
 2. ~~**暴露 `allowed_models` 给客户端**~~ 历史方案已由 2026-08-22 Provider M3 取代：客户端模型成员来自 Built-in `builtin:offpeak-idle-plan`。
-3. **服务端内部 `take_number.limit/window` 的运营值**不下发客户端；客户端不得据此恢复 D36 本地计数。只使用 availability 和 3103。
+3. **服务端内部 `take_number.timezone/daily_limit/daily_limits` 的运营值**不下发客户端；客户端不得据此恢复 D36 本地计数。只使用 availability 和 3103。
 4. **排队 429 不得携带 `x-should-retry: false`**：客户端 retry-after 解析在该头为 false 时会丢弃 Retry-After（spike ④，`failure-inspection.ts:205`）。
 5. **灰度按账号命中则 client/configs 需要 Authorization**：现有客户端消费者均不带鉴权头，只按 app_version/platform 区分（spike ⑥）；若 offPeak 灰度要按用户放量，需服务端确认语义并由客户端补带。
 6. **`next_poll_after` 单位确认**：客户端按"秒"实现（与 Retry-After 同惯例，×1000 转毫秒）；若服务端下发毫秒需告知。

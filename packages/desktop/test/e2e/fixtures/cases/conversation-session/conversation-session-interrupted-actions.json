@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-interrupted-actions",
+  "spec": "./test/e2e/conversation-session/conversation-session-interrupted-actions.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-interrupted-actions.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "title-e2e_interrupted_",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复和流式时序以复现用例动作窗口；真实 Agent、工具执行、队列与 UI 不被替换。"
+    },
+    {
+      "id": "slow-e2e_interrupted_",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "真实 partial 输出后保持流，直到测试点击 Stop；不存在错过停止窗口而跳过断言的路径。"
+    },
+    {
+      "id": "reply-e2e_interrupted_",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    }
+  ]
+}

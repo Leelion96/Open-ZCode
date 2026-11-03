@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-model-switch-tool-edit-fork",
+  "spec": "./test/e2e/conversation-session/conversation-session-model-switch-tool-edit-fork.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-tool-edit-fork.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/shared/readonly-tool.txt",
+      "source": "created-by-helper",
+      "description": "模型切换探针执行真实 Read 工具的只读文件。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "title-e2e_",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    },
+    {
+      "id": "model-switch-readonly-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    },
+    {
+      "id": "reply-e2e_msw_edit_",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    },
+    {
+      "id": "reply-e2e_msw_fork_",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    },
+    {
+      "id": "upstream-conversation-readonly-tool-call",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只读工具首段用于构造稳定 tool_use/tool_result 历史；工具业务由本地文件 fixture 决定，不依赖真实模型选择。"
+    }
+  ]
+}

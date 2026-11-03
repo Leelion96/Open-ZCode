@@ -30,7 +30,8 @@ describe("incoming message trusted producers", () => {
       expect(steerTurn).toHaveBeenCalledWith(
         expect.objectContaining({
           inputPresentation: "coordinator_steer",
-          input: summary ? "summary\n\nraw body" : "raw body",
+          // summary 只用于 UI 预览，子 agent 只收到 message。
+          input: "raw body",
         }),
       );
     },
@@ -59,11 +60,13 @@ describe("incoming message trusted producers", () => {
       }),
     );
   });
+  // 空闲整批的每条通知存为同一条消息的一个文本块，边界不靠正文猜测；这一轮的输入文本仍以 "\n\n" 相连。
+  // 轮中通知每条单独一个 entry，生产中不会成批，保持原来的连接字符串。
   it.each([false, true])(
     "keeps a background batch raw with one marker midTurn=%s",
     async (midTurn) => {
       const target = runtime();
-      await persistBackgroundTaskNotificationBatch.call(
+      const persisted = await persistBackgroundTaskNotificationBatch.call(
         target as never,
         [
           { id: "1", text: "one", traceContext: {} },
@@ -71,9 +74,15 @@ describe("incoming message trusted producers", () => {
         ] as never,
         midTurn,
       );
+      const content = midTurn
+        ? "one\n\ntwo"
+        : [
+            { type: "text", text: "one" },
+            { type: "text", text: "two" },
+          ];
       expect(target.messageHistory.toRuntimeEntries()).toEqual([
         {
-          message: { role: "user", content: "one\n\ntwo" },
+          message: { role: "user", content },
           metadata: {
             source: "legacy_synthetic",
             inputPresentation: midTurn ? "task_notification_steer" : "task_notification",
@@ -81,6 +90,10 @@ describe("incoming message trusted producers", () => {
         },
       ]);
       expect(target.persistSyntheticUserNoticeForSession).toHaveBeenCalledOnce();
+      expect(target.persistSyntheticUserNoticeForSession).toHaveBeenCalledWith(
+        expect.objectContaining({ text: midTurn ? "one\n\ntwo" : ["one", "two"] }),
+      );
+      expect(persisted.text).toBe("one\n\ntwo");
     },
   );
   it.each(["local_agent", "local_bash", "local_workflow", "monitor_mcp"] as const)(

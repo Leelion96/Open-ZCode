@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { promisify } from "node:util";
 import { test } from "node:test";
+import { patchNodePtyPrebuilds } from "./zcode-distribution/assets.mjs";
 import { installScriptSource } from "./zcode-distribution/installer.mjs";
 
 const exec = promisify(execFile);
@@ -175,4 +176,18 @@ test("installer creates zcode and the installed command defaults to CLI", async 
   assert.deepEqual(JSON.parse(result.stdout).argv, []);
   const webHelp = await exec(join(bin, "zcode"), ["--web", "--help"]);
   assert.match(webHelp.stdout, /zcode --web/);
+});
+
+test("node-pty prebuild patch keeps the official native that matches the official JS", async (t) => {
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "zcode-distribution-pty-")));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const prebuilds = join(directory, "node_modules/node-pty/prebuilds");
+  await mkdir(join(prebuilds, "darwin-arm64"), { recursive: true });
+  await writeFile(join(prebuilds, "darwin-arm64/pty.node"), "official-1.1.0");
+  await patchNodePtyPrebuilds(directory);
+  // Bug 回归：旧补丁用平台包 1.2.0-beta.10 的 darwin native 覆盖官方 1.1.0 native，
+  // 官方 JS 只传 3 个 resize 参数，新 native 要 5 个，macOS 终端 resize 必然失败。
+  assert.equal(await readFile(join(prebuilds, "darwin-arm64/pty.node"), "utf8"), "official-1.1.0");
+  // 官方包缺失的平台仍由平台包补齐。
+  assert.ok((await readFile(join(prebuilds, "linux-x64/pty.node"))).length > 0);
 });

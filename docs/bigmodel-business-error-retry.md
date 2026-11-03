@@ -41,6 +41,8 @@ BigModel / Z.AI 兼容接口会把一部分可恢复失败包装成业务错误�
 
 当 provider 返回 `retry-after-ms` 或 `retry-after` 时，adapter 会优先使用 provider 指定的等待时间；合理上限是 5 分钟。若同一响应带有 `x-should-retry: false` 或 `x-should-retry: 0`，则不使用 `retry-after` 驱动等待，只保留本地 retry 判断。
 
+使用 provider 指定的等待时间时，开启 jitter（默认开启）的情况下再**往后**加一段随机抖动：`[0, min(retry-after × 20%, 5 秒)]`，等待时间绝不短于 provider 要求的值。原因：同一时刻被限流的一批请求拿到的是同一个 `retry-after`，不加抖动就会在同一毫秒一起醒来、再一起撞上限流（2026-10 线上 1302 风暴的成因之一）。`jitter: false` 时保持精确等于 `retry-after`，便于测试。
+
 响应头必须贯穿三条路径：fetch 层直接抛出的 `ProviderBusinessError`、AI SDK error chunk / finish metadata 重建出的 `ProviderBusinessError`、以及被 `APICallError.cause` 包住的业务错误。否则 adapter 会把 `retry-after` 误判为缺失，并退回本地指数退避。
 
 ## 流式 attempt 清理边界
@@ -79,6 +81,7 @@ BigModel / Z.AI 兼容接口会把一部分可恢复失败包装成业务错误�
 - `failure-classifier.test.ts` 覆盖 error chunk 重建和 `APICallError.cause` 包装后仍保留 `retry-after`。
 - `runner-provider-business-network.test.ts` 覆盖 SSE 中的 `1305` 业务错误在可安全重放时会发布失败事件、重试调度事件，并在下一次请求成功。
 - `runner-provider-business-network.test.ts` 覆盖 SSE error chunk 中的 `retry-after` 会决定下一次物理请求的等待时间。
+- `runner-retry.test.ts` 覆盖开启 jitter 时，基于 `retry-after` 的等待时间落在 `[retry-after, retry-after + min(20%, 5 秒)]` 内，从不提前。
 - `runner-provider-business-network.test.ts` 覆盖 SSE error chunk 调度 retry 后，下一次物理请求必须等待上一轮 abort、`iterator.return()` 和 tee 保留分支的有界清理。
 
 ## 后续方向

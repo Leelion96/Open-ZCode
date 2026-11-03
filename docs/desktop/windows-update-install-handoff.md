@@ -3,7 +3,7 @@
 ## 目标
 
 Windows 桌面端继续使用 `electron-updater` 下载和校验更新，并通过
-`quitAndInstall()` 交给 `electron-builder 26.8.1` 生成的 NSIS 安装器完成覆盖安装。
+`quitAndInstall()` 交给 `electron-builder 26.17.0` 生成的 NSIS 安装器完成覆盖安装。
 本方案不自定义下载器、增量更新算法或安装引擎，只补齐 ZCode 多进程退出和 NSIS
 快捷方式保留策略之间的边界。
 
@@ -69,6 +69,7 @@ Main 进程不能在调用 `quitAndInstall()` 前按整个安装目录杀进程�
     -> 保留原 .lnk / 固定身份
     -> 若继承的目标失效，则原位修复 .lnk
   ```
+
 - 覆盖更新时，开始菜单和桌面快捷方式先由 electron-builder 的 `KeepShortcuts` 机制保留。
   ZCode 的 `customInstall` 必须读取已有 `.lnk` 的目标：目标已经等于本次 `$appExe` 时原样保留，
   不得再次调用 `CreateShortCut`；目标不同、为空或无法读取时才原位修复为 `$appExe`。修复原因
@@ -113,7 +114,7 @@ Main 进程不能在调用 `quitAndInstall()` 前按整个安装目录杀进程�
 
 ## 验证范围
 
-- Windows `installer.nsh` 必须使用 electron-builder 26.8.1 对应的真实 NSIS compiler、include
+- Windows `installer.nsh` 必须使用当前锁定的 electron-builder 对应的真实 NSIS compiler、include
   与 plugin 目录做独立编译测试，禁止只靠源码字符串断言判断宏可用。
 - NSIS 隔离夹具在临时安装目录执行覆盖更新宏：目标已经正确的桌面/开始菜单快捷方式必须
   保留目标、参数和 Shell 身份；目标失效的快捷方式必须修复为 `$appExe`；用户已删除的快捷

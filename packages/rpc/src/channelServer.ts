@@ -48,6 +48,7 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
       case ResponseType.PromiseSuccess:
       case ResponseType.PromiseError:
       case ResponseType.EventFire:
+      case ResponseType.EventError:
       case ResponseType.PromiseErrorObj:
         this.send([response.type, response.id], response.data);
         return;
@@ -66,9 +67,10 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
   }
 
   private onRawMessage(message: VSBuffer): void {
+    // 修复原因：同一 protocol 上还有反向 ChannelClient，对方发来的响应也会到这里；原来先解码消息体
+    // 再判断类型，每条响应都被完整解码两次。修法：先读消息头，只解码属于本端的请求体。
     const reader = new BufferReader(message);
     const header = deserialize(reader);
-    const body = deserialize(reader);
     const type = header[0] as RequestType;
 
     switch (type) {
@@ -78,7 +80,7 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
           id: header[1],
           channelName: header[2],
           name: header[3],
-          arg: body,
+          arg: deserialize(reader),
         });
         return;
       case RequestType.EventListen:
@@ -87,7 +89,7 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
           id: header[1],
           channelName: header[2],
           name: header[3],
-          arg: body,
+          arg: deserialize(reader),
         });
         return;
       case RequestType.PromiseCancel:
@@ -147,6 +149,7 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
               taskId?: unknown;
               traceId?: unknown;
               retryable?: unknown;
+              profileId?: unknown;
             } = {
               message: error.message,
               name: error.name,
@@ -164,6 +167,9 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
               "taskId",
               "traceId",
               "retryable",
+              // Bug 原因：Host 的远程等待点（需要安装/升级、补凭据）用 profileId 指明实际操作线路；
+              // 旧白名单丢掉它，侧栏项目只能把不含凭据的目标交给向导，确认安装后报“SSH 认证失败”。
+              "profileId",
             ] as const;
             for (const key of passthroughKeys) {
               const value = errorRecord[key];
@@ -205,18 +211,32 @@ export class ChannelServer<TContext = string> implements IChannelServer<TContext
       return;
     }
 
-    const disposable = channel.listen(
-      this.ctx,
-      request.name,
-      request.arg,
-    )((data) => {
+    try {
+      const disposable = channel.listen(
+        this.ctx,
+        request.name,
+        request.arg,
+      )((data) => {
+        this.sendResponse({
+          id: request.id,
+          data,
+          type: ResponseType.EventFire,
+        });
+      });
+      this.activeRequests.set(request.id, disposable);
+    } catch (error) {
+      // 已结束的终端等资源会拒绝迟到订阅；该拒绝属于本次请求，不能逃逸并退出整个 Host。
+      // 独立失败帧不会被旧客户端当作业务事件，也不会建立无法释放的活动订阅。
       this.sendResponse({
         id: request.id,
-        data,
-        type: ResponseType.EventFire,
+        type: ResponseType.EventError,
+        data: {
+          name: error instanceof Error ? error.name : "Error",
+          message: error instanceof Error ? error.message : String(error),
+          ...(error instanceof Error && error.stack ? { stack: error.stack.split("\n") } : {}),
+        },
       });
-    });
-    this.activeRequests.set(request.id, disposable);
+    }
   }
 
   private disposeActiveRequest(id: number): void {

@@ -163,7 +163,8 @@ get_app_state({app_ref, include_screenshot?=false, disable_diffing?=false})
 
 left_click({target, mouse_button?="left", click_count?=1, modifiers?="",
            strategy?="auto", app_ref?, return_state?="none"})
-left_click_drag({from_target, to, modifiers?="", app_ref?, return_state?="none"})
+left_click_drag({from_target, to, modifiers?="", strategy?="auto", app_ref?,
+                return_state?="none"})
 scroll({target, scroll_direction, scroll_amount, strategy?="auto", app_ref?,
        return_state?="none"})
 

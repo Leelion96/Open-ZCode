@@ -3,7 +3,6 @@ import {
   parsePromptCodeComments,
   type CodeCommentComposerAttachment,
 } from "@/lib/codeCommentContext.js";
-import { stripGenUiModelContext } from "@zcode/shared/gen-ui";
 import {
   buildPromptWithConversationSelections,
   parsePromptConversationSelections,
@@ -62,18 +61,9 @@ export function serializeComposerPromptContexts(
     text,
     contexts.conversationSelections,
   );
-  const withCodeComments = buildPromptWithCodeComments(
-    withSelections,
-    contexts.codeComments,
-  );
-  const withWebElements = buildPromptWithWebElementContexts(
-    withCodeComments,
-    contexts.webElements,
-  );
-  const withPptx = buildPromptWithPptxElementReferences(
-    withWebElements,
-    contexts.pptxElements,
-  );
+  const withCodeComments = buildPromptWithCodeComments(withSelections, contexts.codeComments);
+  const withWebElements = buildPromptWithWebElementContexts(withCodeComments, contexts.webElements);
+  const withPptx = buildPromptWithPptxElementReferences(withWebElements, contexts.pptxElements);
   return buildPromptWithPluginUiContexts(withPptx, contexts.pluginUiContexts ?? []);
 }
 
@@ -88,7 +78,7 @@ export function parseComposerPromptContexts(
   pptxElements: PptxElementReference[];
   pluginUiContexts: PluginUiModelContext[];
 } {
-  const plugin = parsePromptPluginUiContexts(stripGenUiModelContext(content));
+  const plugin = parsePromptPluginUiContexts(content);
   const pptx = parsePromptPptxElementReferences(plugin.visibleContent);
   const web = parsePromptWebElementContexts(pptx.visibleContent, workspace);
   const code = parsePromptCodeComments(web.visibleContent, workspace);

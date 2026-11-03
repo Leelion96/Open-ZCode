@@ -1,8 +1,9 @@
 # Sidebar Task View Switcher
 
-## 当前行为（2026-10-13）
+## 当前行为（2026-10-20）
 
-侧栏筛选为“按项目 / 按分组 / 最近更新”，各项保留图标，不恢复旧两级切换。
+侧栏筛选为“按项目 / 按分组 / 最近更新 / 按未读”，各项保留图标，不恢复旧两级切换。
+“按未读”使用 Bell，集合与系统角标同源；排序、分页与已读行为见[任务未读状态](task-unread-state.md)。
 分组与项目互相独立，具体契约见[分组视图](task-grouped-view.md)。
 客户端有有效新 `view` 时沿用；否则迁移旧 `organizeBy`：`grouped` → `grouped`、
 `chronological` → `timeline`、`project` → `projects`。无有效历史偏好默认按项目。

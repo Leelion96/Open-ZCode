@@ -352,6 +352,8 @@ export class EventReducer {
         source: payload.source ?? existing?.source,
         inputPresentation: payload.inputPresentation ?? existing?.inputPresentation,
         intent: payload.intent ?? existing?.intent,
+        // 编辑事件不是重新准入；未携带身份时保留原 automation attribution。
+        automationId: payload.automationId ?? existing?.automationId,
         toolDisallowlist: payload.toolDisallowlist ?? existing?.toolDisallowlist,
         // editQueueItem 会以同 id 重发 queued 事件；编辑不是重新 admission，
         // 必须保留原排队时间和数组位置，否则 runtime 冷重建会把它移到队尾。

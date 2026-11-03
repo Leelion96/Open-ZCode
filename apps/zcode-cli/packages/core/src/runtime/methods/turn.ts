@@ -1,7 +1,12 @@
 import { beginLocalTurnPreparation, type LocalTtftDetail } from "@zcode/contracts";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
+import { refreshWorkspaceTrustAdmission } from "./mcp.js";
 import { withConversationQuotes } from "../helpers/conversation-quotes.js";
-import { ensureGroupTaskPermissionScope } from "./input-intent-persistence.js";
+import {
+  ensureGroupTaskPermissionScope,
+  telemetryInputOrigin,
+  TELEMETRY_INPUT_ORIGIN_ATTRIBUTE,
+} from "./input-intent-persistence.js";
 import { prepareOffPeakTurn } from "../off-peak/runtime.js";
 import {
   CoreErrorType,
@@ -15,7 +20,6 @@ import {
   runWithContextAsync,
   traceContextToLogContext,
   TurnMachineImpl,
-  formatLocalIsoDate,
 } from "../deps.js";
 import type {
   HookRunResult,
@@ -34,9 +38,9 @@ import {
   createTurnAbortScope,
   throwIfTurnAborted,
   createTurnFailureError,
+  isExternalTurnFault,
   isTurnCancellationError,
   appendTurnOutcomeEvent,
-  buildDateChangeReminderBody,
   buildRuntimeUserEntriesFromTurn,
   buildUserContentFromTurn,
   logResolvedTurnAttachments,
@@ -52,6 +56,7 @@ import type { PromptRuntimeCommand } from "../command-queue.js";
 import { enqueueCancellableRuntimeCommand } from "./runtime-command-submit.js";
 import { buildReferencedSessionContextReminderBody } from "../../session-context/read-session-context.js";
 import { runRegularTurnLoop } from "./turn-loop.js";
+import { appendInterruptMarker } from "./interrupt-marker.js";
 import {
   maybeStartDeferredSessionTitleGeneration,
   maybeStartSessionTitleGeneration,
@@ -161,7 +166,8 @@ export async function executeTurnCommand(
   const turnId = startReservation?.turnId ?? createTurnId();
   const queryId = options?.queryId ?? (options?.inputId as QueryId | undefined) ?? createQueryId();
   const displayInput = options?.displayInput ?? input;
-  const turnTraceContext =
+  const inputOrigin = telemetryInputOrigin(options?.intent, options?.traceContext?.attributes);
+  const baseTurnTraceContext =
     startReservation?.traceContext ??
     createChildTraceContext(options?.traceContext ?? this.rootTraceContext, {
       queryId,
@@ -171,6 +177,15 @@ export async function executeTurnCommand(
         turnNumber: this.turnNumber,
       },
     });
+  const turnTraceContext = inputOrigin
+    ? {
+        ...baseTurnTraceContext,
+        attributes: {
+          ...baseTurnTraceContext.attributes,
+          [TELEMETRY_INPUT_ORIGIN_ATTRIBUTE]: inputOrigin,
+        },
+      }
+    : baseTurnTraceContext;
   const traceId = turnTraceContext.traceId;
   const turnStartedAtMs = Date.now();
   const targetRunInputID = options?.inputId ?? String(turnId);
@@ -508,6 +523,7 @@ export async function executeTurnCommand(
           foregroundExecutionId: this.activeForegroundExecution?.foregroundExecutionId,
           queryId,
           inputSource: options?.inputSource,
+          ...(inputOrigin ? { inputOrigin } : {}),
           inputVisibility: options?.inputVisibility,
           originMeta: options?.originMeta,
           ...(options?.epilogueStart === undefined ? {} : { epilogueStart: options.epilogueStart }),
@@ -611,7 +627,6 @@ export async function executeTurnCommand(
         );
         injectReferencedSessionContextReminderIntoMessageHistory.call(this, input, options);
         // 话题原文由标准文本附件按需读取，可信来源归档不能再次生成隐藏上下文。
-        injectDateChangeReminderIntoMessageHistory.call(this);
         const resolvedAttachments = await resolveTurnAttachments(attachments, {
           abortSignal: turnAbortSignal,
           artifactStore: this.artifactStore,
@@ -700,10 +715,16 @@ export async function executeTurnCommand(
               resolvedAttachments,
               {
                 browserAmbientContext: options?.browserAmbientContext,
+                genUiContext: options?.intent?.genUiContext,
               },
             ).map((entry) => {
               const metadata = runtimeInputMetadata(options?.inputPresentation);
-              return entry.kind !== "attachment" && metadata ? { ...entry, metadata } : entry;
+              // 合并而不是替换：输入 entry 上还挂着页面状态（genUiState）。
+              // 修复原因：整体替换会删掉它，抢占运行中轮次的立即发送在热态请求里丢失页面状态，
+              // 冷恢复按合并恢复又带上，前后请求不一致。写法与冷恢复相同。
+              return entry.kind !== "attachment" && metadata
+                ? { ...entry, metadata: { ...entry.metadata, ...metadata } }
+                : entry;
             }),
           );
           // /init 和自定义 slash command 会把模型输入展开成较长的内部
@@ -724,6 +745,14 @@ export async function executeTurnCommand(
                 : { epilogueStart: options.epilogueStart }),
             },
           );
+          // 提示读取跟随真实新输入，不随模型续步重复；首输入复用 MCP 初始化的读取。
+          if (
+            this.mcpToolsRegistered &&
+            (options?.inputSource === undefined || options.inputSource === "workflow_launch") &&
+            runtimeInputMetadata(options?.inputPresentation)?.source !== "legacy_synthetic"
+          ) {
+            await refreshWorkspaceTrustAdmission(this, turnTraceContext);
+          }
         }
         if (creationFailure) {
           // 已接纳输入已随 TurnStarted 和用户消息落库；不准备 Agent、不生成标题、不请求模型，
@@ -806,6 +835,7 @@ export async function executeTurnCommand(
           backgroundSubagentResultConsumed: options?.backgroundSubagentResultConsumed === true,
           workflowResultConsumed: options?.workflowResultConsumed === true,
           completedRealToolResultBatch: false,
+          inputAttachmentCollectionPending: true,
           currentUserMessageId: userMessageId,
           events,
           input,
@@ -1000,6 +1030,15 @@ export async function executeTurnCommand(
         if (finishedTarget?.targetID === startedTarget?.targetID) {
           startedTarget = finishedTarget;
         }
+        // 停止的轮次给模型留中断标记；send-now 抢占是为了交付下一条输入，不加标记。
+        // 修复原因：宿主外部故障中止本轮时，被取消的工具结果已写成停止文字，却没有标记；
+        // 它同样是中止，与用户停止一样留标记。
+        const abortedTurn =
+          coreError.type === CoreErrorType.TurnCancelled ||
+          isExternalTurnFault(turnAbortSignal?.reason);
+        if (loopState && abortedTurn && !preserveQueueAutoDrainOnCancel) {
+          await appendInterruptMarker(this, loopState, turnTraceContext);
+        }
         if (coreError.type === CoreErrorType.TurnCancelled) {
           await this.pauseActiveTargetForCancellation(turnTraceContext);
           if (activeTurn) {
@@ -1126,21 +1165,6 @@ export async function executeTurnCommand(
       });
     }
   });
-}
-
-function injectDateChangeReminderIntoMessageHistory(this: AgentRuntimeInternal): void {
-  const currentDate = formatLocalIsoDate(this.now());
-  const previousDate = this.lastEmittedLocalDate;
-  this.lastEmittedLocalDate = currentDate;
-
-  if (!previousDate || previousDate === currentDate) {
-    return;
-  }
-
-  this.messageHistory.addAttachment(
-    "date_change",
-    buildDateChangeReminderBody(previousDate, currentDate),
-  );
 }
 
 function injectReferencedSessionContextReminderIntoMessageHistory(

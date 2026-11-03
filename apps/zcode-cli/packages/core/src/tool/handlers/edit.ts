@@ -37,9 +37,10 @@ import {
 } from "../edit-matchers.js";
 import { resolveWorkspacePath } from "../path-policy.js";
 import {
-  createReadFileStateKey,
-  findEditableReadFileState,
+  findLatestReadFileState,
   normalizeReadFileStateMtimeMs,
+  requestedPathField,
+  setReadFileStateEntry,
 } from "../read-file-state.js";
 import { createReadFileStateMetadataFromEntry } from "../read-file-state-metadata.js";
 import {
@@ -425,7 +426,7 @@ function getEditableReadStateFailure(
 ): ToolHandlerFailure | undefined {
   if (!readFileState) return undefined;
 
-  const lastRead = findEditableReadFileState(readFileState, filePath);
+  const lastRead = findLatestReadFileState(readFileState, filePath);
   if (!lastRead || lastRead.isPartialView) {
     return editFailure(EditErrorCode.FILE_NOT_READ, EDIT_NOT_READ_MESSAGE);
   }
@@ -523,6 +524,7 @@ async function writeEditResult(input: {
   const readFileStateEntry = updateReadFileStateAfterEdit(
     input.context.readFileState,
     input.filePath,
+    input.inputFilePath,
     contentToWrite,
     writeResult.revision,
   );
@@ -572,12 +574,14 @@ async function writeEditResult(input: {
 function updateReadFileStateAfterEdit(
   readFileState: ReadFileStateMap | undefined,
   filePath: string,
+  requestedPath: string,
   content: string,
   revision: FileSystemReadTextResult["revision"] | undefined,
 ): ReadFileStateEntry | undefined {
   if (!readFileState) return undefined;
   const entry: ReadFileStateEntry = {
     path: filePath,
+    ...requestedPathField(requestedPath, filePath),
     content,
     offset: undefined,
     limit: undefined,
@@ -588,7 +592,7 @@ function updateReadFileStateAfterEdit(
     mtimeMs: normalizeReadFileStateMtimeMs(revision?.mtimeMs),
     sizeBytes: revision?.sizeBytes ?? Buffer.byteLength(content, "utf8"),
   };
-  readFileState.set(createReadFileStateKey(filePath, 1, undefined), entry);
+  setReadFileStateEntry(readFileState, entry);
   return entry;
 }
 

@@ -161,6 +161,8 @@ describe("facade prose", () => {
       "declare interface Agent",
       "declare function agent(",
       "declare const args",
+      // docs/dynamic-workflow/authoring.md「The run's identity」：run 身份，与 args 同为 facade 的值。
+      "declare const run",
       "declare function log(",
       "declare function report(",
       // docs/dynamic-workflow/authoring.md「Declaring a dashboard」：内容成员 + 四种预置看板的 spec。

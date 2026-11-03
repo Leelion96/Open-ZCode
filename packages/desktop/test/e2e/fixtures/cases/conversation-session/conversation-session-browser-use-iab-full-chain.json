@@ -30,7 +30,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "验证不依赖跨 cell binding 的 tab/page 连续性，并稳定覆盖 actionability、trusted input、页面副作用、同一结果多图画廊与 viewport 回读。"
+      "syntheticReason": "验证不依赖跨 cell binding 的 tab/page 连续性，同时稳定覆盖 actionability、trusted guest input、页面副作用、显式图片和 viewport 回读。"
     },
     {
       "id": "upstream-browser-use-iab-final",
@@ -38,7 +38,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "稳定验证显式 emitImage 与 Browser turn-end screenshot 同时保留。"
+      "syntheticReason": "稳定形成 normal completion，验证显式 emitImage 不抑制 Browser turn-end screenshot。"
     }
   ]
 }

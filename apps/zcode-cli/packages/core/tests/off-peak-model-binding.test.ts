@@ -3,10 +3,10 @@ import { OffPeakLifecycle, type OffPeakLifecycleEvent } from "../src/runtime/off
 import { OffPeakTicketAuthority } from "../src/runtime/off-peak/model-binding.js";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 
-const expired = () =>
+const expired = (code = "3102") =>
   Object.assign(new Error("expired"), {
     code: "invalid_model_request",
-    context: { providerCode: "3102", providerId: "idle" },
+    context: { providerCode: code, providerId: "idle" },
   });
 function fixture() {
   const events: OffPeakLifecycleEvent[] = [];
@@ -37,6 +37,26 @@ const result = {
 };
 
 describe("闲时模型请求换票", () => {
+  it("包装后保留原模型的全部数据字段，包括请求能力", () => {
+    const { authority } = fixture();
+    const requestCapabilities = { foldRemindersIntoToolResults: true } as const;
+    const base = {
+      ...createTestRuntimeModel({ generateText: async () => result }),
+      requestCapabilities,
+    };
+    const wrapped = authority.createBinding().wrap({ ...base, bind: () => base });
+    // 漏掉请求能力时，闲时轮不并入 tool_result、ToolSearch 按协议不支持处理，和普通轮形态不同。
+    expect(wrapped.requestCapabilities).toEqual(requestCapabilities);
+    expect(wrapped.bind().requestCapabilities).toEqual(requestCapabilities);
+    expect(wrapped).toMatchObject({
+      providerId: base.providerId,
+      modelId: base.modelId,
+      properties: base.properties,
+      optionSpecs: base.optionSpecs,
+      options: base.options,
+    });
+  });
+
   it("取消信号传到底层，关闭不结束也不吞掉取消错误", async () => {
     const { authority } = fixture();
     const binding = authority.createBinding();
@@ -140,7 +160,7 @@ describe("闲时模型请求换票", () => {
     binding.release();
   });
 
-  it("请求过期后暂停，换票重试相同请求，多个请求只申请一次新票", async () => {
+  it.each(["3102", "3106"])("过期码 %s 通知 Host 收口，多个请求只通知一次", async (code) => {
     const { authority, events } = fixture();
     const binding = authority.createBinding();
     const tickets: string[] = [];
@@ -155,17 +175,35 @@ describe("闲时模型请求换票", () => {
             abortSignal: request.abortSignal,
           });
           tickets.push(auth!.headers!.ticket!);
-          if (auth!.headers!.ticket === "one") throw expired();
+          if (auth!.headers!.ticket === "one") throw expired(code);
           return result;
         },
       }),
     );
     const request = { messages: [] };
     const pending = Promise.all([model.generateText(request), model.generateText(request)]);
+    void pending.catch(() => {});
     await expect.poll(() => events.filter((e) => e.type === "ticket_needed").length).toBe(1);
     expect(authority.replaceTicket(1, "two", { headers: { ticket: "two" } })).toBe(true);
     expect(await pending).toEqual([result, result]);
     expect(tickets).toEqual(["one", "one", "two", "two"]);
+    binding.release();
+  });
+
+  it("3104 无效票据直接失败，不进入换票等待", async () => {
+    const { authority, events } = fixture();
+    const binding = authority.createBinding();
+    const error = expired("3104");
+    const model = binding.wrap(
+      createTestRuntimeModel({
+        providerId: "idle",
+        generateText: async () => {
+          throw error;
+        },
+      }),
+    );
+    await expect(model.generateText({ messages: [] })).rejects.toBe(error);
+    expect(events.some((event) => event.type === "ticket_needed")).toBe(false);
     binding.release();
   });
 

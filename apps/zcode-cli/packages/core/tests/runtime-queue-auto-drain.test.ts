@@ -49,6 +49,9 @@ describe("guide 行内 drain 的外层 FIFO 门", () => {
       input: "guide current work",
       queuedAt: new Date(0),
       delivery: "guide",
+      intent: {
+        genUiContext: [{ path: "/project/example.html", state: { stage: "guide" } }],
+      },
     };
     const activeTurn = {
       pendingInputs: [futureQueue, currentGuide],
@@ -80,6 +83,17 @@ describe("guide 行内 drain 的外层 FIFO 门", () => {
     expect(JSON.stringify(runtime.messageHistory.addEntries.mock.calls[0])).not.toContain(
       "future work",
     );
+    // 页面状态挂在 guide 自己的 entry 上，不写单独的状态条目。
+    expect(runtime.messageHistory.addEntries.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({
+        message: { role: "user", content: "guide current work" },
+        metadata: expect.objectContaining({
+          genUiState: expect.stringContaining(
+            '[{"path":"/project/example.html","state":{"stage":"guide"}}]',
+          ),
+        }),
+      }),
+    ]);
     expect(appendedEvents).toEqual([
       expect.objectContaining({
         payload: expect.objectContaining({ pendingInputIds: ["current-guide"] }),

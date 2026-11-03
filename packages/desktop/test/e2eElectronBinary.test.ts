@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveE2EElectronBinary } from "./e2e/helpers/e2e-electron-binary.js";
 
@@ -14,6 +15,11 @@ afterEach(async () => {
 });
 
 describe("E2E Electron binary preflight", () => {
+  it("ChromeDriver 映射覆盖 Electron 44.7.0 的真实 Chromium 版本", () => {
+    const require = createRequire(import.meta.url);
+    const { electronToChromium } = require("electron-to-chromium");
+    expect(electronToChromium("44.7.0")).toBe("152.0.7977.130");
+  });
   it("loads local E2E env before reading timeout and resolving Electron", () => {
     const wdioSource = readFileSync(new URL("../wdio.conf.ts", import.meta.url), "utf8");
     const loadEnvIndex = wdioSource.indexOf("\nloadE2ELocalEnv();");

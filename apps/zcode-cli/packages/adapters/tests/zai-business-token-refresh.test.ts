@@ -83,7 +83,7 @@ describe("Z.ai 业务登录 Token 刷新", () => {
   });
   it("连续 401 有限失败，下次调用不永久粘住旧业务 JWT", async () => {
     const f = fixture({ failures: [401, 401, 200] });
-    await expect(f.resolve()).rejects.toThrow("project_token_request_failed");
+    await expect(f.resolve()).rejects.toThrow("project_token_http_401");
     expect(f.logins()).toBe(2);
     await expect(f.resolve()).resolves.toBe("pat-3");
     expect(f.logins()).toBe(3);

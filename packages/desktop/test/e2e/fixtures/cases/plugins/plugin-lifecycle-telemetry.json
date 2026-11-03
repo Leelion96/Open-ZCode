@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "plugin-lifecycle-telemetry",
+  "spec": "./test/e2e/plugins/plugin-lifecycle-telemetry.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-lifecycle-telemetry.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

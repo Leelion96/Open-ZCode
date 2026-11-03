@@ -99,6 +99,8 @@ export type PluginComponentKind = "agent" | "command" | "skill" | "hook" | "mcp"
 
 export interface PluginComponentItem {
   name: string;
+  /** 发现的 agent 源文件路径；仅供 CLI 加载，不投影到组件详情协议。 */
+  path?: string;
   /** 来自组件 frontmatter / manifest 的描述；缺失时省略，绝不伪造。 */
   description?: string;
 }

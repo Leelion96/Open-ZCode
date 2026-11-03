@@ -53,9 +53,41 @@ const initialRows: ConversationRow[] = userRows.flatMap((row, index): Conversati
   ];
 });
 
+const hydrationRows: ConversationRow[] = [
+  {
+    rowId: 1,
+    turnId: "hydrate-leading",
+    createdAt: 1,
+    createdAtSeq: 1,
+    kind: "turnHeader",
+    origin: "backgroundResult",
+    state: "completedSuccess",
+    startedAt: 1,
+    endedAt: 1000,
+  },
+  ...Array.from(
+    { length: 134 },
+    (_, index): ConversationRow => ({
+      rowId: index + 2,
+      turnId: "hydrate-leading",
+      createdAt: index + 2,
+      createdAtSeq: index + 2,
+      kind: "toolCall",
+      toolCallId: `hydrate-tool-${index}`,
+      toolName: "FixtureTool",
+      status: "success",
+      inputText: '{"query":"fixture"}',
+      input: { query: "fixture" },
+    }),
+  ),
+  ...userRows.slice(0, 5).map((row, index) => ({ ...row, rowId: 200 + index })),
+];
+
 function Fixture() {
   const [session, setSession] = useState("a");
-  const [rows, setRows] = useState(initialRows);
+  const [rows, setRows] = useState(
+    query.get("hydrate") === "true" ? hydrationRows.slice(-60) : initialRows,
+  );
   const back = useRef<(() => void) | null>(null);
   const locate = useRef<((target: { unitIndex: number; rowId: number }) => void) | null>(null);
   return (
@@ -89,6 +121,7 @@ function Fixture() {
             >
               Grow
             </button>
+            <button onClick={() => setRows(hydrationRows)}>Hydrate</button>
             <output data-testid="scope">{session}</output>
           </nav>
           <div className="flex min-h-0 min-w-0 flex-1">

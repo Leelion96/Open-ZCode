@@ -20,6 +20,47 @@ const model = createTestRuntimeModel({
 });
 
 describe("Context execution model source", () => {
+  it("shares environment and model sections with subagents and custom system prompts", () => {
+    const main = createContextBuilder({ envInfo, model, workingDirectory: envInfo.cwd }).build();
+    const child = createSubagentContextBuilder({
+      envInfo,
+      model,
+      agentPrompt: "Child-only identity.",
+    }).build();
+    const custom = createContextBuilder({
+      envInfo,
+      model,
+      workingDirectory: envInfo.cwd,
+      customSystemPrompt: "Host override.",
+    }).build();
+    const runtimeContext = (result: typeof main) =>
+      result.sections.filter(
+        (section) => section.source === "env_info" || section.source === "model",
+      );
+    expect(runtimeContext(child)).toEqual(runtimeContext(main));
+    expect(runtimeContext(child).map((section) => section.injectionTarget)).toEqual([
+      "meta_user",
+      "meta_user",
+    ]);
+    // 自定义 prompt 只替换 system 正文，环境与模型公告照常发送。
+    expect(runtimeContext(custom)).toEqual(runtimeContext(main));
+    expect(child.metaUserAttachments).toEqual([]);
+    const initial = child.systemMessages.map((message) => message.content).join("");
+    expect(initial).toMatch(
+      /Child-only identity\.\n\nMessages from the agent that launched you — .+\n\nNotes:/u,
+    );
+    expect(initial).not.toContain("# Environment");
+    expect(initial).not.toContain("<env>");
+    expect(initial).not.toContain("You are powered by");
+    expect(
+      child.sections.some(
+        (section) =>
+          section.source === "session_context" ||
+          section.source === "memory" ||
+          section.source === "desktop_context",
+      ),
+    ).toBe(false);
+  });
   for (const kind of ["main", "subagent"] as const) {
     const build = (source: EnvInfo, withModel: boolean) => {
       const config = { envInfo: source, model: withModel ? model : undefined };
@@ -30,7 +71,10 @@ describe("Context execution model source", () => {
               ...config,
               agentPrompt: "Inspect the workspace.",
             }).build();
-      return result.systemMessages.map((message) => String(message.content)).join("\n");
+      // 环境与模型身份只产出 section，由运行时宣告。
+      return [...result.systemMessages, ...result.sections]
+        .map((item) => String(item.content))
+        .join("\n");
     };
 
     it(`${kind} renders the actual Model without putting model identity into EnvInfo`, () => {

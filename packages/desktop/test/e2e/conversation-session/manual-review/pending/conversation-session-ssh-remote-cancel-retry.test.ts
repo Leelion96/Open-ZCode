@@ -76,18 +76,11 @@ describe(`${CASE_MARKER}: SSH pending cancel 后立即重试`, () => {
       CONNECTION_CLOSE_TIMEOUT_MS,
       `${CASE_MARKER}: 取消后首个 SSH socket 没有关闭`,
     );
-    await browser.waitUntil(
-      () =>
-        browser.execute(() => {
-          const dialog = document.querySelector('[data-testid="ssh-dialog"]');
-          return (
-            /已取消|Cancelled/u.test(dialog?.textContent ?? "") &&
-            !dialog?.querySelector('[data-testid="ssh-error"]')
-          );
-        }),
-      { timeout: 15_000, timeoutMsg: `${CASE_MARKER}: 主动取消仍显示错误` },
-    );
-    await closeCancelledSSHDialog();
+    // 失败录像显示取消已返回项目草稿；旧断言仍等待关闭向导内的“已取消”，误报为错误。
+    await $('[data-testid="ssh-dialog"]').waitForExist({ reverse: true });
+    await $('[data-testid="virtual-project-name"]').waitForDisplayed();
+    expect(await $('[data-testid="ssh-error"]').isExisting()).toBe(false);
+    expect(await readHostProcesses()).toEqual(initialHosts);
     await openSSHRemoteDialog(CASE_MARKER);
 
     await fillSSHPasswordSettings(proxiedConfig);
@@ -116,22 +109,6 @@ describe(`${CASE_MARKER}: SSH pending cancel 后立即重试`, () => {
     expect(await readHostProcesses()).toEqual(initialHosts);
   });
 });
-
-async function closeCancelledSSHDialog(): Promise<void> {
-  // 当前取消页没有“返回配置”；关闭会清空未完成草稿，再从真实新建入口以新凭据重试同一 target。
-  await browser.waitUntil(
-    () =>
-      browser.execute(() => {
-        const button = Array.from(
-          document.querySelectorAll<HTMLButtonElement>('[data-testid="ssh-dialog"] button'),
-        ).find((item) => ["关闭", "Close"].includes(item.innerText.trim()) && !item.disabled);
-        button?.click();
-        return Boolean(button);
-      }),
-    { timeout: 15_000, timeoutMsg: `${CASE_MARKER}: 取消页没有关闭入口` },
-  );
-  await $('[data-testid="ssh-dialog"]').waitForExist({ reverse: true });
-}
 
 async function waitForPromise<T>(
   promise: Promise<T>,

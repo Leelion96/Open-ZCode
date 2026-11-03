@@ -13,7 +13,12 @@ const clientConfigSchema = z
               .url()
               .refine((value) => {
                 const url = new URL(value);
-                return url.protocol === "https:" && !url.username && !url.password;
+                // 内网和测试部署也会提供 HTTP 配置地址；协议准入不按产品环境区分。
+                return (
+                  (url.protocol === "https:" || url.protocol === "http:") &&
+                  !url.username &&
+                  !url.password
+                );
               })
               .optional(),
           })

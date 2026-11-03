@@ -12,6 +12,7 @@ import { hydrateMessageHistoryFromSession } from "../src/agent/session-history-h
 import { buildProviderRequestMessages } from "../src/runtime/helpers/provider-request-messages.js";
 import type { AgentRuntimeInternal } from "../src/runtime/internal.js";
 import { createToolRegistry } from "../src/tool/registry.js";
+import type { ToolExecutionContext } from "../src/tool/types.js";
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createRecordingMessageStore } from "./runtime-output-token-continuation-test-helpers.js";
@@ -37,6 +38,7 @@ function createFixture(
     streamFailure?: boolean;
     earlyWriteFailure?: "pending" | "running" | false;
     delayEarlySchedule?: boolean;
+    recordReadSnapshot?: boolean;
   } = {},
 ) {
   const sessionId = createSessionId("streaming-part-identity");
@@ -53,8 +55,21 @@ function createFixture(
   const releaseSchedule = Promise.withResolvers<void>();
   const lateExecutionSettled = Promise.withResolvers<void>();
   const registry = createToolRegistry();
-  const handler = vi.fn(async () => {
+  const handler = vi.fn(async (_input: unknown, context: ToolExecutionContext) => {
     if (options.outcome === "tool-error") throw new Error(READ_ERROR);
+    if (options.recordReadSnapshot) {
+      context.recordReadFileStateMetadata?.({
+        content: READ_OUTPUT,
+        isPartialView: false,
+        mtimeMs: 1,
+        path: "/tmp/stream-read.txt",
+        readAtMs: 1,
+        revisionId: "rev:stream-read",
+        schemaVersion: 1,
+        sizeBytes: READ_OUTPUT.length,
+        tool: "Read",
+      });
+    }
     return READ_OUTPUT;
   });
   let earlyWriteFailed = false;
@@ -253,6 +268,24 @@ describe("streaming tool attempt history", () => {
       expect(new Set(fixture.writes.map((part) => part.id)).size).toBe(2);
     },
   );
+
+  it("stores the read-state snapshot index on a result settled from early execution", async () => {
+    const fixture = createFixture({ earlyWriteFailure: false, recordReadSnapshot: true });
+    expect((await fixture.runtime.executeTurn("read a file")).response).toBe("done");
+    expect(fixture.handler).toHaveBeenCalledTimes(1);
+    expect(fixture.parts()).toEqual([
+      expect.objectContaining({
+        id: fixture.writes[0]!.id,
+        declarationIndex: 0,
+        state: expect.objectContaining({
+          status: "completed",
+          metadata: expect.objectContaining({
+            readFileState: expect.objectContaining({ snapshotIndex: expect.any(Number) }),
+          }),
+        }),
+      }),
+    ]);
+  });
 
   it("persists fallback when the first pending write failed", async () => {
     const fixture = createFixture({ earlyWriteFailure: "pending" });

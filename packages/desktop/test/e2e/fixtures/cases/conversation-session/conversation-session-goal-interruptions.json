@@ -9,6 +9,13 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-goal-interruptions-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "upstream-goal-verifier-stop-continuation",
       "kind": "main",
       "source": "synthetic",
@@ -20,7 +27,7 @@
       "kind": "goal-verifier",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "goal verifier stop 需要稳定 running 窗口；真实 verifier 可能过快完成。"
+      "syntheticReason": "verifier 响应保持未完成，直到应用真实 Stop 取消；不依赖固定延时维持观察窗口。"
     },
     {
       "id": "upstream-goal-verifier-stop-next",
@@ -48,14 +55,14 @@
       "kind": "goal-verifier",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "goal verifier compact 需要稳定 running 窗口；真实 verifier 可能过快完成。"
+      "syntheticReason": "verifier 响应保持未完成，直到应用真实 Stop 取消；不依赖固定延时维持观察窗口。"
     },
     {
       "id": "upstream-goal-verifier-compact-summary",
       "kind": "main",
       "source": "synthetic",
-      "timingPolicy": "fast-json",
-      "syntheticReason": "验证 stopped verifier 后允许 manual compact，并给后续请求一个可断言的 compact 摘要 marker。"
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "真实回放 compact 仅耗时 38ms，测试错过 started；保持摘要流打开，确认开始态后放行并验证同一 inputId 完成及摘要续发。"
     },
     {
       "id": "upstream-goal-verifier-compact-next",

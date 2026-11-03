@@ -1955,10 +1955,21 @@ export function useRemoteWorkspaceHistory({
       const profile = snapshot?.profiles.find(
         (candidate) => candidate.profileId === device?.profileId,
       );
+      // Bug 原因（ZCT-2112984371086536704）：等待点（如需要安装）也会被记成失败；3.16.2 的记录只有
+      // 本地化文案。线路尚未识别时，旧逻辑用这段过期文案判成“连接失败”，不重连也不显示安装确认。
+      // 第一版修复在线路未识别时忽略全部记录，普通失败后每次点击又都静默重拨，打不开向导。
+      // 现在按记录的错误码区分：普通失败照常交给向导查看、不拨号；等待点或无码旧记录先重连，
+      // 由 Host 给出当前带码的结果和实际操作线路。线路已识别时仍按原逻辑使用项目级失败。
+      const recordFailureCode =
+        entry.lastConnectionErrorCode &&
+        resolveRemoteConnectionPresentation({ errorCode: entry.lastConnectionErrorCode }).status !==
+          "pending"
+          ? entry.lastConnectionErrorCode
+          : undefined;
       const presentation = resolveRemoteConnectionPresentation({
         ...device,
         attached: false,
-        projectError: entry.lastConnectionError,
+        projectError: device || recordFailureCode ? entry.lastConnectionError : undefined,
       });
       await requestRemoteProjectConnection({
         preference: {
@@ -1969,7 +1980,7 @@ export function useRemoteWorkspaceHistory({
         },
         presentation,
         failure: {
-          code: device?.errorCode,
+          code: device ? device.errorCode : recordFailureCode,
           message: device?.error ?? entry.lastConnectionError ?? "",
           logs: reconnectingRemoteWorkspaceLogsByWorkspaceKey[workspaceKey] ?? [],
         },

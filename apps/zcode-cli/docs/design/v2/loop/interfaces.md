@@ -797,26 +797,29 @@ equivalent to:
 
 ### 4.3 核心类型
 
+以 `core/src/context/types.ts` 的 `ContextSource` 为准；本节只示意。
+
 ```typescript
 // === Context Source ===
 type ContextSource =
   | 'cli_prefix'
   | 'identity'
   | 'env_info'
-  | 'system_context'
+  | 'session_context'
   | 'skills'
   | 'tools'
   | 'request_user_context'
   | 'memory'
   | 'current_date'
   | 'custom_system_prompt'
+  | 'workflow_actor_identity'
   | 'subagent_agent_prompt'
   | 'subagent_notes'
-  | 'subagent_environment'
+  | 'model'
   | 'dynamic_behavior'
   | 'session_guidance'
-  | 'output_style'
-  | 'context_management';
+  | 'context_management'
+  | 'desktop_context';
 
 // === Context Section ===
 interface ContextSection {
@@ -858,7 +861,7 @@ interface EnvInfo {
   osVersion: string;
   nodeVersion: string;
   currentModel?: string; // active runtime model id, refreshed after /model changes
-  isGitRepository?: boolean;
+  isGitRepository?: boolean; // 从 cwd 的真实路径（解析链接）向上查找 `.git`（目录或文件）得到，不启动 git 进程
   gitBranch?: string;
   gitMainBranch?: string;
   gitUser?: string;
@@ -896,7 +899,7 @@ interface SessionContextOptions {
 interface ContextBuilderConfig {
   workingDirectory: string;
   envInfo: EnvInfo;
-  currentDate?: string;                 // YYYY-MM-DD，由 adapter 解析
+  currentDate?: string;                 // YYYY-MM-DD，由 adapter 解析；只用于日期段的用量统计，模型看到的日期取运行时时钟
   userInstructions?: UserInstructionsOptions;  // L2
   projectContext?: ProjectContext;             // TODO - P2
   sessionContext?: SessionContextOptions;      // TODO - P3
@@ -906,11 +909,14 @@ interface ContextBuilderConfig {
 `Environment Info` mixes one live field with a frozen git snapshot. The runtime
 must refresh `currentModel` from the active session model selection whenever the
 dynamic system block is rebuilt, including after `/model` changes and on resume.
-All git-derived fields (`isGitRepository`, branch metadata, git user, status
-lines, recent commits) are a session-start snapshot. They must be persisted and
-reused for the rest of the session, and must not be recomputed later in the
-same session, otherwise normal repository changes would invalidate prompt cache
-identity.
+The git-derived fields (`isGitRepository`, branch metadata, git user, status
+lines, recent commits) form a session-start snapshot. The snapshot is persisted
+and is not recomputed in the same session, so normal repository changes do not
+invalidate prompt cache identity. When the cwd changes, the environment
+announcement detects the repository attribute again for the new directory (see
+`meta-user-context.md`). The `session_context` announcement reads Git again only when history
+holds none (see `meta-user-context.md`); that read builds the announcement and
+does not change this snapshot.
 
 ### 4.4 User Instructions (L2)
 

@@ -251,3 +251,26 @@ describe("zcode protocol message mapper", () => {
     ]);
   });
 });
+
+// 历史/索引共用的 CLI snapshot 出口必须解码旧尾块，不能依赖 UI 再过滤。
+it.each([undefined, []])(
+  "normalizes legacy snapshots but preserves explicit new-format text (%j)",
+  (genUiContext) => {
+    const text =
+      'Question\n\n<untrusted_gen_ui_state>\n[{"path":"/project/page.html","state":{"stage":"entry"}}]\n</untrusted_gen_ui_state>';
+    const message = {
+      info: {
+        id: "message",
+        sessionID: "session",
+        role: "user",
+        time: { created: 1 },
+        metadata: { conversationInputIntent: { genUiContext } },
+      },
+      parts: [{ id: "part", messageID: "message", sessionID: "session", type: "text", text }],
+    } as unknown as MessageWithParts;
+    expect(mapMessageWithParts(message).parts[0]).toMatchObject({
+      text: genUiContext ? text : "Question",
+    });
+    expect(message.parts[0]).toMatchObject({ text });
+  },
+);

@@ -262,10 +262,10 @@ send(commandId, payload)
                                       ├─ duplicate/noop/failed -> 收口
                                       ├─ discarded queue/guide -> 静默清账
                                       ├─ discarded startNow    -> 用户确认后才能用新 command 重发
-                                      └─ unknown               -> 静默清账，不呈现 UI 错误
+                                      └─ unknown               -> 保留待确认线索，不呈现 UI 错误
 ```
 
-CLI queue 只保证当前进程内可靠。CLI restart 时，已 admitted 但尚未进入 transcript 的 input 不自动恢复为可执行 queue，而是在 discarded input ledger 写入 tombstone；`commands/query` 返回 `failed` + `fault.command.inputDiscardedOnRestart` + 持久 `delivery`。ledger 只用于证明“该输入已被明确丢弃”，不能携带自动执行语义。UI 对 `queue/guide` 与无权威结论的 `unknown` 静默清账且不呈现错误；只有未进入 transcript 的 `startNow` 保留原文本和附件引用，待用户确认后以**新的 commandId** 重发。
+CLI queue 只保证当前进程内可靠。CLI restart 时，已 admitted 但尚未进入 transcript 的 input 不自动恢复为可执行 queue，而是在 discarded input ledger 写入 tombstone；`commands/query` 返回 `failed` + `fault.command.inputDiscardedOnRestart` + 持久 `delivery`。ledger 只用于证明“该输入已被明确丢弃”，不能携带自动执行语义。UI 对 `queue/guide` 静默清账；无权威结论的 `unknown` 保留待确认线索直到明确结果、权威投影或既有 TTL，不呈现错误；只有未进入 transcript 的 `startNow` 保留原文本和附件引用，待用户确认后以**新的 commandId** 重发。
 
 服务端幂等内存分层为 `in-flight pinned / live queue-or-guide pinned / settled LRU`；512/session
 上限只作用于 settled。query 与 execute 使用同一 key gate，持久化回源按 session 建一次惰性索引并由
@@ -274,4 +274,4 @@ CLI queue 只保证当前进程内可靠。CLI restart 时，已 admitted 但尚
 
 最终不变量：每条已提交输入必须且只能处于 `queue / guided row / transcript / explicit rejected|failed|discarded` 之一。ACK 丢失、gap、重连或 restart 都不能造成“UI 已清空、权威层无记录”。
 
-镜像不变量（renderer 侧）：一条输入一旦被权威接管（ACK accepted/duplicate，或 queue/row/marker 的 `sourceCommandId` 对账），composer 中属于这次提交的正文必须被清空，且这一义务不随 composer 组件实例消亡。传输层失败（如远端 ChannelClient dispose）只是“ACK 未知”，不是“未 admission”：正文可先恢复回草稿，但要把 `{commandId, text}` 登记到 `composerSubmissionSettlement`（模块级、仅内存），由它持有 registry resolution 订阅；pane 因断连卸载重建后，新 composer 回填草稿时向它认领结算。用户已在回填正文上继续编辑时不清空；failed/unknown/discarded 终态删除登记并保留正文。
+镜像不变量（renderer 侧）：一条输入一旦被权威接管（ACK accepted/duplicate，或 queue/row/marker 的 `sourceCommandId` 对账），composer 中属于这次提交的正文必须被清空，且这一义务不随 composer 组件实例消亡。传输层失败（如远端 ChannelClient dispose）只是“ACK 未知”，不是“未 admission”：正文可先恢复回草稿，但要把 `{commandId, text}` 登记到 `composerSubmissionSettlement`（模块级、仅内存），由它持有 registry resolution 订阅；pane 因断连卸载重建后，新 composer 回填草稿时向它认领结算。用户已在回填正文上继续编辑时不清空；failed/discarded 终态删除登记并保留正文；unknown 不是终态，保留登记与结算订阅。

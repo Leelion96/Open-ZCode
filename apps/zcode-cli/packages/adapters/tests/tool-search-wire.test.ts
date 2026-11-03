@@ -1,3 +1,15 @@
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import {
+  buildToolExposure,
+  buildToolSearchAnnouncement,
+} from "../../core/src/tool/search/exposure.js";
+import { prepareRuntimeProviderRequest } from "../../core/src/runtime/helpers/runtime-provider-request-messages.js";
+import { createToolRegistry } from "../../core/src/tool/registry.js";
+import { toolSearchToolEntry } from "../../core/src/tool/handlers/tool-search.js";
+import { deferredToolCallEntry } from "../../core/src/tool/handlers/deferred-tool-call.js";
+import { webFetchToolEntry } from "../../core/src/tool/handlers/webfetch.js";
+import { createTestRuntimeModel } from "../../core/tests/test-runtime-model.js";
+import type { RuntimeMessageEntry } from "../../core/src/agent/message-history.js";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText } from "ai";
 import { expect, it } from "vitest";
@@ -155,7 +167,9 @@ Deferred tools appear by name in <system-reminder> messages. Until fetched, only
 Result format: each matched tool appears as one <function>{"description": "...", "name": "...", "parameters": {...}}</function> line inside the <functions> block — the same encoding as the tool list at the top of this prompt.
 
 Query forms:
-- "select:Read,Edit,Grep" — fetch these exact tools by name
+Regular expressions are not supported. Use space-separated keywords for broad searches, or "select:<name>[,<name>...]" for exact tool names. Characters such as "|" and ".*" are treated literally. For example, use "shell terminal execute command".
+
+- "select:TodoWrite,mcp__byob__browser_navigate" — fetch these exact deferred tools by name
 - "notebook jupyter" — keyword search, up to max_results best matches
 - "+slack send" — require "slack" in the name, rank by remaining terms`);
     expect(body.tools[0]?.input_schema).toMatchObject({
@@ -163,7 +177,7 @@ Query forms:
       properties: {
         query: {
           description:
-            'Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search.',
+            'Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search. Regular expressions are not supported.',
         },
         max_results: {
           description: "Maximum number of results to return (default: 5)",
@@ -173,3 +187,96 @@ Query forms:
     });
   }
 });
+
+it.each(["anthropic", "openai-compatible"] as const)(
+  "sends only LocalToolSearch on %s wire after native history",
+  async (providerKind) => {
+    const registry = createToolRegistry();
+    [toolSearchToolEntry, deferredToolCallEntry, webFetchToolEntry].forEach((entry) =>
+      registry.register(entry),
+    );
+    const model = {
+      ...createTestRuntimeModel({
+        generateText: async () => ({ text: "", finishReason: "stop", usage: {} }),
+      }),
+      requestCapabilities: { toolSearch: { protocolSupported: true, defaultEnabled: true } },
+    };
+    const input = { model, registry, tools: registry.toContracts() };
+    const entries: RuntimeMessageEntry[] = [
+      buildToolSearchAnnouncement({ ...input, mode: "native", entries: [] })!,
+      { message: { role: "user", content: "Find a tool" } },
+      {
+        message: {
+          role: "assistant",
+          content: "",
+          toolCalls: [{ id: "search", name: "ToolSearch", input: { query: "select:WebFetch" } }],
+        },
+      },
+      {
+        message: {
+          role: "tool",
+          toolName: "ToolSearch",
+          toolCallId: "search",
+          content: [{ type: "tool_reference", toolName: "WebFetch" }],
+        },
+      },
+    ];
+    const before = structuredClone(entries);
+    const { request } = prepareRuntimeProviderRequest(
+      { config: { toolSearch: { mode: "local" } } },
+      { ...input, entries },
+    );
+    let body: any;
+    const options = {
+      apiKey: "fixture",
+      baseURL: "https://provider.example/v1",
+      fetch: async (_url: unknown, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({ error: { type: "invalid_request_error", message: "capture" } }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      },
+    };
+    const provider =
+      providerKind === "anthropic"
+        ? createAnthropic(options)("test")
+        : createOpenAICompatible({ ...options, name: "fixture" })("test");
+    const transform = { providerKind, toolSearchEnabled: request.toolSearchEnabled };
+    await expect(
+      generateText({
+        model: provider,
+        maxRetries: 0,
+        tools: toAiSdkTools(request.tools, transform),
+        messages: toAiSdkMessages(request.messages, transform),
+      }),
+    ).rejects.toBeDefined();
+    const names = body.tools.map((tool: any) => tool.name ?? tool.function.name);
+    expect(names).toEqual(["LocalToolSearch", "DeferredToolCall"]);
+    const searchTool = body.tools[0].function ?? body.tools[0];
+    expect(searchTool.description).toContain(
+      'Query forms:\nRegular expressions are not supported. Use space-separated keywords for broad searches, or "select:<name>[,<name>...]" for exact tool names. Characters such as "|" and ".*" are treated literally. For example, use "shell terminal execute command".',
+    );
+    expect(
+      (searchTool.input_schema ?? searchTool.parameters).properties.query.description,
+    ).toContain("Regular expressions are not supported.");
+    const calls =
+      providerKind === "anthropic"
+        ? body.messages
+            .flatMap((message: any) => message.content)
+            .filter((block: any) => block.type === "tool_use")
+            .map((block: any) => block.name)
+        : body.messages
+            .flatMap((message: any) => message.tool_calls ?? [])
+            .map((call: any) => call.function.name);
+    expect(calls).toEqual(["LocalToolSearch"]);
+    expect(JSON.stringify(body)).toContain("available via LocalToolSearch.");
+    expect(JSON.stringify(body)).toContain("<functions>");
+    expect(JSON.stringify(body)).not.toContain("tool_reference");
+    expect(JSON.stringify(body)).not.toContain("defer_loading");
+    expect(entries).toEqual(before);
+    expect(
+      buildToolExposure({ ...input, mode: "native", entries }).tools.map((tool) => tool.name),
+    ).toEqual(["ToolSearch", "WebFetch"]);
+  },
+);

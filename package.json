@@ -1,6 +1,6 @@
 {
   "name": "zcode",
-  "version": "3.16.2",
+  "version": "3.17.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,18 +24,14 @@
     "audit:agent-remnants": "node scripts/audit-zcode-agent-remnants.mjs",
     "audit:conversation-session-coverage": "node scripts/audit-conversation-session-case-coverage.mjs --check",
     "audit:conversation-session-complete": "node scripts/audit-conversation-session-case-coverage.mjs --check --require-complete",
-    "test": "pnpm run test:unit",
     "test:e2e": "pnpm --filter @zcode/desktop test:e2e",
     "test:e2e:all:coverage": "pnpm --filter @zcode/desktop test:e2e:all:coverage",
     "test:e2e:windows:sharded": "pnpm --filter @zcode/desktop test:e2e:windows:sharded",
     "test:e2e:container": "bash scripts/test-desktop-e2e-container.sh",
     "test:e2e:container:conversation": "bash scripts/test-desktop-e2e-container.sh conversation-session-verified",
     "test:e2e:container:plugins": "bash scripts/test-desktop-e2e-container.sh plugins-verified",
-    "test:coverage": "vitest run --coverage --exclude \"packages/desktop/test/e2e/**/*.test.ts\"",
-    "test:unit": "vitest run --exclude \"packages/desktop/test/e2e/**/*.test.ts\"",
-    "test:unit:affected": "node scripts/run-affected-unit-tests.mjs",
     "test:docker:web-app-gateway": "node scripts/test-web-app-gateway-reset.mjs",
-    "verify:pre-push": "pnpm run lint && pnpm run db:schema:check && pnpm run test:architecture && pnpm run architecture:check -- --changed && pnpm run test:unit:affected --scope push",
+    "verify:pre-push": "node scripts/check-push-worktree.mjs && pnpm run check:e2e-remote-targets && pnpm run lint && pnpm run docs:stale-phrases:check && pnpm run db:schema:check && pnpm run test:architecture && pnpm run architecture:check -- --changed && pnpm run test:engineering:affected --scope push",
     "build": "pnpm -r build",
     "build:desktop-agent:bytecode": "node scripts/build-desktop-agent-bytecode.mjs",
     "build:docs": "pnpm --filter @zcode/dev-docs build",
@@ -48,6 +44,7 @@
     "build:native-search": "node scripts/build-native-search-tools.mjs",
     "pack:native-search": "node scripts/package-native-search-tools.mjs",
     "ci:ensure-native-search-deps": "node scripts/ensure-native-search-deps.mjs",
+    "ci:verify-electron-builder-mirror": "node scripts/verify-electron-builder-binaries-mirror.mjs",
     "test:native-search:e2e": "node scripts/test-native-search-tools-e2e.mjs",
     "test:sea-runtime-tools:e2e": "node scripts/test-sea-runtime-tools-e2e.mjs",
     "clean": "node scripts/clean.mjs",
@@ -73,10 +70,17 @@
     "architecture:report": "node scripts/architecture/architecture-check.mjs report",
     "architecture:baseline:update": "node scripts/architecture/architecture-check.mjs baseline:update",
     "architecture:context": "node scripts/architecture/architecture-check.mjs context",
-    "test:architecture": "node --test scripts/test/architecture-governance.test.mjs scripts/test/architecture-governance-review.test.mjs scripts/test/architecture-upstream-admission.test.mjs scripts/test/source-size-policy.test.mjs",
+    "test:architecture": "node --test scripts/test/architecture-governance.test.mjs scripts/test/architecture-governance-review.test.mjs scripts/test/architecture-upstream-admission.test.mjs scripts/test/source-size-policy.test.mjs scripts/test/architecture-default-branch.test.mjs scripts/test/pre-push-worktree.test.mjs scripts/test/retired-app-unit-evidence.test.mjs",
     "architecture:adopt": "node scripts/architecture/architecture-check.mjs adopt",
+    "docs:stale-phrases:check": "node scripts/check-stale-doc-phrases.mjs",
     "db:schema:check": "node --test scripts/test/sqlite-schema-contract.test.mjs && pnpm --dir apps/zcode-cli exec tsx ../../scripts/check-sqlite-schema.ts",
-    "db:schema:update": "pnpm --dir apps/zcode-cli exec tsx ../../scripts/check-sqlite-schema.ts --update"
+    "db:schema:update": "pnpm --dir apps/zcode-cli exec tsx ../../scripts/check-sqlite-schema.ts --update",
+    "provider:regression:report": "tsx apps/zcode-cli/tools/provider-regression/src/report-cli.ts",
+    "provider:regression": "pnpm --filter @zcode/bootstrap... build && tsx apps/zcode-cli/tools/provider-regression/src/cli.ts",
+    "test:engineering": "vitest run --project engineering",
+    "test:engineering:affected": "node scripts/run-affected-engineering-tests.mjs",
+    "test:engineering-tools": "node --test scripts/test/affected-engineering-test-cli.test.mjs scripts/test/pre-push-worktree.test.mjs scripts/test/retired-app-unit-evidence.test.mjs scripts/test/e2e-remote-targets-check.test.mjs",
+    "check:e2e-remote-targets": "node scripts/check-e2e-remote-targets.mjs"
   },
   "dependencies": {
     "border-beam": "^1.0.1",
@@ -88,7 +92,6 @@
     "@release-it/conventional-changelog": "^10.0.6",
     "@tanstack/react-virtual": "^3.13.23",
     "@types/node": "^25.5.0",
-    "@vitest/coverage-v8": "^4.1.1",
     "@zcode/zcode-cua": "workspace:*",
     "concurrently": "^9.1.2",
     "conventional-changelog-conventionalcommits": "^9.3.1",
@@ -96,8 +99,8 @@
     "dotenv": "^17.4.2",
     "husky": "^9.1.7",
     "istanbul-lib-instrument": "6.0.3",
+    "jsdom": "^29.1.1",
     "knip": "^6.0.6",
-    "lint-staged": "^17.0.8",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.57.0",
     "postject": "1.0.0-alpha.6",
@@ -106,7 +109,8 @@
     "tsx": "^4.19.4",
     "turbo": "^2.4.0",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.1",
+    "yaml": "2.9.0"
   },
   "peerDependencies": {
     "@tanstack/react-virtual": "^3.13.23"
@@ -117,6 +121,8 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
+      "@electron/rebuild>node-abi": "4.37.0",
+      "electron-to-chromium": "1.5.452",
       "react": "19.2.7",
       "react-dom": "19.2.7"
     },
@@ -126,7 +132,9 @@
       "wdio-electron-service@9.2.1": "patches/wdio-electron-service@9.2.1.patch",
       "@arms/rum-electron@0.0.3": "patches/@arms__rum-electron@0.0.3.patch",
       "@ai-sdk/openai-compatible@2.0.60": "patches/@ai-sdk__openai-compatible@2.0.60.patch",
-      "@ai-sdk/anthropic@3.0.81": "patches/@ai-sdk__anthropic@3.0.81.patch"
+      "@ai-sdk/anthropic@3.0.81": "patches/@ai-sdk__anthropic@3.0.81.patch",
+      "@aiden0z/pptx-renderer@1.2.4": "patches/@aiden0z__pptx-renderer@1.2.4.patch",
+      "@extend-ai/react-xlsx@0.16.0": "patches/@extend-ai__react-xlsx@0.16.0.patch"
     }
   },
   "license": "Apache-2.0"

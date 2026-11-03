@@ -1,5 +1,7 @@
 # WSL 远端同步入口设计
 
+> **被取代（2026-10，票 14）**：入口显示条件已由[数据同步规格](../../remote/data-sync.md)「旧入口」一节取代：连接向导、Header、侧栏项目菜单入口覆盖 SSH、WSL、Docker 三种远程 tab，从 workspace identity 解析 sourceServerId（旧格式 tab 解析不出时不显示入口），只在设备在线时可用；Web 与手机远控不显示入口（平台不能申请 source-settings attachment）。本文「Docker 本轮不扩展入口」已不成立。写权限预检 15 秒超时仍有效，实现位于数据同步弹窗。
+
 ## 背景
 
 现有 Skill、MCP、Plugin 远端同步最初按 SSH workspace 设计，UI 入口和文案都以 SSH host 命名。但桌面 WSL workspace 已经走统一 `RemoteTarget` / `InitRemoteWorkspace` / remote service collection 链路，`skillSyncService`、`mcpSyncService`、`pluginSyncService` 均来自 WSL 远端 host。

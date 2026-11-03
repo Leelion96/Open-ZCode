@@ -13,6 +13,9 @@ import { modelStatusContextToLogContext, type ModelStatusContext } from "./runne
 import { modelFailureAttributionFields } from "./runner-telemetry.js";
 
 const MAX_REASONABLE_RETRY_AFTER_MS = 5 * 60_000;
+/** Retry-After 之上追加的抖动：最多 retry-after 的 20%，且不超过 5 秒。 */
+const RETRY_AFTER_JITTER_RATIO = 0.2;
+const RETRY_AFTER_JITTER_MAX_MS = 5_000;
 const RELIABLE_ATTRIBUTION_CONTEXT_KEYS = [
   "errorPhase",
   "exceptionKind",
@@ -45,7 +48,11 @@ export function calculateRetryDelay(
   // provider 会返回几十秒到数分钟的 retry-after；
   // 旧 60s 上限会把合法限流等待退化为本地短退避。
   if (isReasonableRetryAfterMs(retryAfterMs, uncapped)) {
-    return retryAfterMs;
+    // 同一时刻被限流的一批请求拿到同一个 retry-after：不加抖动会在同一毫秒一起醒来、再一起撞上
+    // 限流（2026-10 线上 1302 风暴）。抖动只往后加，绝不早于 provider 要求的时间。
+    if (!retry.jitter) return retryAfterMs;
+    const spread = Math.min(retryAfterMs * RETRY_AFTER_JITTER_RATIO, RETRY_AFTER_JITTER_MAX_MS);
+    return retryAfterMs + Math.round(Math.random() * spread);
   }
 
   if (!retry.jitter || capped === 0) {

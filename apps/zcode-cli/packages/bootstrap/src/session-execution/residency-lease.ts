@@ -1,6 +1,20 @@
 import type { SessionResidencyFinalizationOwner } from "./contract.js";
 export type { SessionResidencyFinalizationOwner } from "./contract.js";
 
+const finalizationWaiters = new WeakMap<SessionResidencyFinalizationOwner, Set<() => void>>();
+
+/** 只等待原 record 的执行收尾；调用者须先关闭新执行准入。 */
+export function waitForSessionResidencyFinalization(
+  record: SessionResidencyFinalizationOwner,
+): Promise<void> {
+  if (!record.residencyFinalizationCount) return Promise.resolve();
+  return new Promise((resolve) => {
+    let waiters = finalizationWaiters.get(record);
+    if (!waiters) finalizationWaiters.set(record, (waiters = new Set()));
+    waiters.add(resolve);
+  });
+}
+
 /**
  * residency lease 只覆盖 Bootstrap detached runner 的收尾窗口，避免 pool 回收仍在使用的
  * record。Prompt admission 的 busy/idle authority 已归 Core；activeAbortController 仅是旧命令
@@ -15,6 +29,11 @@ export function acquireSessionResidencyFinalization(
     if (released) return;
     released = true;
     record.residencyFinalizationCount = Math.max(0, (record.residencyFinalizationCount ?? 1) - 1);
+    if (record.residencyFinalizationCount === 0) {
+      const waiters = finalizationWaiters.get(record);
+      finalizationWaiters.delete(record);
+      for (const resolve of waiters ?? []) resolve();
+    }
   };
 }
 

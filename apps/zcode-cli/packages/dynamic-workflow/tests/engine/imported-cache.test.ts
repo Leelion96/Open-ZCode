@@ -436,6 +436,35 @@ describe("导入缓存 — world 节点", () => {
   });
 });
 
+describe("导入缓存 — world.run 的 opts 属于内容键", () => {
+  it("只改 opts.output 即新节点：不命中前驱的记录、live 执行，journal 的 input 带新 opts", async () => {
+    // 前驱是 full 模式跑的（结果里是全文）；修订成 discard 后若仍命中，脚本会拿到全文而
+    // journal 行声称 discard——同一份结果两种形状。opts 进 inputHash 才保证换模式就是新节点。
+    const fullArgs = ["pnpm", ["test"]];
+    const discardArgs = ["pnpm", ["test"], { output: "discard" }];
+    const cache = cacheOf(
+      [],
+      [[worldKey("run", fullArgs), [worldEntry("run", fullArgs, { exitCode: 0, stdout: "全文" })]]],
+    );
+    const { engine, driver, journal } = setup({ importedCache: cache });
+
+    expect(worldKey("run", discardArgs)).not.toBe(worldKey("run", fullArgs));
+    expect(worldKey("run", ["pnpm", ["test"], { output: { tail: 64 } }])).not.toBe(
+      worldKey("run", ["pnpm", ["test"], { output: { tail: 65 } }]),
+    );
+
+    const run = engine.worldRead("world#1", "run", discardArgs);
+    expect(driver.worldReads).toHaveLength(1);
+    driver.worldReads[0]?.deferred.resolve({ exitCode: 0, stdout: "", stderr: "" });
+    await expect(run).resolves.toEqual({ exitCode: 0, stdout: "", stderr: "" });
+    expect(journal.getNode(RUN, "world#1", 1)).toMatchObject({
+      kind: "world-run",
+      inputHash: worldKey("run", discardArgs),
+      input: { op: "run", args: discardArgs },
+    });
+  });
+});
+
 describe("导入缓存 — 崩溃后 resume 的分歧重建", () => {
   it("据 journal 行逐 seq 重推分歧点：原次已分歧的 actor 不会被后缀哈希意外命中", async () => {
     // 修订 run 的原次执行：seq 0 命中导入，seq 1 分歧（指令与 entries[1] 不同）后全 live，

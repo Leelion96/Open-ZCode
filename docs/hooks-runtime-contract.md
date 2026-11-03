@@ -166,16 +166,29 @@ stdout 规则：
 - `2`：请求阻断；对可阻断事件产生对应 block/deny，Stop 产生继续一轮反馈。
 - 其他非零：可恢复 Hook 失败，不让整个 turn 崩溃。
 
+Hook 自身失败时的处置（单条 Hook 的 `onError` 字段，`process` 与 `command` 都可写）：
+
+- `allow`（缺省）：放行，工具照常执行，失败只记 `HookRunFailed` 事件与 warn 日志。
+- `deny`：只对 `PreToolUse` 生效。其他非零退出、超时、已知字段类型错误都等同于退出码 `2`：
+  工具调用被拒，终态事件是 `HookRunBlocked`，`blockReason` 写明是 Hook 失败触发的拦截，
+  `errorMessage` 保留原始失败。用户中断不算失败；未受信任而没有运行的工作区 Hook、
+  `async: true` 的 Hook 与其他事件不受影响。
+- 工作区 Hook 的 `onError: "deny"` 进声明摘要：加上或去掉它都要重新信任；不写或写 `allow`
+  的声明摘要不变。
+
+放行也留痕：用户、项目、插件配置的 `PreToolUse` Hook 每放行一次工具调用，记一条 info 日志
+`hook.run.allowed`（含 source、sourceKind、toolName、toolCallId、耗时）。内置 Hook 不记。
+
 事件输出效果：
 
 | Event                | 可阻断           | 可修改                                       | 模型可见上下文                                   |
 | -------------------- | ---------------- | -------------------------------------------- | ------------------------------------------------ |
 | `SessionStart`       | 否               | 否                                           | `additionalContext` 注入首轮前                   |
 | `UserPromptSubmit`   | 是               | 不修改原 prompt                              | `additionalContext` 注入本轮前                   |
-| `PreToolUse`         | 是               | `updatedInput`，并重新做 tool schema 校验    | 成功/失败 tool result 都携带 `additionalContext` |
+| `PreToolUse`         | 是               | `updatedInput`，并重新做 tool schema 校验    | 成功、失败都在工具批次后附上 `additionalContext` |
 | `PermissionRequest`  | 是               | allow 时可返回 `updatedInput` 和 permissions | 否                                               |
-| `PostToolUse`        | 否               | 本期不替换 tool output                       | 追加 `additionalContext`                         |
-| `PostToolUseFailure` | 否               | 否                                           | 追加 recovery `additionalContext`                |
+| `PostToolUse`        | 否               | 本期不替换 tool output                       | 工具批次后附上 `additionalContext`               |
+| `PostToolUseFailure` | 否               | 否                                           | 工具批次后附上 recovery `additionalContext`      |
 | `Stop`               | 是，表示不要结束 | 否                                           | block reason/context 注入下一轮，最多连续 3 次   |
 
 兼容字段：
@@ -190,6 +203,12 @@ stdout 规则：
 
 `PreToolUse` 的失败结果包括 Hook 自身 deny、后续权限拒绝和工具 handler 失败；这些提前返回路径
 也必须保留已产生的 `additionalContext`，不能只在 handler 成功或抛错路径追加。
+
+工具 Hook 的 `additionalContext` 不进 tool result：每条写成
+`<Event>:<ToolName> hook additional context: <context>`，作为这批 tool result 之后的
+`tool_hook_context` 附件，按 tool result 顺序分组，同一工具 Pre 在前，多个 Hook 不合并。
+tool result 只放工具原文。MCS 下与同批附件合成同一条 system；非 MCS 下按普通 user 侧提醒投影
+（Anthropic Messages 协议并入这批最后一个 tool result）。附件随历史持久化；App 工具卡不显示 Hook 文本。
 
 ## async 契约
 

@@ -63,7 +63,7 @@ export function trackUnsettledComposerSubmission(
     (resolution) => {
       if (trackedByScope.get(scopeKey) !== tracked) return;
       if (!isAuthoritativeResolution(resolution)) {
-        // failed/unknown/discarded：原文应继续留在草稿里，交给既有的恢复 UI 处理。
+        // 明确失败或 discarded：原文继续留在草稿；unknown 不会产生结算通知。
         trackedByScope.delete(scopeKey);
         return;
       }

@@ -52,7 +52,7 @@ function safeJson(value: unknown, depth = 0): boolean {
   if (value === null || typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value === "string")
-    return value.length <= 32768 && !/^(?:file|data|javascript|zcode-artifact):/iu.test(value);
+    return value.length <= 32768 && !/^(?:javascript|zcode-artifact):/iu.test(value);
   if (Array.isArray(value))
     return value.length <= 1024 && value.every((entry) => safeJson(entry, depth + 1));
   if (value && typeof value === "object")

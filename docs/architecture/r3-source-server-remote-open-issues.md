@@ -13,6 +13,7 @@
 - 2026-09-13 文档整理：R3 过程文档归档到 `docs/archive/remote-r3/`，本文引用已同步；R3-ISSUE-012 因前提失效改为不修复，R3-ISSUE-019 进入修复中；当前阅读入口见 [docs/remote/README.md](../remote/README.md)
 - 2026-09-13 补登：R3-ISSUE-023（恢复态手动连接成功不发 reconnect）来自同日分支审查 RV-P1-2，随修复一并关闭
 - 2026-09-14 补登：R3-ISSUE-024（wsl.exe 默认 shell 提前展开命令变量，WSL 安装误报缺少 tar）来自同日 Windows 实机复现，随修复登记为待验证
+- 2026-10-20 补登：R3-ISSUE-031～033 来自停止 / 重启远端服务的设计讨论，均为范围外登记
 
 ## 状态定义
 
@@ -65,6 +66,9 @@
 | R3-ISSUE-024 | P0     | WSL Transport    | wsl.exe 非 --exec 模式让默认 shell 提前展开命令变量，WSL 安装误报缺少 tar | 已确认       | 待验证 |
 | R3-ISSUE-029 | P2 | 恢复 | logical replacement 在途时不保留后续 reconnect，当前连接收口时序未触发 | 已确认（条件性） | 待修复 |
 | R3-ISSUE-030 | P2 | Provider 取消 | 等待共享 Registry 刷新期间不能及时取消，当前生产调用方不传 signal | 已确认（条件性） | 待修复 |
+| R3-ISSUE-031 | P2 | 恢复 | crash-loop-stopped 时 `serve --daemon` 因锁冲突失败，自动恢复无法拉起远端服务 | 已确认（静态） | 待修复 |
+| R3-ISSUE-032 | P2 | 生命周期 | Supervisor 自身无响应时没有强杀兜底，停止与重启只能报错 | 已确认 | 待修复 |
+| R3-ISSUE-033 | P2 | 文档 | 启动自动重连文案与 §7.1 写“最近 7 天”，代码不按 7 天过滤 | 已确认 | 待修复 |
 
 ## 问题详情
 
@@ -117,6 +121,9 @@
 ### R3-ISSUE-003：手机 attachment 可访问 Terminal RPC
 
 - 状态：已关闭
+- 当前合同（2026-10-22）：已配对手机应支持终端；下述历史修复中的 Terminal 禁令已被
+  [手机终端恢复合同](../web-remote-control/web-remote-control-architecture.md#启动调用边界与-office-xss-关系)
+  替代。继续保留 allowlist 和其他频道限制，仅恢复 Terminal，桌面服务面不变。
 
 #### 修复记录 2026-08-28
 
@@ -461,6 +468,29 @@
 - 当前处理：仅登记。首个支持取消的生产调用方接入时，单个等待者与 signal 竞速；共享 `accountConfigSyncByClient` 刷新继续完成，不能由一个调用者取消其他调用者依赖的刷新。
 - 关闭条件：一个等待者取消时及时拒绝，其他等待者仍可完成，且已取消的模型请求不会发送；共享刷新失败仍向未取消调用者传播。
 
+### R3-ISSUE-031：crash-loop-stopped 时自动恢复无法拉起远端服务
+
+- 状态：待修复；2026-10-20 在[停止和重启远端服务](../issues/remote-daemon-lifecycle/01-stop-restart-remote-service.md)讨论中登记，静态核对，未运行时复现。
+- 现象：Core 在 5 分钟内崩溃 5 次后，Supervisor 进入 `crash-loop-stopped`，仍持有 data-root 锁和 control。probe 读到的 status `pid` 为空，Desktop 自动恢复执行 `serve --daemon`；该命令只对 ready / starting / `stop-failed`+`pid:null` 特判，不先停止现有 Supervisor。fallback 模式新 Supervisor 抢锁失败，service 模式等待 ready 超时，设备停在连接失败并每 2 分钟重复失败。
+- 当前处理：新的整棵进程树 `zcode restart` 与设备卡「重启远端服务」让用户手动走出该状态。
+- 待决：`crash-loop-stopped` 本身是防止无限崩溃重启的保护，自动恢复不应绕过崩溃预算。候选方向是识别该状态后停止自动恢复，展示“需要处理 · 远端服务反复崩溃”，主操作为重启；这会改变五态映射和设备卡主操作，需产品确认。
+- 关闭条件：确定产品方案后，覆盖 crash-loop 状态的 probe、自动恢复终止与 UI 映射，并在真实远端复现崩溃预算耗尽。
+
+### R3-ISSUE-032：Supervisor 自身无响应时没有强杀兜底
+
+- 状态：待修复；2026-10-20 登记（同上讨论 Q11）。
+- 现象：Core 卡死时 Supervisor 会先 IPC shutdown、5 秒后 SIGKILL；但 Supervisor 自身事件循环卡住、control 请求超时时，`zcode stop` / `restart` 只返回 `source-server-control-unresponsive`，不清理也不 kill。
+- 当前处理：首期接受，设备卡显示“远端服务无响应”，用户需登录服务器处理。
+- 后续修复边界：按 `server.lock` 的 pid 与 ownerToken 确认身份后 SIGTERM → SIGKILL Supervisor，Core 因 IPC 断开自行退出；需覆盖 pid 复用、service 管理器托管与 Windows named pipe。
+- 关闭条件：卡住的 Supervisor 能被 `restart` 安全替换，且不会误杀其他 root 或其他用户的进程。
+
+### R3-ISSUE-033：启动自动重连“最近 7 天”文案与代码不一致
+
+- 状态：待修复；2026-10-20 登记。
+- 现象：设置页「启动时自动重连」说明与 §7.1 状态机写“最近 7 天内在线过的设备”；Host 候选枚举按 `lastOnlineAt` 排序，但不按 7 天过滤，保存的连接不因长期未使用失去启动重连资格。另外显式断开会刷新 `lastOnlineAt`，刚断开的设备在下次启动时排在最前。
+- 处理方向：以代码行为为准修正文案与 §7.1，或由产品决定恢复 7 天门禁；二者择一后同步 case 目录。
+- 关闭条件：文案、规格与候选枚举一致，并有覆盖候选范围的单测。
+
 ## 连接体验后续议题（RDUX 范围外）
 
 来源：[体验优化范围外](../issues/remote-connection-ux/01-remote-connection-ux-optimization.md#out-of-scope)。以下均未纳入 RDUX-03 实施，也不修改状态机或手机恢复协议。
@@ -479,6 +509,7 @@
 - 待修复或待复现：014、017，以及后续议题 025–027。
 - 待验证：018、028；文档与覆盖状态核对：019。
 - 条件性后续项：029、030；仅在各自触发前提变化或新增调用方时实施。
+- 远端服务生命周期：031 待产品决策，032、033 待修复；来源见[停止和重启远端服务](../issues/remote-daemon-lifecycle/01-stop-restart-remote-service.md)。
 - 已关闭项不再列入修复顺序。012 的不修复决策继续保留，不重新引入已退出的 Provider 方案。
 - 2026-10-10 文档收敛移除重复过程与过期 UI 规则；019 仍保持修复中，不能由文档链接检查推定代码、覆盖率与最终发布证据已全部一致。
 

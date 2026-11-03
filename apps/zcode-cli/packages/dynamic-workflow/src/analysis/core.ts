@@ -214,7 +214,8 @@ function at(loc: ScriptLoc): string {
  * sorted — their sequence IS the temporal content; regions/controls/phases follow in
  * creation order. `issue` always carries its phase (`unphased` outside every marker's
  * extent), and a `settle` line carries `maybe` only when the barrier was a may-claim and
- * `joins=` only when it waited for strands (`strand` on the region line marks those). A
+ * `joins=` only when it waited for strands (`strand` on the region line marks those), with
+ * `maybeJoins=` naming the subset it lifted on a may-claim. A
  * settle that ONLY joined strands names no step and prints without the step token.
  *
  * The structural regions (`choice` / `call` / `try` / `attempt` / `catch` / `finally`) and
@@ -351,7 +352,10 @@ function renderEvent(event: OrderTrace["events"][number]): string {
       chain(event.regions) +
       (event.joins === undefined || event.joins.length === 0
         ? ""
-        : ` joins=${event.joins.join(",")}`)
+        : ` joins=${event.joins.join(",")}`) +
+      (event.maybeJoins === undefined || event.maybeJoins.length === 0
+        ? ""
+        : ` maybeJoins=${event.maybeJoins.join(",")}`)
     );
   }
   if (event.at === "mark") return `mark ${event.phase}${chain(event.regions)}`;

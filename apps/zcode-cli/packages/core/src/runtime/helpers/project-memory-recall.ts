@@ -17,9 +17,9 @@ import {
 } from "../../memory/recall/index.js";
 import type { ReadFileStateMap } from "../../tool/types.js";
 import {
-  createReadFileStateKey,
   createReadFileStatePathKey,
   normalizeReadFileStateMtimeMs,
+  setReadFileStateEntry,
 } from "../../tool/read-file-state.js";
 import type { ProjectMemoryRetrievalBranch } from "../../memory/project-memory-retrieval-branch.js";
 import type { AgentRuntimeInternal } from "../internal.js";
@@ -72,27 +72,29 @@ export function startProjectMemoryRecallPrefetch(
 
   const readFileStateSnapshot: ReadFileStateMap = new Map(runtime.readFileState);
   const recalledPathsSnapshot = new Set(recallState.recalledPaths);
-  void prefetchProjectMemories(runtime, {
-    abortSignal: abortController.signal,
-    causation: runtime.agentTelemetry.captureCausation(),
-    model: input.model,
-    query,
-    readFileStateSnapshot,
-    recalledPathsSnapshot,
-    rootDir: runtime.memoryRoot,
-    state: recallState,
-    traceContext: input.traceContext,
-  })
-    .then((memories) => {
-      prefetch.memories = memories;
+  void runtime.trackResidencyBlockingWork(
+    prefetchProjectMemories(runtime, {
+      abortSignal: abortController.signal,
+      causation: runtime.agentTelemetry.captureCausation(),
+      model: input.model,
+      query,
+      readFileStateSnapshot,
+      recalledPathsSnapshot,
+      rootDir: runtime.memoryRoot,
+      state: recallState,
+      traceContext: input.traceContext,
     })
-    .catch(() => {
-      prefetch.memories = [];
-    })
-    .finally(() => {
-      prefetch.settled = true;
-      prefetch.detachTurnAbort();
-    });
+      .then((memories) => {
+        prefetch.memories = memories;
+      })
+      .catch(() => {
+        prefetch.memories = [];
+      })
+      .finally(() => {
+        prefetch.settled = true;
+        prefetch.detachTurnAbort();
+      }),
+  );
 }
 
 export function consumeSettledProjectMemoryRecall(
@@ -116,7 +118,7 @@ export function consumeSettledProjectMemoryRecall(
   // 修复原因：Recall 正文对模型等价于一次读取，必须在实际注入时同步既有 read-state，供后续 Edit/Write 使用。
   const readAt = new Date();
   for (const memory of memories) {
-    runtime.readFileState.set(createReadFileStateKey(memory.filePath, undefined, memory.limit), {
+    setReadFileStateEntry(runtime.readFileState, {
       content: memory.content,
       isPartialView: false,
       limit: memory.limit,
@@ -162,11 +164,7 @@ export function invalidateProjectMemoryRecallPaths(
   disposeProjectMemoryRecallPrefetch(runtime);
   const touchedPathKeys = new Set(paths.map((path) => createReadFileStatePathKey(path)));
 
-  for (const [key, entry] of runtime.readFileState) {
-    if (touchedPathKeys.has(createReadFileStatePathKey(entry.path))) {
-      runtime.readFileState.delete(key);
-    }
-  }
+  for (const key of touchedPathKeys) runtime.readFileState.delete(key);
   for (const recalledPath of runtime.memoryRecallState.recalledPaths) {
     if (touchedPathKeys.has(createReadFileStatePathKey(recalledPath))) {
       runtime.memoryRecallState.recalledPaths.delete(recalledPath);

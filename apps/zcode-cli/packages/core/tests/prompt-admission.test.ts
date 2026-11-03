@@ -54,11 +54,15 @@ describe("AgentRuntime prompt admission", () => {
 
     const admission = await runtime.admitPrompt("future turn", undefined, {
       ...admissionOptions("require-queue"),
+      automationId: "automation-queued",
       requireQueue: true,
     });
 
     expect(admission.kind).toBe("queued");
     expect(modelCalls).toBe(0);
+    expect((await runtime.getProjection()).pendingSteerInputs).toEqual([
+      expect.objectContaining({ automationId: "automation-queued" }),
+    ]);
   });
 
   it("reserves before the first turn reaches TurnStarted, so the second prompt is queued", async () => {

@@ -6,7 +6,7 @@ import { PRODUCT_DISPLAY_NAME } from "@zcode/shared/product";
 import type { ContextSection } from "../types.js";
 import { estimateTokens } from "../utils.js";
 
-const CLI_PREFIX_PROMPT = `You are ${PRODUCT_DISPLAY_NAME}, an interactive coding agent`;
+const CLI_PREFIX_PROMPT = `You are ${PRODUCT_DISPLAY_NAME}, an interactive agent`;
 
 export function buildCliPrefixSection(): ContextSection {
   const content = CLI_PREFIX_PROMPT;

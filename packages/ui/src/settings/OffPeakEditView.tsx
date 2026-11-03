@@ -43,7 +43,7 @@ import { cn } from "@/components/lib/utils.js";
 import { SETTINGS_FRAME_CONTENT_CLASSNAME } from "@/settings/SettingsPageParts.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useSettings } from "@/hooks/useSettingService.js";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
+import { useConfirmDialog, useYoloModeConfirmation } from "@/hooks/useConfirmDialog.js";
 import {
   AUTOMATION_DEFAULT_MODE,
   buildAutomationModeOption,
@@ -358,6 +358,10 @@ export function OffPeakEditView({
   ]);
 
   // 闲时与定时任务复用同一权限 option，并通过 provider 保持会话权限词表一致。
+  const confirmMode = useYoloModeConfirmation(
+    JSON.stringify([editing?.offPeakTaskId, createProjectKey, readOnly, saving, tab]),
+    mode,
+  );
   const modeOption = useMemo(() => buildAutomationModeOption(mode), [mode]);
   const createSubmitButton = (
     <Button
@@ -628,7 +632,7 @@ export function OffPeakEditView({
                   <ConfigSelect
                     option={modeOption}
                     provider={ZCODE_AGENT_PROVIDER}
-                    onValueChange={setMode}
+                    onValueChange={(value) => confirmMode(value, () => setMode(value))}
                     disabled={readOnly}
                     tooltipTitle={intl.formatMessage({
                       id: "chat.toolbar.mode.label",

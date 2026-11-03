@@ -3,7 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-  CREATE_WORKFLOW_SOURCE_ERROR,
+  CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR,
+  CREATE_WORKFLOW_SOURCE_MISSING_ERROR,
+  WORKFLOW_SOURCE_MISSING_HINT,
   CreateWorkflowInputSchema,
   HookEventName,
   SAVE_WORKFLOW_SENTINEL_IN_SCRIPT_ERROR,
@@ -955,20 +957,36 @@ describe("CreateWorkflow saved source", () => {
     expect(existsSync(join(cwd, ".zcode", "workflows"))).toBe(false);
   });
 
+  // 「没给」与「多给」分开报：`{}` 也是参数 JSON 解析失败后 adapter 恢复出的形状，那句话要说出
+  // 这个原因；「多给」只是选择要撤回，不该扯上 JSON。
   it.each([
-    ["neither", {}],
-    ["both", { script: "return 1;", saved: { name: "x" } }],
-  ])("ends a %s-source call before the gate with one actionable message", async (label, input) => {
-    const outcome = await run({
-      input,
-      name: `create-source-${label}`,
-      toolName: "CreateWorkflow",
-      workingDirectory: makeCwd(),
-    });
+    ["neither", {}, CREATE_WORKFLOW_SOURCE_MISSING_ERROR],
+    ["only-settings", { max_concurrency: 2 }, CREATE_WORKFLOW_SOURCE_MISSING_ERROR],
+    ["both", { script: "return 1;", saved: { name: "x" } }, CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR],
+    [
+      "all-three",
+      { script: "return 1;", saved: { name: "x" }, path: "a.dwf.ts" },
+      CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR,
+    ],
+  ])(
+    "ends a %s-source call before the gate with its own actionable message",
+    async (label, input, message) => {
+      const outcome = await run({
+        input,
+        name: `create-source-${label}`,
+        toolName: "CreateWorkflow",
+        workingDirectory: makeCwd(),
+      });
 
-    expect(outcome.permissionRequested).toHaveLength(0);
-    expect(outcome.result.success).toBe(false);
-    expect(outcome.result.error?.message).toContain(CREATE_WORKFLOW_SOURCE_ERROR);
+      expect(outcome.permissionRequested).toHaveLength(0);
+      expect(outcome.result.success).toBe(false);
+      expect(outcome.result.error?.message).toContain(message);
+    },
+  );
+
+  it("names the unparsed-arguments cause only when no source arrived", () => {
+    expect(CREATE_WORKFLOW_SOURCE_MISSING_ERROR).toContain(WORKFLOW_SOURCE_MISSING_HINT);
+    expect(CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR).not.toContain(WORKFLOW_SOURCE_MISSING_HINT);
   });
 });
 

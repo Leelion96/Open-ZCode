@@ -7,6 +7,12 @@ import {
   createRuntimeUserEntry,
   type RuntimeMessageEntry,
 } from "../../agent/message-history.js";
+import {
+  createProviderToolRoundEntries,
+  hasProviderToolRoundContent,
+  providerToolRoundsCompactGroupKey,
+  withCompactGroupKey,
+} from "../provider-tool-rounds/contract.js";
 import type { RegularTurnLoopState, TurnRequestState } from "./turn-loop-state.js";
 
 export const OUTPUT_TOKEN_CONTINUE_PROMPT =
@@ -112,21 +118,49 @@ export function commitAssistantToTurnRequest(
   toolCalls: Parameters<typeof createRuntimeAssistantEntry>[1],
 ): boolean {
   const reasoning = result.reasoning?.filter(hasAssistantReasoningContent);
-  const hasAssistantContent =
+  const hasFinalRoundContent =
     state.modelResponse.length > 0 || (reasoning?.length ?? 0) > 0 || (toolCalls?.length ?? 0) > 0;
-  if (!hasAssistantContent) return false;
+  const hasProviderRounds = hasProviderToolRoundContent(result.providerToolRounds);
+  if (!hasFinalRoundContent && !hasProviderRounds) return false;
   // provider result metadata 可能报告别的模型；assistant 归因必须使用
   // Turn 已绑定的 Model，避免恢复链重新引入旧的 provider-owned 模型身份。
   const modelRef = { providerId: state.model.providerId, modelId: state.model.modelId };
-  commitTurnRequestEntries(runtime, state.turnRequestState, [
-    createRuntimeAssistantEntry(
-      state.modelResponse,
-      toolCalls,
-      reasoning,
-      modelRef,
-      toTokenUsageInfo(result.usage),
+  // 服务端内置工具切出的前序轮次排在最后一轮之前，每轮自带调用与结果。
+  const providerRoundEntries = createProviderToolRoundEntries(
+    result.providerToolRounds,
+    modelRef,
+    hasAssistantReasoningContent,
+  );
+  // 前序轮次与最后一轮同属一条持久化 assistant，compact 必须把它们算作一组。
+  const compactGroupKey = providerToolRoundsCompactGroupKey(result.providerToolRounds);
+  // 有服务端内置工具轮次时，provider usage 是服务端内部多轮请求的合计（约为单次上下文的轮数倍），
+  // 不能当作上下文估算锚点；不挂 tokens，估算回落到上一个真实锚点加本地增量。冷恢复同样不挂。
+  const contextUsage = compactGroupKey ? undefined : toTokenUsageInfo(result.usage);
+  if (!hasFinalRoundContent) {
+    commitTurnRequestEntries(
+      runtime,
+      state.turnRequestState,
+      withCompactGroupKey(providerRoundEntries, compactGroupKey),
+    );
+    return true;
+  }
+  commitTurnRequestEntries(
+    runtime,
+    state.turnRequestState,
+    withCompactGroupKey(
+      [
+        ...providerRoundEntries,
+        createRuntimeAssistantEntry(
+          state.modelResponse,
+          toolCalls,
+          reasoning,
+          modelRef,
+          contextUsage,
+        ),
+      ],
+      compactGroupKey,
     ),
-  ]);
+  );
   return true;
 }
 

@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS remote_project_entries (
  legacy_workspace_json TEXT, last_synced_at INTEGER, UNIQUE(host_id,remote_project_id));
 `;
 
+/** 远端项目删除态缓存；在线刷新写入，离线回退读取，避免已删项目以缓存行复现。 */
+export const REMOTE_ENTRY_DELETED_CACHE_SQL =
+  "ALTER TABLE remote_project_entries ADD COLUMN cached_deleted INTEGER NOT NULL DEFAULT 0";
+
 export const TASK_PROJECT_COLUMNS: Readonly<Record<string, string>> = {
   host_id: "TEXT",
   root_path: "TEXT",
@@ -85,3 +89,12 @@ export function addProjectSchema(db: DatabaseSync): void {
       "CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id,archived,cli_updated_at DESC) WHERE deleted=0",
     );
 }
+/** 旧客户端没有预分配 ID；身份分配与任务预留必须共用事务，重启不能重新生成。 */
+export const SESSION_CREATION_COMMANDS_SQL = `
+CREATE TABLE IF NOT EXISTS session_creation_commands (
+  workspace_key TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  command_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  PRIMARY KEY (workspace_key, client_id, command_id)
+);`;

@@ -50,6 +50,8 @@ export class WebRemoteControlTerminalTransport {
   private tokenController?: AbortController;
   private handshakeTimer?: ReturnType<typeof setTimeout>;
   private authenticated = false;
+  // 最近一次 matched 所在且尚未被 waiting/INTERNAL/关闭撤销的 socket；挂起不撤销这项连接事实。
+  private pairedSocket?: WebSocket;
   private readonly heartbeat: WebRemoteControlV2Heartbeat;
   private socketGeneration = 0;
   private lastPairedSocketGeneration = 0;
@@ -213,7 +215,9 @@ export class WebRemoteControlTerminalTransport {
         maxBytes: WEB_REMOTE_CONTROL_RPC_TRANSPORT_LIMITS.maxPhysicalFrameBytes,
       };
     }
-    if (this.state !== "paired" || this.staleWaitingCount > 0) {
+    // 挂起期间只确认已收到的可靠帧，避免对端 45 秒期限误判；新的业务发送仍等 paired。
+    const retainedAck = payload.zcode_type === "rpc-frame-ack" && this.canContinueRetainedRpc();
+    if ((this.state !== "paired" && !retainedAck) || this.staleWaitingCount > 0) {
       return { kind: "unavailable" };
     }
     return this.sendSerialized(prepared.message, prepared.json)
@@ -323,12 +327,23 @@ export class WebRemoteControlTerminalTransport {
         this.applyPairStatus(message.pair_status);
         break;
       case "pair_status_ack":
-        if (!this.authenticated || this.state === "suspended") return;
+        if (!this.authenticated) return;
+        if (this.state === "suspended") {
+          // 后台 waiting 只撤销 raw 帧许可；迟到 matched 不复活页面或心跳，回前台由探测重新确认。
+          if (message.pair_status === "waiting") this.pairedSocket = undefined;
+          return;
+        }
         this.applyPairStatus(message.pair_status);
         break;
       case "data":
-        if (!this.authenticated || this.state !== "paired") return;
-        this.handleDataPayload(message.payload);
+        if (!this.authenticated) return;
+        if (this.state === "paired") {
+          this.handleDataPayload(message.payload);
+        } else if (this.canContinueRetainedRpc() && isRawTransportCandidate(message.payload)) {
+          // Bugfix: 3.16 在挂起/原 socket 探测期间丢弃同一有效 socket 的 rpc-frame，回前台下一帧序号断档，
+          // 触发 physicalGap 和 bridge 重建。raw 帧交现有 adapter 校验身份与顺序，未接纳的不回落 app payload。
+          this.options.onRawTransportPayload?.(message.payload);
+        }
         break;
       case "error":
         this.handleRelayError(message.code, message.message);
@@ -336,7 +351,18 @@ export class WebRemoteControlTerminalTransport {
     }
   }
 
+  /** 挂起或原 socket 探测期间，当前 socket 是否仍是已认证、打开的同一连接；默认还要求 raw 帧许可未撤销。 */
+  private canContinueRetainedRpc(requirePermit = true): boolean {
+    return (
+      (this.state === "suspended" || this.state === "reconnecting") &&
+      this.authenticated &&
+      (!requirePermit || this.socket === this.pairedSocket) &&
+      this.socket?.readyState === this.WebSocketCtor.OPEN
+    );
+  }
+
   private applyPairStatus(status: "waiting" | "matched"): void {
+    this.pairedSocket = status === "matched" ? this.socket : undefined;
     this.lastPairStatusAckAt = Date.now();
     this.emitDiagnostic({ type: "pair-status", pairStatus: status, state: this.state });
     if (webRemoteControlV2PairState(status) === "waiting_terminal") {
@@ -406,6 +432,14 @@ export class WebRemoteControlTerminalTransport {
       return;
     }
     if (code === "INTERNAL") {
+      if (this.wasPaired && this.canContinueRetainedRpc(false)) {
+        // Bugfix: 挂起期间回 ACK 时 hub 找不到桌面只回 INTERNAL。若按未配对重连处理，会关闭 socket
+        // 并清掉 wasPaired，回前台跳过原 socket 探测，桌面未回来时 30 秒进入失败页。这里只撤销许可。
+        // 多个 ACK 在途时会连收 INTERNAL，首个已撤销许可，所以这里不要求许可，否则后续落回未配对分支。
+        this.pairedSocket = undefined;
+        this.options.onError(new Error(message || code));
+        return;
+      }
       if (this.state === "paired" || (this.hadPairedSession && this.state === "waiting")) {
         this.enterWaitingForDeviceAfterRelayError(message || code);
         return;
@@ -588,6 +622,7 @@ export class WebRemoteControlTerminalTransport {
   }
 
   private enterWaitingForDeviceAfterRelayError(message: string): void {
+    this.pairedSocket = undefined;
     // Bugfix: zcode-remote-hub 在已认证连接上转发 data 找不到 device 时只返回 INTERNAL，
     // 不会关闭当前 terminal WS。这里保持手机端 WS，降级为 waiting 并继续查询配对状态，
     // 避免把“桌面端暂时不在”放大成手机端反复重连。
@@ -665,6 +700,7 @@ export class WebRemoteControlTerminalTransport {
   }
 
   private closeSocket(): void {
+    this.pairedSocket = undefined;
     // 等待超时属于旧 socket；KICKED 的退避不能让其残留引用阻止新一代重新计时。
     this.clearWaitingTimer();
     ++this.socketGeneration;

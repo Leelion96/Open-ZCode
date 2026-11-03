@@ -7,8 +7,9 @@ session 初始化/父 turn 的同一 RPC → definitions → listing / Agent / S
 配置读取失败 snapshot 标记内置回退；RPC 断连/取消仍结束父轮，保留输入且无 provider 请求。
 后台更新期间使用旧完整 snapshot；running child 不刷新，terminal resume 使用父轮定义并保留
 身份历史。Host 诊断按文件更新记录，CLI 不重复解析。工具 schema/执行/历史与缓存标记不变。
-删除专用广播，不扩展插件热更新、独立 CLI/远程来源或 continuous/replayable 语义。
-详见 `docs/subagent-runtime-refresh.md`。
+删除专用广播，不扩展插件热更新、独立 CLI 来源或 continuous/replayable 语义。
+远程 workspace 由远端 Host 走同一链路（2026-10-18）；是否接入读取由持有 CLI stdio 的 Host
+决定，不按 workspace 身份排除。详见 `docs/subagent-runtime-refresh.md`。
 
 SHR09/SHR10 仅补测：真实 Settings 单字段保存 → 下一父轮 spawn/terminal resume → provider
 及既有模型变更持久化；running SendMessage 只投递，不刷新 child。时序控制留在测试端，
@@ -82,8 +83,9 @@ desktop continuous 与 web remote replayable 的交付边界不变。
 写入携带 runtime 生成的可选 `declarationIndex`。回退和断流恢复继续新建 part，沿用
 同一 callID 和声明序号；模型 history hydration 在同一 assistant 内按 callID 选最后
 新建的 part，再在序号完整时恢复 calls/results 声明顺序。缺少序号时保留所选记录原序。
-原始 parts、UI 和文件读取状态恢复不做调用合并或声明排序。
-模型流回调、工具调度及落盘时机保持不变。
+原始 parts 和 UI 不做调用合并或声明排序。文件读取状态恢复按 live 的写入顺序：快照 metadata
+另带执行器在工具记录快照时取的可选 `snapshotIndex`，同一 assistant 内按它重放快照，模型 history
+不使用它。模型流回调、工具调度及落盘时机保持不变。
 详细契约见 [工具历史顺序修复方案](./tool-history-order-repair-proposal.md)。
 
 ```text
@@ -185,9 +187,28 @@ CronDelete(id)
 
 删除不存在的 ID、已删除的 ID 或不属于当前 workspace 的 ID，不能返回成功。调用方需要得到明确的未找到结果，避免模型在 CronList 后反复重试同一个删除请求。
 
+## CronPauseSelf 暂停语义
+
+CronPauseSelf 只在 automation 执行轮可见，用于在 prompt 的停止条件满足时暂停本轮所属任务。
+
+```text
+Host admission automationId（仅接受调度派发显式注入；inputId/runId 只是追踪字段）
+  -> core RegularTurnLoopState.automationId
+  -> executor ToolExecutionContext.automationId
+  -> CronPauseSelf({})（无 id 输入，缺少 automationId 时拒绝）
+  -> CLI AutomationPort.pause({ id })
+  -> automation/pause protocol
+  -> Service.pause(id, current workspace)
+  -> Repo.pause：只把 active + enabled 的行改为 paused
+  -> { paused: true | false }
+  -> Tool result
+```
+
+普通用户轮、只有兜底信号的轮和 remote workspace 都不暴露该工具。已暂停、已完成、已失败、已删除或不属于当前 workspace 的任务返回 `paused: false`，不改变状态。scheduler 的 `markDispatched` 回写在同一条 UPDATE 内保留 paused，避免暂停后被派发回写复活。完整状态与时序见 `docs/automation-edit-status.md`。
+
 ## 远程 workspace 的 Cron 工具策略
 
-SSH、WSL、Docker 和 Server workspace 使用 `remote:*` workspace identity。此类 session 在创建或恢复时将 CronCreate、CronList、CronUpdate、CronDelete 加入 session 级 denylist，避免远程 Agent 暴露无法由远程调度边界可靠承载的定时任务能力。本地 workspace 不继承该限制。
+SSH、WSL、Docker 和 Server workspace 使用 `remote:*` workspace identity。此类 session 在创建或恢复时将 CronCreate、CronList、CronUpdate、CronDelete、CronPauseSelf 加入 session 级 denylist，避免远程 Agent 暴露无法由远程调度边界可靠承载的定时任务能力。本地 workspace 不继承该限制。
 
 ## Todo103：Off-Peak 工具与标准执行边界
 
@@ -226,6 +247,7 @@ Host 闲时派发 -> prompt-turn.ts / server-operations.ts turn denylist（+Send
 `isOffPeakCreateRestrictedTurn` 的 denylist 兜底只认 OffPeakCreate 哨兵。工具 schema、权限、超时不变；
 automation 轮与普通轮不受影响。测试：`core/tests/off-peak-tool.test.ts`、
 `bootstrap/tests/offpeak-prompt-turn-disallowlist.test.ts`、`bootstrap/tests/v4-native-commands.test.ts`。
+
 #### 2026-09-08 原生验证发现的入口校验问题
 
 话题原文回查与历史附件选择均以 `conversationInputIntent` 为权威来源。仅当该字段不存在时兼容 `inputIntent`；权威字段存在但无有效话题记录时，不得从同条消息的旧字段恢复记录。相同消息上两个字段冲突时只采纳权威记录，正文与 synthetic 背景仍不能注入来源身份。

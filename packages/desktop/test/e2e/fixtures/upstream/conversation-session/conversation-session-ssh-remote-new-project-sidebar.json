@@ -4,6 +4,53 @@
   "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-new-project-sidebar.test.ts",
   "fixtures": [
     {
+      "id": "ssh-new-project-existing-title",
+      "description": "A 项目前置会话标题。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定 A 已完成会话的准备响应，使新建 B 不触发草稿项目自动切换；不替换远端会话和项目状态。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_SSH_NEW_PROJECT_SIDEBAR_EXISTING"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"ssh-new-project-existing-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"SSH existing task\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "ssh-new-project-existing",
+      "description": "A 项目已完成会话，创建 B 时保持当前会话。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定 A 已完成会话的准备响应，使新建 B 不触发草稿项目自动切换；不替换远端会话和项目状态。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SSH_NEW_PROJECT_SIDEBAR_EXISTING"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "ssh-new-project-existing",
+          "inputTokens": 64,
+          "outputTokens": 8,
+          "text": "SSH_NEW_PROJECT_EXISTING_DONE"
+        }
+      }
+    },
+    {
       "id": "ssh-new-project-title",
       "description": "首发标题辅助请求。",
       "metadata": {
@@ -19,12 +66,10 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "ssh-new-project-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"SSH sidebar first task\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"ssh-new-project-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"SSH sidebar first task\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {
@@ -136,12 +181,10 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "ssh-new-project-sibling-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"SSH sidebar sibling task\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"ssh-new-project-sibling-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"SSH sidebar sibling task\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {

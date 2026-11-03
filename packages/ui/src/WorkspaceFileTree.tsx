@@ -1,7 +1,7 @@
 import { usePanelRef } from "react-resizable-panels";
 import { logger } from "@/logger.js";
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
-import { FolderOpenIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "lucide-react";
+import { FolderOpenIcon, PanelLeftCloseIcon, PanelLeftOpenIcon } from "lucide-react";
 import { PreviewPane } from "@/PreviewPane.js";
 import { WorkspaceFileTree } from "@/workspace-file-tree/WorkspaceFileTree.js";
 import { Button } from "@/components/ui/button.js";
@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/resizable.js";
 
 export { WorkspaceFileTree };
-const FILE_MANAGER_PANEL_IDS = ["preview", "directory"];
+const FILE_MANAGER_PANEL_IDS = ["directory", "preview"];
 
 type FileManagerPaneProps = Omit<ComponentProps<typeof PreviewPane>, "source"> & {
   source: CodeViewerSource | null;
@@ -55,17 +55,21 @@ export function FileManagerPane({
     (state) => state.fileManagerNavigationOpenByWorkspace[workspaceKey],
   );
   const setNavigationPreferenceOpen = useZCodeStore((state) => state.setFileManagerNavigationOpen);
+  // 空白文件标签需要先显示目录供用户选择；仅覆盖当前标签，不改写工作区的历史偏好。
+  const [initialNavigationOpenOverride, setInitialNavigationOpenOverride] = useState<true | null>(
+    source ? null : true,
+  );
   const [compactNavigationOpenOverride, setCompactNavigationOpenOverride] = useState<
     boolean | null
   >(mobileOverlay ? !source : null);
   const compactLayout = mobileOverlay || isNarrow;
-  // Bug 原因：显隐原本由每个 FileManagerPane 的 useState 持有，新文件 Tab 或 App 重启会再次默认展开。
-  // workspace store 现在独占用户偏好；紧凑布局选中文件后的自动收起只保留在当前面板。
+  // 已选文件继承 workspace 偏好；空白标签默认展开，紧凑布局选中文件后仅临时收起当前面板。
   const navigationOpen = compactLayout
     ? (compactNavigationOpenOverride ??
+      initialNavigationOpenOverride ??
       storedNavigationPreferenceOpen ??
       (!mobileOverlay || !source))
-    : (storedNavigationPreferenceOpen ?? true);
+    : (initialNavigationOpenOverride ?? storedNavigationPreferenceOpen ?? true);
   const canNavigate = Boolean(target.workspacePath && (!source || source.path));
   const showNavigation = canNavigate && navigationOpen;
   const previewPanelRef = usePanelRef();
@@ -96,6 +100,7 @@ export function FileManagerPane({
   const toggleNavigation = () => {
     const nextOpen = !navigationOpen;
     setNavigationPreferenceOpen(workspaceKey, nextOpen);
+    setInitialNavigationOpenOverride(null);
     setCompactNavigationOpenOverride(null);
   };
 
@@ -106,15 +111,8 @@ export function FileManagerPane({
       data-file-manager-pane
     >
       <div className="flex h-10 shrink-0 items-center border-b border-border bg-surface/30">
-        <div ref={setHeaderContainer} className="min-w-0 flex-1">
-          {!source ? (
-            <span className="px-3 text-ui-base text-foreground-subtle">
-              {intl.formatMessage({ id: "fileManager.title" })}
-            </span>
-          ) : null}
-        </div>
         {canNavigate ? (
-          <div className="flex shrink-0 items-center border-l border-border px-1.5">
+          <div className="flex shrink-0 items-center border-r border-border px-1.5">
             <Button
               variant="ghost"
               size="icon-sm"
@@ -124,13 +122,20 @@ export function FileManagerPane({
               aria-expanded={showNavigation}
             >
               {showNavigation ? (
-                <PanelRightCloseIcon className="size-4" />
+                <PanelLeftCloseIcon className="size-4" />
               ) : (
-                <PanelRightOpenIcon className="size-4" />
+                <PanelLeftOpenIcon className="size-4" />
               )}
             </Button>
           </div>
         ) : null}
+        <div ref={setHeaderContainer} className="min-w-0 flex-1">
+          {!source ? (
+            <span className="px-3 text-ui-base text-foreground-subtle">
+              {intl.formatMessage({ id: "fileManager.title" })}
+            </span>
+          ) : null}
+        </div>
       </div>
       <ResizablePanelGroup
         layoutId="file-manager-layout"
@@ -138,32 +143,6 @@ export function FileManagerPane({
         disabled={!showNavigation || isNarrow || mobileOverlay}
         className="min-h-0 flex-1"
       >
-        <ResizablePanel
-          id="preview"
-          panelRef={previewPanelRef}
-          collapsible
-          collapsedSize="0px"
-          minSize="160px"
-          className="min-h-0 min-w-0"
-        >
-          {source ? (
-            <PreviewPane {...previewProps} source={source} headerContainer={headerContainer} />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-ui-base text-foreground-subtle">
-              <FolderOpenIcon className="size-6" />
-              <span>{intl.formatMessage({ id: "fileManager.empty" })}</span>
-            </div>
-          )}
-        </ResizablePanel>
-        <ResizableHandle
-          aria-label={intl.formatMessage({ id: "fileManager.resizeNavigation" })}
-          className={cn(
-            WORKSPACE_VERTICAL_RESIZE_HANDLE_CLASS_NAME,
-            // 边框与拖拽高亮共用热区中线，避免目录边框与 resize 指示线左右错位。
-            "before:pointer-events-none before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-border before:content-[''] after:left-1/2 after:-translate-x-1/2",
-            (!showNavigation || isNarrow || mobileOverlay) && "hidden",
-          )}
-        />
         <ResizablePanel
           id="directory"
           panelRef={directoryPanelRef}
@@ -184,6 +163,32 @@ export function FileManagerPane({
               onOpenBrowserUrl={previewProps.onOpenBrowserUrl}
             />
           ) : null}
+        </ResizablePanel>
+        <ResizableHandle
+          aria-label={intl.formatMessage({ id: "fileManager.resizeNavigation" })}
+          className={cn(
+            WORKSPACE_VERTICAL_RESIZE_HANDLE_CLASS_NAME,
+            // 内部分隔线没有面板圆角，高亮需上下贴边，并与目录边框共用热区中线。
+            "before:pointer-events-none before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-border before:content-[''] after:inset-y-0 after:rounded-none after:left-1/2 after:-translate-x-1/2",
+            (!showNavigation || isNarrow || mobileOverlay) && "hidden",
+          )}
+        />
+        <ResizablePanel
+          id="preview"
+          panelRef={previewPanelRef}
+          collapsible
+          collapsedSize="0px"
+          minSize="160px"
+          className="min-h-0 min-w-0"
+        >
+          {source ? (
+            <PreviewPane {...previewProps} source={source} headerContainer={headerContainer} />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-4 text-ui-base text-foreground-subtle">
+              <FolderOpenIcon className="size-6" />
+              <span>{intl.formatMessage({ id: "fileManager.empty" })}</span>
+            </div>
+          )}
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>

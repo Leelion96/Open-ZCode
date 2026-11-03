@@ -13,6 +13,10 @@ R3 主规格（身份 / 连接 / 迁移）
 未决问题 → 问题台账；旧过程正文 → 历史快照入口
 ```
 
+## 支持范围
+
+远端只支持 Linux 与 macOS 的 x64、arm64；Linux 需要 glibc 2.28 及以上（CentOS 7、Ubuntu 18.04、Alpine 等 musl 系统暂不支持），Windows 请通过 WSL 连接。连接前的 probe 对 Windows 原生主机和不支持的架构给出专用提示；glibc 过低或 musl 只在连接日志警告并继续安装或连接，规则见 [R3 主规格 §5.1](../architecture/r3-source-server-remote-architecture.md)。
+
 ## 当前合同
 
 下表的主规格均指 [R3 Source Server 架构](../architecture/r3-source-server-remote-architecture.md)。
@@ -38,11 +42,16 @@ R3 主规格（身份 / 连接 / 迁移）
 
 ## 问题与验证
 
+- [数据同步：把本机配置推送到远端设备](data-sync.md)：`Status: ready-for-agent`。设置页新增按设备推送 User 级技能、MCP、插件、子智能体、命令、钩子；模型提供商只读并支持失败重试；旧同步入口统一到新弹窗；Scope 菜单按设备分组。拉取、会话、记忆不在本期范围。
+
 - [项目创建与远程连接管理分离](../issues/remote-connection-ux/15-project-device-selection-and-connection-management.md)：包含三入口、设备选择、分类添加、返回草稿与验收场景；实施与验证范围见子票 #16–#22 的完成记录，父票状态及未验证平台以各票记录为准。
 
 - [聊天连接后必选远程文件夹并进入项目](../issues/remote-connection-ux/21-chat-settings-round-trip.md)：2026-10-14 已按 #23–#26 实施；每次显式选目录，按唯一／多个／零匹配进入项目，取消恢复原目标，项目准备完成前禁止发送。当前验证证据与未实跑平台见规格，候选仍保留人工审核边界。
 
+- [在设备卡上停止和重启远端服务](../issues/remote-daemon-lifecycle/01-stop-restart-remote-service.md)：`Status: ready-for-agent`。设备卡「更多」新增重启、停止远端服务；CLI `stop --wait` 与整棵进程树 `restart` 负责时序，Host 停止前先断开、重启期间断线视为预期。仅桌面端。
+
 - [R3 问题台账](../architecture/r3-source-server-remote-open-issues.md)：保留未修复、待验证与产品待决项，关闭项不再排入修复顺序。
+- [3.16.2 远程会话卡顿](../issues/remote-performance-3-16/01-remote-session-lag-analysis.md)：发送前的远端查询、侧栏频繁全量读取远端的根因证据与优化方案；三项产品决定待确认。
 - [UX 子任务索引](../issues/remote-connection-ux/01-remote-connection-ux-optimization.md)：已完成实施与未决 ssh-agent 评估。
 - [测试方案](../testing/r3-remote-automation-plan.md)、[R3A 矩阵](../testing/r3-remote-automation-case-matrix.md)：完整验收目标及覆盖差距。
 - [case 目录](../conversation-session-case-catalog.md)、[覆盖矩阵](../testing/conversation-session-e2e-coverage-matrix.md)：稳定 ID、测试文件、pending/formal 状态和证据。

@@ -5,7 +5,7 @@ import { shouldPrepareCodingPlanTeamMock } from "./e2e/helpers/coding-plan-mock-
 it("连续切模回放隔离启动账号控制面，避免假 JWT 请求线上后遮挡模型菜单", () => {
   expect(
     shouldPrepareCodingPlanTeamMock([
-      "./test/e2e/conversation-session/manual-review/pending/conversation-session-active-model-context.test.ts",
+      "./test/e2e/conversation-session/conversation-session-active-model-context.test.ts",
     ]),
   ).toBe(true);
 });
@@ -14,7 +14,7 @@ interface ReplayFixtureFile {
   fixtures: Array<{
     id: string;
     match: { pathIncludes?: string };
-    response: { body?: string; text?: unknown };
+    response: { body?: string; text?: unknown; headers?: Record<string, string> };
   }>;
 }
 
@@ -58,7 +58,31 @@ describe("model provider E2E replay contract", () => {
       expect(openai?.match.pathIncludes).toBe("/chat/completions");
       expect(openai?.response.body).toBeDefined();
       expect(anthropic?.match.pathIncludes).toBe("/messages");
-      expect(anthropic?.response.text).toBeDefined();
+      if (id.endsWith("title")) expect(anthropic?.response.body).toBeDefined();
+      else expect(anthropic?.response.text).toBeDefined();
     }
   });
+});
+
+it.each([
+  "conversation-session-pasted-image-path-projection",
+  "conversation-session-model-provider-restart-recovery",
+  "conversation-session-background-bash-output",
+  "conversation-session-model-provider-turbo-recovery",
+  "conversation-session-bash-direct-output",
+  "conversation-session-model-provider-settings-transition",
+])("%s 的非流式标题请求返回可解析 JSON", (name) => {
+  const file = readReplayFixture(`./e2e/fixtures/upstream/conversation-session/${name}.json`);
+  const titles = file.fixtures.filter((item) => item.id.includes("title"));
+  // 标题在首发后独立请求，缺少 fixture 时主流程断言仍可能通过。
+  expect(titles.length).toBeGreaterThan(0);
+  for (const fixture of titles) {
+    expect(fixture.response.headers?.["content-type"]).toContain("application/json");
+    const body = JSON.parse(fixture.response.body!);
+    const text =
+      fixture.match.pathIncludes === "/messages"
+        ? body.content[0].text
+        : body.choices[0].message.content;
+    expect(JSON.parse(text).title).toBeTruthy();
+  }
 });

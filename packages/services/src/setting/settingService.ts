@@ -12,10 +12,18 @@ import {
   appSettingsSchema,
   formatLogPrefix,
   formatZodError,
+  USER_INSTRUCTIONS_MAX_BYTES,
+  USER_INSTRUCTIONS_TOO_LARGE_ERROR_CODE,
 } from "@zcode/shared";
+import { atomicWritePrivateTextFile } from "@zcode/shared/node";
 import type { ISettingService, WorkspaceSettingsProjection } from "./setting.js";
 import { normalizeSettingsPatch } from "#src/setting/normalizeSettingsPatch.js";
-import { copyDataDirectory, getDataBaseDir, validateDataBaseDirTarget } from "../paths.js";
+import {
+  copyDataDirectory,
+  getAgentUserInstructionsFilePath,
+  getDataBaseDir,
+  validateDataBaseDirTarget,
+} from "../paths.js";
 import { isEffectiveDevelopmentNodeEnv } from "../runtime-tools/nodeEnv.js";
 import { maybeThrowInjectedFsFault } from "../fs/fsFaultInjection.js";
 import { atomicWriteText, withAtomicFileLock } from "../fs/atomicFileUtils.js";
@@ -227,6 +235,18 @@ export function createSettingServiceWithMigrations(): {
   // 原因：每次 IO 动态读 HOME 会让旧异步投影写进后来实例的目录。
   // 在实例创建时取值，既支持测试/Host 注入，也让读取、文件锁与替换始终同源。
   const settingsFile = join(resolveUserHomeDir(), PRODUCT_USER_DIRECTORY, "v2", "setting.json");
+  // 个性化指令文件与 settingsFile 同理：实例创建时取值，读取与写入始终同源。
+  const userInstructionsFile = getAgentUserInstructionsFilePath();
+  // 修复原因（评审 CR-01）：atomicWriteText 只保证单次替换完整，不保证多次保存的提交顺序；
+  // 慢 IO 下旧写的 rename 可能晚于新写落地，用旧内容覆盖已保存的新内容。个性化指令的
+  // 写入必须进程内 FIFO 排队（组件按草稿新旧顺序入队，队尾即最新内容），跨实例写入由
+  // 文件锁再兜一层；读取先排空队列，避免保存后立即重开读到旧内容。
+  let userInstructionsWriteQueue: Promise<unknown> = Promise.resolve();
+  const enqueueUserInstructionsWrite = <T>(write: () => Promise<T>): Promise<T> => {
+    const queued = userInstructionsWriteQueue.then(write, write);
+    userInstructionsWriteQueue = queued.catch(() => {});
+    return queued;
+  };
   const getSettingsFile = () => settingsFile;
   const getSettingsDir = () => dirname(settingsFile);
   const readSettingsWithMeta = () => readSettingsWithMetaAt(settingsFile);
@@ -386,6 +406,51 @@ export function createSettingServiceWithMigrations(): {
       }
 
       await this.update({ dataBaseDir: newDir });
+    },
+
+    async getUserInstructions(): Promise<{ content: string; filePath: string }> {
+      // 读取等待已接纳的写入排空：保存后立即重开分区时不能把旧内容当基线。
+      await userInstructionsWriteQueue;
+      try {
+        const content = await readFile(userInstructionsFile, "utf8");
+        return { content, filePath: userInstructionsFile };
+      } catch (error) {
+        if (
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          (error as { code?: string }).code === "ENOENT"
+        ) {
+          // 文件不存在等价于未配置个性化指令，不算错误。
+          return { content: "", filePath: userInstructionsFile };
+        }
+        throw error;
+      }
+    },
+
+    async saveUserInstructions(content: string): Promise<{ filePath: string }> {
+      // 最终校验用与 CLI 读取一致的共享常量，防止其他 RPC 调用方绕过 UI 写入超限内容
+      // （Agent 只读前 100KB，超限保存会让用户误以为全部生效）。
+      if (Buffer.byteLength(content, "utf8") > USER_INSTRUCTIONS_MAX_BYTES) {
+        const error = new Error(`user instructions exceed ${USER_INSTRUCTIONS_MAX_BYTES} bytes`);
+        (error as Error & { code: string }).code = USER_INSTRUCTIONS_TOO_LARGE_ERROR_CODE;
+        throw error;
+      }
+      await enqueueUserInstructionsWrite(async () => {
+        // 修复原因（评审 CR-01 回归）：acquireFileLock 以不带 recursive 的 mkdir(lockFile)
+        // 创建锁文件，父目录 ~/.zcode 不存在时会 ENOENT 抛出——建目录必须发生在取锁之前，
+        // 否则首次保存（目录尚不存在）永远失败。
+        maybeThrowInjectedFsFault({ operation: "mkdir", path: dirname(userInstructionsFile) });
+        await mkdir(dirname(userInstructionsFile), { recursive: true });
+        await withAtomicFileLock(userInstructionsFile, async () => {
+          maybeThrowInjectedFsFault({ operation: "writeFile", path: userInstructionsFile });
+          // 修复原因（评审 CR-01 权限）：atomicWriteText 的临时文件不带 mode，rename 换 inode
+          // 后会把既有 0600 文件放宽为 umask 默认（常见 0644），同机其他账号可读。
+          // 私有写入固定 0600，只会收紧不会放宽权限。
+          await atomicWritePrivateTextFile(userInstructionsFile, content);
+        });
+      });
+      return { filePath: userInstructionsFile };
     },
   };
 

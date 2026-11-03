@@ -361,6 +361,117 @@ describe("workflow concurrency governor — 桶与闸门（决策 34）", () => 
   });
 });
 
+describe("workflow concurrency governor — 主代理 subagent 池（docs/dynamic-workflow/concurrency.md「Where the port is bound」）", () => {
+  // 修复原因：subagent 曾继承父的 observer，并行的 Agent 调用既不排队也不看 Retry-After，
+  // 是线上 1302 风暴的最大来源。
+
+  it("受闸门约束：cap 满时快路径未命中，acquire 排队到有名额", async () => {
+    const { governor, admitNow } = makeGovernor(1);
+    const pool = governor.sessionSubagents("session-1");
+    const busy = admitNow("A");
+    expect(pool.tryAcquire!({ model: MODEL_A })).toBeUndefined();
+    const waiting = track(pool.acquire({ model: MODEL_A }));
+    await flush();
+    expect(waiting.settled).toBe(false);
+    outcome.completed(busy);
+    await flush();
+    expect(waiting.ticket).toBeDefined();
+    expect(governor.snapshot(KEY_A)?.inFlight).toBe(1);
+  });
+
+  it("看冷却：主代理撞出的 Retry-After 冻结 subagent，到期唤醒；主代理（observer）照常放行", async () => {
+    const { governor, clock, observe } = makeGovernor();
+    outcome.throttled429(await observe(), 20_000);
+    const pool = governor.sessionSubagents("session-1");
+    expect(pool.tryAcquire!({ model: MODEL_A })).toBeUndefined();
+    const waiting = track(pool.acquire({ model: MODEL_A }));
+    await flush();
+    expect(waiting.settled).toBe(false);
+    expect(await observe()).toBeDefined();
+    clock.advance(20_000);
+    await flush();
+    expect(waiting.ticket).toBeDefined();
+  });
+
+  it("喂信号：subagent 的 429 同样压低 cap、设冷却", async () => {
+    const { governor, clock } = makeGovernor();
+    const ticket = governor.sessionSubagents("session-1").tryAcquire!({ model: MODEL_A })!;
+    outcome.throttled429(ticket, 10_000);
+    expect(governor.snapshot(KEY_A)?.cap).toBe(6);
+    expect(governor.snapshot(KEY_A)?.cooldownUntil).toBe(clock.now() + 10_000);
+  });
+
+  it("同一父会话的 subagent 共用一条队列，在轮转里只占一份：workflow run 不被饿死", async () => {
+    const { governor, admitNow } = makeGovernor(1);
+    const busy = admitNow("runA");
+    const order: string[] = [];
+    const tickets: ModelRequestAdmissionTicket[] = [];
+    const record = (label: string) => (ticket: ModelRequestAdmissionTicket) => {
+      order.push(label);
+      tickets.push(ticket);
+    };
+    // 同一会话的两个 subagent 各要 2 次请求，共 4 个等待者；workflow run 只排 1 个。
+    for (const pool of [governor.sessionSubagents("s1"), governor.sessionSubagents("s1")]) {
+      void pool.acquire({ model: MODEL_A }).then(record("sub"));
+      void pool.acquire({ model: MODEL_A }).then(record("sub"));
+    }
+    void governor.admit("runA", KEY_A, new AbortController().signal).then(record("wf"));
+    await flush();
+    outcome.completed(busy);
+    await flush();
+    outcome.completed(tickets.shift()!);
+    await flush();
+    // 轮转按 run 身份：四个 subagent 请求只算一个 run，第二个名额就轮到 workflow。
+    expect(order).toEqual(["sub", "wf"]);
+  });
+
+  it("不同父会话各自一份：s1 排 2 个、s2 排 1 个，s2 的第一个不晚于 s1 的第二个", async () => {
+    const { governor, admitNow } = makeGovernor(1);
+    const busy = admitNow("A");
+    const order: string[] = [];
+    const tickets: ModelRequestAdmissionTicket[] = [];
+    const enqueue = (sessionId: string) =>
+      void governor
+        .sessionSubagents(sessionId)
+        .acquire({ model: MODEL_A })
+        .then((ticket) => {
+          order.push(sessionId);
+          tickets.push(ticket);
+        });
+    enqueue("s1");
+    enqueue("s1");
+    enqueue("s2");
+    await flush();
+    outcome.completed(busy);
+    await flush();
+    outcome.completed(tickets.shift()!);
+    await flush();
+    expect(order).toEqual(["s1", "s2"]);
+  });
+
+  it("signal abort 把等待中的 subagent 请求移出队列", async () => {
+    const { governor, admitNow } = makeGovernor(1);
+    admitNow("A");
+    const controller = new AbortController();
+    const waiting = track(
+      governor.sessionSubagents("s1").acquire({ model: MODEL_A, signal: controller.signal }),
+    );
+    await flush();
+    expect(governor.snapshot(KEY_A)?.waiters).toBe(1);
+    controller.abort(new Error("user cancelled"));
+    await flush();
+    expect((waiting.error as Error).message).toBe("user cancelled");
+    expect(governor.snapshot(KEY_A)?.waiters).toBe(0);
+  });
+
+  it("不抬增长上限：subagent 池不进桶的 runs，登记了大上界的 run 也只抬它自己用过的 key", () => {
+    const { governor } = makeGovernor();
+    governor.setRunBound("big", 40);
+    void governor.sessionSubagents("s1").tryAcquire!({ model: MODEL_A });
+    expect(governor.snapshot(KEY_A)?.growthLimit).toBe(2 * CEILING);
+  });
+});
+
 describe("workflow concurrency governor — ticket 上的事件映射（决策 27/36）", () => {
   it("一次 429 = failed(retryable:true) + retry_scheduled，只算一次 throttled（不减两次）", async () => {
     const { governor, observe } = makeGovernor();

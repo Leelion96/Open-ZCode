@@ -1,10 +1,13 @@
 import {
   ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY,
+  ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY,
+  ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY,
   ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY,
 } from "@zcode/contracts/mcp";
 import { isOfficialCuaImageRefText } from "@zcode/zcode-cua/frame-contract";
 import { CUA_APP_ASSOCIATIONS_META_KEY } from "@zcode/zcode-cua/host-display-contract";
-import type { NodeReplRunResult } from "@zcode/core/repl";
+import { matchBrowserScreenshotImageIndices, type NodeReplRunResult } from "@zcode/core/repl";
+import type { NodeReplCallFacts } from "./call-ledger/contract.js";
 import type { CallToolResult } from "@modelcontextprotocol/server";
 
 type EmbeddedContentBlock = CallToolResult["content"][number];
@@ -72,7 +75,21 @@ function keepLatestCuaFrame(blocks: EmbeddedContentBlock[]): EmbeddedContentBloc
   return blocks.filter((_, index) => !dropped.has(index));
 }
 
-export function toMcpRunResult(run: NodeReplRunResult): CallToolResult {
+const NO_CALL_FACTS: NodeReplCallFacts = {
+  cuaApps: [],
+  browserScreenshots: [],
+  browserUse: false,
+  computerUse: false,
+};
+
+/**
+ * 组装 MCP 工具结果。run 来自 Worker 的结果消息，cell 能冒充它，所以只当作内容；
+ * 可信 key 只取主线程账本记下的 facts（20-node-repl-call-ledger.md「结果组装」）。
+ */
+export function toMcpRunResult(
+  run: NodeReplRunResult,
+  facts: NodeReplCallFacts = NO_CALL_FACTS,
+): CallToolResult {
   const textParts: string[] = [];
   // SDK 结果通过专用 sink 写入后，不能再从 run.result/console 日志解析第二份副本。
   // 否则模型的 JSON.stringify 会把 image base64 降成普通文本，破坏 image/image_ref 邻接关系。
@@ -87,21 +104,35 @@ export function toMcpRunResult(run: NodeReplRunResult): CallToolResult {
   }
   if (embedded?._meta) Object.assign(responseMeta, embedded._meta);
   // 该 key 决定 core 是否把原图落盘，不能允许 REPL 代码通过
-  // setResponseMeta 伪造来源；只接受 NodeReplSession 根据真实 screenshot payload 生成的索引。
+  // setResponseMeta 伪造来源；只接受按账本里真实截图匹配出的下标（见下）。
   delete responseMeta[ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY];
   // 同款处置：producer 的应用元数据决定工具卡显示哪个 App 的名称和图标。它经
   // `projectToHost` -> `nodeRepl.emitStructuredResult` 到达上面的合并循环，而那个 API 挂在模型
   // 可见的 sandbox globals 上 —— cell 里自己 emit 一份就能让卡片声称操作了别的应用。因此这里
-  // 无条件丢弃，只接受 CUA bridge 从 broker 响应直接记录的 run.cuaApp。
+  // 无条件丢弃，只接受主线程 CUA broker 记进账本的身份。
+  // 修复原因（MR !3207 评审 CR-01）：原来取 run.cuaApp、run.browserScreenshotImageIndices，而 run 是
+  // Worker 的结果消息，cell 能经 worker_threads 冒充它；这两个字段现在一律忽略。
   delete responseMeta[CUA_APP_ASSOCIATIONS_META_KEY];
   delete responseMeta[ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY];
-  if (run.cuaApp) responseMeta[ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY] = run.cuaApp;
+  const cuaApp = facts.cuaApps.at(-1);
+  if (cuaApp) responseMeta[ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY] = cuaApp;
+  // 同款处置：core 据这两个键给会话打 browser_use / computer_use 标签。cell 经 sandbox 通道写的同名键
+  // 一律丢弃，只按两个 broker 记进账本的事实写回（session-features-header.md「BUA/CUA 标签的补充规则」）。
+  delete responseMeta[ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY];
+  delete responseMeta[ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY];
+  if (facts.browserUse) responseMeta[ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY] = true;
+  if (facts.computerUse) responseMeta[ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY] = true;
   // Anthropic 兼容网关（如 bigmodel MaaS）只解析 tool_result.content 开头的连续
   // image block，一旦先遇到 text 就丢弃后面的图，模型只能看到 image_ref 元数据而看不到画面
   // （实测 [image]/[image,text] 可见，[text,image]/[text,image,text] 不可见）。
   // 把 image 排在 text 之前即可让图稳定到达模型；顺序在 Anthropic 规范里本就是自由的。
   // image 因此从 content[0] 起连续排列，image 下标与 content 下标相等，无需再做 +1 偏移。
-  const browserScreenshotContentIndices = run.browserScreenshotImageIndices;
+  // 按字节把 run.images 对应到账本里代理转发过的真实截图；cell 即使冒充结果放进截图字节，
+  // 被标出的也确实是那张截图。
+  const browserScreenshotContentIndices = matchBrowserScreenshotImageIndices(
+    run.images ?? [],
+    facts.browserScreenshots,
+  );
   const structuredContent = keepLatestCuaFrame(
     structuredResults.flatMap((structured) => structured.content as EmbeddedContentBlock[]),
   );

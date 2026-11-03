@@ -24,6 +24,52 @@ export function isContextExceededFinishReason(
   );
 }
 
+// GLM（MaaS）输出侧安全审核用非标准的 sensitive 终止流；AI SDK 只认 content-filter。
+const CONTENT_FILTER_FINISH_REASONS = new Set(["content-filter", "content_filter", "sensitive"]);
+
+function isContentFilterFinishReason(reason: string | undefined): boolean {
+  return reason !== undefined && CONTENT_FILTER_FINISH_REASONS.has(reason.trim().toLowerCase());
+}
+
+/** 无正文、无工具调用且 provider 以内容过滤终止；思考内容和 usage 不影响判定。 */
+export function isContentFilteredEmptyModelResult(
+  finishReason: string | undefined,
+  rawFinishReason: string | undefined,
+  responseLength: number,
+  toolCallCount: number,
+): boolean {
+  return (
+    responseLength === 0 &&
+    toolCallCount === 0 &&
+    (isContentFilterFinishReason(finishReason) || isContentFilterFinishReason(rawFinishReason))
+  );
+}
+
+export function createContentFilteredModelResultError(input: {
+  finishReason: string | undefined;
+  model?: { modelId: string; providerId: string };
+  rawFinishReason: string | undefined;
+}) {
+  // 同一上下文重发会被同样拦截；不能落到 suspicious empty（retryable），否则会白跑恢复重试。
+  return createCoreError(
+    CoreErrorType.ModelError,
+    "Model output was blocked by the provider's content safety filter.",
+    {
+      context: {
+        finishReason: input.finishReason,
+        ...(input.model
+          ? { modelId: input.model.modelId, providerId: input.model.providerId }
+          : {}),
+        rawFinishReason: input.rawFinishReason,
+        reason: "content_filter",
+        source: "provider",
+      },
+      recoverable: true,
+      retryable: false,
+    },
+  );
+}
+
 export function createModelContextExceededFinishError(input: {
   finishReason: string | undefined;
   rawFinishReason: string | undefined;

@@ -151,10 +151,12 @@ describe("WPL-011 remote Workspace Plugin explicit sync E2E", () => {
       workspaceConfigBefore,
     );
 
+    // 票 14：Header「同步插件」打开数据同步弹窗，定位到当前 workspace 所在设备的插件分类。
     await openRemotePluginSyncDialog(workspacePath);
-    await waitForRemotePluginCandidate(`marketplace:${PLUGIN_LIFECYCLE_ID}`);
+    await waitForDataSyncDialogOnPlugins();
+    await waitForRemotePluginCandidate(PLUGIN_LIFECYCLE_ID.toLowerCase());
     await startRemotePluginSync();
-    await waitForRemotePluginSyncComplete();
+    await waitForRemotePluginSyncComplete(PLUGIN_LIFECYCLE_ID.toLowerCase());
 
     await browser.waitUntil(
       async () => {
@@ -192,7 +194,8 @@ describe("WPL-011 remote Workspace Plugin explicit sync E2E", () => {
 
     // 显式同步后的验证必须在同一远程项目创建新会话；全局新建会错误执行本机已安装的插件。
     // 同步完成保留结果弹窗；未关闭它时真实侧栏点击被遮罩拦截。
-    const syncDialog = $('[role="dialog"]');
+    const syncDialog = $('[data-testid="remote-sync-dialog"]');
+    // 分类页没有底部「关闭」按钮，用弹窗右上角的关闭按钮。
     await syncDialog.$('[data-slot="dialog-close"]').click();
     await syncDialog.waitForExist({ reverse: true });
     await startDraftFromProject(workspacePath, { workspaceIdentity: task.identity });
@@ -403,13 +406,12 @@ async function openRemotePluginSyncDialog(workspacePath: string): Promise<void> 
             }
             const item = Array.from(
               document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-            ).find((candidate) => {
-              if (candidate.getClientRects().length === 0) return false;
-              const text = candidate.innerText.trim();
-              // 修复原因：菜单项文案是 remote.syncPlugins（"同步插件" / "Sync plugins"），
-              // 旧断言找的是"同步 Plugin"。现场事实里这一项确实叫"同步插件"。
-              return ["同步插件", "Sync plugins", "同步 Plugin", "Sync Plugin"].includes(text);
-            });
+            ).find(
+              (candidate) =>
+                candidate.getClientRects().length > 0 &&
+                candidate.dataset.testid === "data-sync-entry-plugins" &&
+                candidate.getAttribute("aria-disabled") !== "true",
+            );
             if (!item) return { ...base, stage: "item-missing" as const, moreState };
             item.click();
             return { ...base, stage: "clicked" as const, moreState };
@@ -431,18 +433,42 @@ async function openRemotePluginSyncDialog(workspacePath: string): Promise<void> 
     });
 }
 
-async function waitForRemotePluginCandidate(candidateId: string): Promise<void> {
+async function waitForDataSyncDialogOnPlugins(): Promise<void> {
   await browser.waitUntil(
     () =>
-      browser.execute((id) => {
-        const checkbox = document.getElementById(
-          `remote-plugin-sync-${id}`,
-        ) as HTMLInputElement | null;
-        return Boolean(checkbox && !checkbox.disabled && checkbox.checked);
-      }, candidateId),
+      browser.execute(() => {
+        const dialog = document.querySelector('[data-testid="remote-sync-dialog"]');
+        const tab = document.querySelector('[data-testid="remote-sync-tab-plugins"]');
+        const device = document.querySelector('[data-testid="remote-sync-dialog-device"]');
+        return Boolean(
+          dialog && device?.textContent?.trim() && tab?.getAttribute("aria-current") === "page",
+        );
+      }),
+    {
+      timeout: 30_000,
+      timeoutMsg: `${CASE_MARKER}: Header「同步插件」没有打开数据同步弹窗的插件分类`,
+    },
+  );
+}
+
+async function readRemotePluginRow(rowKey: string) {
+  return await browser.execute((rowTestId) => {
+    const row = document.querySelector<HTMLElement>(`[data-testid="${rowTestId}"]`);
+    return row
+      ? { status: row.dataset.syncStatus ?? null, checked: row.getAttribute("aria-checked") }
+      : null;
+  }, `remote-sync-row-${rowKey}`);
+}
+
+async function waitForRemotePluginCandidate(rowKey: string): Promise<void> {
+  await browser.waitUntil(
+    async () => {
+      const row = await readRemotePluginRow(rowKey);
+      return row?.status === "push" && row.checked === "true";
+    },
     {
       timeout: 120_000,
-      timeoutMsg: `${CASE_MARKER}: remote Plugin sync 没有默认选中 ${candidateId}`,
+      timeoutMsg: `${CASE_MARKER}: 数据同步弹窗没有把 ${rowKey} 显示为默认勾选的「推送」`,
     },
   );
 }
@@ -451,84 +477,29 @@ async function startRemotePluginSync(): Promise<void> {
   await browser.waitUntil(
     () =>
       browser.execute(() => {
-        const button = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
-          (candidate) => {
-            const text = candidate.innerText.trim();
-            return !candidate.disabled && (text === "同步已选项" || text === "Sync selected");
-          },
+        const button = document.querySelector<HTMLButtonElement>(
+          '[data-testid="remote-sync-push"]',
         );
-        if (!button) return false;
+        if (!button || button.disabled) return false;
         button.click();
         return true;
       }),
     {
       timeout: 30_000,
-      timeoutMsg: `${CASE_MARKER}: “同步已选项”不可点击`,
+      timeoutMsg: `${CASE_MARKER}: 插件分类的推送按钮不可点击`,
     },
   );
 }
 
-async function waitForRemotePluginSyncComplete(): Promise<void> {
-  let observedBusy = false;
-  let latestState: {
-    dialogText: string;
-    failed: boolean;
-    syncButtonEnabled: boolean;
-    synced: boolean;
-  } = {
-    dialogText: "",
-    failed: false,
-    syncButtonEnabled: false,
-    synced: false,
-  };
-  await browser.waitUntil(
-    async () => {
-      latestState = await browser.execute(() => {
-        const synced = Array.from(document.querySelectorAll<HTMLElement>("span")).some(
-          (candidate) => {
-            const text = candidate.innerText.trim();
-            return text === "已同步" || text === "Synced";
-          },
-        );
-        const failed = Array.from(document.querySelectorAll<HTMLElement>("span")).some(
-          (candidate) => {
-            const text = candidate.innerText.trim();
-            return text === "失败" || text === "Failed";
-          },
-        );
-        const syncButton = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find(
-          (candidate) => {
-            const text = candidate.innerText.trim();
-            return text === "同步已选项" || text === "Sync selected";
-          },
-        );
-        const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(
-          (candidate) => candidate.getClientRects().length > 0,
-        );
-        return {
-          dialogText: dialog?.innerText.trim() ?? "",
-          failed,
-          syncButtonEnabled: Boolean(syncButton && !syncButton.disabled),
-          synced,
-        };
-      });
-      if (!latestState.syncButtonEnabled) {
-        observedBusy = true;
-      }
-      return (
-        latestState.synced || latestState.failed || (observedBusy && latestState.syncButtonEnabled)
-      );
-    },
-    {
-      timeout: 240_000,
-      timeoutMsg: `${CASE_MARKER}: remote Plugin sync 没有进入“已同步”`,
-    },
+async function waitForRemotePluginSyncComplete(rowKey: string): Promise<void> {
+  await browser.waitUntil(async () => (await readRemotePluginRow(rowKey))?.status === "synced", {
+    timeout: 240_000,
+    timeoutMsg: `${CASE_MARKER}: 推送后 ${rowKey} 没有变为「已同步」`,
+  });
+  const failed = await browser.execute(() =>
+    Boolean(document.querySelector('[data-testid^="remote-sync-row-error-"]')),
   );
-  if (!latestState.synced) {
-    throw new Error(
-      `${CASE_MARKER}: remote Plugin sync 回退到选择阶段，dialog=${JSON.stringify(latestState.dialogText)}`,
-    );
-  }
+  expect(failed).toBe(false);
 }
 
 function writeBase64Command(path: string, content: string): string {

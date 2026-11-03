@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-remote-install-killed",
+  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-install-killed.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-remote-install-killed.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "requests": []
+}

@@ -29,9 +29,9 @@ export function handleHeapMutator(
   // a call result `log().push(x)`) used to skip BOTH halves of the transfer — the argument
   // taint merged nowhere (a silent total drop of the flow) and the receiver expression was
   // never evaluated, so a facade sink sitting in receiver position was never visited at
-  // all. Mirror writeTarget's unresolvable-receiver path (assign.ts): evaluate the receiver
-  // for effect and smear each argument into the chain's root identifier.
-  if (container === undefined) ev.evalExpr(access.expression, ctx);
+  // all. Mirror writeTarget's unresolvable-receiver path (assign.ts): the receiver is
+  // evaluated for effect (evalCall evaluates every member call's receiver once, before
+  // dispatching here) and each argument is smeared into the chain's root identifier.
   for (const arg of node.arguments) {
     const argVal = collapse(ev.evalExpr(arg, ctx));
     if (container !== undefined) {

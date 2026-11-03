@@ -37,21 +37,19 @@ export function createAssistantPreviewPptxAutoOpenGateState(): AssistantPreviewP
 export function resolveLatestCompletedAssistantPreviewTurn(
   rows: readonly ConversationRow[],
 ): AssistantPreviewPptxCompletedTurn | null {
-  const latestHeader = [...rows]
-    .reverse()
-    .find(
-      (row): row is Extract<ConversationRow, { kind: "turnHeader" }> => row.kind === "turnHeader",
-    );
+  // Bug 根因：原先用 [...rows].reverse().find 复制并反转整窗，随每个流式帧执行，成本随历史线性增长。
+  // findLast 结果相同，且最新 header 与正文都在尾部，查找几乎只扫尾轮。
+  const latestHeader = rows.findLast(
+    (row): row is Extract<ConversationRow, { kind: "turnHeader" }> => row.kind === "turnHeader",
+  );
   if (!latestHeader || latestHeader.state !== "completedSuccess") {
     return null;
   }
 
-  const latestAssistant = [...rows]
-    .reverse()
-    .find(
-      (row): row is Extract<ConversationRow, { kind: "assistantText" }> =>
-        row.kind === "assistantText" && row.turnId === latestHeader.turnId,
-    );
+  const latestAssistant = rows.findLast(
+    (row): row is Extract<ConversationRow, { kind: "assistantText" }> =>
+      row.kind === "assistantText" && row.turnId === latestHeader.turnId,
+  );
   if (!latestAssistant || latestAssistant.state !== "complete") return null;
 
   return {

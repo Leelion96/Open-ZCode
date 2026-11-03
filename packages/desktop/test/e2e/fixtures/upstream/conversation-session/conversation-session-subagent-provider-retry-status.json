@@ -20,10 +20,10 @@
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "text": {
-          "id": "upstream-e2e-subagent-provider-retry-title",
-          "text": "{\"title\":\"Subagent Provider Retry\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-subagent-provider-retry-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Subagent Provider Retry\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":128,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":12,\"service_tier\":\"standard\"}}"
       }
     },
     {

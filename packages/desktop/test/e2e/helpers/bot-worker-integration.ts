@@ -140,12 +140,18 @@ export async function createBotWorkerIntegration(baseUrl: string, dropTextContai
     const reverseResources: unknown[] = [];
     const agent = createZCodeAgentService({
       // 项目化创建要求先预留 task 归属；旧夹具漏接此 Host 端口，在调用 CLI 前即失败。
-      prepareSessionCreation: async (target) =>
-        projects.reserveCreatedTask({
+      prepareSessionCreation: async (target) => {
+        const prepared = projects.reserveCreatedTask({
           task: { ...target, taskId: target.sessionId },
           projectId: target.projectId,
+          creationCommand: target.creationCommand,
           additionalDirectories: target.additionalDirectories,
-        }).additionalDirectories,
+        });
+        return {
+          sessionId: prepared.taskId,
+          additionalDirectories: prepared.additionalDirectories,
+        };
+      },
       commandResolver: () => ({
         command: process.execPath,
         args: [

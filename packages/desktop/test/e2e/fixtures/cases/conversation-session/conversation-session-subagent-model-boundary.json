@@ -8,13 +8,68 @@
   ],
   "fileFixtures": [],
   "requests": [
-    { "id": "subagent-boundary-parent-agent", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "固定父 Agent tool_use。" },
-    { "id": "subagent-boundary-child-delayed", "kind": "main", "source": "synthetic", "timingPolicy": "delayed-text", "syntheticReason": "延迟 child 以验证在途快照。" },
-    { "id": "subagent-boundary-parent-final", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "父 continuation。" },
-    { "id": "subagent-nested-parent-agent", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "三层父 Agent。" },
-    { "id": "subagent-nested-child-agent", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "三层第二级 Agent。" },
-    { "id": "subagent-nested-grandchild-final", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "三层第三级回复。" },
-    { "id": "subagent-nested-child-final", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "第二级 continuation。" },
-    { "id": "subagent-nested-parent-final", "kind": "main", "source": "synthetic", "timingPolicy": "fast-text", "syntheticReason": "父 continuation。" }
+    {
+      "id": "conversation-session-subagent-model-boundary-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "subagent-boundary-parent-agent",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定 Agent tool_use，模型身份由真实运行时请求断言。"
+    },
+    {
+      "id": "subagent-boundary-child-delayed",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "门闩确定性保持子响应在途，父模型改选后再完成子请求。"
+    },
+    {
+      "id": "subagent-boundary-parent-final",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "验证父 continuation 仍能完成。"
+    },
+    {
+      "id": "subagent-nested-parent-agent",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定第一层 child。"
+    },
+    {
+      "id": "subagent-nested-child-agent",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "注入非法递归工具调用，验证工具权限边界。"
+    },
+    {
+      "id": "subagent-nested-child-final",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "验证运行时拒绝未暴露的 Agent 工具，不产生孙级请求。"
+    },
+    {
+      "id": "subagent-nested-parent-final",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "验证递归拒绝后父会话仍正常完成。"
+    },
+    {
+      "id": "subagent-boundary-next-input",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "提供后续普通输入响应，真实请求断言切换后的模型身份。"
+    }
   ]
 }

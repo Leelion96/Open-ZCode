@@ -2713,6 +2713,24 @@ describe("NodeExecutionAdapter", () => {
     });
   });
 
+  it("resolves a Windows command from a quoted PATH entry", () => {
+    const resolved = resolveExecutionCommand(
+      { mode: "argv", file: "pnpm", args: ["install"] },
+      {
+        cwd: "C:\\repo",
+        env: {
+          ComSpec: "C:\\Windows\\System32\\cmd.exe",
+          Path: '"C:\\Program Files\\node tools";C:\\Windows',
+          PATHEXT: ".COM;.EXE;.BAT;.CMD",
+        },
+        exists: (path) => path === "C:\\Program Files\\node tools\\pnpm.cmd",
+        platform: "win32",
+      },
+    );
+
+    expect(resolved.args.at(-1)).toBe('"C:\\Program Files\\node tools\\pnpm.cmd" install');
+  });
+
   it("keeps Windows .exe argv commands shell-free after PATH resolution", () => {
     const resolved = resolveExecutionCommand(
       {

@@ -35,10 +35,63 @@ nodes:
       - Brand surfaces use name by default; omit redundant subjects in generic copy and retain the name where app, account or runtime scope matters. Original Agent terms remain. Identity and private data remain independent; logos and icons are unchanged.
       - User and project namespaces have independent switches; explicit paths retain priority.
       - Standalone CLI retains upstream defaults without app configuration; Web consumes the product configuration through its original entrypoints.
+  - id: "capability.shared-task-cli"
+    kind: "capability"
+    label: "Local projectless workspaces share one chat CLI"
+    aliases: ["无项目任务共享 CLI", "统一 CLI 选择", "shared task CLI"]
+    docs: ["docs/shared-task-cli.md", "docs/session-task-restart.md"]
+    codeSeeds:
+      - file: "packages/services/src/zcode-agent/zcodeAgentProcessManager.ts"
+        symbol: "ZCodeAgentProcessManager"
+      - file: "packages/services/src/zcode-agent/zcodeAgentService.ts"
+        symbol: "createZCodeAgentService"
+      - file: "packages/services/src/project-storage/project-repository.ts"
+        symbol: "hasProjectWorkspace"
+      - file: "apps/zcode-cli/packages/bootstrap/src/zcode-protocol/transport.ts"
+    invariants:
+      - "Existing workspace runtime ownership wins until its physical process tree exits; moving a task changes project affiliation only."
+      - "Process startup and global preferences are coordinated per physical CLI; workspace initialization, session routing and persistence keep their own identities."
+      - "Deferred draft release and session restart never dispose the shared process; process loss invalidates every bound workspace."
+  - id: "capability.gen-ui-input-context"
+    kind: "capability"
+    label: "Gen UI model state attached to a conversation input"
+    aliases: ["Gen UI 状态", "untrusted_gen_ui_state", "GenUI 上下文"]
+    docs:
+      - "docs/specs/gen-ui-model-context.md"
+      - "docs/specs/gen-ui-output-directory.md"
+      - "packages/services/src/gen-ui/CONTRACT.md"
+    codeSeeds:
+      - file: "packages/shared/src/gen-ui/contract.ts"
+        symbol: "selectGenUiModelContext"
+      - file: "packages/ui/src/v4/SessionPane.tsx"
+      - file: "apps/zcode-cli/packages/core/src/agent/message-history.ts"
+        symbol: "normalizeGenUiInput"
+    invariants:
+      - "Only modelContent supplies model context; privateContent restores widget UI."
+      - "Changing widget state alone does not start an Agent turn."
+      - "Canonical input owns the snapshot; CLI derives a model-only reminder and decodes legacy tails at input/read boundaries."
+  - id: "surface.gen-ui-conversation-input"
+    kind: "ui-surface"
+    label: "Conversation send and Gen UI follow-up input"
+    docs: ["packages/ui/src/gen-ui/CONTRACT.md"]
+    codeSeeds:
+      - file: "packages/ui/src/v4/SessionPane.tsx"
+    invariants:
+      - "Send targets retain workspace and session ownership; mobile does not gain a Gen UI sandbox."
+  - id: "state.gen-ui-widget-state"
+    kind: "state-owner"
+    label: "Desktop Host widget state scoped by workspace, session and document path"
+    docs: ["packages/services/src/gen-ui/CONTRACT.md"]
+    codeSeeds:
+      - file: "packages/shared/src/gen-ui/contract.ts"
+        symbol: "buildGenUiStateKey"
+    invariants:
+      - "Desktop Host owns widget state even when HTML execution files belong to a remote Host."
+
   - id: "capability.tool-search"
     kind: "capability"
     label: "Provider-aware deferred ToolSearch"
-    aliases: ["ToolSearch", "工具搜索", "延迟工具加载"]
+    aliases: ["ToolSearch", "LocalToolSearch", "工具搜索", "延迟工具加载"]
     docs: ["apps/zcode-cli/docs/design/v2/tool/19-tool-search.md"]
     codeSeeds:
       - file: "apps/zcode-cli/packages/core/src/tool/search/exposure.ts"
@@ -48,6 +101,21 @@ nodes:
     invariants:
       - "Current provider and launch override decide exposure; genuine results and effective compact boundaries own discovery."
       - "Pure output-token continuation reuses its announcement snapshot; disabled projection never mutates raw history."
+      - "Local exposes LocalToolSearch and Native exposes ToolSearch; both resolve to the same canonical ToolSearch handler."
+  - id: "surface.tool-search-card"
+    kind: "ui-surface"
+    label: "Shared ToolSearch and LocalToolSearch conversation card"
+    aliases: ["搜索工具卡片", "LocalToolSearch 卡片"]
+    docs: ["apps/zcode-cli/docs/design/v2/tool/19-tool-search.md"]
+    codeSeeds:
+      - file: "packages/ui/src/ToolCallBlocks/resolveRenderer.ts"
+        symbol: "resolveToolCallRenderer"
+      - file: "packages/ui/src/ToolCallBlocks/renderers/search.tsx"
+        symbol: "ToolSearchToolCallBlock"
+    invariants:
+      - "Both names share the renderer, icon, localized summary and ToolSearch tooltip title, including pending and stopped calls before execution normalization."
+      - "The card has no expandable arguments or results and preserves failure status; it does not join Explore content-search aggregation."
+      - "Desktop and mobile share presentation; TS14 proves only the Desktop continuous execution path."
   - id: "surface.tool-search-settings"
     kind: "ui-surface"
     label: "General Settings ToolSearch mode"
@@ -70,6 +138,7 @@ nodes:
       - file: "packages/desktop/test/e2e/conversation-session/conversation-session-toolsearch-cli.test.ts"
       - file: "packages/desktop/test/e2e/conversation-session/conversation-session-toolsearch-tui.test.ts"
       - file: "packages/desktop/test/e2e/conversation-session/conversation-session-toolsearch-catalog.test.ts"
+      - file: "packages/desktop/test/e2e/conversation-session/conversation-session-tool-discovery-card.test.ts"
 
   - id: "capability.preview-pane-image-actions"
     kind: "capability"
@@ -477,8 +546,8 @@ nodes:
       - "弹窗标签恢复"
     docs:
       - "docs/browser-use/2026-07-31-browser-generic-target-popup-recovery-guidance-spec.md"
-      - "docs/browser-use/2026-07-10-browser-use-codex-parity-spec.md"
-      - "docs/testing/browser-use-codex-parity-coverage-matrix.md"
+      - "docs/browser-use/2026-07-10-browser-use-spec.md"
+      - "docs/testing/browser-use-coverage-matrix.md"
     codeSeeds:
       - symbol: "loadBrowserDocumentation"
         file: "apps/zcode-cli/packages/core/src/browser-client/documentation.ts"
@@ -615,6 +684,8 @@ nodes:
       - "docs/working-memory/provider-refactor/steps/todo-97-subagent-markdown-in-place-migration-and-legacy-read-audit.md"
       - "docs/working-memory/provider-refactor/steps/todo-99-worker-account-selection-repair.md"
     codeSeeds:
+      - symbol: "startManualCompact"
+        file: "apps/zcode-cli/packages/bootstrap/src/zcode-protocol-v4/commands/handlers/goal-compact.ts"
       - symbol: "ModelSelectionFacade"
         file: "packages/provider/src/facades.ts"
       - symbol: "ApiProviderModelRuntime"
@@ -630,6 +701,7 @@ nodes:
       - symbol: "resolveSubagentSelection"
         file: "apps/zcode-cli/packages/core/src/runtime/helpers/subagent-selection.ts"
     invariants:
+      - "Manual compact freezes the submitted Composer ModelSelection through direct execution, FIFO queue and recovery; later menu edits cannot replace it. Both slash and context-panel entries share this contract. Auto compact retains its triggering Active Model."
       - "ModelSelectionFacade projects visible user candidates and change events only; authoritative selection validation occurs against the current process Registry when ModelFactory builds a Model. Internal products such as Off-Peak may preflight an exact hidden selection through the Registry, but that preflight never replaces final Model construction validation."
       - "User-visible model candidates, option specs, and preferredSelection come atomically from the target Workspace Host: local workspaces use Local Host and remote workspaces use Remote Host, with no Base/Local fallback while a remote target is waiting or disconnected. App Recent is isolated by workspaceKey = workspaceIdentity?.trim() || workspacePath; the Renderer may prefer a still-selectable Recent over Host preferredSelection, while final execution validation remains in the target Worker Registry and ModelFactory."
       - "ModelSelection stores provider/model identity and selected options. ModelFactory validates and freezes complete execution selections; it never fills missing reasoning. New default completion and an explicit user model-menu choice use the highest public level (Todo 88). Auxiliary low-cost calls explicitly use values[0], while invalid saved Session/Composer effective selections remain empty without fallback or empty-selection notifications."
@@ -1269,6 +1341,11 @@ nodes:
       - "message image thumbnails"
       - "消息图片缩略图"
       - "共享图片预览"
+      - "图片标注编辑"
+      - "图片编辑保存到对话"
+    invariants:
+      - "Preview annotations are local drafts; saving appends a new PNG through focused Composer attachment admission without sending or replacing the original."
+      - "Capture the Composer receiver before export and reject late results after preview or Composer scope changes."
     docs:
       - "docs/ui/shared-image-preview-dialog.md"
     codeSeeds:
@@ -1334,7 +1411,7 @@ nodes:
       - "内置浏览器代理"
     docs:
       - "apps/zcode-cli/docs/design/v2/model/http-proxy.md"
-      - "docs/testing/browser-use-codex-parity-coverage-matrix.md"
+      - "docs/testing/browser-use-coverage-matrix.md"
     codeSeeds:
       - symbol: "applyDesktopChromiumNetworkPolicies"
         file: "packages/desktop/src/main/desktopNetworkPolicy.ts"
@@ -1381,7 +1458,7 @@ nodes:
       - "恢复上次浏览器尺寸"
     docs:
       - "docs/browser-use/2026-07-15-responsive-browser-viewport-spec.md"
-      - "docs/testing/browser-use-codex-parity-coverage-matrix.md"
+      - "docs/testing/browser-use-coverage-matrix.md"
     codeSeeds:
       - symbol: "ResponsiveBrowserViewport"
         file: "packages/ui/src/browser-use/ResponsiveBrowserViewport.tsx"
@@ -1611,6 +1688,31 @@ nodes:
         file: "packages/services/src/usage-stats/providers/zcodeMcpQuotaProvider.ts"
       - symbol: "useV4SessionQuotaBanner"
         file: "packages/ui/src/v4/useV4SessionQuotaBanner.ts"
+
+  - id: "capability.session-owned-shutdown"
+    kind: "capability"
+    label: "Session-owned work shutdown"
+    aliases: ["重启任务", "关闭所属子代理", "workflow cleanup", "session restart"]
+    docs:
+      - "docs/session-task-restart.md"
+      - "apps/zcode-cli/docs/design/v2/session-runtime-lifecycle.md"
+    codeSeeds:
+      - symbol: "createSessionFacade"
+        file: "apps/zcode-cli/packages/bootstrap/src/app/session-facade.ts"
+      - symbol: "AgentRuntime"
+        file: "apps/zcode-cli/packages/core/src/runtime/agent-runtime.ts"
+      - symbol: "createExploreSubagentPort"
+        file: "apps/zcode-cli/packages/core/src/subagent/runner.ts"
+      - symbol: "ScriptWorkflowRuntime"
+        file: "apps/zcode-cli/packages/bootstrap/src/app/script-workflow-runtime.ts"
+      - symbol: "createRunServiceLifecycle"
+        file: "apps/zcode-cli/packages/bootstrap/src/app/dynamic-workflow-run-lifecycle.ts"
+      - symbol: "releaseActorSessions"
+        file: "apps/zcode-cli/packages/bootstrap/src/app/workflow-driver-quiescence.ts"
+    invariants:
+      - "Background work detaches from a turn, not its session owner. Shutdown closes admission, cancels owned work and drains actual execution and cleanup before releasing shared resources."
+      - "Task terminal status and workflow settlement do not prove cleanup completion. Failed cleanup keeps the existing lifecycle faulted; restart must not create a second instance."
+      - "Ownership comes from runtime handles, not historical parentSessionId traversal. Independent tasks and forks remain isolated, including sessions sharing a CLI process."
 
   - id: "capability.subagents"
     kind: "capability"
@@ -2076,11 +2178,7 @@ nodes:
   - id: "evidence.desktop-startup-critical-path-tests"
     kind: "evidence"
     label: "Desktop runtime env, Host deadline, and tab restore tests"
-    codeSeeds:
-      - file: "packages/services/test/runtimeCommandEnv.test.ts"
-      - file: "packages/desktop/test/desktopWindowLifecycle.test.ts"
-      - file: "packages/ui/test/useTabPersistence.test.ts"
-      - file: "packages/ui/test/remoteWorkspaceSessionPersistence.test.ts"
+    codeSeeds: [] # App 单测已退役，当前没有该层自动化证据。
 
   - id: "surface.app-usage-dashboard"
     kind: "ui-surface"
@@ -2183,10 +2281,8 @@ nodes:
       - "docs/testing/marketing-touch-e2e-audit.md"
       - "docs/testing/marketing-touch-e2e-implementation.md"
     codeSeeds:
-      - file: "packages/ui/test/marketingTouchProvider.test.ts"
       - file: "packages/desktop/test/e2e/ui-shell/manual-review/pending/marketing-touch-delivery.test.ts"
       - file: "packages/desktop/test/e2e/ui-shell/manual-review/pending/marketing-touch-entitlement.test.ts"
-      - file: "packages/ui/test/aliyunCaptchaRuntime.test.ts"
 
   - id: "surface.office-document-workbench"
     kind: "ui-surface"
@@ -2860,9 +2956,7 @@ nodes:
     label: "Plugin scope projection and search tests"
     docs:
       - "docs/plugin-capabilities-settings.md"
-    codeSeeds:
-      - file: "packages/ui/test/pluginSettingsSection.test.ts"
-      - file: "packages/ui/test/pluginCapabilityProjection.test.ts"
+    codeSeeds: [] # App 单测已退役，当前没有该层自动化证据。
 
   - id: "capability.skill-catalog-discovery"
     kind: "capability"
@@ -2923,8 +3017,6 @@ nodes:
       - "docs/external-agent-skills-import.md"
     codeSeeds:
       - file: "apps/zcode-cli/packages/adapters/tests/skills.test.ts"
-      - file: "packages/services/test/skillsService.test.ts"
-      - file: "packages/ui/test/skillSourceFilter.test.ts"
 
   - id: "capability.command-workspace-scope"
     kind: "capability"
@@ -2987,8 +3079,7 @@ nodes:
     label: "Command Workspace scope selection tests"
     docs:
       - "docs/settings-command-list.md"
-    codeSeeds:
-      - file: "packages/ui/test/settingsCommandWorkspaceScope.test.ts"
+    codeSeeds: [] # App 单测已退役，当前没有该层自动化证据。
 
   - id: "surface.project-memory-settings"
     kind: "ui-surface"
@@ -4273,7 +4364,6 @@ nodes:
     codeSeeds:
       - file: "apps/zcode-cli/packages/bootstrap/tests/plugins.test.ts"
       - file: "apps/zcode-cli/packages/adapters/tests/plugins.test.ts"
-      - file: "packages/ui/test/pluginStoreListing.test.ts"
 
   - id: "capability.plugin-reference"
     kind: "capability"
@@ -4498,10 +4588,6 @@ nodes:
     kind: "evidence"
     label: "ModelIO full retention schema, UI, protocol, and writer tests"
     codeSeeds:
-      - file: "packages/shared/test/appSettings.test.ts"
-      - file: "packages/ui/test/settingsDataBaseDirControl.test.ts"
-      - file: "packages/ui/test/useSettingServiceAutoResolution.test.ts"
-      - file: "packages/services/test/zcodeAgentService.test.ts"
       - file: "apps/zcode-cli/packages/bootstrap/tests/zcode-protocol.test.ts"
       - file: "apps/zcode-cli/packages/adapters/tests/runner.test.ts"
 
@@ -4882,30 +4968,20 @@ nodes:
     kind: "evidence"
     label: "Browser screenshot surface and bounded activity coverage"
     codeSeeds:
-      - file: "packages/desktop/test/browserScreenshotSurfaceCoordinator.test.ts"
-      - file: "packages/desktop/test/browserScreenshotSurfaceCoordinatorWiring.test.ts"
-      - file: "packages/desktop/test/browserScreenshotActivityController.test.ts"
-      - file: "packages/desktop/test/browserGuestManager.test.ts"
       - file: "packages/desktop/scripts/browser-background-activity-smoke.mjs"
 
   - id: "evidence.browser-webview-video-recording-tests"
     kind: "evidence"
     label: "Browser WebView recording schema, SDK, main, artifact and runtime coverage"
     codeSeeds:
-      - file: "packages/shared/test/browserControlProtocol.test.ts"
       - file: "apps/zcode-cli/packages/core/tests/browser-client.test.ts"
-      - file: "packages/desktop/test/browserGuestManager.test.ts"
-      - file: "packages/desktop/test/browserControlMainBridge.test.ts"
-      - file: "packages/desktop/test/browserRecordingArtifactMaterializer.test.ts"
-      - file: "packages/desktop/test/browserVideoRecorder.test.ts"
 
   - id: "evidence.embedded-browser-network-policy-tests"
     kind: "evidence"
     label: "Desktop Chromium Session network policy target and certificate tests"
     docs:
-      - "docs/testing/browser-use-codex-parity-coverage-matrix.md"
-    codeSeeds:
-      - file: "packages/desktop/test/desktopNetworkPolicy.test.ts"
+      - "docs/testing/browser-use-coverage-matrix.md"
+    codeSeeds: [] # App 单测已退役，当前没有该层自动化证据。
 
   - id: "evidence.host-api-network-policy-tests"
     kind: "evidence"
@@ -4913,16 +4989,12 @@ nodes:
     docs:
       - "docs/superpowers/specs/2026-08-25-host-api-proxy-design.md"
     codeSeeds:
-      - file: "packages/services/test/nodeApiClient.test.ts"
-      - file: "packages/services/test/nodeApiClientEndpoint.test.ts"
       - file: "packages/desktop/src/host/remoteWorkspaceServiceCollection.ts"
 
   - id: "evidence.embedded-browser-responsive-viewport-tests"
     kind: "evidence"
     label: "Responsive browser viewport interaction coverage"
     codeSeeds:
-      - file: "packages/ui/test/UnifiedBrowserView.test.ts"
-      - file: "packages/shared/test/appSettings.test.ts"
       - file: "packages/desktop/test/e2e/browser-human-viewport-preference.test.ts"
 
   - id: "evidence.browser-use-agent-guidance-tests"
@@ -4940,7 +5012,6 @@ nodes:
       - file: "apps/zcode-cli/packages/cli/tests/build-sea.test.mjs"
       - file: "apps/zcode-cli/packages/adapters/tests/plugins.test.ts"
       - file: "apps/zcode-cli/packages/node-repl-host/test/mcp-server.test.ts"
-      - file: "packages/server/test/remoteDeploy.test.ts"
       - file: "packages/desktop/test/runtime-asset-scripts.test.ts"
   - id: "capability.side-pane-tab-strip"
     kind: "capability"
@@ -5003,10 +5074,8 @@ nodes:
     docs:
       - "docs/conversation-session-case-catalog.md"
       - "docs/testing/conversation-session-e2e-coverage-matrix.md"
-      - "docs/testing/browser-use-codex-parity-coverage-matrix.md"
-    codeSeeds:
-      - file: "packages/desktop/test/browserGuestManager.test.ts"
-      - file: "packages/ui/test/UnifiedBrowserView.test.ts"
+      - "docs/testing/browser-use-coverage-matrix.md"
+    codeSeeds: [] # App 单测已退役，当前没有该层自动化证据。
 
   - id: "capability.project-creation-folder-confirmation"
     kind: "capability"
@@ -5172,9 +5241,6 @@ nodes:
     kind: "evidence"
     label: "Workspace Hook Settings, controller, identity, and Trust store coverage"
     codeSeeds:
-      - file: "packages/ui/test/hooksSection.test.ts"
-      - file: "packages/ui/test/workspaceHookInlineTrust.test.ts"
-      - file: "packages/ui/test/workspaceHookReviewStore.test.ts"
       - file: "apps/zcode-cli/packages/bootstrap/tests/workspace-hook-review-controller.test.ts"
       - file: "apps/zcode-cli/packages/adapters/tests/workspace-hook-trust-store.test.ts"
   - id: "capability.workflow-run-confirmation"
@@ -5517,6 +5583,51 @@ nodes:
         file: "packages/ui/src/v4/ConversationShareReadonlyTimeline.tsx"
 
 edges:
+  - from: "capability.shared-task-cli"
+    to: "capability.workspace-identity"
+    type: "preserves"
+    rank: "must-inspect"
+  - from: "capability.shared-task-cli"
+    to: "capability.session-residency-management"
+    type: "shares-process-with"
+    rank: "must-inspect"
+  - from: "capability.shared-task-cli"
+    to: "capability.remote-delivery"
+    type: "preserves-shared-host-routing"
+    rank: "must-inspect"
+  - from: "capability.shared-task-cli"
+    to: "service.project-task-mutation"
+    type: "retains-runtime-during-move"
+    rank: "must-inspect"
+  - from: "capability.gen-ui-input-context"
+    to: "surface.gen-ui-conversation-input"
+    type: "renders-in"
+    rank: "must-inspect"
+    condition: "The current sendText producer reads widget state before input admission."
+  - from: "capability.gen-ui-input-context"
+    to: "state.gen-ui-widget-state"
+    type: "reads-from"
+    rank: "must-inspect"
+  - from: "capability.gen-ui-input-context"
+    to: "capability.conversation-runtime"
+    type: "consumed-by"
+    rank: "must-inspect"
+    condition: "Ordinary input, queue promotion, guide and cold history must preserve the context associated with the same input."
+  - from: "capability.gen-ui-input-context"
+    to: "surface.conversation-share-publish"
+    type: "projects-through"
+    rank: "must-inspect"
+    condition: "New share snapshots consume conversation rows; already published static shares do not rerun CLI normalization."
+
+  - from: "capability.tool-search"
+    to: "surface.tool-search-card"
+    type: "renders-in"
+    rank: "must-inspect"
+    condition: "Model-visible names can reach the shared card before executor canonicalization, including interrupted parameter streaming."
+  - from: "surface.tool-search-card"
+    to: "evidence.tool-search-lifecycle"
+    type: "verified-by"
+    rank: "evidence-only"
   - from: "capability.tool-search"
     to: "surface.tool-search-settings"
     type: "renders-in"
@@ -9164,3 +9275,16 @@ edges:
     type: "must-remain-isolated-from"
     rank: "invariant-only"
     condition: "Bot output stays bot-channel-continuous; mobile input and recovery retain replayable semantics."
+
+  - from: "capability.session-owned-shutdown"
+    to: "capability.subagents"
+    type: "depends-on"
+    rank: "must-inspect"
+  - from: "capability.session-owned-shutdown"
+    to: "capability.shared-task-cli"
+    type: "must-remain-isolated-from"
+    rank: "invariant-only"
+  - from: "capability.session-owned-shutdown"
+    to: "capability.conversation-runtime"
+    type: "depends-on"
+    rank: "must-inspect"

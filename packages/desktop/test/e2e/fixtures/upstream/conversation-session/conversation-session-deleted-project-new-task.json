@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-deleted-project-new-task",
+  "spec": "./test/e2e/conversation-session/conversation-session-deleted-project-new-task.test.ts",
+  "fixtures": [
+    {
+      "id": "deleted-project-session",
+      "description": "Completed session retained after project deletion",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "Fixed response creates a real session before deleting its project; assertions cover navigation and retained project membership, not model output quality."
+      },
+      "match": {
+        "method": "POST",
+        "lastUserMessageIncludes": ["E2E_DELETED_PROJECT_SESSION"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "deleted-project-session",
+          "inputTokens": 80,
+          "outputTokens": 12,
+          "text": "E2E_DELETED_PROJECT_READY"
+        }
+      }
+    }
+  ]
+}

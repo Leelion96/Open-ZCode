@@ -9,46 +9,60 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-goal-timeline-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "upstream-goal-timeline-new-target-continuation",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "新目标未完成后存在真实自动续跑；发送正文前缀后保持流打开，测试核对时间线后通过真实 Stop 取消，不能让 Missing Fixture 500 代替正常续跑。"
+    },
+    {
       "id": "upstream-goal-timeline-first-reply",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定第 1 轮 goal continuation 文案，复现未完成 timeline 锚点。"
+      "syntheticReason": "该响应用于稳定复现第 1 轮 goal 未完成后的 timeline 锚点，真实文案内容不影响产品语义。"
     },
     {
       "id": "upstream-goal-timeline-first-verifier-failed",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定第 1 次 verifier 未完成结果，驱动自动续跑。"
+      "syntheticReason": "该 verifier 响应用于固定第 1 次目标未完成状态，驱动自动续跑与 timeline separator。"
     },
     {
       "id": "upstream-goal-timeline-second-reply",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定同 target 第 2 轮 assistant 文案，验证完成 verifier 的 anchor。"
+      "syntheticReason": "该响应用于固定同一 target 第 2 次迭代输出，验证后续 verifier divider 仍锚定本轮 assistant。"
     },
     {
       "id": "upstream-goal-timeline-second-verifier-passed",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定同 target 第 2 次 verifier 完成结果。"
+      "syntheticReason": "该 verifier 响应用于固定同一 target 第 2 次迭代完成状态，验证完成 divider 的位置。"
     },
     {
       "id": "upstream-goal-timeline-new-target-reply",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定新 target 第 1 轮 assistant 文案，验证目标切换后的 timeline 归属。"
+      "syntheticReason": "该响应用于创建新 target 的 assistant anchor，验证新 target timeline 不会串进上一个 target。"
     },
     {
       "id": "upstream-goal-timeline-new-target-verifier-failed",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定新 target 第 1 次 verifier 未完成结果，覆盖第二个 /goal 的 divider 顺序。"
+      "syntheticReason": "该 verifier 响应用于固定新 target 的第 1 次未完成 divider，覆盖目标切换后的 timeline 归属。"
     }
   ]
 }

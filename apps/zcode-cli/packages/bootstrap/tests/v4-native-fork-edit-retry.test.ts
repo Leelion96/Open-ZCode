@@ -1644,3 +1644,31 @@ describe("v4 原生 applyFileRewind", () => {
     expect(app.runtime.applyWorkspaceFileRewind).toHaveBeenCalledTimes(1);
   });
 });
+
+it("history edit retains the original Gen UI snapshot with the changed text", async () => {
+  const app = makeApp();
+  const target = attachmentEditTarget();
+  const genUiContext = [{ path: "/project/page.html", state: "ORIGINAL_STATE" }];
+  const host = makeHost(makeRecord({ app }), {
+    resolveRowActionTarget: () => ({
+      ...target,
+      editTarget: {
+        ...target.editTarget,
+        intent: { kind: "sendText", text: "Original", genUiContext },
+      },
+    }),
+  });
+  await new V4CommandExecutor(host).execute(
+    envelope("editUserQuery", {
+      target: { rowId: 7, entityId: "entity-7" },
+      newText: "Changed",
+    }),
+  );
+  await settle();
+  expect(app.sendInput).toHaveBeenCalledWith(
+    { text: "Changed" },
+    expect.objectContaining({
+      intent: expect.objectContaining({ genUiContext }),
+    }),
+  );
+});

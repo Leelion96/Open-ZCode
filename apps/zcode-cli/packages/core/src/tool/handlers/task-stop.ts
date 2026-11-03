@@ -50,7 +50,8 @@ const taskStopHandler: ToolHandler = async (input, context) => {
   }
 
   const result = await context.backgroundTaskControlPort.stopBackgroundTask(taskId, {
-    // 模型自己停的：终态通知会说「stopped by you」，而不是把它写成用户的决定。
+    // 模型自己停的：终态通知按模型发起来写（子 agent 为「was stopped by ZCode」，
+    // workflow 为「was stopped by you (TaskStop)」；后台命令只写「was stopped」），而不是写成用户的决定。
     initiator: "model",
     strict: true,
     traceContext: context.traceContext,

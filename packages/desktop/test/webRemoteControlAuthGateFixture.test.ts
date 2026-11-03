@@ -34,9 +34,15 @@ it("keeps cached-account business requests inside the auth-gate fixture and rest
 });
 
 it.each([
+  "command-center-history-search.test.ts",
   "conversation-session-virtual-project-mobile.test.ts",
+  "conversation-session-composer-settlement.test.ts",
+  "conversation-session-new-task-missing-root-mobile.test.ts",
   "conversation-session-web-remote-project-directory.test.ts",
   "conversation-session-web-remote-unread.test.ts",
+  "conversation-session-web-remote-terminal.test.ts",
+  "conversation-session-workspace-mcp-trust.test.ts",
+  "conversation-session-id-compatibility.test.ts",
 ])(
   "provides %s with an isolated authenticated relay and the current Web frontend",
   async (spec) => {
@@ -55,9 +61,13 @@ it.each([
         credentialsFile,
         settingsFile,
         workspacePath: root,
+        webUrl: "http://127.0.0.1:0/remote/v4",
       });
       expect(close).not.toBeNull();
-      expect(process.env.ZCODE_WEB_REMOTE_CONTROL_URL).toBe("http://127.0.0.1:5173/remote/v4");
+      const webUrl = new URL(process.env.ZCODE_WEB_REMOTE_CONTROL_URL!);
+      expect(webUrl.hostname).toBe("127.0.0.1");
+      expect(Number(webUrl.port)).toBeGreaterThan(0);
+      expect(webUrl.pathname).toBe("/remote/v4");
       const origin = process.env.ZCODE_E2E_REMOTE_AUTH_GATE_URL!;
       expect(new URL(origin).hostname).toBe("127.0.0.1");
       expect(process.env.ZAI_BUSINESS_BASE_URL).toBe(origin);

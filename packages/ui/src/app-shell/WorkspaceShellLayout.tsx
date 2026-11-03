@@ -527,6 +527,203 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
     onSessionMissing: () => handleStartDraftInWorkspace(workspaceAbsPath, workspaceIdentity),
   });
   const workspaceShellRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const shell = workspaceShellRef.current;
+    if (!shell) return;
+    const scope =
+      "[data-project-sidebar-panel], [data-workspace-conversation-frame], [data-workspace-side-frame]";
+    const timers = new Map<HTMLElement, number>();
+    let hovered: HTMLElement | null = null;
+    let dragging = false;
+    const animations = new Map<HTMLElement, Animation>();
+    const setVisible = (element: HTMLElement, visible: boolean) => {
+      if (element.hasAttribute("data-scrollbar-active") === visible) return;
+      const current = getComputedStyle(element).getPropertyValue("--zcode-scrollbar-thumb");
+      animations.get(element)?.cancel();
+      element.toggleAttribute("data-scrollbar-active", visible);
+      const target = visible
+        ? getComputedStyle(element).getPropertyValue("--color-border")
+        : "transparent";
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        const animation = element.animate(
+          [{ "--zcode-scrollbar-thumb": current }, { "--zcode-scrollbar-thumb": target }],
+          { duration: 200, easing: "ease" },
+        );
+        animations.set(element, animation);
+        animation.onfinish = () => {
+          animations.delete(element);
+        };
+      }
+    };
+    const hideLater = (element: HTMLElement) => {
+      window.clearTimeout(timers.get(element));
+      timers.set(
+        element,
+        window.setTimeout(() => {
+          timers.delete(element);
+          if (element === hovered || dragging) return;
+          setVisible(element, false);
+        }, 1000),
+      );
+    };
+    const reveal = (element: HTMLElement) => {
+      setVisible(element, true);
+      hideLater(element);
+    };
+    const onScroll = (event: Event) => {
+      const element = event.target;
+      if (element instanceof HTMLElement && element.closest(scope)) {
+        element.setAttribute("data-scrollbar-container", "");
+        reveal(element);
+      }
+    };
+    let thumbHovered: HTMLElement | null = null;
+    const setThumbHovered = (element: HTMLElement | null) => {
+      if (thumbHovered === element) return;
+      thumbHovered?.removeAttribute("data-scrollbar-hover");
+      thumbHovered = element;
+      element?.setAttribute("data-scrollbar-hover", "");
+    };
+    let pointerFrame = 0;
+    let pendingPointer: MouseEvent | null = null;
+    const updatePointer = (event: MouseEvent) => {
+      let element = event.target instanceof HTMLElement ? event.target : null;
+      let next: HTMLElement | null = null;
+      if (!element || !element.closest(scope)) {
+        setThumbHovered(null);
+        if (hovered) hideLater(hovered);
+        hovered = null;
+        return;
+      }
+      while (element && shell.contains(element)) {
+        if (
+          element.scrollHeight <= element.clientHeight &&
+          element.scrollWidth <= element.clientWidth
+        ) {
+          element = element.parentElement;
+          continue;
+        }
+        const rect = element.getBoundingClientRect();
+        const vertical =
+          element.scrollHeight > element.clientHeight &&
+          element.offsetWidth > element.clientWidth &&
+          event.clientX >= rect.right - 10 &&
+          event.clientX <= rect.right;
+        const horizontal =
+          element.scrollWidth > element.clientWidth &&
+          element.offsetHeight > element.clientHeight &&
+          event.clientY >= rect.bottom - 10 &&
+          event.clientY <= rect.bottom;
+        if (vertical || horizontal) {
+          next = element;
+          break;
+        }
+        element = element.parentElement;
+      }
+      if (!next) {
+        // Query mounted nodes instead of retaining removed session/panel DOM in a Set.
+        for (const candidate of shell.querySelectorAll<HTMLElement>("[data-scrollbar-container]")) {
+          const rect = candidate.getBoundingClientRect();
+          if (
+            event.clientX >= rect.right - 14 &&
+            event.clientX <= rect.right &&
+            event.clientY >= rect.top &&
+            event.clientY <= rect.bottom &&
+            candidate.scrollHeight > candidate.clientHeight
+          ) {
+            next = candidate;
+            break;
+          }
+        }
+      }
+      const previous = hovered;
+      hovered = next;
+      if (previous && previous !== next) hideLater(previous);
+      let hitThumb = false;
+      if (next) {
+        reveal(next);
+        const rect = next.getBoundingClientRect();
+        const vertical = event.clientX >= rect.right - 14 && next.scrollHeight > next.clientHeight;
+        const track = vertical ? next.clientHeight : next.clientWidth;
+        const extent = vertical ? next.scrollHeight : next.scrollWidth;
+        const offset = vertical ? next.scrollTop : next.scrollLeft;
+        const length = Math.min(track, Math.max(32, (track * track) / extent));
+        const start = extent > track ? (offset / (extent - track)) * (track - length) : 0;
+        const position = vertical
+          ? event.clientY - rect.top - next.clientTop
+          : event.clientX - rect.left - next.clientLeft;
+        hitThumb = position >= start && position <= start + length;
+      }
+      setThumbHovered(hitThumb ? next : null);
+    };
+    const onPointerMove = (event: MouseEvent) => {
+      pendingPointer = event;
+      if (pointerFrame) return;
+      pointerFrame = requestAnimationFrame(() => {
+        pointerFrame = 0;
+        if (pendingPointer) updatePointer(pendingPointer);
+        pendingPointer = null;
+      });
+    };
+    const onPointerDown = () => {
+      dragging = thumbHovered !== null;
+      if (dragging) thumbHovered?.setAttribute("data-scrollbar-dragging", "");
+    };
+    const onPointerUp = () => {
+      dragging = false;
+      shell
+        .querySelectorAll("[data-scrollbar-dragging]")
+        .forEach((element) => element.removeAttribute("data-scrollbar-dragging"));
+      shell.querySelectorAll<HTMLElement>("[data-scrollbar-active]").forEach(hideLater);
+    };
+    const onPointerLeave = () => {
+      cancelAnimationFrame(pointerFrame);
+      pointerFrame = 0;
+      pendingPointer = null;
+      setThumbHovered(null);
+      const previous = hovered;
+      hovered = null;
+      if (previous) hideLater(previous);
+    };
+    const onBlur = () => {
+      setThumbHovered(null);
+      hovered = null;
+      onPointerUp();
+    };
+    // 捕获真实滚动，不切换 overflow/宽度；每个滚动容器独立计时，避免内容抖动。
+    shell.addEventListener("scroll", onScroll, true);
+    shell.addEventListener("mousemove", onPointerMove, true);
+    shell.addEventListener("mousedown", onPointerDown, true);
+    shell.addEventListener("pointerleave", onPointerLeave);
+    window.addEventListener("mouseup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      shell.removeEventListener("scroll", onScroll, true);
+      shell.removeEventListener("mousemove", onPointerMove, true);
+      shell.removeEventListener("mousedown", onPointerDown, true);
+      shell.removeEventListener("pointerleave", onPointerLeave);
+      window.removeEventListener("mouseup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("blur", onBlur);
+      setThumbHovered(null);
+      shell
+        .querySelectorAll("[data-scrollbar-dragging]")
+        .forEach((element) => element.removeAttribute("data-scrollbar-dragging"));
+      cancelAnimationFrame(pointerFrame);
+      timers.forEach(window.clearTimeout);
+      timers.clear();
+      shell
+        .querySelectorAll("[data-scrollbar-container]")
+        .forEach((element) => element.removeAttribute("data-scrollbar-container"));
+      animations.forEach((animation) => animation.cancel());
+      animations.clear();
+      shell
+        .querySelectorAll("[data-scrollbar-active]")
+        .forEach((element) => element.removeAttribute("data-scrollbar-active"));
+    };
+  }, []);
+
   const workspaceSidebarPanelElementRef = useRef<HTMLDivElement | null>(null);
   const conversationPanelElementRef = useRef<HTMLDivElement | null>(null);
   const conversationAutoCollapseStateRef = useRef({
@@ -2186,6 +2383,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
                     isWorkspaceVisible && !isSidePaneOpen && !isSidePaneVisible
                   }
                   readOnly={Boolean(workspaceReadOnlyReason)}
+                  readOnlyReason={workspaceReadOnlyReason}
                   workspacePath={workspaceAbsPath}
                   workspaceIdentity={workspaceIdentity}
                   isDesktop={isDesktop === true}
@@ -2421,6 +2619,8 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
                                 desktopWindowChromeState?.supportsNativeRoundedCorners ?? null,
                             }),
                         isTerminalVisible && "rounded-b-[var(--workspace-panel-radius)] border-b",
+                        "border-[0.5px]",
+                        !isFullView && "shadow-xs",
                         isWebRemoteControlShell &&
                           "max-md:rounded-none max-md:border-x-0 max-md:border-b-0",
                         // 完整视图由面板外框或浮窗外框承担边框与圆角，对话 frame 不再叠一层。
@@ -2630,6 +2830,7 @@ const WorkspaceShellLayoutContent = memo(function WorkspaceShellLayoutComponent(
                                   isWorkspaceVisible && !isSidePaneOpen && !isSidePaneVisible
                                 }
                                 readOnly={Boolean(workspaceReadOnlyReason)}
+                                readOnlyReason={workspaceReadOnlyReason}
                                 foregroundEnabled={isWorkspaceVisible}
                                 workspacePath={workspaceAbsPath}
                                 workspaceIdentity={workspaceIdentity}

@@ -133,7 +133,11 @@ const BACKGROUND_MIXED_FOREGROUND_RELEASE_FILE = resolveE2ERuntimePath(
 interface BackgroundResultPresentationSnapshot {
   assistantText: string;
   historyContentCount: number;
+  visibleHistoryContentCount: number;
+  historyTriggerId: string | null;
   historyTriggerCount: number;
+  historyExpanded: string | null;
+  titleOutsideHistory: boolean;
   navigatorItemCount: number;
   title: string;
 }
@@ -149,13 +153,29 @@ async function getBackgroundResultPresentation(
       const turn = titleNode?.closest<HTMLElement>("[data-turn-key]");
       if (!titleNode || !turn) return null;
       return {
-        assistantText: turn.textContent ?? "",
+        assistantText: turn.innerText,
         historyContentCount: turn.querySelectorAll(`[data-testid^="${historyContentTestId}-"]`)
           .length,
+        visibleHistoryContentCount: Array.from(
+          turn.querySelectorAll<HTMLElement>(`[data-testid^="${historyContentTestId}-"]`),
+        ).filter(
+          (node) =>
+            node.getBoundingClientRect().height > 0 &&
+            getComputedStyle(node).visibility !== "hidden",
+        ).length,
+        historyTriggerId:
+          turn
+            .querySelector(`[data-testid^="${historyTriggerTestId}-"]`)
+            ?.getAttribute("data-testid") ?? null,
         historyTriggerCount: turn.querySelectorAll(`[data-testid^="${historyTriggerTestId}-"]`)
           .length,
         navigatorItemCount: document.querySelectorAll(`[data-testid^="${navigatorItemTestId}-"]`)
           .length,
+        historyExpanded:
+          turn
+            .querySelector(`[data-testid^="${historyTriggerTestId}-"]`)
+            ?.getAttribute("aria-expanded") ?? null,
+        titleOutsideHistory: titleNode.closest('[data-slot="collapsible-content"]') === null,
         title: titleNode.textContent?.trim() ?? "",
       };
     },
@@ -179,22 +199,53 @@ async function waitForBackgroundResultPresentation(options: {
       return Boolean(
         snapshot &&
         snapshot.assistantText.includes(options.assistantMarker) &&
-        snapshot.historyTriggerCount === 0 &&
-        snapshot.historyContentCount === 0 &&
+        snapshot.historyTriggerCount === 1 &&
+        snapshot.historyExpanded === "false" &&
+        snapshot.titleOutsideHistory &&
+        snapshot.visibleHistoryContentCount === 0 &&
         snapshot.navigatorItemCount === 0,
       );
     },
     {
       timeout: 60000,
-      timeoutMsg: `${options.failureLabel} 没有显示结构化标题、仍存在折叠控件，或被计入 turn navigator`,
+      timeoutMsg: `${options.failureLabel} 没有显示结构化标题、完成态折叠入口缺失，或被计入 turn navigator`,
     },
   );
   expect(snapshot).toMatchObject({
-    historyContentCount: 0,
-    historyTriggerCount: 0,
+    visibleHistoryContentCount: 0,
+    historyTriggerCount: 1,
+    historyExpanded: "false",
+    titleOutsideHistory: true,
     navigatorItemCount: 0,
     title: options.expectedTitle,
   });
+
+  // 必须观察实际过程容器：仅检查触发器状态会漏掉内容仍可见的回归。
+  const completed = await getBackgroundResultPresentation(options.expectedTitle);
+  expect(completed?.historyTriggerId).toBeTruthy();
+  const trigger = await $(`[data-testid="${completed!.historyTriggerId}"]`);
+  for (const expanded of [true, false]) {
+    await trigger.click();
+    await browser.waitUntil(
+      async () => {
+        const current = await getBackgroundResultPresentation(options.expectedTitle);
+        return Boolean(
+          current &&
+          current.historyExpanded === String(expanded) &&
+          current.visibleHistoryContentCount === (expanded ? 1 : 0) &&
+          (!expanded ||
+            (current.historyContentCount === 1 &&
+              current.assistantText.includes("background-history-visible"))) &&
+          current.titleOutsideHistory &&
+          current.assistantText.includes(options.assistantMarker),
+        );
+      },
+      {
+        timeout: 5000,
+        timeoutMsg: `${options.failureLabel} 过程${expanded ? "展开" : "收起"}后内容可见性或最终结果不符合预期`,
+      },
+    );
+  }
 }
 
 describe("会话区 Background Runtime Task E2E", () => {
@@ -500,7 +551,8 @@ describe("会话区 Background Runtime Task E2E", () => {
 
     const launchIndex = await waitForFirstRequestIndex(
       {
-        includes: ["E2E_BACKGROUND_AUTO_TIMEOUT_BASH", "Command running in background"],
+        // 前台 Bash 超时转后台时，结果写明超时并给出后台任务 ID。
+        includes: ["E2E_BACKGROUND_AUTO_TIMEOUT_BASH", "and was moved to the background (ID:"],
       },
       requestCountBefore,
       "foreground Bash timeout 后没有返回 backgrounded tool result",
@@ -961,7 +1013,9 @@ describe("会话区 Background Runtime Task E2E", () => {
           "E2E_BACKGROUND_CANCEL_AGENT",
           "<task-notification>",
           "<tool-use-id>toolu_e2e_background_cancel_agent</tool-use-id>",
-          "<status>stopped</status>",
+          // 停止状态词是 killed，summary 写明是用户停止的。
+          "<status>killed</status>",
+          "was stopped by user</summary>",
         ],
         lastUserMessageIncludes: ["<task-notification>"],
       },
@@ -1014,7 +1068,9 @@ describe("会话区 Background Runtime Task E2E", () => {
           "Successfully stopped task:",
           "<task-notification>",
           "<tool-use-id>toolu_e2e_background_taskstop_agent</tool-use-id>",
-          "<status>stopped</status>",
+          // 模型用 TaskStop 停止：summary 写明是 ZCode 停止的。
+          "<status>killed</status>",
+          "was stopped by ZCode</summary>",
         ],
         lastUserMessageIncludes: ["<task-notification>"],
       },
@@ -1148,13 +1204,13 @@ describe("会话区 Background Runtime Task E2E", () => {
     await waitForToolCallBlockByToolName("Agent", 60000);
     await respondToBackgroundBlockers();
 
+    // child prompt 不写出 payload：child 只收到 message，payload 在 child 请求里只能出现一次。
     const sendMessageIndex = await waitForFirstRequestIndex(
       {
         includes: [
           "E2E_BACKGROUND_SEND_MESSAGE",
           "Async agent launched successfully",
           "agentId: agent_",
-          "E2E_BACKGROUND_SEND_MESSAGE_PAYLOAD",
         ],
         excludes: ["sent to its active turn"],
       },
@@ -1192,7 +1248,8 @@ describe("会话区 Background Runtime Task E2E", () => {
       presentation: "coordinator_steer",
       marker: "E2E_BACKGROUND_SEND_MESSAGE_PAYLOAD",
       role: "user",
-      body: "E2E_BACKGROUND_SEND_MESSAGE_STEER\n\nE2E_BACKGROUND_SEND_MESSAGE_PAYLOAD",
+      // summary 只用于 UI 预览，child 只收到 message。
+      body: "E2E_BACKGROUND_SEND_MESSAGE_PAYLOAD",
     });
     const notificationIndex = await waitForFirstRequestIndex(
       {
@@ -2138,24 +2195,24 @@ describe("会话区 Background Runtime Task E2E", () => {
     await startNewBackgroundDraft();
     const requestCountBefore = await getUpstreamRequestRecordCount();
     await sendV4Prompt(
-      "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE: Start one long cc background agent and three zcode background agents. The three zcode agents should finish before the cc agent.",
+      "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE: Start one long-running background agent and three short-lived background agents. The three short-lived agents should finish before the long-running agent.",
     );
     await waitForV4ComposerText("", "BG24 prompt 发送后输入框没有清空");
     await waitForV4UserMessageContaining("E2E_BACKGROUND_AGENT_CONTROL_PRESERVE");
-    await waitForToolCallBlockByToolCallId("toolu_e2e_bg24_cc_agent", 60000);
-    await waitForToolCallBlockByToolCallId("toolu_e2e_bg24_zcode_one_agent", 60000);
-    await waitForToolCallBlockByToolCallId("toolu_e2e_bg24_zcode_two_agent", 60000);
-    await waitForToolCallBlockByToolCallId("toolu_e2e_bg24_zcode_three_agent", 60000);
+    await waitForToolCallBlockByToolCallId("toolu_e2e_bg24_long_running_agent", 60000);
+    await waitForToolCallBlockByToolCallId("toolu_e2e_bg24_short_lived_one_agent", 60000);
+    await waitForToolCallBlockByToolCallId("toolu_e2e_bg24_short_lived_two_agent", 60000);
+    await waitForToolCallBlockByToolCallId("toolu_e2e_bg24_short_lived_three_agent", 60000);
     await respondToBackgroundBlockers();
 
     const launchIndex = await waitForFirstRequestIndex(
       {
         includes: [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
-          "toolu_e2e_bg24_cc_agent",
-          "toolu_e2e_bg24_zcode_one_agent",
-          "toolu_e2e_bg24_zcode_two_agent",
-          "toolu_e2e_bg24_zcode_three_agent",
+          "toolu_e2e_bg24_long_running_agent",
+          "toolu_e2e_bg24_short_lived_one_agent",
+          "toolu_e2e_bg24_short_lived_two_agent",
+          "toolu_e2e_bg24_short_lived_three_agent",
           "Async agent launched successfully",
         ],
       },
@@ -2170,58 +2227,58 @@ describe("会话区 Background Runtime Task E2E", () => {
     }
     await waitForBackgroundTaskControlRow(
       "agent",
-      "E2E BG24 cc keepalive agent",
-      "BG24 初始 cc Agent background control row 没有显示在右上角面板",
+      "E2E BG24 long-running keepalive agent",
+      "BG24 初始 long-running Agent background control row 没有显示在右上角面板",
     );
     await waitForBackgroundTaskControlRow(
       "agent",
-      "E2E BG24 zcode three agent",
-      "BG24 初始第三个 zcode Agent background control row 没有显示在右上角面板",
+      "E2E BG24 short-lived three agent",
+      "BG24 初始第三个 short-lived Agent background control row 没有显示在右上角面板",
     );
 
-    const zcodeOneNotificationIndex = await waitForFirstRequestIndex(
+    const firstShortLivedNotificationIndex = await waitForFirstRequestIndex(
       {
         includes: [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
           "<task-notification>",
-          "<tool-use-id>toolu_e2e_bg24_zcode_one_agent</tool-use-id>",
+          "<tool-use-id>toolu_e2e_bg24_short_lived_one_agent</tool-use-id>",
           "<status>completed</status>",
-          "E2E_BG24_ZCODE_ONE_CHILD_DONE",
+          "E2E_BG24_SHORT_LIVED_ONE_CHILD_DONE",
         ],
         lastUserMessageIncludes: ["<task-notification>"],
       },
       launchIndex,
-      "BG24 第一个 zcode background Agent completion notification 没有进入父模型请求",
+      "BG24 第一个 short-lived background Agent completion notification 没有进入父模型请求",
     );
-    expect(zcodeOneNotificationIndex).toBeGreaterThan(launchIndex);
+    expect(firstShortLivedNotificationIndex).toBeGreaterThan(launchIndex);
     await waitForV4AssistantMessageContaining(
-      "background-agent-control-preserve-zcode-one-notification-ok",
+      "background-agent-control-preserve-short-lived-one-notification-ok",
     );
     await waitForBackgroundTaskControlRow(
       "agent",
-      "E2E BG24 cc keepalive agent",
-      "BG24 第一个 zcode Agent 完成后 cc running Agent row 被错误清掉",
+      "E2E BG24 long-running keepalive agent",
+      "BG24 第一个 short-lived Agent 完成后 long-running running Agent row 被错误清掉",
     );
     await startBackgroundTaskControlPresenceProbe(
       "agent",
-      "E2E BG24 cc keepalive agent",
+      "E2E BG24 long-running keepalive agent",
       sourceTaskId,
     );
-    const zcodeTwoNotificationIndex = await waitForFirstRequestIndex(
+    const secondShortLivedNotificationIndex = await waitForFirstRequestIndex(
       {
         includes: [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
           "<task-notification>",
-          "<tool-use-id>toolu_e2e_bg24_zcode_two_agent</tool-use-id>",
+          "<tool-use-id>toolu_e2e_bg24_short_lived_two_agent</tool-use-id>",
           "<status>completed</status>",
-          "E2E_BG24_ZCODE_TWO_CHILD_DONE",
+          "E2E_BG24_SHORT_LIVED_TWO_CHILD_DONE",
         ],
         lastUserMessageIncludes: ["<task-notification>"],
       },
-      zcodeOneNotificationIndex,
-      "BG24 第二个 zcode background Agent completion notification 没有进入父模型请求",
+      firstShortLivedNotificationIndex,
+      "BG24 第二个 short-lived background Agent completion notification 没有进入父模型请求",
     );
-    expect(zcodeTwoNotificationIndex).toBeGreaterThan(zcodeOneNotificationIndex);
+    expect(secondShortLivedNotificationIndex).toBeGreaterThan(firstShortLivedNotificationIndex);
 
     await startNewBackgroundDraft();
     await waitForV4ConversationState(
@@ -2237,33 +2294,33 @@ describe("会话区 Background Runtime Task E2E", () => {
     );
     await waitForBackgroundTaskControlRow(
       "agent",
-      "E2E BG24 cc keepalive agent",
-      "BG24 第二个 notification 处理中切回原 task 后 cc running Agent row 没有恢复",
+      "E2E BG24 long-running keepalive agent",
+      "BG24 第二个 notification 处理中切回原 task 后 long-running running Agent row 没有恢复",
     );
     await waitForV4AssistantMessageContaining(
-      "background-agent-control-preserve-zcode-two-notification-ok",
+      "background-agent-control-preserve-short-lived-two-notification-ok",
     );
     await waitForBackgroundTaskControlRow(
       "agent",
-      "E2E BG24 cc keepalive agent",
-      "BG24 第二个 zcode Agent 完成后 cc running Agent row 被错误清掉",
+      "E2E BG24 long-running keepalive agent",
+      "BG24 第二个 short-lived Agent 完成后 long-running running Agent row 被错误清掉",
     );
 
-    const zcodeNotificationIndex = await waitForFirstRequestIndex(
+    const thirdShortLivedNotificationIndex = await waitForFirstRequestIndex(
       {
         includes: [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
           "<task-notification>",
-          "<tool-use-id>toolu_e2e_bg24_zcode_three_agent</tool-use-id>",
+          "<tool-use-id>toolu_e2e_bg24_short_lived_three_agent</tool-use-id>",
           "<status>completed</status>",
-          "E2E_BG24_ZCODE_THREE_CHILD_DONE",
+          "E2E_BG24_SHORT_LIVED_THREE_CHILD_DONE",
         ],
         lastUserMessageIncludes: ["<task-notification>"],
       },
-      zcodeTwoNotificationIndex,
-      "BG24 第三个 zcode background Agent completion notification 没有进入父模型请求",
+      secondShortLivedNotificationIndex,
+      "BG24 第三个 short-lived background Agent completion notification 没有进入父模型请求",
     );
-    expect(zcodeNotificationIndex).toBeGreaterThan(zcodeTwoNotificationIndex);
+    expect(thirdShortLivedNotificationIndex).toBeGreaterThan(secondShortLivedNotificationIndex);
     const afterTodoIndex = await waitForFirstRequestIndex(
       {
         includes: [
@@ -2272,49 +2329,52 @@ describe("会话区 Background Runtime Task E2E", () => {
           "E2E_BG24_TODO_UPDATED",
         ],
       },
-      zcodeNotificationIndex,
-      "BG24 zcode notification 中的 TodoWrite tool result 没有进入后续父模型请求",
+      thirdShortLivedNotificationIndex,
+      "BG24 short-lived notification 中的 TodoWrite tool result 没有进入后续父模型请求",
     );
-    expect(afterTodoIndex).toBeGreaterThan(zcodeNotificationIndex);
+    expect(afterTodoIndex).toBeGreaterThan(thirdShortLivedNotificationIndex);
     await waitForV4AssistantMessageContaining(
-      "background-agent-control-preserve-zcode-notification-ok",
+      "background-agent-control-preserve-short-lived-notification-ok",
     );
-    await waitForIdle("BG24 zcode Agent notification 后会话没有回到 idle");
+    await waitForIdle("BG24 short-lived Agent notification 后会话没有回到 idle");
     const presenceProbe = await stopBackgroundTaskControlPresenceProbe();
     expect(presenceProbe.observedPresent).toBe(true);
     expect(presenceProbe.missingTransitions).toEqual([]);
     await waitForNoBackgroundTaskControlRow(
       "agent",
-      "E2E BG24 zcode three agent",
-      "BG24 已完成的第三个 zcode Agent row 没有从右上角面板消失",
+      "E2E BG24 short-lived three agent",
+      "BG24 已完成的第三个 short-lived Agent row 没有从右上角面板消失",
     );
     await waitForBackgroundTaskControlRow(
       "agent",
-      "E2E BG24 cc keepalive agent",
-      "BG24 zcode Agent 完成后 cc running Agent row 被错误清掉",
+      "E2E BG24 long-running keepalive agent",
+      "BG24 short-lived Agent 完成后 long-running running Agent row 被错误清掉",
     );
 
-    await clickStopBackgroundTaskControlRow("agent", "E2E BG24 cc keepalive agent");
+    await clickStopBackgroundTaskControlRow("agent", "E2E BG24 long-running keepalive agent");
     const stopNotificationIndex = await waitForFirstRequestIndex(
       {
         includes: [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
           "<task-notification>",
-          "<tool-use-id>toolu_e2e_bg24_cc_agent</tool-use-id>",
-          "<status>stopped</status>",
+          "<tool-use-id>toolu_e2e_bg24_long_running_agent</tool-use-id>",
+          "<status>killed</status>",
+          "was stopped by user</summary>",
         ],
         lastUserMessageIncludes: ["<task-notification>"],
       },
-      zcodeNotificationIndex,
-      "BG24 cc background Agent stop notification 没有进入父模型请求",
+      thirdShortLivedNotificationIndex,
+      "BG24 long-running background Agent stop notification 没有进入父模型请求",
     );
-    expect(stopNotificationIndex).toBeGreaterThan(zcodeNotificationIndex);
-    await waitForV4AssistantMessageContaining("background-agent-control-preserve-cc-stopped-ok");
-    await waitForIdle("BG24 cc Agent stop notification 后会话没有回到 idle");
+    expect(stopNotificationIndex).toBeGreaterThan(thirdShortLivedNotificationIndex);
+    await waitForV4AssistantMessageContaining(
+      "background-agent-control-preserve-long-running-stopped-ok",
+    );
+    await waitForIdle("BG24 long-running Agent stop notification 后会话没有回到 idle");
     await waitForNoBackgroundTaskControlRow(
       "agent",
-      "E2E BG24 cc keepalive agent",
-      "BG24 stop 后 cc Agent row 没有从右上角面板消失",
+      "E2E BG24 long-running keepalive agent",
+      "BG24 stop 后 long-running Agent row 没有从右上角面板消失",
     );
   });
 });

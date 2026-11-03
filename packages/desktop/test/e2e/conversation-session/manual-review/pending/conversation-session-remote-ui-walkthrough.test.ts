@@ -8,6 +8,7 @@ import { createServer, connect, type Server, type Socket } from "node:net";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import {
+  TID_CONFIRM_DIALOG_CONFIRM,
   TID_VIRTUAL_PROJECT_ADD,
   TID_REMOTE_KIND_DOCKER,
   TID_REMOTE_KIND_SSH,
@@ -122,6 +123,11 @@ async function captureFrames(
   }
   index.push({ step, title: `${title}（${files.length} 帧）`, files });
   if (!satisfied) throw new Error(`${MARKER}: ${title} 未到达目标状态`);
+}
+
+async function openDeviceMenu() {
+  await $('[data-source-server-card] button[aria-label="更多"]').click();
+  await $('[role="menu"]').waitForDisplayed();
 }
 
 async function clickButton(label: string | RegExp, root = dialog) {
@@ -423,10 +429,14 @@ describe(`${MARKER}: 远程连接 UI 走查`, () => {
 
       await clickLastEnabledSSHDialogButton(MARKER);
       const installVisible = () => hasButton("安装并继续");
+      const boundary = $('[data-testid="source-server-boundary-dialog"]');
       await captureFrames(
         "connecting-first",
         "向导第 2 屏：首次连接，时间线逐步推进直到需要确认安装",
-        async () => (await installVisible()) || !(await $(dialog).isExisting()),
+        async () =>
+          (await installVisible()) ||
+          (await boundary.isDisplayed()) ||
+          !(await $(dialog).isExisting()),
         { timeoutMs: 120_000, intervalMs: 500 },
       );
       if (await installVisible()) {
@@ -438,10 +448,15 @@ describe(`${MARKER}: 远程连接 UI 走查`, () => {
         await captureFrames(
           "installing",
           "安装并启动 ZCode Server 的实时进度",
-          async () => !(await $(dialog).isExisting()),
+          async () => (await boundary.isDisplayed()) || !(await $(dialog).isExisting()),
           { timeoutMs: 240_000, intervalMs: 700 },
         );
       }
+      // 新版首次介绍必须真实确认；旧走查只等向导消失，会把已完成安装误报为超时。
+      await boundary.waitForDisplayed();
+      await capture("boundary-introduction", "首次远程连接：介绍页等待明确确认");
+      await boundary.$(`[data-testid="${TID_CONFIRM_DIALOG_CONFIRM}"]`).click();
+      await boundary.waitForDisplayed({ reverse: true });
       expect(await waitForSSHDirectoryStep(MARKER)).toBe("closed");
       await capture("device-first-added", "设置：添加完成并定位设备，不打开目录");
       await backToWorkspace();
@@ -473,7 +488,9 @@ describe(`${MARKER}: 远程连接 UI 走查`, () => {
       await browser.keys("Escape");
 
       await openSettingsRemoteDevices();
-      await clickButton("编辑", "[data-source-server-card]");
+      // RDUX-13：编辑与断开在设备行「更多」菜单里。
+      await openDeviceMenu();
+      await clickButton("编辑", '[role="menu"]');
       const editor = '[role="dialog"][data-slot="dialog-content"]';
       await $(editor).waitForDisplayed();
       await capture("edit-connection-dialog", "设置页编辑连接对话框");
@@ -493,7 +510,10 @@ describe(`${MARKER}: 远程连接 UI 走查`, () => {
       // ---------- 设置页 ----------
       await openSettingsRemoteDevices();
       await $("[data-source-server-card]").waitForDisplayed();
-      await capture("settings-card-online", "设置 · 远程设备：设备卡（已连接）与连接偏好");
+      await capture("settings-card-online", "设置 · 远程设备：设备行（已连接）与连接偏好");
+      // 最近日志在设备行展开区。
+      const toggle = $("[data-source-server-card] [data-source-server-toggle]");
+      if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
       await $("[data-source-server-card] [data-source-server-log-toggle]").click();
       await $("[data-source-server-log-timestamp]").waitForDisplayed();
       await capture("settings-card-logs", "设备卡：展开最近日志");
@@ -509,12 +529,15 @@ describe(`${MARKER}: 远程连接 UI 走查`, () => {
       // 确认框的取消按钮带 esc 快捷键后缀，直接按 Esc 关闭，绝不点确认。
       await browser.keys("Escape");
       await $('[role="dialog"]').waitForExist({ reverse: true });
-      await clickButton("编辑", "[data-source-server-card]");
+      await openDeviceMenu();
+      await clickButton("编辑", '[role="menu"]');
       await $(editor).waitForDisplayed();
       await capture("settings-edit-dialog", "设备卡「编辑」对话框");
       await clickButton("取消", editor);
       await $(editor).waitForExist({ reverse: true });
-      await clickButton("断开", "[data-source-server-card]");
+      await openDeviceMenu();
+      // 断开菜单项内带任务继续提示，按前缀匹配。
+      await clickButton(/^断开/u, '[role="menu"]');
       await $(
         '[data-source-server-card] [data-remote-connection-status="offline"]',
       ).waitForDisplayed({ timeout: 30_000 });
@@ -608,21 +631,21 @@ describe(`${MARKER}: 远程连接 UI 走查`, () => {
         await clickLastEnabledSSHDialogButton(MARKER);
         await browser.waitUntil(() => stall.sockets.size > 0, { timeout: 30_000 });
         await clickButton(/在后台继续|收起/u);
-        await $('[data-testid="remote-connection-minimized"]').waitForDisplayed();
-        await settle();
-        await capture("minimized-connecting", "在后台继续：侧栏出现连接进度卡片");
-        for (const socket of stall.sockets) socket.destroy();
-        await browser.waitUntil(
-          async () =>
-            /失败|failed/iu.test(await $('[data-testid="remote-connection-minimized"]').getText()),
-          { timeout: 90_000 },
+        // 后台进度已由设置页承接；限定真实承接位置，避免全局同名卡片让旧侧栏覆盖说明误报通过。
+        const background = $(
+          '[data-settings-content-frame] [data-testid="remote-connection-minimized"]',
         );
-        await $(dialog)
-          .waitForExist({ reverse: true, timeout: 5_000 })
-          .catch(() => undefined);
+        await background.waitForDisplayed();
         await settle();
-        await capture("minimized-failed", "后台连接失败：侧栏卡片变为失败态，不自动弹回");
-        await $('[data-testid="remote-connection-minimized"]').click();
+        await capture("minimized-connecting", "在后台继续：设置页未完成连接显示进度");
+        for (const socket of stall.sockets) socket.destroy();
+        await browser.waitUntil(async () => /失败|failed/iu.test(await background.getText()), {
+          timeout: 90_000,
+        });
+        await $(dialog).waitForDisplayed({ reverse: true, timeout: 5_000 });
+        await settle();
+        await capture("minimized-failed", "后台连接失败：设置进度项保留失败，不自动弹回");
+        await background.click();
         await $(`${dialog} [data-testid="${TID_SSH_ERROR}"]`).waitForDisplayed();
         await settle();
         await capture("reopened-failed", "点击卡片恢复向导：失败详情");

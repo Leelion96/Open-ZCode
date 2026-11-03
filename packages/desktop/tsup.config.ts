@@ -1,4 +1,4 @@
-import { loadProductConfig } from "../../scripts/product-config.mjs";
+import { loadProductConfig, resolveProductUpdateOrigin } from "../../scripts/product-config.mjs";
 import { parse as parseEnv } from "dotenv";
 import { pickProductEndpointEnv } from "@zcode/shared/zcodeEndpoint";
 import { readFileSync, existsSync } from "node:fs";
@@ -194,6 +194,7 @@ const desktopTsupBundleSecurityOptions = resolveDesktopTsupBundleSecurityOptions
 function createSharedDefines() {
   return {
     __ZCODE_PRODUCT_CONFIG__: JSON.stringify(productConfig),
+    __ZCODE_TRUSTED_UPDATE_ORIGIN__: JSON.stringify(resolveProductUpdateOrigin({ ...env, ...pickProductEndpointEnv(process.env), ZCODE_ENV: zcodeEnv })),
     __ZCODE_ENDPOINT_ENV__: JSON.stringify(pickProductEndpointEnv(env)),
     __ZCODE_VERSION__: JSON.stringify(buildMetadata.appVersion),
     __ZCODE_MIN_COMPATIBLE_VERSION__: JSON.stringify(buildMetadata.minCompatibleVersion),

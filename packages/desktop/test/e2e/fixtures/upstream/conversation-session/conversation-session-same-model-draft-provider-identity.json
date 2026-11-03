@@ -21,9 +21,9 @@
         "statusCode": 200,
         "statusMessage": "OK",
         "headers": {
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"chatcmpl-same-model-provider-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-same-model-provider-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"Provider Identity\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-same-model-provider-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"chatcmpl-same-model-provider-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Provider Identity\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}"
       }
     },
     {
@@ -40,11 +40,7 @@
         "method": "POST",
         "pathIncludes": "/chat/completions",
         "lastUserMessageIncludes": ["E2E_GLM52_PROVIDER_IDENTITY_PRIMARY"],
-        "bodyIncludes": [
-          "E2E_GLM52_PROVIDER_IDENTITY_PRIMARY",
-          "upstream-e2e-ok",
-          "glm-5.2"
-        ],
+        "bodyIncludes": ["E2E_GLM52_PROVIDER_IDENTITY_PRIMARY", "upstream-e2e-ok", "glm-5.2"],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
@@ -70,11 +66,7 @@
         "method": "POST",
         "pathIncludes": "/chat/completions",
         "lastUserMessageIncludes": ["E2E_GLM52_PROVIDER_IDENTITY_ALTERNATE"],
-        "bodyIncludes": [
-          "E2E_GLM52_PROVIDER_IDENTITY_ALTERNATE",
-          "upstream-e2e-ok",
-          "glm-5.2"
-        ],
+        "bodyIncludes": ["E2E_GLM52_PROVIDER_IDENTITY_ALTERNATE", "upstream-e2e-ok", "glm-5.2"],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {

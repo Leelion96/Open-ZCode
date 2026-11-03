@@ -68,6 +68,13 @@ interface WorkflowConcurrencyGovernor extends WorkflowConcurrencyPort {
    * 且喂信号（它的请求 provider 同样看得见）。主代理的 turn 永不被 workflow 流量阻塞。
    */
   observer(): ModelRequestAdmission;
+  /**
+   * 主代理 subagent（`Agent` 工具，taskType `subagent_child`）用的 admission：和 workflow run 一样
+   * 排队、看冷却、喂信号。一个父会话的全部 subagent 共用**一条**队列（run 身份
+   * `\0subagents:<parentSessionId>`），在轮转里只占一份；不登记上界、不订阅、不进桶的 `runs`，
+   * 会话结束后不留状态（docs/dynamic-workflow/concurrency.md「Where the port is bound」）。
+   */
+  sessionSubagents(parentSessionId: string): ModelRequestAdmission;
   /** 控制器只读快照；没有这个 key 的桶时为 undefined。 */
   snapshot(key: string): ConcurrencyControllerSnapshot | undefined;
 }
@@ -111,7 +118,7 @@ interface Bucket {
   /** 轮转游标：上一次放行的 run，下一次从它之后开始找。 */
   lastGrantedRun?: string;
   /**
-   * 在这个 key 上请求过准入的 run（observer 除外）。增长上限只看它们登记的上界：一个跑在别的
+   * 在这个 key 上请求过准入的 run（observer 与 subagent 池除外）。增长上限只看它们登记的上界：一个跑在别的
    * 模型上的大 run 不该抬这个 key。run 清掉上界时一并移出。
    */
   readonly runs: Set<string>;
@@ -120,6 +127,10 @@ interface Bucket {
 
 /** observer（主代理）的 run 身份：不排队、不订阅，只在扇出过滤里作为「不是任何 run」出现。 */
 const OBSERVER_RUN_ID = "\0observer";
+/** 主代理 subagent 池的 run 身份前缀；`\0` 起头，和任何 workflow run id 都不会撞。 */
+const SESSION_SUBAGENTS_RUN_PREFIX = "\0subagents:";
+/** runner 没给 signal 时的占位：永不 abort（用户取消走请求自己的 signal）。 */
+const NEVER_ABORTED: AbortSignal = new AbortController().signal;
 
 const defaultSchedule = (callback: () => void, delayMs: number): (() => void) => {
   const timer = setTimeout(callback, delayMs);
@@ -352,18 +363,27 @@ export function createWorkflowConcurrencyGovernor(
     armCooldownWake(bucket);
   };
 
-  const tryAdmit: WorkflowConcurrencyPort["tryAdmit"] = (runId, key) => {
-    const bucket = bucketFor(key);
-    noteRunUsed(bucket, runId);
+  /** 快路径的本体；`trackRun` 为 false 时（subagent 池）不把 run 记进桶的 `runs`。 */
+  const tryAdmitIn = (
+    bucket: Bucket,
+    runId: string,
+    trackRun: boolean,
+  ): ModelRequestAdmissionTicket | undefined => {
+    if (trackRun) noteRunUsed(bucket, runId);
     fanOut(bucket, bucket.controller.observe(now()));
     if (waiterCount(bucket) > 0 || !bucket.controller.canAdmit(now())) return undefined;
     return grant(bucket, runId);
   };
 
-  const admit: WorkflowConcurrencyPort["admit"] = (runId, key, signal) => {
-    const bucket = bucketFor(key);
+  /** 排队的本体；`trackRun` 同上。 */
+  const admitIn = (
+    bucket: Bucket,
+    runId: string,
+    signal: AbortSignal,
+    trackRun: boolean,
+  ): Promise<ModelRequestAdmissionTicket> => {
     if (signal.aborted) return Promise.reject(abortedError(signal));
-    noteRunUsed(bucket, runId);
+    if (trackRun) noteRunUsed(bucket, runId);
     return new Promise<ModelRequestAdmissionTicket>((resolve, reject) => {
       const waiter: Waiter = { runId, resolve, reject, signal, onAbort: () => {} };
       waiter.onAbort = () => {
@@ -384,6 +404,12 @@ export function createWorkflowConcurrencyGovernor(
       drain(bucket);
     });
   };
+
+  const tryAdmit: WorkflowConcurrencyPort["tryAdmit"] = (runId, key) =>
+    tryAdmitIn(bucketFor(key), runId, true);
+
+  const admit: WorkflowConcurrencyPort["admit"] = (runId, key, signal) =>
+    admitIn(bucketFor(key), runId, signal, true);
 
   const subscribe: WorkflowConcurrencyPort["subscribe"] = (runId, listener) => {
     const set = listeners.get(runId) ?? new Set();
@@ -417,6 +443,19 @@ export function createWorkflowConcurrencyGovernor(
       Promise.resolve(grant(bucketFor(workflowConcurrencyKey(model)), OBSERVER_RUN_ID)),
   };
 
+  // 修复原因：subagent 曾继承父的 observer，一轮并行十个 Agent 调用就是十路既不排队也不看
+  // Retry-After 的请求，各自退避重试——线上 1302 的最大来源（2026-10-20 抽样占 46%），还连带把
+  // workflow 和用户自己的 turn 一起拒掉。subagent 是委派出去的工作，和 workflow subagent 同类，
+  // 所以过同一道闸门；用户自己的 turn 仍是 observer。
+  const sessionSubagents = (parentSessionId: string): ModelRequestAdmission => {
+    const runId = `${SESSION_SUBAGENTS_RUN_PREFIX}${parentSessionId}`;
+    return {
+      tryAcquire: ({ model }) => tryAdmitIn(bucketFor(workflowConcurrencyKey(model)), runId, false),
+      acquire: ({ model, signal }) =>
+        admitIn(bucketFor(workflowConcurrencyKey(model)), runId, signal ?? NEVER_ABORTED, false),
+    };
+  };
+
   return {
     tryAdmit,
     admit,
@@ -424,6 +463,7 @@ export function createWorkflowConcurrencyGovernor(
     setRunBound,
     clearRunBound,
     observer: () => observerAdmission,
+    sessionSubagents,
     snapshot(key) {
       return buckets.get(key)?.controller.snapshot();
     },

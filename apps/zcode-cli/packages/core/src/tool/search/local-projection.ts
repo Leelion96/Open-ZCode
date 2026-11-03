@@ -26,6 +26,6 @@ export function localToolsLoadedReminder(names: readonly string[]): string {
   const action = names.length === 1 ? "Call it now" : "Call them now";
   return wrapSystemReminderForSource(
     "tool_result_warning",
-    `Loaded: ${names.join(", ")}. ${action} with ${DEFERRED_TOOL_CALL_NAME} {"name":"<tool name>","input":{...}}, using the exact tool name and filling input according to its schema above. No additional ToolSearch is needed before calling these tools.`,
+    `Loaded: ${names.join(", ")}. ${action} with ${DEFERRED_TOOL_CALL_NAME} {"name":"<tool name>","input":{...}}, using the exact tool name and filling input according to its schema above. No additional LocalToolSearch is needed before calling these tools.`,
   );
 }

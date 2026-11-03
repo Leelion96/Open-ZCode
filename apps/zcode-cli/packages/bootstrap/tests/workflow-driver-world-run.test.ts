@@ -41,6 +41,7 @@ interface RecordedRun {
   cwd: string | undefined;
   timeoutMs: number | undefined;
   maxInlineBytes: number | undefined;
+  tailBytes: number | undefined;
 }
 
 /** 记录请求并回放配置结果的 ExecutionPort 桩。 */
@@ -73,6 +74,7 @@ function stubExecutionPort(result: Partial<ExecutionResult>): {
           cwd: request.cwd,
           timeoutMs: request.timeoutMs,
           maxInlineBytes: request.outputLimit?.maxInlineBytes,
+          tailBytes: request.outputLimit?.tailBytes,
         });
         return full;
       },
@@ -80,7 +82,7 @@ function stubExecutionPort(result: Partial<ExecutionResult>): {
   };
 }
 
-const CAP = 256 * 1024;
+const CAP = 16 * 1024 * 1024;
 
 function makeDriver(executionPort: ExecutionPort) {
   return createAgentRuntimeWorkflowDriver({
@@ -109,6 +111,7 @@ describe("workflow driver — world.run", () => {
         cwd: "/workspace/root",
         timeoutMs: 300_000,
         maxInlineBytes: CAP + 1,
+        tailBytes: undefined,
       },
     ]);
   });
@@ -171,15 +174,25 @@ describe("workflow driver — world.run", () => {
     expect(calls.map((call) => call.file)).toEqual(["echo"]);
   });
 
-  it("rejects stdout over the 256KB cap with actionable guidance (cap+1 probe)", async () => {
-    const big = "x".repeat(CAP + 1);
+  it("accepts exactly cap bytes in full mode (the +1 probe tells 'exactly' from 'over')", async () => {
+    // 文本内容与本断言无关，只看 bytes / truncated；不真造 16 MiB 字符串。
     const { port } = stubExecutionPort({
-      stdout: { text: big, bytes: CAP + 1, truncated: false } as never,
+      stdout: { text: "x", bytes: CAP, truncated: false } as never,
+    });
+    const driver = makeDriver(port);
+    await expect(driver.executeWorldRead("run", ["node", []])).resolves.toMatchObject({
+      stdout: "x",
+    });
+  });
+
+  it("rejects stdout over the 16 MiB cap with actionable guidance (cap+1 probe)", async () => {
+    const { port } = stubExecutionPort({
+      stdout: { text: "x", bytes: CAP + 1, truncated: false } as never,
     });
     const driver = makeDriver(port);
     await expect(driver.executeWorldRead("run", ["node", ["-e", "spam"]])).rejects.toMatchObject({
       code: "WorldReadCapExceeded",
-      message: expect.stringContaining("stdout"),
+      message: expect.stringMatching(/stdout[\s\S]*output: \{ tail: n \}/u),
     });
   });
 
@@ -207,6 +220,86 @@ describe("workflow driver — world.run", () => {
     await reject(["lean", [], { timeoutMs: 0 }]);
     await reject(["lean", [], { timeoutMs: 1.5 }]);
     await reject(["lean", [], {}, "extra"]);
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("workflow driver — world.run output modes", () => {
+  const huge = (tail?: string) =>
+    ({ text: "", bytes: 10 * CAP, truncated: true, ...(tail === undefined ? {} : { tail }) }) as never;
+
+  it("explicit output 'full' sends the same request as the default", async () => {
+    const { port, calls } = stubExecutionPort({});
+    const driver = makeDriver(port);
+    await driver.executeWorldRead("run", ["lean", [], { output: "full" }]);
+    expect(calls[0]).toMatchObject({ maxInlineBytes: CAP + 1, tailBytes: undefined });
+  });
+
+  it("discard asks for no inline bytes and returns empty streams whatever the process printed", async () => {
+    const { port, calls } = stubExecutionPort({ stdout: huge(), stderr: huge() });
+    const driver = makeDriver(port);
+    await expect(
+      driver.executeWorldRead("run", ["pnpm", ["test"], { output: "discard" }]),
+    ).resolves.toEqual({ exitCode: 0, stdout: "", stderr: "" });
+    expect(calls[0]).toMatchObject({ maxInlineBytes: 0, tailBytes: undefined });
+  });
+
+  it("discard still returns a nonzero exit as a value", async () => {
+    const { port } = stubExecutionPort({ status: "failed", exitCode: 1, stdout: huge(), stderr: huge() });
+    const driver = makeDriver(port);
+    await expect(
+      driver.executeWorldRead("run", ["pnpm", ["test"], { output: "discard" }]),
+    ).resolves.toEqual({ exitCode: 1, stdout: "", stderr: "" });
+  });
+
+  it("tail asks the port for the last n bytes and returns them per stream", async () => {
+    const { port, calls } = stubExecutionPort({
+      status: "failed",
+      exitCode: 2,
+      stdout: huge("last out"),
+      stderr: huge("last err"),
+    });
+    const driver = makeDriver(port);
+    await expect(
+      driver.executeWorldRead("run", ["pnpm", ["test"], { output: { tail: 4096 } }]),
+    ).resolves.toEqual({ exitCode: 2, stdout: "last out", stderr: "last err" });
+    expect(calls[0]).toMatchObject({ maxInlineBytes: 0, tailBytes: 4096 });
+  });
+
+  it("tail accepts n at both bounds (1 and the cap)", async () => {
+    const { port, calls } = stubExecutionPort({ stdout: huge("x"), stderr: huge("") });
+    const driver = makeDriver(port);
+    await driver.executeWorldRead("run", ["node", [], { output: { tail: 1 } }]);
+    await driver.executeWorldRead("run", ["node", [], { output: { tail: CAP } }]);
+    expect(calls.map((call) => call.tailBytes)).toEqual([1, CAP]);
+  });
+
+  it("tail fails loudly when the port returns no tail (wiring error, not an empty stream)", async () => {
+    const { port } = stubExecutionPort({ stdout: huge(), stderr: huge() });
+    const driver = makeDriver(port);
+    await expect(
+      driver.executeWorldRead("run", ["node", [], { output: { tail: 8 } }]),
+    ).rejects.toMatchObject({ code: "DriverError", message: expect.stringContaining("tail") });
+  });
+
+  it("rejects bad output shapes with an actionable DriverError before running anything", async () => {
+    const { port, calls } = stubExecutionPort({});
+    const driver = makeDriver(port);
+    const reject = (output: unknown) =>
+      expect(driver.executeWorldRead("run", ["lean", [], { output }])).rejects.toMatchObject({
+        code: "DriverError",
+        message: expect.stringContaining("opts.output"),
+      });
+    await reject("quiet");
+    await reject(null);
+    await reject([]);
+    await reject({});
+    await reject({ tail: 0 });
+    await reject({ tail: -1 });
+    await reject({ tail: 1.5 });
+    await reject({ tail: "64" });
+    await reject({ tail: CAP + 1 });
+    await reject({ tail: 64, head: 64 });
     expect(calls).toEqual([]);
   });
 });

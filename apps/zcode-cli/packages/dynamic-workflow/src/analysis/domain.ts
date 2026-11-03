@@ -30,7 +30,7 @@ export interface Placeholder {
   param: number;
   /**
    * A rest parameter (`...parts`) is a single formal that gathers every actual at
-   * index >= `param`. Resolution (substitute in calls.ts, emitFacts in state.ts)
+   * index >= `param`. Resolution (substitute in calls.ts, emission in state.ts)
    * unions ALL those actuals into the formal rather than the single positional one.
    */
   rest?: boolean;
@@ -109,20 +109,32 @@ export function addOcc(target: AbstractValue, occ: TaintOcc): boolean {
   return addExact(target, occ);
 }
 
+/**
+ * The ported occurrence keys of each site, per occurrence map. `addExact` and
+ * `addPortless` are the only writers of any `occs` map, and they keep this index in step.
+ *
+ * 修复原因：`addPortless` 曾为找同站点的带端口出现而扫一遍整个出现集，哪怕一个都没有。
+ * 每次读变量都要克隆值，克隆又逐个 addOcc，于是攒着 K 个标签的值每读一次就是 K²；
+ * 一个被 n 条语句读的 n 标签数组是 n³（n=600 用了 5.7 秒）。按站点索引后只碰真正要删的键。
+ */
+const portedKeys = new WeakMap<Map<string, TaintOcc>, Map<string, string[]>>();
+
+function portedKeysOf(v: AbstractValue, site: string): readonly string[] | undefined {
+  return portedKeys.get(v.occs)?.get(site);
+}
+
 function addPortless(target: AbstractValue, occ: TaintOcc): boolean {
   // Drop any ported occurrences of the same site, folding their exactness in.
   let exact = occ.exact;
   let changed = false;
-  const drop: string[] = [];
-  for (const [key, existing] of target.occs) {
-    if (existing.site === occ.site && existing.port !== undefined) {
-      exact = exact || existing.exact;
-      drop.push(key);
+  const drop = portedKeysOf(target, occ.site);
+  if (drop !== undefined) {
+    for (const key of drop) {
+      exact = exact || (target.occs.get(key) as TaintOcc).exact;
+      target.occs.delete(key);
+      changed = true;
     }
-  }
-  for (const key of drop) {
-    target.occs.delete(key);
-    changed = true;
+    portedKeys.get(target.occs)?.delete(occ.site);
   }
   return addExact(target, { exact, site: occ.site }) || changed;
 }
@@ -132,6 +144,16 @@ function addExact(target: AbstractValue, occ: TaintOcc): boolean {
   const existing = target.occs.get(key);
   if (existing === undefined) {
     target.occs.set(key, { exact: occ.exact, port: occ.port, site: occ.site });
+    if (occ.port !== undefined) {
+      let bySite = portedKeys.get(target.occs);
+      if (bySite === undefined) {
+        bySite = new Map();
+        portedKeys.set(target.occs, bySite);
+      }
+      const keys = bySite.get(occ.site);
+      if (keys === undefined) bySite.set(occ.site, [key]);
+      else keys.push(key);
+    }
     return true;
   }
   if (occ.exact && !existing.exact) {
@@ -356,10 +378,7 @@ export function readField(container: AbstractValue, key: string): AbstractValue 
 }
 
 function hasPortedOcc(v: AbstractValue, site: string): boolean {
-  for (const occ of v.occs.values()) {
-    if (occ.site === site && occ.port !== undefined) return true;
-  }
-  return false;
+  return (portedKeysOf(v, site)?.length ?? 0) > 0;
 }
 
 /** Copy of `v` with every occurrence's exactness bit cleared (recursively). */

@@ -23,6 +23,8 @@
 
 ## 会话流可见性
 
+- `DeferredToolCall` 在 `inputStreaming` 阶段尚未确认目标工具，不渲染临时卡片或空白占位，也不从半截包装参数推测目标。完整调用经 Core 确认后，同一行按目标名称复用原 renderer 和显示设置；关闭“显示待办”时，包装的 TodoWrite 从传参到完成均不展示卡片。
+- 此过滤只隐藏包装调用的参数生成阶段；直接工具的流式预览、目标工具执行进度以及包装调用的失败/停止展示保持原行为。会话运行态和 Stop 入口仍读取原始投影。
 - `EnterPlanMode` 是会话模式切换的内部边界，不向用户提供可操作详情；主会话流在 `inputStreaming` / `running` / 终态下都不渲染它的 tool row。
 - 可见性过滤只作用于 UI render unit：协议投影仍保留原始 `ToolCallRow`，运行态、冷恢复、模式切换和诊断轨迹不得因隐藏展示而丢失。
 - 过滤在桌面 `desktop-continuous` 和手机 `web-remote-replayable` 共用的渲染单元上执行，不改写两类 delivery 的快照、gap 恢复或消息顺序。
@@ -59,8 +61,8 @@ SPT05 验收以真实 DOM 几何调用和动画事件为证据：批量收起工
 - `ReadSessionContext` 通过 `ReadSessionContextToolCallBlock` 渲染，不走 fallback 的 `Parameters` / `Result` JSON 块。
 - 摘要行展示本次上下文读取的 `query`，并把 `sessionId` 作为次级标识。
 - 展开区只展示 `query` 和返回的上下文内容；若 output 是结构化对象，优先读取 `output.content`，再回退到文本型 output 或 `rawOutput`。
-- `SendMessage` 归入 `message` family，并通过 `SendMessageToolCallBlock` 渲染。收起态按“已发送/正在发送 + input `summary` + 给/to + 目标 agent `to`”组成一句完整摘要；展开态只展示目标智能体、摘要和消息正文，不展示投递状态、message/agent/task id、输出路径、result 或整段 tool call JSON。目标、摘要和消息都尚未到达时必须禁用展开，禁止在 streaming input 或字段未加载的 snapshot 上出现空详情面板。
-- `SendMessage` 的主展示数据使用 Core 在 model content 格式化和 hook additional context 拼接之外生成的 `local_agent_message` display payload。payload 只保留 `status`、失败 `error` 和结果 `message`，不得携带或展示 delivery、message/agent/task id、输出路径；`error` 与 `message` 必须分别受 4 KiB UTF-8 预算约束，超出时保留完整 code point 并追加 `...[truncated]` 标记，避免 display 绕过 tool result budget 放大实时事件和持久化快照。lowercase `send_message` 是另一条 session mailbox 语义，不得复用 `SendMessage` identity、display 或 renderer。
+- `SendMessage` 归入 `message` family，并通过 `SendMessageToolCallBlock` 渲染。收起态按“已发送/正在发送 + input `summary`（缺省时用 `message` 的第一个非空行） + 给/to + 目标 agent `to`”组成一句完整摘要；展开态只展示目标智能体、摘要和消息正文，不展示投递状态、message/agent/task id、输出路径、result 或整段 tool call JSON。目标、摘要和消息都尚未到达时必须禁用展开，禁止在 streaming input 或字段未加载的 snapshot 上出现空详情面板。
+- `SendMessage` 的主展示数据使用 Core 在 model content 格式化之外生成的 `local_agent_message` display payload（hook additional context 是单独的附件，不进 tool result）。payload 只保留 `status`、失败 `error` 和结果 `message`，不得携带或展示 delivery、message/agent/task id、输出路径；`error` 与 `message` 必须分别受 4 KiB UTF-8 预算约束，超出时保留完整 code point 并追加 `...[truncated]` 标记，避免 display 绕过 tool result budget 放大实时事件和持久化快照。lowercase `send_message` 是另一条 session mailbox 语义，不得复用 `SendMessage` identity、display 或 renderer。
 - `SendMessage` 的 display 若返回 `status: "failed"`，即使外层 tool call 已 completed，也按业务失败展示“消息发送失败”和 failure status；真实 tool failure 同样不得继续显示“已发送”。结构化 output、JSON 字符串、纯文本 model content 和 `rawOutput` / `result.content` 只作为旧快照/provider 兼容 fallback，禁止通过错误文案推断成功或失败。
 - `SendMessage` 的收起态必须显式覆盖完整终态：`completed` 显示“已发送”，`failed` 或 display 业务失败显示“消息发送失败”，`denied` 显示“发送已拒绝”，`stopped` 显示“发送已停止”；不得把非成功终态落入成功文案。
 - `TaskStop` 归入 `task-control` family，并通过 `TaskStopToolCallBlock` 渲染。收起态只使用停止中/已停止的动作文案和 `task_id`（输入阶段兼容 deprecated `shell_id`），不得展示 `task_type`；展开态的摘要行继续保留 task id，详情区只展示 task type、任务描述或命令，以及结果消息，不重复 task id，也不展示整段 tool call JSON。

@@ -206,9 +206,10 @@ zcode-plugins-test）的官方插件直接失效，而它也不是真实屏障�
 
 ### 6.4 banner
 
-- `packages/ui/src/v4/mcpUnavailableBannerNotice.ts`：`resolveMcpUnavailableNotice(rows)` 从窗口
+- `packages/ui/src/v4/mcpUnavailableBannerNotice.ts`：`resolveMcpUnavailableNoticeInPartition(partition)` 从窗口
   内**最新**一条带 `display.unavailable` 的 `mcp_tool` row 产出 `{ code, serverName, toolName, rowId }`。
-  取最新而非第一条：同一会话可能先撞额度、后换连接又撞权益，提示要跟随最近事实；
+  取最新而非第一条：同一会话可能先撞额度、后换连接又撞权益，提示要跟随最近事实；输入是 rows 的
+  「历史 + 尾轮」分区，结果与整窗倒序扫描相同（见 `docs/ui/chat-virtual-scroll.md`「每帧派生成本」）；
 - `sessionQuotaBannerState.ts`：新增 kind `mcp-quota-exhausted` / `mcp-plan-required`，
   **插在 `provider-limited` 之后、Start-Plan-only 早退之前**（Coding Plan 会话一定命中那道早退，
   放其后永远不生效）；新增 `mcpServerName` / `mcpNoticeRowId` 两个 state 字段，后者进 dismiss key；

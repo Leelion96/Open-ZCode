@@ -141,7 +141,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "../../visualize-plugin",
       "../../../visualize-plugin",
     ],
-    version: "0.1.0",
+    version: "0.1.1",
   },
   {
     // 无 listing：宿主不进市场、不对用户露出。它必须始终可用，因为 node_repl 的注册门禁
@@ -159,7 +159,7 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
       "../../node-repl-host",
       "../../../node-repl-host",
     ],
-    version: "0.6.1",
+    version: "0.7.0",
   },
   {
     listing: {
@@ -210,11 +210,12 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
   },
   ...(
     [
-      // 版本按插件各自升：pdf 0.2.1 起面板带中日韩字体回退，换新缓存目录，不复用 0.2.0 的旧缓存。
-      ["documents", "docx", "Documents", "Word文档", "0.2.0"],
-      ["pdf", "pdf", "PDF", "PDF", "0.2.1"],
-      ["presentations", "pptx", "Presentations", "演示文档", "0.2.0"],
-      ["spreadsheets", "xlsx", "Spreadsheets", "电子表格", "0.2.0"],
+      // 版本按插件各自升，换新缓存目录：pdf 0.2.1 起面板带中日韩字体回退；0.2.1（pdf 0.2.2）起
+      // server 由工作区内各 session 共享，旧缓存的 server 不区分 session，不能沿用。
+      ["documents", "docx", "Documents", "Word文档", "0.2.1"],
+      ["pdf", "pdf", "PDF", "PDF", "0.2.2"],
+      ["presentations", "pptx", "Presentations", "演示文档", "0.2.1"],
+      ["spreadsheets", "xlsx", "Spreadsheets", "电子表格", "0.2.1"],
     ] as const
   ).map(
     ([name, skill, displayName, chineseName, version]): OfficialPluginDefinition => ({
@@ -427,6 +428,48 @@ export const OFFICIAL_PLUGIN_DEFINITIONS: readonly OfficialPluginDefinition[] = 
     // 这里的 version 追踪上游 zcode-cua runtime 版本，使插件 UI 展示、缓存路径、
     // marketplace 条目都对齐；具体版本由原子 producer bump 工作流维护。
     version: "0.6.5",
+  },
+  {
+    // ZCode Sites（技术方案 4）：Skill 指导 Agent 把项目改造并打包成 runner 可直接运行的产物包，
+    // 再用 scripts/zcode-site.mjs（CLI）上传发布；commands/ 是 /site-* 斜杠命令。
+    // 0.4.0 起自带 Sites 面板（UI plugin）：MCP server 与面板页面构建进 dist/，只给面板用，模型看不到
+    // （docs/site/sites-panel.md）。默认开启，用户不必先去设置里打开就能让 Agent 部署站点。
+    componentTypes: ["ui"],
+    name: "zcode-site",
+    defaultEnabled: true,
+    listing: {
+      author: ZAI_AUTHOR,
+      category: "productivity",
+      displayName: `${PRODUCT_DISPLAY_NAME} Sites`,
+      displayName_i18n: { "zh-CN": `${PRODUCT_DISPLAY_NAME} Sites` },
+      description_i18n: {
+        "zh-CN": "把 Web 项目改造为可在云端 Linux 运行的部署包，一个 start.sh 即可启动。",
+      },
+      examplePrompts: ["Deploy this project as a website"],
+      examplePrompts_i18n: { "zh-CN": ["把这个项目部署成网站"] },
+      icon: `${OFFICIAL_PLUGIN_ASSETS_BASE_URL}/zcode-site/icon.png`,
+    },
+    rootCandidates: [
+      "packages/zcode-site-plugin",
+      "../zcode-site-plugin",
+      "../../zcode-site-plugin",
+      "../../../zcode-site-plugin",
+    ],
+    requiredSeedPaths: [
+      "commands/site-deploy.md",
+      "dist/product.mjs",
+      "scripts/zcode-site.mjs",
+      "scripts/stage.mjs",
+      "skills/site-deploy/SKILL.md",
+      "skills/site-deploy/templates/static.sh",
+      "skills/site-deploy/templates/static-server.mjs",
+      "skills/site-deploy/templates/node.sh",
+      "skills/site-deploy/templates/python.sh",
+      // 缺了会 seed 出能看到面板入口却启动不了 MCP server 的残缺插件。
+      "dist/server.mjs",
+      "dist/ui/panel.html",
+    ],
+    version: "0.4.2",
   },
 ];
 

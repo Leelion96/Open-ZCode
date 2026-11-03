@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 import { expect, it } from "vitest";
 
-it("MRO03 pending与formal保持普通上下文，显式compact用例仍用小窗口", async () => {
+it("pending与formal使用相同窗口，仅显式自动压缩场景使用小窗口", async () => {
   const source = await readFile(resolve(import.meta.dirname, "../wdio.conf.ts"), "utf8");
   const file = ts.createSourceFile("wdio.conf.ts", source, ts.ScriptTarget.Latest, true);
   const expressions = new Map<string, string>();
@@ -26,16 +26,97 @@ it("MRO03 pending与formal保持普通上下文，显式compact用例仍用小�
     ...unrelated,
     `const autoCompactSpec = ${auto}; return ${window};`,
   ) as (specs: string[], override: undefined, ...flags: boolean[]) => number;
-  for (const path of [
-    "./test/e2e/conversation-session/manual-review/pending/conversation-session-web-remote-unread.test.ts",
-    "./test/e2e/conversation-session/conversation-session-web-remote-unread.test.ts",
-  ])
-    expect(readWindow([path], undefined, ...unrelated.map(() => false))).toBe(128000);
+  for (const folder of ["", "manual-review/pending/"]) {
+    for (const name of [
+      "web-remote-unread",
+      "tool-history-order",
+      "model-switch-queue",
+      "compact",
+      "compact-actions",
+      "first-send",
+    ]) {
+      expect(
+        readWindow(
+          [`./test/e2e/conversation-session/${folder}conversation-session-${name}.test.ts`],
+          undefined,
+          ...unrelated.map(() => false),
+        ),
+        name,
+      ).toBe(128000);
+    }
+    for (const name of [
+      "compact-auto",
+      "compact-auto-actions",
+      "goal-run-cases",
+      "model-switch-auto-compact",
+      "subagent-runtime-refresh",
+    ]) {
+      expect(
+        readWindow(
+          [`./test/e2e/conversation-session/${folder}conversation-session-${name}.test.ts`],
+          undefined,
+          ...unrelated.map(() => false),
+        ),
+        name,
+      ).toBe(240);
+    }
+  }
+});
+
+it("模型配置与切换用例保留可观测的思考参数映射", async () => {
+  const source = await readFile(resolve(import.meta.dirname, "../wdio.conf.ts"), "utf8");
+  const file = ts.createSourceFile("wdio.conf.ts", source, ts.ScriptTarget.Latest, true);
+  let expression = "";
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === "exposeSubagentReasoningMetadata" &&
+      node.initializer
+    ) {
+      expression = node.initializer.getText(file);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  const enabled = new Function(
+    "specs",
+    "builtInSubagentModelOverridesSpec",
+    "settingsSubagentCreateEditPersistenceSpec",
+    "isSubagentCodingPlanLoginCatalogStaleSpec",
+    `return ${expression};`,
+  ) as (specs: string[], a: boolean, b: boolean, c: () => boolean) => boolean;
+  for (const folder of ["", "manual-review/pending/"]) {
+    for (const name of [
+      "model-config",
+      "model-switch-tool-edit-fork",
+      "model-switch-compact",
+      "model-switch-auto-compact",
+      "goal-session-model",
+      "new-session-inherits-model",
+      "draft-model-switch-first-send",
+      "model-provider-session-isolation",
+      "upstream-workspace-smoke",
+      "model-switch-edit-fork",
+      "model-switch-queue",
+      "same-model-provider-identity",
+    ]) {
+      expect(
+        enabled(
+          [`./test/e2e/conversation-session/${folder}conversation-session-${name}.test.ts`],
+          false,
+          false,
+          () => false,
+        ),
+      ).toBe(true);
+    }
+  }
   expect(
-    readWindow(
-      ["./test/e2e/conversation-session/conversation-session-compact-auto.test.ts"],
-      undefined,
-      ...unrelated.map(() => false),
+    enabled(
+      ["./test/e2e/conversation-session/conversation-session-first-send.test.ts"],
+      false,
+      false,
+      () => false,
     ),
-  ).toBe(240);
+  ).toBe(false);
 });

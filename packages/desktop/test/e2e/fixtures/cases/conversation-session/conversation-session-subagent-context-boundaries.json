@@ -65,13 +65,6 @@
       "syntheticReason": "仅用 provider 回放及测试 stdio 代理控制时序/读取故障；真实 Settings、Host、CLI 和 child runtime 执行，生产代码和依赖不变。"
     },
     {
-      "id": "scb-running-continuation",
-      "kind": "subagent",
-      "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "仅用 provider 回放及测试 stdio 代理控制时序/读取故障；真实 Settings、Host、CLI 和 child runtime 执行，生产代码和依赖不变。"
-    },
-    {
       "id": "scb-running-message-next",
       "kind": "subagent",
       "source": "synthetic",

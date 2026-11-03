@@ -1,5 +1,6 @@
 import {
   WEB_REMOTE_CONTROL_RELAY_V2_HTTP,
+  type MobilePushEvent,
   parseWebRemoteControlRelayV2HttpResponse,
   WebRemoteControlV2ConnectionError,
   type WebRemoteControlRelayV2HttpOperation,
@@ -45,6 +46,41 @@ export function createWebRemoteControlV2Http(endpointOrigin: string, fetcher = f
     }
   }
   return {
+    async reportNotification(
+      deviceSid: string,
+      event: MobilePushEvent,
+      jwt: string,
+      signal: AbortSignal,
+    ): Promise<"accepted" | "ignored" | "rejected"> {
+      try {
+        const response = await fetcher(
+          new URL("/api/v1/remote/notification/events", endpointOrigin),
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${jwt}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ device_sid: deviceSid, event }),
+            signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
+            redirect: "error",
+          },
+        );
+        if (!response.ok) throw new Error("http_failed");
+        const value = (await response.json()) as {
+          code?: number;
+          data?: { event_id?: string; status?: unknown };
+        };
+        const status = value?.data?.status;
+        if (
+          value?.code !== 0 ||
+          value.data?.event_id !== event.event_id ||
+          (status !== "accepted" && status !== "ignored" && status !== "rejected")
+        )
+          throw new Error("invalid_receipt");
+        return status;
+      } catch {
+        // 不暴露响应正文或凭据；通知请求失败不进入远控的自动重试路径。
+        throw new WebRemoteControlV2ConnectionError("relay-unavailable");
+      }
+    },
     async register(deviceMid: string, jwt: string, signal: AbortSignal) {
       const result = await request("register", { device_mid: deviceMid }, jwt, signal);
       if (!result.data) throw new WebRemoteControlV2ConnectionError("relay-unavailable");

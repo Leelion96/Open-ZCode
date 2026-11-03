@@ -26,16 +26,21 @@ const emptyInputs: ReadonlyMap<
 > = new Map();
 const getEmptyInputs = () => emptyInputs;
 
-export function useRemoteDevicePresentationInput(sourceServerId?: string) {
+/** 管理快照中全部设备的展示输入（按 sourceServerId）；Web / 手机没有管理服务时为空。 */
+export function useRemoteDevicePresentationInputs() {
   const management = useBaseWorkspaceServices().sourceServerManagementService;
   const registry = useMemo(
     () => (management ? getSourceServerStatusRegistry(management) : null),
     [management],
   );
-  const inputs = useSyncExternalStore(
+  return useSyncExternalStore(
     registry?.subscribe ?? subscribeToNothing,
     registry?.getInputs ?? getEmptyInputs,
     registry?.getInputs ?? getEmptyInputs,
   );
+}
+
+export function useRemoteDevicePresentationInput(sourceServerId?: string) {
+  const inputs = useRemoteDevicePresentationInputs();
   return sourceServerId ? inputs.get(sourceServerId) : undefined;
 }

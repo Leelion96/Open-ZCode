@@ -9,12 +9,19 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-plugin-mcp-skill-workspace-inherited-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "workspace-inherited-tool-call",
       "description": "Workspace 缺 key 时继承 User enabled 的 MCP tool_use。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "tool-use",
-      "syntheticReason": "固定工具调用，证明 User inheritance 在新 Session runtime 生效。"
+      "syntheticReason": "固定 tool_use，证明继承路径仍注册 Plugin MCP。"
     },
     {
       "id": "workspace-inherited-final",
@@ -22,7 +29,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定最终响应，闭合 inherited runtime。"
+      "syntheticReason": "固定最终文本，闭合 inherited runtime。"
     }
   ]
 }

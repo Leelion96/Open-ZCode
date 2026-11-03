@@ -19,3 +19,7 @@ Widget state remains scoped to the current workspace identity and session.
 State storage is an injected adapter. Atomic file replacement and the existing cross-process file
 lock serialize full snapshots; notifications project durable state. Only modelContent is exported
 as untrusted next-turn context. Main owns native sandbox resources, not persisted state.
+
+Model state travels as bounded `genUiContext` input metadata, never appended to user text.
+The CLI owns legacy-tail decoding and reminder projection; queued inputs retain the snapshot
+captured at admission. Empty arrays identify new-format input. See `docs/specs/gen-ui-model-context.md`.

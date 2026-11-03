@@ -69,6 +69,84 @@ for (const [width, locale, theme] of [
   [390, "zh-CN", "light"],
   [1200, "en-US", "dark"],
 ]) {
+  test(`provider rename keeps focus after pointer movement ${width}/${theme}`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 1100 } });
+    const mutations = [];
+    await page.route("**/mutation", async (route) => {
+      mutations.push(route.request().postDataJSON());
+      await route.fulfill({ status: 200, body: "{}" });
+    });
+    try {
+      await page.goto(
+        `${origin}fixture?${new URLSearchParams({ locale, theme, access: "manual" })}`,
+      );
+      const trigger = page.getByTestId("model-provider-actions-button");
+      await trigger.click();
+      const menu = page.getByRole("menu");
+      // 暂停真实退场动画，保证鼠标移动命中尚未卸载的菜单，不靠固定延时碰竞态。
+      await menu.evaluate((node) => {
+        window.renamePointerMoves = 0;
+        node.addEventListener("pointermove", () => {
+          if (node.dataset.state === "closed") window.renamePointerMoves += 1;
+        });
+        node.addEventListener("animationstart", () => {
+          if (node.dataset.state === "closed") {
+            window.renameExitAnimations = node.getAnimations();
+            window.renameExitAnimations.forEach((animation) => animation.pause());
+          }
+        });
+      });
+      await page.getByTestId("model-provider-name-edit-button").click();
+      await page.waitForFunction(() =>
+        window.renameExitAnimations?.some((animation) => animation.playState === "paused"),
+      );
+      const itemBox = await page.getByTestId("model-provider-name-edit-button").boundingBox();
+      await page.mouse.move(itemBox.x + itemBox.width / 2 + 2, itemBox.y + itemBox.height / 2);
+      assert.ok(await page.evaluate(() => window.renamePointerMoves > 0));
+      await page.mouse.move(itemBox.x - 8, itemBox.y - 8);
+      await page.evaluate(() =>
+        window.renameExitAnimations.forEach((animation) => animation.finish()),
+      );
+      await menu.waitFor({ state: "detached" });
+      await page.waitForFunction(
+        () => document.activeElement?.dataset.testid === "model-provider-name-input",
+        undefined,
+        { timeout: 3000 },
+      );
+      // 直接向当前焦点输入，不能用 locator.fill/press 自动聚焦掩盖输入框闪退。
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.keyboard.type("Renamed after pointer movement");
+      await page.keyboard.press("Enter");
+      await page
+        .getByTestId("model-provider-header")
+        .getByText("Renamed after pointer movement")
+        .waitFor();
+      assert.equal(mutations.length, 1);
+      assert.equal(mutations[0].payload.providerNameUpdate, "Renamed after pointer movement");
+      assert.equal(mutations[0].payload.enabledUpdate, undefined);
+
+      await trigger.focus();
+      await page.keyboard.press("ArrowDown");
+      await page.waitForFunction(
+        () => document.activeElement?.dataset.testid === "model-provider-name-edit-button",
+      );
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(
+        () => document.activeElement?.dataset.testid === "model-provider-name-input",
+      );
+      await page.keyboard.type(" cancelled");
+      await page.keyboard.press("Escape");
+      assert.equal(await page.getByTestId("model-provider-name-input").count(), 0);
+      assert.equal(mutations.length, 1);
+      assert.equal(
+        await page.getByTestId("model-provider-enabled-switch").getAttribute("aria-checked"),
+        "true",
+      );
+    } finally {
+      await page.close();
+    }
+  });
+
   test(`header name and option feedback ${width}/${theme}`, async () => {
     await mkdir(artifacts, { recursive: true });
     const page = await browser.newPage({ viewport: { width, height: 1100 } });

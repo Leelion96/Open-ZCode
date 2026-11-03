@@ -64,12 +64,52 @@ export class ProjectAccessTokenError extends Error {
   }
 }
 
+/**
+ * I/O adapter 确认的请求失败类别；只保留类别与 HTTP 状态码，不携带原始响应、URL、Token 或 cause。
+ * 失败码映射见 docs/model-provider-project-access-token.md「换证失败错误码」。
+ */
+export type ProjectAccessTokenRequestFailure =
+  | { readonly kind: "network" }
+  | { readonly kind: "timeout" }
+  | { readonly kind: "http"; readonly status: number };
+
 /** I/O adapter 确认的临时故障；不携带原始响应、URL、Token 或 cause。 */
 export class ProjectAccessTokenTransientError extends Error {
-  constructor() {
+  constructor(readonly failure?: ProjectAccessTokenRequestFailure) {
     super("project_token_transient_failure");
     this.name = "ProjectAccessTokenTransientError";
   }
+}
+
+/** I/O adapter 确认的非临时 HTTP 状态（如 401/403）；只保留状态码，不触发旧 PAT 降级。 */
+export class ProjectAccessTokenHttpStatusError extends Error {
+  readonly failure: ProjectAccessTokenRequestFailure;
+
+  constructor(status: number) {
+    super("project_token_http_status");
+    this.name = "ProjectAccessTokenHttpStatusError";
+    this.failure = { kind: "http", status };
+  }
+}
+
+/**
+ * Bug 原因：换证 catch 曾把网络、超时、401/403/5xx 全部压成 project_token_request_failed，
+ * 远端反馈（ZCT-2111046389485834240）只能看到同一个码，无法区分代理/断网与鉴权拒绝。
+ * 这里只把结构化类别投影成固定码；状态码不是凭据，越界值仍回到未分类码。
+ */
+export function projectAccessTokenRequestFailureCode(
+  failure: ProjectAccessTokenRequestFailure | undefined,
+): string {
+  if (failure?.kind === "network") return "project_token_network_error";
+  if (failure?.kind === "timeout") return "project_token_timeout";
+  if (
+    failure?.kind === "http" &&
+    Number.isInteger(failure.status) &&
+    failure.status >= 100 &&
+    failure.status <= 599
+  )
+    return `project_token_http_${failure.status}`;
+  return "project_token_request_failed";
 }
 
 interface CacheEntry {

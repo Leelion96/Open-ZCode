@@ -11,6 +11,7 @@ import type {
 import { createServiceLogger, type ServiceLogger } from "#src/logger/serviceLogger.js";
 import {
   ADDON_ENV,
+  GHOST_CURSOR_OVERLAY_ARG,
   WindowsCuaChildLifecycle,
   asError,
   defaultChildProcess,
@@ -306,12 +307,15 @@ export class WindowsCuaHelperHost implements ManagedCuaProductHelperHost {
   ): Promise<CuaHelperHandle> {
     const id = ++this.nextGeneration;
     const socketPath = preservedTransport?.socketPath ?? this.mintSocketPath();
+    // 末位 --ghost-cursor-overlay：Windows 产品链恒开（spec §4.9，对齐 macOS；
+    // 漏传时 helper 侧 OverlayEnabled() 恒 false，agent cursor 完全不渲染）。
     const argv = [
       this.options.runtime.entryPath,
       "--socket",
       socketPath,
       "--parent-pid",
       String(process.pid),
+      GHOST_CURSOR_OVERLAY_ARG,
     ];
     let child: WindowsCuaChild;
     try {

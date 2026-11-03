@@ -1,0 +1,9 @@
+lane actor#1 name-head="a-" @9:40 families=fanout#1
+lane actor#2 name-head="b-" @10:40 families=fanout#2
+region seq#1 seq
+region fanout#1 fanout parent=seq#1 @6:22 label="map"
+region fanout#2 fanout parent=seq#1 @6:22 label="map"
+step ask#1 ask "ask" label-head="a-" @9:56 lane=actor#1 region=fanout#1 maybe stack
+step ask#2 ask "ask" label-head="b-" @10:56 lane=actor#2 region=fanout#2 maybe stack
+edge ask#1 -> ask#2 seq maybe
+sink ask#1,ask#2

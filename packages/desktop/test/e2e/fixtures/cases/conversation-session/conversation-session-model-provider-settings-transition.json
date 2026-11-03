@@ -9,6 +9,13 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "model-provider-transition-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题生成不属于设置页往返的模型选择语义，但首发后的请求必须完整回放。"
+    },
+    {
       "id": "model-provider-transition-s01",
       "kind": "main",
       "source": "synthetic",

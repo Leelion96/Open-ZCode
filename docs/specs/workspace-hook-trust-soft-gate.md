@@ -14,7 +14,7 @@
 4. **信任是异步行为,作用于未来,不回溯解锁过去。** 不存在"turn 停下来等审核结果再继续"的语义。
 5. **执行点复杂度留在准入层。** 不把安全状态机扩散到协议 RPC、队列、UI 跳转等远端层次。
 
-由公理 2+4 推出:**turn 永不停等审核**;由公理 1 推出:**pending hook 本轮直接跳过(blocked)**;由公理 3 推出:**会话内常驻提示 + 一键去审核**;由公理 5 推出:**删除 parked-turn 全套协议机制**。
+由公理 2+4 推出:**turn 永不停等审核**;由公理 1 推出:**pending hook 本轮直接跳过(blocked)**;由公理 3 推出:**composer 图标提醒 + 一键去审核**;由公理 5 推出:**删除 parked-turn 全套协议机制**。
 
 ## 2. 行为对比
 
@@ -30,7 +30,7 @@
                         │
                         └─> 事件: WorkspaceHookAdmissionUpdated { pendingCount>0 }
                               └─> snapshot.workspaceHookAdmission
-                                    └─> 聊天底部常驻提示条 [N 个 Hook 待审核] [去审核] [忽略]
+                                    └─> composer 权限右侧 Hook 图标 + 未读点 → 点击浮层 [N 个 Hook 待审核] [去审核] [忽略]
                                           └─(用户主动点击)─> requestWorkspaceHookReview
                                                 └─> controller 开 review flow(受 supervisor 监管)
                                                       └─> Settings/Hooks 未信任行显示[信任]
@@ -48,7 +48,7 @@ Renderer                     V4 Server(bootstrap)                Core Runtime
    │                              ├──────────────────────────────────>│ activate(): pending → skip
    │                              │        WorkspaceHookAdmission     │ 记录 skippedSessionStart
    │<── snapshot{pendingCount:2} ─┤<──────── Updated(2) ──────────────┤ + securityRevision R1
-   │ [提示条出现]                  │                                   │ turn 正常执行(无 hooks)
+   │ [Hook 图标出现]               │                                   │ turn 正常执行(无 hooks)
    │                              │                                   │
    │ 点击[去审核]                  │                                   │
    ├─ requestWorkspaceHookReview >│ openReviewFlow + supervise        │
@@ -57,7 +57,7 @@ Renderer                     V4 Server(bootstrap)                Core Runtime
    ├─ respondWorkspaceHookReview >│ exact grant → 落盘 → revision R2  │
    │<── ReviewSettled ────────────┤                                   │
    │<── snapshot{pendingCount:0} ─┤<──── AdmissionUpdated(0) ─────────┤
-   │ [提示条消失]                  │                                   │
+   │ [Hook 图标消失]               │                                   │
    │ prompt #2                    │                                   │
    ├─────────────────────────────>│ startPromptTurn                   │
    │                              ├──────────────────────────────────>│ 不补跑旧 SessionStart
@@ -83,7 +83,7 @@ Renderer                     V4 Server(bootstrap)                Core Runtime
   ```ts
   workspaceHookAdmission: {
     pendingCount: number;      // configuredEnabled && admissionClass === "pending" 的声明数
-    bundleDigest: string;      // 提示条 dismiss 的幂等 key
+    bundleDigest: string;      // 图标已读 / 忽略的幂等 key
     workspaceIdentity?: string;
   } | null
   ```
@@ -101,23 +101,41 @@ Renderer                     V4 Server(bootstrap)                Core Runtime
 - Handler → controller 现成的 `openReviewFlowForNewPendingItems(getCurrentSnapshot())`;已有活跃 flow 时复用(`openOrReuseFlow` 幂等)。
 - **必须走 `superviseFlow`**——否则重蹈"撤销后面板永久失效"UAT bug(见 `workspace-hook-review-supervisor.ts` 头注)。
 - flow deadline 只使 immutable request 过期并发送 `ReviewSettled(timed_out)`；不创建 Trust、
-  不写负向决定，也不清除 admission pending。用户可从提示条重新请求新 generation。
+  不写负向决定，也不清除 admission pending。用户可从图标浮层重新请求新 generation。
 
-### D4. UI:常驻提示条 + Hooks 行内信任(packages/ui)
+### D4. UI: composer Hook 图标提醒 + 点击浮层（2026-10-26）
 
-- 新组件 `WorkspaceHookPendingBanner`,置于 `SessionPane` 的 `conversationBottomDock`(`ConversationQuotaBanner` 同级,composer 之上),样式/结构仿 `PendingCommandRecoveryBanner`(`role="status"`、border/bg-surface、主操作+忽略)。
-- 显示条件:`snapshot.workspaceHookAdmission?.pendingCount > 0` 且未被忽略。
-- 文案(zh/en 双侧,i18n key `chat.workspaceHookPending.*`,缺 key 校验仿 `workspaceHookTrustState.test.ts` 的 parity 断言):
-  - 正文:"N 个工作区 Hook 待审核,本会话暂未启用" / "N workspace hooks pending review; disabled for this session"
-  - 主按钮:"去审核" / "Review";次按钮:"忽略" / "Dismiss"
-- [去审核] = `setPendingSettingsSectionIntent("hooks")` + `openSettingsTab()` + 经 `findWorkspaceHookCommandBinding`(该通道正是为无 pending-review 时保留命令通道而设,当前无 caller)发送 `requestWorkspaceHookReview`。
-- [忽略] = renderer 本地 dismiss,key 为 `sessionId + bundleDigest`;bundle 变化(hook 内容变更)后提示条重新出现。不落盘。
-- 删除 `V4InteractionDialogs.tsx` 的强制跳转(`presentedWorkspaceHookReviewInteractions` Set + `setPendingSettingsSectionIntent/openSettingsTab`);保留 store connect/upsert/clear(面板数据通路)与"不降级为通用对话框"守卫。
-- `chatLoadingVisibility.ts`:`workspaceHookReview` 不再是 chat-loading blocker(对应测试断言反转)。
-- `SessionPane` 的 `blockingInteractionId` 推导必须排除 `workspaceHookReview`,否则用户点开审核面板时 composer 与提示条会被 `display:none`。
-- 删除 `WorkspaceHookReviewPanel` 与 Hooks 行内 configured/trust/effective 三组徽章。
-- 未信任 workspace Hook 只在最右侧配置开关左边显示一个 outline `信任` 按钮；点击成功后刷新持久 Trust 快照，按钮消失。已信任行不显示额外状态或撤销入口。
-- 遵守 `DESIGN.md`(颜色/圆角/主题/国际化)与多端约束(banner 数据源是 V4 snapshot,web-remote 同样生效)。
+- `WorkspaceHookPendingIndicator` 放在 `ConversationComposer` 权限选择器紧右侧、CUA 入口左侧；移除 composer 上方的常驻横幅。
+- 唯一业务数据源仍为 `snapshot.workspaceHookAdmission`。仅实际会话 `pendingCount > 0` 且当前 `sessionId + bundleDigest` 未忽略时显示图标；草稿、无 pending、只读会话不显示。
+- 图标复用设置页 Hooks 的 `Anchor`，使用 composer 标准 28px 图标按钮。右上角品牌色圆点表示未读；按钮使用本地化名称和 pending 描述，不能只靠颜色传达提醒。
+- 点击、Enter/Space 或触摸打开图标上方的轻量 Popover（产品表现为可点击的 tooltip）。浮层包含原文案、原“去审核”和“忽略”按钮；hover 不自动展开。Esc、外部点击或再次点击图标关闭，关闭后仍可重开。
+- 首次展开即标记当前 `sessionId + bundleDigest` 已读，圆点消失，图标保留。已读/忽略共用 renderer 内存状态，切换会话后返回仍保留，刷新后重置；bundle 变化重新未读。业务 admission 和 Trust 不受已读影响。
+- 浮层展开状态仅归当前组件；会话或 bundle 变化时关闭，避免旧浮层自动展示新内容。snapshot pending 归零后图标和浮层一起移除。
+- [去审核] 关闭浮层，继续 `setPendingSettingsSectionIntent("hooks")` + `openSettingsTab()` + 现有 command binding 的 `requestWorkspaceHookReview`；命令失败继续既有 warn 记录，不增加重试或定时同步。
+- [忽略] 关闭浮层并隐藏当前 key 的图标，不写 Trust；后续新 bundle / 新会话重新提醒。
+- Popover 使用现有主题 token 和共享组件；窄屏限制在 viewport 内，文案换行，两个操作始终可达。支持中英文、Zai Light/Dark、desktop 与手机 Web 共享 composer。
+- `workspaceHookReview` 继续不阻塞 composer、不自动跳转设置。Settings 仍仅逐条持久信任；不新增审核操作或改变 Hook 执行规则。
+
+```text
+Runtime admission → V4 snapshot → Composer Hook 图标
+                      │                 │ 点击
+                      │                 v
+                      │       renderer 已读 + 打开浮层
+                      │          ├─ 去审核 → 既有 review 命令 → Hooks 设置
+                      │          └─ 忽略 → renderer 隐藏当前 session+bundle
+                      └─ pending=0 → 图标与浮层移除
+
+desktop continuous / mobile replayable → 同一 snapshot 语义
+renderer 已读、忽略、浮层开关不参与远端 Trust 同步
+```
+
+验收扩展既有 HK05–HK07：权限右邻位置、无旧横幅、首次未读、打开即已读、关闭重开、键盘退出、去审核、忽略不写 Trust、新会话重新未读、pending 清零移除。桌面/窄屏、中英文和两主题验证浮层不越界；真实手机远控链路单独记录验证边界。pending 清零、bundle 变化和会话已读隔离由共享组件的真实 Chromium 验收补足：
+
+```bash
+node --test packages/ui/test/browser/manual-review/pending/workspace-hook-pending.test.mjs
+```
+
+2026-10-26：Desktop Hook Trust E2E 3/3、Chromium 桌面/触摸验收 8/8 通过，覆盖中英文和两主题；完整记录见 `docs/testing/conversation-session-e2e-coverage-matrix.md` HK05–HK07。
 
 ### D5. SessionStart 不补跑(core)
 
@@ -143,18 +161,18 @@ parked turn 消失后,以下机制整体退役(近期 deadlock/超时监管 bug 
 - snapshot 字段 additive + default → 旧 client 解析不受影响。
 - `requestWorkspaceHookReview` 仅由新 UI 发送,桌面端 server 与 UI 同版本捆绑,无需新增 capability 协商;`workspaceHookReview` capability 保持原样。
 - headless CLI 行为不变(本来就是 skip + 诊断);desktop 与其语义合流。
-- web-remote:提示条数据源为 V4 snapshot,replayable 链路天然携带;不触碰 stream/queue/blocking request 语义。
+- web-remote:图标数据源为 V4 snapshot,replayable 链路天然携带;不触碰 stream/queue/blocking request 语义。
 
 ## 4. 测试计划(先写测试)
 
 - **core**:admission skip 语义(pending → 不等待、port 上报 pendingCount);SessionStart 在 Trust 变化后也不补跑——回归测试。
 - **shared**:snapshot 字段 default 解析;`requestWorkspaceHookReview` schema。
 - **bootstrap**:命令 handler(幂等复用 flow、必受 supervise);settle/toggle/revoke 后 `WorkspaceHookAdmissionUpdated` 重算;投影写入/清空 snapshot 字段;prompt-turn 不再 park(改写 `v4-native-commands.test.ts:968` 起五案、`v4-native-queue.test.ts` 三案为"直接 TurnStarted + AdmissionUpdated")。
-- **ui**:banner 显隐/dismiss 幂等 key/去审核动作；Hook 行只在未信任且有匹配 generation 时显示“信任”，成功后刷新消失；旧 panel/状态徽章不渲染；i18n zh/en parity。
+- **ui**:图标与浮层显隐、已读/忽略幂等 key、去审核动作；Hook 行只在未信任且有匹配 generation 时显示“信任”，成功后刷新消失；旧 panel/状态徽章不渲染；i18n zh/en parity。
 - 手册:`docs/testing/workspace-hook-trust-manual-acceptance.md` §1 重写为软门禁验收。
 
 ## 5. 明确不做(本期)
 
-- 会话创建时(首个 prompt 之前)即推送 pendingCount——首次评估仍发生在 activate();提示条最早出现于第一条消息之后,与旧行为的拦截时点一致。
+- 会话创建时(首个 prompt 之前)即推送 pendingCount——首次评估仍发生在 activate();图标最早出现于第一条消息之后,与旧行为的拦截时点一致。
 - 批量选择、全选和设置页内撤销入口。
 - 区分"本地刚编辑的 hook"与"仓库带来的 hook"的差异化确认。

@@ -38,6 +38,28 @@ const outgoingData = z.strictObject({
   payload: z.json(),
   client_ts: unixSeconds.optional(),
 });
+export const mobilePushRunSchema = z.strictObject({
+  workspace_id: identifier,
+  session_id: identifier,
+  run_id: identifier,
+});
+export type MobilePushRun = z.infer<typeof mobilePushRunSchema>;
+export const mobilePushEventSchema = z.strictObject({
+  version: z.literal(1),
+  locale: z.enum(["zh-CN", "en-US"]).optional(),
+  session_title: z.string().max(512).optional(),
+  desktop_platform: z.enum(["windows", "macos", "linux"]).optional(),
+  event_id: identifier,
+  kind: z.enum(["question", "approval", "plan", "task_completed", "task_failed"]),
+  workspace_id: identifier,
+  session_id: identifier,
+  run_id: identifier,
+  interaction_id: identifier.optional(),
+  state: z.enum(["open", "resolved"]),
+  occurred_at: unixSeconds,
+});
+export type MobilePushEvent = z.infer<typeof mobilePushEventSchema>;
+export type MobilePushStatus = "available" | "unavailable" | "unknown";
 const outgoingMessage = z.discriminatedUnion("type", [authInit, pairStatusQuery, outgoingData]);
 export type WebRemoteControlRelayV2PairStatusQuery = z.infer<typeof pairStatusQuery>;
 export type WebRemoteControlRelayV2OutgoingData = z.infer<typeof outgoingData>;

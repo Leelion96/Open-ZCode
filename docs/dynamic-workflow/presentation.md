@@ -1278,6 +1278,20 @@ padding is the breathing room above a bubble, and with no bubble under it the ro
 would float a turn's height below the previous turn. Its first node therefore sits at the
 ordinary flow gap below the previous turn.
 
+The space at the **top of the transcript** is a separate rule, owned by the timeline. The
+status capsule floats over the conversation's top-right corner (16 px down, 34 px high as a
+pill), so whatever starts the transcript needs 56 px of clearance or the capsule covers it
+and swallows its clicks. A hub launch is the case that showed this: its turn is the
+session's first and has no bubble, so the card's Configure, Stop and `⤢` lay under the
+pill. The timeline therefore wraps the **session's first turn** in a 56 px top inset, and
+that turn drops its own top padding, bubble or not: a first turn that opens with a bubble
+sits where it always did (the inset replaces its padding), and a first turn without one sits
+below the capsule instead of under it. The inset belongs to the turn's virtual item, not to
+the list, so measuring, jumping to the first turn and keeping the reading position when
+older history is prepended all count it. It applies only while the session's first turn is
+loaded (no older history left to fetch) and no imported share sits above it (that block has
+its own top spacing); otherwise the first loaded turn keeps the per-turn rule above.
+
 The header is one line: the icon, the **kind word** for the run's status ("Workflow
 started / running / completed / errored / stopped", shimmering while running; "Workflow
 superseded" / 「工作流已被替代」 for a run stopped by an amendment), the name, a

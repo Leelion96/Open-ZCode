@@ -366,8 +366,8 @@ describe("background task control", () => {
           async run() {
             throw new Error("run should not be called");
           },
-          async stopTask(taskId) {
-            stoppedTaskIds.push(taskId);
+          async stopTask(taskId, options) {
+            stoppedTaskIds.push(`${taskId}:${options?.initiator}`);
             return {
               agentId: taskId,
               agentType: "general-purpose",
@@ -384,7 +384,8 @@ describe("background task control", () => {
 
     const result = await runtime.cancelBackgroundTask("agent_bg");
 
-    expect(stoppedTaskIds).toEqual(["agent_bg"]);
+    // GUI 入口是用户的停止：停止者随 stopTask 传给 subagent，终态通知据此写 "was stopped by user"。
+    expect(stoppedTaskIds).toEqual(["agent_bg:user"]);
     expect(result).toMatchObject({
       cancelled: true,
       status: "cancelled",
@@ -467,6 +468,7 @@ describe("background task control", () => {
     const aborted = deferred();
     let abortObserved = false;
     const notifications: string[] = [];
+    const notificationOriginMetas: unknown[] = [];
     const notificationArtifactStates: Array<{ exists: boolean; content: string }> = [];
     const emittedEvents: Array<{ type: SessionEventType; payload: unknown }> = [];
     const backgroundCompletedAbortStates: boolean[] = [];
@@ -486,6 +488,7 @@ describe("background task control", () => {
           content: outputFile && existsSync(outputFile) ? readFileSync(outputFile, "utf8") : "",
         });
         notifications.push(notification.text);
+        notificationOriginMetas.push(notification.originMeta);
       },
       outputRootDir,
       runtimeTaskRegistry: registry,
@@ -523,7 +526,7 @@ describe("background task control", () => {
         workspaceRoot: outputRootDir,
       });
 
-      const stopped = await port.stopTask?.("agent_stop");
+      const stopped = await port.stopTask?.("agent_stop", { initiator: "model" });
       await aborted.promise;
 
       expect(stopped).toMatchObject({
@@ -535,7 +538,19 @@ describe("background task control", () => {
         status: "killed",
       });
       expect(notifications).toHaveLength(1);
-      expect(notifications[0]).toContain("<status>stopped</status>");
+      expect(notifications[0]).toContain("<status>killed</status>");
+      // TaskStop 传入的停止者进入通知；killed 通知不带 usage。
+      expect(notifications[0]).toContain('<summary>Agent "Stop me" was stopped by ZCode</summary>');
+      expect(notifications[0]).not.toContain("<usage>");
+      // 终态随 originMeta 结构化下发；killed 不带 error。
+      expect(notificationOriginMetas).toEqual([
+        {
+          backgroundSource: "subagent",
+          title: "Stop me",
+          workId: "agent_stop",
+          subagentResult: { status: "killed" },
+        },
+      ]);
       expect(notificationArtifactStates).toEqual([
         expect.objectContaining({
           exists: true,
@@ -550,6 +565,94 @@ describe("background task control", () => {
       await rm(outputRootDir, { force: true, recursive: true });
     }
   });
+
+  // 停止者全链路：停止入口 → runtime.stopBackgroundTask → subagent stopTask → killed 通知 summary。
+  it.each([
+    { initiator: "model", summary: "was stopped by ZCode" },
+    { initiator: "user", summary: "was stopped by user" },
+  ])(
+    "carries the $initiator stop initiator from the stop entry into the killed notification",
+    async ({ initiator, summary }) => {
+      const sessionId = createSessionId(`background-control-agent-initiator-${initiator}`);
+      const turnId = createTurnId(`turn_background_control_agent_initiator_${initiator}`);
+      const outputRootDir = await mkdtemp(
+        join(tmpdir(), "zcode-background-control-agent-initiator-"),
+      );
+      const aborted = deferred();
+      const notifications: string[] = [];
+      const registry = new InMemoryRuntimeTaskRegistry();
+      const port = createExploreSubagentPort({
+        createAgentId: () => "agent_initiator",
+        emitParentEvent: async () => {},
+        enqueueParentTaskNotification: (notification) => {
+          notifications.push(notification.text);
+        },
+        outputRootDir,
+        runtimeTaskRegistry: registry,
+        async runExploreAgent(request, options) {
+          await request.onSessionReady?.();
+          return await new Promise((_, reject) => {
+            options?.signal?.addEventListener(
+              "abort",
+              () => {
+                aborted.resolve();
+                reject(options.signal?.reason ?? new Error("aborted"));
+              },
+              { once: true },
+            );
+          });
+        },
+      });
+      const runtime = createTestAgentRuntime(
+        sessionId,
+        { mode: "build" },
+        {
+          eventStore: createTestSessionEventStore(),
+          runtimeTaskRegistry: registry,
+          subagentPort: port,
+        },
+      );
+
+      try {
+        await port.start?.({
+          agentType: "general-purpose",
+          description: "Stop me",
+          parentToolCallId: "tool_agent_initiator",
+          prompt: "Wait until stopped",
+          sessionId,
+          trace: {
+            traceId: "trace_background_control_agent_initiator",
+            spanId: "span_background_control_agent_initiator",
+            sessionId,
+            turnId,
+          },
+          turnId,
+          workingDirectory: outputRootDir,
+          workspaceRoot: outputRootDir,
+        });
+
+        if (initiator === "model") {
+          // 模型入口：TaskStop 用 runtime 交给工具执行上下文的同一个绑定。
+          await taskStopToolEntry.handler({ task_id: "agent_initiator" }, {
+            backgroundTaskControlPort: {
+              stopBackgroundTask: runtime.stopBackgroundTask.bind(runtime),
+            },
+            toolCallId: "tool_task_stop",
+          } as never);
+        } else {
+          // App 入口：v4 cancelBackgroundWork 调 cancelBackgroundTask。
+          await runtime.cancelBackgroundTask("agent_initiator");
+        }
+        await aborted.promise;
+
+        expect(registry.get("agent_initiator")).toMatchObject({ status: "killed" });
+        expect(notifications).toHaveLength(1);
+        expect(notifications[0]).toContain(`<summary>Agent "Stop me" ${summary}</summary>`);
+      } finally {
+        await rm(outputRootDir, { force: true, recursive: true });
+      }
+    },
+  );
 
   it("cleans up a background subagent when startup event emission fails before run starts", async () => {
     const sessionId = createSessionId("background-control-agent-startup-failure");

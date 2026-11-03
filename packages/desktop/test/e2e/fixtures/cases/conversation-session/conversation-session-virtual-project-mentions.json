@@ -9,6 +9,13 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "virtual-project-mentions-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示 session_title 旁路缺少 fixture；固定标题响应隔离标题生成，主用例不验证标题内容。"
+    },
+    {
       "id": "vp14-existing-task",
       "kind": "main",
       "source": "synthetic",

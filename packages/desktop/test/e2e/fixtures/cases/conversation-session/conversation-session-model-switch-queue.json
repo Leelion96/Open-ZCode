@@ -9,6 +9,13 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-model-switch-queue-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "upstream-model-switch-held-running-slow",
       "kind": "main",
       "source": "synthetic",
@@ -16,7 +23,7 @@
       "syntheticReason": "模型切换 held queue 需要当前轮保持 streaming，真实模型可能过快完成。"
     },
     {
-      "id": "upstream-model-switch-held-send-now-secondary",
+      "id": "upstream-model-switch-held-send-now-primary",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
@@ -30,7 +37,7 @@
       "syntheticReason": "queued text 消费前切模型需要当前轮保持 streaming，真实模型可能过快完成。"
     },
     {
-      "id": "upstream-model-switch-queue-auto-drain-secondary",
+      "id": "upstream-model-switch-queue-auto-drain-primary",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",

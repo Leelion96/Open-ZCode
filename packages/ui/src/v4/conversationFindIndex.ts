@@ -1,7 +1,4 @@
-import type {
-  AssistantTextRow,
-  UserInputRow,
-} from "@zcode/shared/zcode-protocol-v4";
+import type { AssistantTextRow, UserInputRow } from "@zcode/shared/zcode-protocol-v4";
 import type { ChatSearchResultHighlightRequest } from "@/v4/legacyChatViewTypes.js";
 import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
 import { projectAssistantCodeComments } from "@/lib/assistantCodeComment.js";
@@ -37,7 +34,18 @@ interface ConversationFindTarget {
   rowId: number;
   rowKind: ConversationFindRowKind;
   text: string;
+  normalizedText: string;
 }
+
+type FindOptions = { projectAssistantCodeComments?: boolean };
+type FindTextCache = WeakMap<
+  UserInputRow | AssistantTextRow,
+  {
+    projected: boolean;
+    text: string;
+    normalizedText: string;
+  }
+>;
 
 export function normalizeConversationFindQuery(query: string): string {
   return query.trim().toLocaleLowerCase();
@@ -48,6 +56,7 @@ function addTargetsForUnit(
   unit: ConversationTurnRenderUnit,
   unitIndex: number,
   projectCodeComments: boolean,
+  cache?: FindTextCache,
 ) {
   const latestAssistantState = unit.latestAssistantTextRow?.state;
   const projectUnitCodeComments =
@@ -56,39 +65,71 @@ function addTargetsForUnit(
       latestAssistantState === "complete" ||
       latestAssistantState === "interrupted");
   for (const row of unit.visibleUserInputs) {
-    targets.push(createTarget(unitIndex, row));
+    targets.push(createTarget(unitIndex, row, false, cache));
   }
   for (const row of unit.assistantTextRows) {
-    targets.push({
-      ...createTarget(unitIndex, row),
-      text:
-        projectUnitCodeComments
-          ? projectAssistantCodeComments(row.text, {
-              streaming: row.state === "streaming",
-            }).visibleText
-          : row.text,
-    });
+    targets.push(createTarget(unitIndex, row, projectUnitCodeComments, cache));
   }
 }
 
 function createTarget(
   unitIndex: number,
   row: UserInputRow | AssistantTextRow,
+  projected: boolean,
+  cache?: FindTextCache,
 ): ConversationFindTarget {
+  let prepared = cache?.get(row);
+  if (!prepared || prepared.projected !== projected) {
+    const text =
+      projected && row.kind === "assistantText"
+        ? projectAssistantCodeComments(row.text, { streaming: row.state === "streaming" })
+            .visibleText
+        : row.text;
+    prepared = { projected, text, normalizedText: text.toLocaleLowerCase() };
+    cache?.set(row, prepared);
+  }
   return {
     unitIndex,
     rowId: row.rowId,
     rowKind: row.kind,
-    text: row.text,
+    text: prepared.text,
+    normalizedText: prepared.normalizedText,
   };
 }
 
 export function buildConversationFindIndex(
   units: readonly ConversationTurnRenderUnit[],
   query: string,
-  options: { projectAssistantCodeComments?: boolean } = {},
+  options: FindOptions = {},
+): ConversationFindIndex {
+  return buildFindIndex(units, query, options);
+}
+
+/** query 逐字变化时不能反复投影和转小写全部历史；弱引用跟随不可变 row 的生命期。 */
+export function createConversationFindIndexBuilder() {
+  const cache: FindTextCache = new WeakMap();
+  return (units: readonly ConversationTurnRenderUnit[], query: string, options: FindOptions = {}) =>
+    buildFindIndex(units, query, options, cache);
+}
+
+function buildFindIndex(
+  units: readonly ConversationTurnRenderUnit[],
+  query: string,
+  options: FindOptions,
+  cache?: FindTextCache,
 ): ConversationFindIndex {
   const normalizedQuery = normalizeConversationFindQuery(query);
+  if (!normalizedQuery) {
+    return {
+      query: normalizedQuery,
+      matches: [],
+      matchCount: 0,
+      loadedRowCount: units.reduce(
+        (count, unit) => count + unit.visibleUserInputs.length + unit.assistantTextRows.length,
+        0,
+      ),
+    };
+  }
   const targets: ConversationFindTarget[] = [];
   units.forEach((unit, unitIndex) =>
     addTargetsForUnit(
@@ -96,21 +137,13 @@ export function buildConversationFindIndex(
       unit,
       unitIndex,
       options.projectAssistantCodeComments === true,
+      cache,
     ),
   );
 
-  if (!normalizedQuery) {
-    return {
-      query: normalizedQuery,
-      matches: [],
-      matchCount: 0,
-      loadedRowCount: targets.length,
-    };
-  }
-
   const matches: ConversationFindMatch[] = [];
   for (const target of targets) {
-    const normalizedText = target.text.toLocaleLowerCase();
+    const normalizedText = target.normalizedText;
     let searchStart = 0;
     let rowMatchIndex = 0;
     while (searchStart < normalizedText.length) {
@@ -191,7 +224,11 @@ export function resolveConversationFindActiveMatch(
 }
 
 function normalizeSearchResultProbeText(text: string): string {
-  return text.replace(/^\.{3}/, "").replace(/\.{3}$/, "").replace(/\s+/g, " ").trim();
+  return text
+    .replace(/^\.{3}/, "")
+    .replace(/\.{3}$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function includesProbe(sourceText: string, probe: string): boolean {
@@ -210,9 +247,7 @@ export function resolveSearchResultHighlightMatch(
 
   const snippet = request.snippet?.trim();
   if (snippet) {
-    const snippetMatch = index.matches.find((match) =>
-      includesProbe(match.sourceText, snippet),
-    );
+    const snippetMatch = index.matches.find((match) => includesProbe(match.sourceText, snippet));
     if (snippetMatch) {
       return snippetMatch;
     }

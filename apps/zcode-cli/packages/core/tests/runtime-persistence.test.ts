@@ -154,6 +154,80 @@ function registerShellSnapshotProbe(
 
 describe("AgentRuntime session persistence", () => {
   it.each([true, false])(
+    "preserves Plan reminder cadence and exit boundaries across cold resume with MCS=%s",
+    async (mcs) => {
+      const sessionId = createSessionId(`plan-reminder-resume-${mcs}`);
+      const store = createRecordingSessionStore();
+      const requests: ModelInputMessage[][] = [];
+      const makeRuntime = () =>
+        createTestAgentRuntime(
+          sessionId,
+          { mode: "yolo", planEnabled: true, workingDirectory: "/tmp/plan-reminder-resume" },
+          {
+            eventStore: createTestSessionEventStore(),
+            sessionStore: store,
+            modelFactory: createTestModelFactory({
+              properties: { supportsMidConversationSystem: mcs },
+              async generateText(request) {
+                requests.push(request.messages);
+                return {
+                  text: "ok",
+                  finishReason: "stop",
+                  usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                };
+              },
+            }),
+          },
+        );
+      const full = "Plan mode is active. The user indicated";
+      const sparse = "Plan mode still active (see full instructions";
+      const exited = "You have exited plan mode.";
+      const count = (marker: string) =>
+        providerMessagesToText(requests.at(-1)!).split(marker).length - 1;
+      const runtime = makeRuntime();
+      // 纯文本轮次：本轮 prompt 在模型回应前不计入，所以第七个 prompt 的轮首请求才发简短提醒。
+      for (let turn = 0; turn < 6; turn += 1) await runtime.executeTurn(`Plan step ${turn}`);
+      expect([count(full), count(sparse)]).toEqual([1, 0]);
+      runtime.beginShutdown();
+
+      const resumed = makeRuntime();
+      await resumed.resumeFromStore();
+      await resumed.executeTurn("Continue planning after restart");
+      expect([count(full), count(sparse)]).toEqual([1, 1]);
+      for (let turn = 0; turn < 5; turn += 1) await resumed.executeTurn(`Next step ${turn}`);
+      expect([count(full), count(sparse)]).toEqual([1, 1]);
+      await resumed.executeTurn("Next step 5");
+      expect([count(full), count(sparse)]).toEqual([1, 2]);
+      await resumed.setExecutionState({ planEnabled: false });
+      await resumed.executeTurn("Continue outside plan mode");
+      expect(count(exited)).toBe(1);
+      resumed.beginShutdown();
+
+      const afterExit = makeRuntime();
+      await afterExit.resumeFromStore();
+      expect(afterExit.getPlanEnabled()).toBe(false);
+      await afterExit.executeTurn("Continue after second restart");
+      expect([count(full), count(sparse), count(exited)]).toEqual([1, 2, 1]);
+      await afterExit.setExecutionState({ planEnabled: true });
+      await afterExit.executeTurn("Start a new plan");
+      expect([count(full), count(sparse), count(exited)]).toEqual([2, 2, 1]);
+
+      const notices = (await store.messages({ sessionID: sessionId })).filter((message) =>
+        message.parts.some(
+          (part) =>
+            part.type === "text" &&
+            ["runtime_mode", "plan_mode_exit"].includes(
+              String(part.metadata?.runtimeMessage?.source),
+            ),
+        ),
+      );
+      // 落盘格式与其他动态公告相同，由 runtime-context-announcements 覆盖。
+      expect(notices).toHaveLength(5);
+      afterExit.beginShutdown();
+    },
+  );
+
+  it.each([true, false])(
     "冷恢复优先读取独立执行状态 Plan=%s，保留旧会话字段",
     async (planEnabled) => {
       const sessionId = createSessionId("independent-plan-cold-resume");
@@ -1218,7 +1292,7 @@ describe("AgentRuntime session persistence", () => {
     expect(interactiveRuntime.getPlanEnabled()).toBe(true);
   });
 
-  it("does not emit date change reminder on the first resumed turn", async () => {
+  it("compares resumed dates against the last persisted announcement", async () => {
     const sessionId = createSessionId("runtime-persistence-date-resume");
     const store = createRecordingSessionStore();
     const eventStore = createTestSessionEventStore();
@@ -1266,21 +1340,25 @@ describe("AgentRuntime session persistence", () => {
             };
           },
         } as never),
-        now: () => resumedDates[Math.min(resumedNowIndex++, resumedDates.length - 1)]!,
+        now: () => resumedDates[resumedNowIndex]!,
         sessionStore: store,
       },
     );
 
     await resumedRuntime.resumeFromStore();
     await resumedRuntime.executeTurn("first resumed prompt");
+    resumedNowIndex = 1;
     await resumedRuntime.executeTurn("second resumed prompt");
 
     const requestTexts = resumedRequests.map((messages) =>
       messages.map((message) => String(message.content)).join("\n"),
     );
-    expect(requestTexts[0]).not.toContain("The date has changed.");
+    expect(requestTexts[0]).toContain("The date has changed. Today's date is now 2026-06-03.");
+    expect(requestTexts[0]).toContain("Today's date is 2026-06-02.");
     expect(requestTexts[1]).toContain("The date has changed. Today's date is now 2026-06-04.");
-    expect(requestTexts[1]).toContain("DO NOT mention this to the user explicitly");
+    expect(requestTexts[1]).toContain(
+      "No need to announce the new date — the user's own clock shows it.",
+    );
   });
 
   it("resumes compact history even when persisted rewind metadata points before compact", async () => {
@@ -1972,7 +2050,8 @@ describe("AgentRuntime session persistence", () => {
 
     const providerText = providerMessagesToText(resumedMessages);
     expect(providerText).toContain("- Shell: zsh");
-    expect(providerText).not.toContain("- Shell: CMD");
+    expect(providerText).toContain("- Shell: CMD");
+    expect(providerText.indexOf("- Shell: zsh")).toBeLessThan(providerText.indexOf("- Shell: CMD"));
     expect(providerText).toContain("The Bash tool shell is CMD.");
   });
 
@@ -2631,10 +2710,68 @@ describe("AgentRuntime session persistence", () => {
     expect(providerText).toContain(
       'Called the Read tool with the following input: {"file_path":"long.md"}',
     );
-    expect(providerText).toContain("The file is too large to display in full");
-    expect(providerText).toContain("partial view");
+    expect(providerText).toContain("[Truncated: PARTIAL view \u2014 ");
+    expect(providerText).toMatch(/showing lines 1-\d+ of 1800 total/);
     expect(providerText).toContain("1\t1:");
   });
+
+  it.each([true, false])(
+    "sends the Read partial-view banner after the tool result, not inside it (MCS=%s)",
+    async (mcs) => {
+      const workingDirectory = resolve("/tmp/zcode-read-partial-banner");
+      const filePath = resolve(workingDirectory, "big.md");
+      const content = Array.from(
+        { length: 1800 },
+        (_, index) => `${index + 1}: ${"x".repeat(120)}`,
+      ).join("\n");
+      const requests: ModelInputMessage[][] = [];
+      const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+      const runtime = createTestAgentRuntime(
+        createSessionId(`read-partial-banner-${mcs}`),
+        { mode: "yolo", workingDirectory },
+        {
+          eventStore: createTestSessionEventStore(),
+          fileSystemPort: createTextAttachmentFileSystem(filePath, content),
+          modelFactory: createTestModelFactory({
+            properties: { supportsMidConversationSystem: mcs },
+            async generateText(request) {
+              requests.push(request.messages);
+              return requests.length === 1
+                ? {
+                    text: "",
+                    finishReason: "tool-calls",
+                    toolCalls: [{ id: "read-big", name: "Read", input: { file_path: filePath } }],
+                    usage,
+                  }
+                : { text: "done", finishReason: "stop", usage };
+            },
+          } as never),
+        },
+      );
+
+      await runtime.executeTurn("read the big file");
+
+      const messages = requests[1]!;
+      const toolIndex = messages.findIndex((message) => message.role === "tool");
+      const toolText = providerContentToText(messages[toolIndex]!.content);
+      const banner = `[Truncated: PARTIAL view — ${filePath}: showing lines 1-`;
+      expect(toolText.startsWith("1\t1:")).toBe(true);
+      if (mcs) {
+        // MCS：tool_result 只有正文，提示是紧随其后的 system 消息。
+        expect(toolText).not.toContain("Truncated");
+        expect(messages[toolIndex + 1]).toMatchObject({
+          role: "system",
+          content: expect.stringContaining(banner),
+        });
+      } else {
+        // 非 MCS：提示以 system-reminder 形式排在正文之后。
+        const afterLines = providerMessagesToText(messages.slice(toolIndex));
+        expect(afterLines.indexOf(`<system-reminder>\n${banner}`)).toBeGreaterThan(
+          afterLines.indexOf("1\t1:"),
+        );
+      }
+    },
+  );
 
   it("reads text attachments above the Read full-read size guard through a partial Read view", async () => {
     const sessionId = createSessionId("runtime-persistence-too-large-attachment-reference");
@@ -2724,8 +2861,8 @@ describe("AgentRuntime session persistence", () => {
     expect(providerText).toContain(
       'Called the Read tool with the following input: {"file_path":"huge-lines.md"}',
     );
-    expect(providerText).toContain("The file is too large to display in full");
-    expect(providerText).toContain("Showing a partial view");
+    expect(providerText).toContain("[Truncated: PARTIAL view \u2014 ");
+    expect(providerText).toMatch(/showing lines 1-\d+ of 2100 total/);
     expect(providerText).toContain("1\t1:");
     expect(providerText).not.toContain("2000\t2000:");
   });

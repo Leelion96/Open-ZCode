@@ -16,7 +16,7 @@ import { toToolJsonSchema } from "./json-schema.js";
 export const FILL_WORKFLOW_HOLE_TOOL_NAME = "FillWorkflowHole";
 
 /**
- * 「恰好给一个函数体来源」的违规说明。与 `CREATE_WORKFLOW_SOURCE_ERROR` 同一个位置、同一种语气；
+ * 「恰好给一个函数体来源」的违规说明。与 `CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR` 同一个位置、同一种语气；
  * 与 AmendWorkflow 不同的是两个都不给在这里**也是**违规——没有可沿用的函数体。
  */
 export const FILL_WORKFLOW_HOLE_SOURCE_ERROR =

@@ -507,7 +507,7 @@ HAVING COUNT(DISTINCT device_mid) >= 100
 - **`packages/ui` 不在范围内**：渲染进程代码起不了子进程，renderer heap 样本经 preload 桥上报。
 - **实现位置**：`scripts/ci/ci-telemetry-keyword-guard.mjs`，由 `scripts/ci/ci-repo-hygiene.mjs`
   在 CI 第一站调用（`.gitlab/ci/30-build.yml`），脚本单测在
-  `scripts/ci/ci-telemetry-keyword-guard.test.mjs`（已接入 `pnpm test:unit`，含「当前仓库必须通过」
+  `scripts/ci/ci-telemetry-keyword-guard.test.mjs`（已接入 `pnpm test:engineering`，含「当前仓库必须通过」
   这条回归）。本地可直接 `node scripts/ci/ci-telemetry-keyword-guard.mjs`。
 - **所有遥测模块必须遵守**：新增或拆分的探针、来源与聚合模块都要按该命名落文件或落进 telemetry 目录，
   否则等于自动脱离门禁。

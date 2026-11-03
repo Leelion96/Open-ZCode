@@ -1,5 +1,7 @@
 # 闲时任务 · 术语表与领域模型
 
+> 2026-10-21 修订：关闭自动补号。排队过期、运行中 3102 和遗留无票任务失败收口；仅显式创建、Continue 或重试可取新票。下述历史换票设计由 [技术设计 §4.6](./tech-design.md#46-票据过期停止自动取号2026-10-21) 取代。
+
 > **状态：已实现；本文是 2026-07-22 的代码事实快照。** 当前实现包含 `offPeak` 领域、
 > `off_peak_tasks`、ticket 同步、scheduler/host 派发、per-turn idle provider、UI 和 mock。
 > `decisions.md` 是历史 ADR；早期 D11/D25/D36 等条目须按后续 superseded 标记阅读。

@@ -58,7 +58,7 @@ Read this file in full before authoring. Reread truncated ranges in smaller call
 ### External resources
 
 - Floating UI Core 1.7.3 / DOM 1.7.4, Lucide 1.17.0, and D3 7.9.0 are bundled. Keep their prescribed script URLs unchanged: the Desktop host resolves those exact URLs locally, and standalone export embeds the files. Use a literal `<script src="...">` for D3 so exports remain offline; do not add another copy or fetch a fallback. Other versions, query strings, libraries, fonts, and map data are not bundled by this rule.
-- The CSP allows only `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`, `fonts.googleapis.com`, `fonts.gstatic.com`, and `fonts.bunny.net`. Other origins are blocked and fail silently.
+- The CSP allows only `cdnjs.cloudflare.com`, `esm.sh`, `cdn.jsdelivr.net`, `unpkg.com`, `fonts.googleapis.com`, `fonts.gstatic.com`, `fonts.bunny.net`, and `zcode.z.ai`. Other origins are blocked and fail silently.
 
 ## Exporting an existing visualization
 

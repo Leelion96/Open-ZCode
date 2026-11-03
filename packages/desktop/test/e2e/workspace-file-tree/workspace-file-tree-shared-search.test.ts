@@ -45,6 +45,32 @@ describe("工作区文件树共享搜索 E2E", () => {
     await waitForTestIdByDom(TID_PREVIEW_PANE, {
       timeoutMsg: "文件树搜索结果点击后没有打开 PreviewPane",
     });
+    await toggleFileNavigation(true);
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (treeId, previewId) => {
+            const trees = Array.from(
+              document.querySelectorAll<HTMLElement>(`[data-testid="${treeId}"]`),
+            );
+            return trees.some((tree) => {
+              const pane = tree.closest("[data-file-manager-pane]");
+              const preview = pane?.querySelector<HTMLElement>(`[data-testid="${previewId}"]`);
+              if (!preview) return false;
+              const treeBounds = tree.getBoundingClientRect();
+              const previewBounds = preview.getBoundingClientRect();
+              return (
+                treeBounds.width > 0 &&
+                previewBounds.width > 0 &&
+                treeBounds.right <= previewBounds.left
+              );
+            });
+          },
+          TID_WORKSPACE_FILE_TREE_PANEL,
+          TID_PREVIEW_PANE,
+        ),
+      { timeout: 10000, timeoutMsg: "文件树应显示在文件预览左侧" },
+    );
   });
 
   it("搜索结果中的深层目录点击后会回到树态并逐级展开定位", async function () {
@@ -76,9 +102,33 @@ describe("工作区文件树共享搜索 E2E", () => {
     await writeFile(JAVA_FILE, "public final class UserProfileService {}\n", "utf-8");
     await writeFile(secondFile, "public final class NavigationPreference {}\n", "utf-8");
 
+    // 前序用例已建立搜索索引；重启后读取本例新建文件，避免依赖索引刷新时机。
+    await reloadElectronSessionPreservingBrowserProfile(browser);
+
     await waitForDefaultWorkspaceReady();
     await openFileFromCommandCenter("UserProfileService.java");
     await toggleFileNavigation(false);
+    await openFileFromCommandCenter("NavigationPreference.java");
+    await waitForFileNavigationExpanded(false);
+
+    // 空白新标签不能继承收起状态，否则没有可选择文件的入口。
+    await $("[data-side-pane-add-tab-trigger]").click();
+    const filesLauncher = $('[data-side-pane-open-tab-item="files"]');
+    await filesLauncher.waitForDisplayed({ timeout: 10000 });
+    await filesLauncher.click();
+    await waitForFileNavigationExpanded(true);
+    const highlight = await browser.execute(() => {
+      const pane = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-file-manager-pane]"),
+      ).find((element) => element.getClientRects().length > 0);
+      const separator = pane?.querySelector<HTMLElement>('[role="separator"]');
+      if (!separator) return null;
+      const style = getComputedStyle(separator, "::after");
+      return { top: style.top, bottom: style.bottom, radius: style.borderRadius };
+    });
+    expect(highlight).toEqual({ top: "0px", bottom: "0px", radius: "0px" });
+    await mkdir(".e2e-artifacts", { recursive: true });
+    await browser.saveScreenshot(".e2e-artifacts/file-manager-navigation.png");
     await openFileFromCommandCenter("NavigationPreference.java");
     await waitForFileNavigationExpanded(false);
 

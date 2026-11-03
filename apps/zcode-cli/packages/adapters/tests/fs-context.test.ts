@@ -868,7 +868,8 @@ describe("Node file and context adapters", () => {
 
       expect(snapshot.envInfo.cwd).toBe(dir);
       expect(snapshot.envInfo.shell).toBe("zsh");
-      expect(snapshot.envInfo.isGitRepository).toBe(false);
+      // 有 .git 就是仓库，与项目根同一个事实；原来按 git 进程判定，空 .git 被当成"不是仓库"。
+      expect(snapshot.envInfo.isGitRepository).toBe(true);
       expect(snapshot.userInstructions?.content).toBe("project instructions");
       expect(snapshot.projectContext).toMatchObject({
         type: "node",
@@ -1115,6 +1116,54 @@ describe("Node file and context adapters", () => {
       expect(statusText).toContain('run "git status" using Bash');
       expect(statusText).not.toContain("git status truncated after 20 entries");
       expect(statusText.length).toBeGreaterThan(2000);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("reads the unborn branch from a nested working directory", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-context-git-unborn-"));
+    const adapter = createNodeContextSourceAdapter();
+    try {
+      await runGit(dir, ["init"]);
+      await runGit(dir, ["checkout", "-B", "topic/no-commits"]);
+      const nested = join(dir, "nested");
+      await mkdir(nested);
+      const snapshot = await adapter.resolveContextSources({ workingDirectory: nested });
+      expect(snapshot.envInfo.gitBranch).toBe("topic/no-commits");
+      expect(snapshot.envInfo.recentCommits).toEqual([]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("reads an unborn branch in a linked worktree instead of the parent repository HEAD", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zcode-context-git-worktree-"));
+    const adapter = createNodeContextSourceAdapter();
+    try {
+      await runGit(dir, ["init"]);
+      await runGit(dir, ["checkout", "-B", "main"]);
+      await runGit(dir, [
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--allow-empty",
+        "-m",
+        "initial",
+      ]);
+      const worktree = join(dir, "linked");
+      await runGit(dir, ["worktree", "add", "-b", "topic/worktree", worktree]);
+      // 链接工作树切到还没有提交的分支：rev-parse --abbrev-ref HEAD 在这里以 128 退出、
+      // 回退成 HEAD；只有读本工作树符号引用的 symbolic-ref 能得到分支名。
+      // 父仓库仍在有提交的 main 上，结果不能是父仓库的 HEAD。
+      await runGit(worktree, ["checkout", "--orphan", "topic/unborn-worktree"]);
+      const snapshot = await adapter.resolveContextSources({ workingDirectory: worktree });
+      expect(snapshot.envInfo.gitBranch).toBe("topic/unborn-worktree");
+      expect(snapshot.envInfo.recentCommits).toEqual([]);
     } finally {
       await rm(dir, { force: true, recursive: true });
     }

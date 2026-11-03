@@ -31,7 +31,8 @@ export function parseAgentMcpServers(
     for (const [serverName, config] of Object.entries(spec)) {
       const normalizedServerName = serverName.trim();
       if (normalizedServerName.length === 0) continue;
-      if (!isMcpServerConfig(config)) {
+      // 内联声明来自 Agent 文档，不能伪造 Host 来源绕过工作区 MCP 信任；具名引用保留权威来源。
+      if (!isMcpServerConfig(config) || "source" in config || "official" in config) {
         invalidServerNames.push(normalizedServerName);
         continue;
       }

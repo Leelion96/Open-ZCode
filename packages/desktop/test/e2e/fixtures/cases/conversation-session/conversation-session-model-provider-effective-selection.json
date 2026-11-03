@@ -9,6 +9,20 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "sr87-effective-selection-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "账号代理曾把非流式标题返回为主请求 SSE；本例显式登记 JSON 标题并通过实际 replay matcher 提供响应。"
+    },
+    {
+      "id": "r95c-effective-selection-main",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "只验证实际请求身份、档位及接纳写入边界；模型文本固定收口，不调用真实套餐。"
+    },
+    {
       "id": "sr87-effective-selection-main",
       "kind": "main",
       "source": "synthetic",

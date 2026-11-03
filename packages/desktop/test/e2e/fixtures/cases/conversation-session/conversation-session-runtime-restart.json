@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-runtime-restart",
+  "spec": "./test/e2e/conversation-session/conversation-session-runtime-restart.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-runtime-restart.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-stop-empty-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "延迟标题旁路响应，按实际 pending 请求确认重启发生在标题生成期间，验证关闭会取消旁路而非等待自然完成。"
+    },
+    {
+      "id": "session-runtime-restart-next",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只验证运行实例重建与历史恢复，固定文本排除模型变化。"
+    },
+    {
+      "id": "session-runtime-restart-running",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "重启必须发生在生成窗口内，固定流避免模型速度改变状态前置。"
+    },
+    {
+      "id": "session-runtime-restart-text",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只验证运行实例重建与历史恢复，固定文本排除模型变化。"
+    },
+    {
+      "id": "owned-restart-desktop-launch",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "通过真实后台 Agent 和受控流验证父 session 重启会关闭所属工作。"
+    },
+    {
+      "id": "owned-restart-desktop-ack",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "通过真实后台 Agent 和受控流验证父 session 重启会关闭所属工作。"
+    },
+    {
+      "id": "owned-restart-desktop-child",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "子代理保持真实在飞请求，父 turn 已结束时由用户重启取消。"
+    },
+    {
+      "id": "owned-restart-mobile-launch",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "通过真实后台 Agent 和受控流验证父 session 重启会关闭所属工作。"
+    },
+    {
+      "id": "owned-restart-mobile-ack",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "通过真实后台 Agent 和受控流验证父 session 重启会关闭所属工作。"
+    },
+    {
+      "id": "owned-restart-mobile-child",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "子代理保持真实在飞请求，父 turn 已结束时由用户重启取消。"
+    },
+    {
+      "id": "browser-restart-desktop-tool",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "真实 BrowserControl 与 Electron 网页跨桌面/手机重启保留，固定模型输出验证同页续用。"
+    },
+    {
+      "id": "browser-restart-desktop-ack",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实 BrowserControl 与 Electron 网页跨桌面/手机重启保留，固定模型输出验证同页续用。"
+    },
+    {
+      "id": "browser-restart-mobile-tool",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "真实 BrowserControl 与 Electron 网页跨桌面/手机重启保留，固定模型输出验证同页续用。"
+    },
+    {
+      "id": "browser-restart-mobile-ack",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实 BrowserControl 与 Electron 网页跨桌面/手机重启保留，固定模型输出验证同页续用。"
+    },
+    {
+      "id": "browser-restart-after-tool",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "真实 BrowserControl 与 Electron 网页跨桌面/手机重启保留，固定模型输出验证同页续用。"
+    },
+    {
+      "id": "browser-restart-after-ack",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实 BrowserControl 与 Electron 网页跨桌面/手机重启保留，固定模型输出验证同页续用。"
+    },
+    {
+      "id": "browser-ambient-next",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "验证未释放的 Agent 页面在下一轮真实 provider 请求中有 ambient 页数和 URL，不依赖模型判断。"
+    }
+  ]
+}

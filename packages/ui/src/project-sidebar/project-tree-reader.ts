@@ -29,7 +29,10 @@ export async function readProjectSidebarTree(input: {
     const result = results[index]!;
     const host = before.hosts[index]!;
     if (result.status === "fulfilled") remote.set(host.id, result.value);
-    else errors.set(host.id, String(result.reason));
+    // Bug 原因：读取开始时 Host 未在线，readTree 必然被 route 拒绝（host-offline）；
+    // 若读取期间连接完成，这条拒绝会与读取后目录的 online 配对，被展示成“连接失败”。
+    // 只记录读取开始时已在线的失败；结束时是否在线由诊断再判断。
+    else if (host.connectionStatus === "online") errors.set(host.id, String(result.reason));
   }
   for (const entry of before.entries) {
     const tree = remote.get(entry.hostId);
@@ -38,7 +41,12 @@ export async function readProjectSidebarTree(input: {
       await input.remoteProjectService.refreshEntry({
         entryId: entry.id,
         expectedLastSyncedAt: entry.lastSyncedAt,
-        project: { projectId: project.id, name: project.name, roots: project.roots },
+        project: {
+          projectId: project.id,
+          name: project.name,
+          roots: project.roots,
+          deleted: project.deleted,
+        },
       });
   }
   const directory = (await input.remoteProjectService?.readDirectory()) ?? before;

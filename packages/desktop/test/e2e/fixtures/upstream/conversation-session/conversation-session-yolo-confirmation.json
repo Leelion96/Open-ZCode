@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-yolo-confirmation",
+  "spec": "./test/e2e/conversation-session/conversation-session-yolo-confirmation.test.ts",
+  "fixtures": []
+}

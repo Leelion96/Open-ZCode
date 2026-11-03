@@ -5,8 +5,9 @@ Workspace/project Hook 来自仓库配置并可执行本地命令，因此默认
 
 ## 在设置中信任
 
-当自然事件命中未信任 Hook 时，对话照常继续，Hook 保持 fail closed。聊天区域会提示存在
-待审核 Workspace Hook；点击后进入 `设置 → 钩子 → 工作区`。
+当自然事件命中未信任 Hook 时，对话照常继续，Hook 保持 fail closed。composer 权限选择器右侧会出现 Hook 图标，右上角圆点表示未读。点击图标查看待审核说明，
+圆点随即消失；点击“去审核”进入 `设置 → 钩子 → 工作区`，点击“忽略”隐藏本次提醒。
+关闭浮层后仍可点击图标重开；Hook 配置版本变化或新会话会重新提醒。
 
 未信任行只在最右侧配置开关左边显示“信任”：
 
@@ -23,7 +24,8 @@ Hook 名称与命令                                      [信任] [开关]
 消息补跑；它最早在下一次真实的新 task/session SessionStart 运行。
 
 声明的命令、matcher 等语义发生变化时 digest 会变化，新声明恢复未信任并重新显示按钮；
-未变化声明继续命中原 Trust。
+未变化声明继续命中原 Trust。`onError: "deny"`（Hook 失败时拦截工具调用）也算执行语义：
+加上或去掉它都会改变 digest；不写或写成 `allow` 不改变 digest。
 
 普通工具执行权限中的 `Allow once` 是另一套权限系统，不属于 Workspace Hook Trust。
 

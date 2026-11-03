@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   READ_IMAGE_MAX_BASE64_BYTES,
   READ_IMAGE_MAX_DIMENSION,
@@ -24,11 +24,25 @@ import {
 import { globHandler } from "../src/tool/handlers/glob.js";
 import { grepHandler } from "../src/tool/handlers/grep.js";
 import { readHandler, readToolEntry } from "../src/tool/handlers/read.js";
+import { readTextFileForModel } from "../src/tool/handlers/read-text.js";
+import { estimateTokens } from "../src/context/utils.js";
 import { writeHandler } from "../src/tool/handlers/write.js";
 import { editHandler } from "../src/tool/handlers/edit.js";
 import { applyPatchHandler } from "../src/tool/handlers/apply-patch.js";
-import { createReadFileStateKey } from "../src/tool/read-file-state.js";
+import { createReadFileStatePathKey } from "../src/tool/read-file-state.js";
 import type { ReadFileStateMap, ToolExecutionContext } from "../src/tool/types.js";
+
+// 只有个别用例替换 token 估算（模拟开头远比全文密的文件）；其余用例用真实估算。
+const tokenEstimate = vi.hoisted(() => ({
+  override: undefined as ((text: string) => number) | undefined,
+}));
+vi.mock("../src/context/utils.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/context/utils.js")>();
+  return {
+    ...actual,
+    estimateTokens: (text: string) => tokenEstimate.override?.(text) ?? actual.estimateTokens(text),
+  };
+});
 
 const workspaceRoot = resolve("/work");
 const projectRoot = join(workspaceRoot, "project");
@@ -181,15 +195,74 @@ describe("file tool handlers", () => {
       truncated: true,
       truncatedByTokenCap: true,
     });
-    expect(output.numLines).toBeGreaterThan(0);
-    expect(output.numLines).toBeLessThan(1800);
-    expect(output.partialViewNotice).toContain("partial view");
-    expect(output.partialViewNotice).toContain(`offset ${output.numLines + 1}`);
+    const banner = new RegExp(
+      `^\\[Truncated: PARTIAL view — ${filePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: showing lines 1-(\\d+) of 1800 total \\((\\d+) tokens, cap 25000\\)\\. Call Read with offset=(\\d+) limit=(\\d+) for the next page, or Grep to find a specific section\\. Do NOT answer from this page alone if the answer may be further in the file\\.\\]$`,
+    ).exec(output.partialViewNotice ?? "");
+    expect(banner).not.toBeNull();
+    const [, shown, tokens, nextOffset, pageLimit] = banner!.map(Number);
+    // 保留行数按 行数 × 上限 / 全文 token × 0.85 估算，下一页从其后一行开始，页长相同。
+    expect(output.numLines).toBe(shown);
+    expect(shown).toBe(Math.floor(((1800 * 25_000) / tokens!) * 0.85));
+    expect(nextOffset).toBe(shown! + 1);
+    expect(pageLimit).toBe(shown);
 
+    // 提示不在 tool_result 内；由工具批次之后的附件单独发送。
     const modelContent = readToolEntry.formatModelContent?.(output);
-    expect(modelContent).toContain("<system-reminder>");
-    expect(modelContent).toContain("partial view");
-    expect(modelContent).toContain("1\t1:");
+    expect(modelContent).not.toContain("<system-reminder>");
+    expect(modelContent).not.toContain("Truncated");
+    expect(String(modelContent).startsWith("1\t1:")).toBe(true);
+  });
+
+  it("keeps a partial view within the token cap when the file starts denser than its average", async () => {
+    // 前 400 行是中文、后 1000 行是 ASCII：全文平均字符密度低于前段。
+    const content = [
+      ...Array.from({ length: 400 }, () => "汉".repeat(100)),
+      ...Array.from({ length: 1000 }, () => "x".repeat(120)),
+    ].join("\n");
+    expect(estimateTokens(content)).toBeGreaterThan(25_000);
+    const fs = createMemoryFileSystem({ [filePath]: content });
+
+    const output = await readHandler({ file_path: filePath }, contextWith(fs));
+
+    // 前段比全文平均更密时，部分视图仍不能超过上限。
+    expect(output).toMatchObject({ type: "text", truncatedByTokenCap: true });
+    expect(output.partialViewNotice).toContain(`showing lines 1-${output.numLines} of 1400 total`);
+    expect(estimateTokens(output.content)).toBeLessThanOrEqual(25_000);
+  });
+
+  it("numbers a partial view from the requested start line", async () => {
+    const content = Array.from(
+      { length: 1800 },
+      (_, index) => `${index + 1}: ${"x".repeat(120)}`,
+    ).join("\n");
+    const fs = createMemoryFileSystem({ [filePath]: content });
+
+    const output = await readTextFileForModel({
+      allowPartialFallback: true,
+      filePath,
+      fileSystemPort: fs,
+      offset: 101,
+    });
+
+    // 视图从第 101 行开始：提示里的行号与下一页 offset 都按真实行号写。
+    expect(output).toMatchObject({ startLine: 101, truncatedByTokenCap: true });
+    const shown = output.numLines!;
+    expect(output.partialViewNotice).toContain(`showing lines 101-${100 + shown} of 1800 total`);
+    expect(output.partialViewNotice).toContain(`offset=${101 + shown} limit=${shown}`);
+  });
+
+  it("fails instead of returning a partial view that still exceeds the token cap", async () => {
+    // 开头 30 个 "#" 就超过上限：按字符缩小 6 次后仍放不下。
+    tokenEstimate.override = (text) =>
+      Math.ceil([...text].reduce((sum, char) => sum + (char === "#" ? 1000 : 0.25), 0));
+    try {
+      const fs = createMemoryFileSystem({ [filePath]: `${"#".repeat(30)}${"a".repeat(200_000)}` });
+      await expect(readHandler({ file_path: filePath }, contextWith(fs))).rejects.toMatchObject({
+        context: { code: "read_output_too_many_tokens", filePath },
+      });
+    } finally {
+      tokenEstimate.override = undefined;
+    }
   });
 
   it("returns Read model content that can be copied into Edit without escaped tab drift", async () => {
@@ -1293,7 +1366,7 @@ function createReadFileState(filePath: string, content: string): ReadFileStateMa
   const revision = revisionFor(filePath, content);
   return new Map([
     [
-      createReadFileStateKey(filePath, 1, undefined),
+      createReadFileStatePathKey(filePath),
       {
         path: filePath,
         content: normalizeTestLineEndings(content),

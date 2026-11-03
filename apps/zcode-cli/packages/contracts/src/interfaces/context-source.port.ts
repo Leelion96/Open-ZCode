@@ -20,6 +20,21 @@ export interface EnvInfo {
   recentCommits?: string[];
 }
 
+/**
+ * 会话上下文用的 Git 事实；不含 cwd、shell 等宿主环境。
+ * isGitRepository 由目录的真实路径（解析链接，与 git 一致）向上查找 `.git` 得到，总是确定的结论，不启动 git 进程。
+ */
+export type GitContext = Pick<
+  EnvInfo,
+  | "isGitRepository"
+  | "gitBranch"
+  | "gitMainBranch"
+  | "gitUser"
+  | "gitStatus"
+  | "gitStatusLines"
+  | "recentCommits"
+>;
+
 export interface UserInstructionsOptions {
   workingDirectory: string;
   projectRoot?: string;
@@ -90,6 +105,17 @@ export interface ContextSourceResolveOptions {
 }
 
 export interface ContextSourcePort {
+  // 只读当前宿主环境，不重新加载指令、Skills 或会话起始 Git 详情。
+  resolveEnvironment(
+    request: Pick<ContextSourceRequest, "workingDirectory" | "effectiveShellDisplayName" | "trace">,
+    options?: ContextSourceResolveOptions,
+  ): Promise<EnvInfo>;
+  // 只读当前目录的 Git 会话上下文。每个上下文窗口只决定一次：请求前历史中既没有 session_context
+  // 也没有 date 时，或 compaction 的保留段没有 session_context 时调用。
+  resolveGitContext(
+    request: Pick<ContextSourceRequest, "workingDirectory" | "trace">,
+    options?: ContextSourceResolveOptions,
+  ): Promise<GitContext>;
   resolveContextSources(
     request: ContextSourceRequest,
     options?: ContextSourceResolveOptions,

@@ -7,16 +7,17 @@ import {
   zcodeProtocolMethods,
   type ZCodeWorkspaceRef,
 } from "@zcode/shared";
-import type { OfficialMcpAuthHeadersPort } from "@zcode/contracts";
+import type {
+  Logger,
+  OfficialMcpAuthHeadersPort,
+  OfficialMcpAuthHeadersResult,
+} from "@zcode/contracts";
 import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
 
 let requestSequence = 0;
 
 /** 端口只需要发反向请求的能力，不需要整个 server context。 */
-export type OfficialMcpAuthRequestContext = Pick<
-  ZCodeProtocolAgentServerContext,
-  "requestClient"
->;
+export type OfficialMcpAuthRequestContext = Pick<ZCodeProtocolAgentServerContext, "requestClient">;
 
 /**
  * 构造经协议反向请求取身份头的端口。
@@ -71,6 +72,62 @@ export function createOfficialMcpAuthHeadersPort(input: {
       } catch {
         // host 不可达/协议错误：按不可用处理。错误详情不带出（可能含请求上下文），
         // host 侧已记录不含秘密的分类日志。
+        return { ok: false, reason: "official_auth_unavailable" };
+      }
+    },
+  };
+}
+
+/**
+ * 官方插件命令进程的身份头端口（技术方案 5.8）：给 agent 侧代理端点用，
+ * 请求带 consumer=plugin-command、不带 mcpKey，host 按「套餐可选」解析。
+ * workspace 取发起命令的会话自己的工作区（端点按 session 记录），不取 agent 进程 cwd。
+ * 和 MCP 端口一样，失败一律走返回值；host 拒绝或传输异常额外记 warn，避免被误判为未登录。
+ */
+export function createOfficialCommandAuthHeadersPort(input: {
+  resolveContext: () => OfficialMcpAuthRequestContext | undefined;
+  logger?: Pick<Logger, "warn">;
+}): {
+  resolveHeaders(request: {
+    pluginId: string;
+    targetOrigin: string;
+    workspace: { workspacePath: string; workspaceIdentity?: string };
+    signal?: AbortSignal;
+  }): Promise<OfficialMcpAuthHeadersResult>;
+} {
+  return {
+    async resolveHeaders(request) {
+      const context = input.resolveContext();
+      if (!context) {
+        return { ok: false, reason: "official_auth_unavailable" };
+      }
+      const identity = request.workspace.workspaceIdentity?.trim();
+      const workspace: ZCodeWorkspaceRef = {
+        ...(identity ? { workspaceIdentity: identity } : {}),
+        workspaceKey: identity || request.workspace.workspacePath,
+        workspacePath: request.workspace.workspacePath,
+      };
+      requestSequence += 1;
+      try {
+        return await context.requestClient(
+          zcodeProtocolMethods.interactionRequestOfficialMcpAuthHeaders,
+          {
+            consumer: "plugin-command",
+            pluginId: request.pluginId,
+            requestId: `official-command-auth:${requestSequence}`,
+            targetOrigin: request.targetOrigin,
+            workspace,
+          },
+          zcodeOfficialMcpAuthHeadersResponseSchema,
+          request.signal ? { signal: request.signal } : {},
+        );
+      } catch (error: unknown) {
+        input.logger?.warn("Official command auth request failed", {
+          error: error instanceof Error ? error.message : String(error),
+          event: "zcode_protocol.official_command_endpoint.auth_request_failed",
+          pluginId: request.pluginId,
+          workspaceKey: workspace.workspaceKey,
+        });
         return { ok: false, reason: "official_auth_unavailable" };
       }
     },

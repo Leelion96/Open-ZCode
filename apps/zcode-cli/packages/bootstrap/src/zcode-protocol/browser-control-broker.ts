@@ -22,10 +22,21 @@ import {
  * Browser，一条 turnEnded 都没有）。子会话登记同理：actor runtime 在 app 实例上登记，actor 的浏览器
  * 请求却经进程级实例到达。
  */
+type BrowserRoute = Omit<ReturnType<typeof buildBrowserRequestContext>, "requestId" | "turnId">;
+interface BrowserConnection {
+  browserId: string;
+  browserGeneration: number;
+  route: BrowserRoute;
+  controlScopeId?: string;
+  opening?: Promise<void>;
+  closing?: boolean;
+}
+
 interface ProtocolBrowserBrokerState {
-  connectionsBySession: Map<string, Map<string, { browserId: string; browserGeneration: number }>>;
+  scopedBackends: Set<string>;
+  connectionsBySession: Map<string, Map<string, BrowserConnection>>;
   /** 客户端不认识的子会话（dwf / core Agent 子代理）→ 发起它的客户端会话。只由 forChildSession 写入。 */
-  childSessionParents: Map<string, string>;
+  childSessionParents: Map<string, { parentSessionId: string }>;
   /** 以父会话为 tab 归属的子会话（core Agent 子代理，tabOwner: "parent"）。 */
   parentTabOwnerChildren: Set<string>;
 }
@@ -39,6 +50,7 @@ function brokerState(context: ZCodeProtocolAgentServerContext): ProtocolBrowserB
   let state = brokerStateByContext.get(context);
   if (!state) {
     state = {
+      scopedBackends: new Set(),
       connectionsBySession: new Map(),
       childSessionParents: new Map(),
       parentTabOwnerChildren: new Set(),
@@ -52,7 +64,7 @@ function brokerState(context: ZCodeProtocolAgentServerContext): ProtocolBrowserB
  * ProtocolBrowserControlBroker —— agent 侧 BrowserControlPort 实现。
  *
  * browser-client 的 agent.browsers.* 每个调用经此把一条 BrowserCommand 变成
- * ZCode Protocol 的 interaction/browserExecute 反向请求，由 app（host→main WebContentsView/CDP）
+ * ZCode Protocol 的 interaction/browserExecute 反向请求，由 app（host→main webview/CDP）
  * 执行并返回结果。与 permission broker 并列注入（server-operations 的 createWorkspaceZCodeApp options）。
  */
 export function createProtocolBrowserControlBroker(
@@ -61,10 +73,71 @@ export function createProtocolBrowserControlBroker(
   const state = brokerState(context);
   const { connectionsBySession, childSessionParents } = state;
 
-  const rememberConnection = (sessionId: string, browserId: string, browserGeneration: number) => {
-    const connections = connectionsBySession.get(sessionId) ?? new Map();
-    connections.set(`${browserId}\u0000${browserGeneration}`, { browserId, browserGeneration });
-    connectionsBySession.set(sessionId, connections);
+  const rememberConnection = (
+    {
+      requestId: _requestId,
+      turnId: _turnId,
+      ...route
+    }: ReturnType<typeof buildBrowserRequestContext>,
+    browserId: string,
+    browserGeneration: number,
+  ) => {
+    const connections = connectionsBySession.get(route.sessionId) ?? new Map();
+    const backendKey = `${browserId}\u0000${browserGeneration}`;
+    // 路由也是资源身份的一部分；手机/桌面、远端作用域不能相互覆盖。
+    const key = JSON.stringify([
+      browserId,
+      browserGeneration,
+      route.workspaceKey,
+      route.workspaceIdentity,
+      route.remoteSessionId,
+      route.clientMode,
+    ]);
+    const existing = connections.get(key);
+    const connection: BrowserConnection = existing?.controlScopeId
+      ? existing
+      : { browserId, browserGeneration, route };
+    connections.set(key, connection);
+    connectionsBySession.set(route.sessionId, connections);
+    if (state.scopedBackends.has(backendKey)) connection.controlScopeId ??= randomUUID();
+    if (connection.controlScopeId && !connection.opening && !connection.closing) {
+      connection.opening = (async () => {
+        const result = await context.requestClient(
+          zcodeProtocolMethods.interactionBrowserExecute,
+          {
+            ...route,
+            requestId: randomUUID(),
+            browserId,
+            browserGeneration,
+            controlScopeId: connection.controlScopeId,
+            command: { method: "openScope" },
+          },
+          zcodeBrowserExecuteResultSchema,
+        );
+        if (
+          result.ok &&
+          result.scope?.id === connection.controlScopeId &&
+          result.scope?.state === "open"
+        )
+          return;
+        // 只有建立被明确拒绝才撤销记录；超时/丢响应不能证明 Main 没有登记。
+        if (
+          result.scope?.id === connection.controlScopeId &&
+          result.scope?.state === "rejected" &&
+          connections.get(key) === connection
+        ) {
+          connections.delete(key);
+          if (!connections.size && connectionsBySession.get(route.sessionId) === connections)
+            connectionsBySession.delete(route.sessionId);
+        }
+        throw new Error(result.error?.message ?? "Browser scope admission was not confirmed");
+      })().catch((error) => {
+        // 未知结果仍保留原 ID 的释放责任；失败 flight 不代表永久失败，下一次业务可幂等重试。
+        connection.opening = undefined;
+        throw error;
+      });
+    }
+    return connection;
   };
 
   const sendLifecycle = async (
@@ -74,21 +147,54 @@ export function createProtocolBrowserControlBroker(
       | { method: "turnEnded"; turnId?: string }
       | { method: "closeSession"; closeTabs?: boolean },
   ): Promise<void> => {
-    const connections = [...(connectionsBySession.get(sessionId)?.values() ?? [])];
-    await Promise.allSettled(
-      connections.map(({ browserId, browserGeneration }) =>
-        context.requestClient(
+    const connections = connectionsBySession.get(sessionId);
+    if (!connections) return;
+    const results = await Promise.allSettled(
+      [...connections].map(async ([key, connection]) => {
+        const { browserId, browserGeneration, route, controlScopeId } = connection;
+        if (command.method === "closeSession") connection.closing = true;
+        // 先等待建立结果；拒绝建立已删除记录，结果未知仍交给 owner 确认释放。
+        if (connection.opening) await connection.opening.catch(() => undefined);
+        if (connections.get(key) !== connection) return;
+        const result = await context.requestClient(
           zcodeProtocolMethods.interactionBrowserExecute,
           {
-            ...buildBrowserRequestContext(context, state, { sessionId, turnId }),
+            ...route,
+            requestId: randomUUID(),
+            ...(turnId ? { turnId } : {}),
             browserId,
             browserGeneration,
-            command,
+            ...(controlScopeId ? { controlScopeId } : {}),
+            command:
+              controlScopeId && command.method === "closeSession"
+                ? { method: "releaseScope", closeTabs: command.closeTabs }
+                : command,
           },
           zcodeBrowserExecuteResultSchema,
-        ),
-      ),
+        );
+        if (!result.ok)
+          throw new Error(result.error?.message ?? "Browser lifecycle request failed");
+        if (
+          controlScopeId &&
+          command.method === "closeSession" &&
+          (result.scope?.id !== controlScopeId ||
+            !["released", "absent"].includes(result.scope.state))
+        ) {
+          throw new Error("Browser scope release was not confirmed by owner");
+        }
+        // allSettled 不能吞掉失败，也不能让旧关闭回调删掉后续登记的新控制资源。
+        if (command.method === "closeSession" && connections.get(key) === connection) {
+          connections.delete(key);
+        }
+      }),
     );
+    if (connections.size === 0 && connectionsBySession.get(sessionId) === connections) {
+      connectionsBySession.delete(sessionId);
+    }
+    const errors = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (errors.length) throw new AggregateError(errors, "Browser lifecycle cleanup failed");
   };
 
   const port: BrowserControlPort = {
@@ -99,6 +205,10 @@ export function createProtocolBrowserControlBroker(
         zcodeBrowserListResultSchema,
         buildRequestOptions(traceContext, signal),
       );
+      for (const browser of result.browsers) {
+        if (browser.metadata?.controlScopes === "1")
+          state.scopedBackends.add(`${browser.id}\u0000${browser.generation}`);
+      }
       return result.browsers;
     },
 
@@ -118,7 +228,13 @@ export function createProtocolBrowserControlBroker(
       });
       // 先过会话校验再记连接：被拒的请求（未登记 / 已关闭的子会话）不得在共享状态里留下条目。
       // 连接记在实际下发的 tab 归属下：共用父会话 tab 的子代理，其连接要由父会话的生命周期收尾。
-      rememberConnection(requestContext.sessionId, browserId, browserGeneration);
+      const connection = rememberConnection(requestContext, browserId, browserGeneration);
+      if (connection.closing) throw new Error("Browser control scope is closing");
+      if (connection.opening) await connection.opening;
+      if (connection.closing) throw new Error("Browser control scope is closing");
+      const scopeContext = connection.controlScopeId
+        ? { controlScopeId: connection.controlScopeId }
+        : {};
       const cancelBackendRequest = () => {
         // 只取消 agent 侧 requestClient 会让 host/main 的 CDP 动作继续执行。
         // 这里用同一 backend/generation 发送内部 cancelRequest，main 再按原 requestId 中断 waiter；
@@ -127,7 +243,10 @@ export function createProtocolBrowserControlBroker(
           .requestClient(
             zcodeProtocolMethods.interactionBrowserExecute,
             {
-              ...buildBrowserRequestContext(context, state, { sessionId, turnId, traceContext }),
+              // 取消属于已准入请求；即使 runtime 已 stopping，也必须能取消桌面端动作。
+              ...requestContext,
+              ...scopeContext,
+              requestId: randomUUID(),
               browserId,
               browserGeneration,
               command: { method: "cancelRequest", requestId: requestContext.requestId },
@@ -144,6 +263,7 @@ export function createProtocolBrowserControlBroker(
           zcodeProtocolMethods.interactionBrowserExecute,
           {
             ...requestContext,
+            ...scopeContext,
             browserId,
             browserGeneration,
             command,
@@ -162,18 +282,18 @@ export function createProtocolBrowserControlBroker(
 
     async closeSession({ sessionId, turnId }) {
       await sendLifecycle(sessionId, turnId, { method: "closeSession" });
-      connectionsBySession.delete(sessionId);
     },
 
     forChildSession({ childSessionId, parentSessionId, tabOwner = "child" }) {
-      childSessionParents.set(childSessionId, parentSessionId);
+      const binding = { parentSessionId };
+      childSessionParents.set(childSessionId, binding);
+      const release = () => {
+        if (childSessionParents.get(childSessionId) !== binding) return;
+        childSessionParents.delete(childSessionId);
+        state.parentTabOwnerChildren.delete(childSessionId);
+      };
       if (tabOwner === "parent") {
         state.parentTabOwnerChildren.add(childSessionId);
-        const release = () => {
-          if (childSessionParents.get(childSessionId) !== parentSessionId) return;
-          childSessionParents.delete(childSessionId);
-          state.parentTabOwnerChildren.delete(childSessionId);
-        };
         // tab 属于当前对话：子代理的轮次结束或运行结束都不能替父会话结束 / 关闭 tab，
         // 那会把用户正在看的 tab 释放掉。收尾由父会话自己的 turnEnded / closeSession 负责。
         return {
@@ -185,20 +305,16 @@ export function createProtocolBrowserControlBroker(
           },
         };
       }
+      state.parentTabOwnerChildren.delete(childSessionId);
       return {
         list: port.list,
         execute: port.execute,
         turnEnded: port.turnEnded,
         async closeSession({ sessionId, turnId }) {
-          try {
-            // 子会话永远不会作为对话回来认领 tab：保留的 view 无人可见，只会挂着 guest。
-            await sendLifecycle(sessionId, turnId, { method: "closeSession", closeTabs: true });
-          } finally {
-            connectionsBySession.delete(sessionId);
-            if (childSessionParents.get(childSessionId) === parentSessionId) {
-              childSessionParents.delete(childSessionId);
-            }
-          }
+          if (childSessionParents.get(childSessionId) !== binding) return;
+          // 独立子会话的临时 tab 要关闭；失败时保留资源和绑定供 owner 最终收尾重试。
+          await sendLifecycle(sessionId, turnId, { method: "closeSession", closeTabs: true });
+          release();
         },
       };
     },
@@ -218,7 +334,7 @@ function buildBrowserRequestContext(
   // 子会话的 workspace / clientMode 取发起它的客户端会话；下发的 sessionId 是桌面 browser scope 的
   // tab 归属，不是路由身份（docs/zcode-protocol-model-backed-control-requests.md 契约 4）：dwf 子代理用
   // 子会话自己的，core Agent 子代理用父会话的。没有登记就按原 id 找，找不到即拒。
-  const parentSessionId = state.childSessionParents.get(input.sessionId);
+  const parentSessionId = state.childSessionParents.get(input.sessionId)?.parentSessionId;
   const record = requireSession(context, parentSessionId ?? input.sessionId);
   const workspaceIdentity = record.workspace.workspaceIdentity?.trim() || undefined;
   const remoteSessionId = record.workspace.remoteSessionId?.trim() || undefined;

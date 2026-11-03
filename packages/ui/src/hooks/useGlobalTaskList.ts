@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type {
   WindowHostControllerTaskListItem,
-  ZCodeTaskListKind,
+  ZCodeTaskListQuery,
   ZCodeTaskListWorkspaceScope,
 } from "@zcode/services";
 import { logger } from "@/logger.js";
@@ -35,7 +35,9 @@ function buildWorkspaceScopes(workspaceTabs: WorkspaceTabState[]): ZCodeTaskList
 }
 
 export function useGlobalTaskList(params: {
-  kind: ZCodeTaskListKind;
+  kind: ZCodeTaskListQuery["kind"];
+  scope?: "host";
+  enabled?: boolean;
   workspaceTabs: WorkspaceTabState[];
   sortBy: "created" | "updated";
   searchQuery: string;
@@ -50,8 +52,12 @@ export function useGlobalTaskList(params: {
   );
   const controllerRevision = useSyncExternalStore(
     controllerRegistry?.subscribe ?? subscribeToNothing,
-    controllerRegistry?.getRevision ?? zeroRevision,
-    controllerRegistry?.getRevision ?? zeroRevision,
+    (params.scope === "host"
+      ? controllerRegistry?.getDirectoryRevision
+      : controllerRegistry?.getRevision) ?? zeroRevision,
+    (params.scope === "host"
+      ? controllerRegistry?.getDirectoryRevision
+      : controllerRegistry?.getRevision) ?? zeroRevision,
   );
   const workspaceSignature = JSON.stringify(
     params.workspaceTabs
@@ -81,10 +87,11 @@ export function useGlobalTaskList(params: {
       ),
   );
   const workspaceScopes = useMemo(
-    () => buildWorkspaceScopes(params.workspaceTabs),
+    () =>
+      params.scope === "host" ? ("host" as const) : buildWorkspaceScopes(params.workspaceTabs),
     // workspaceSignature 是标准化后的 scope 值签名，避免父组件重建 tabs 数组时重复查询。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [workspaceSignature],
+    [workspaceSignature, params.scope],
   );
   const taskListVersionSignature = useZCodeSessionStore((state) =>
     JSON.stringify(
@@ -131,14 +138,14 @@ export function useGlobalTaskList(params: {
   const queryKey = useMemo(() => JSON.stringify(query), [query]);
   const standaloneList = useStandaloneTaskList(
     baseServices.zcodeTaskService,
-    controller ? null : query,
+    controller || params.enabled === false ? null : query,
     JSON.stringify([taskListVersionSignature, workspaceSourceGenerationSignature]),
   );
 
   const load = useCallback(
     async (version: WindowControllerTaskListVersion) => {
       const requestSerial = ++requestSerialRef.current;
-      if (workspaceScopes.length === 0) {
+      if (params.enabled === false || workspaceScopes.length === 0) {
         setItems([]);
         itemsRef.current = [];
         setTotal(0);
@@ -182,7 +189,7 @@ export function useGlobalTaskList(params: {
         }
       }
     },
-    [controllerRegistry, params.kind, query, queryKey, workspaceScopes],
+    [controllerRegistry, params.enabled, params.kind, query, queryKey, workspaceScopes],
   );
 
   const refresh = useCallback(async () => {

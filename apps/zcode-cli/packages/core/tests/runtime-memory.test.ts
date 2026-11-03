@@ -82,7 +82,9 @@ describe("AgentRuntime project Memory context", () => {
     });
 
     expect(result.fileSystemPort.readRequests).toEqual([{ maxBytes: undefined, path: indexPath }]);
-    expect(result.providerText.match(/# agentsMd/gu)).toHaveLength(1);
+    expect(
+      result.providerText.match(/Codebase and user instructions are shown below/g),
+    ).toHaveLength(1);
     expect(result.providerText).not.toContain("# claudeMd");
     expect(result.providerText).toContain(
       `Contents of ${indexPath} (user's auto-memory, persists across conversations):\n\n${indexContent}`,

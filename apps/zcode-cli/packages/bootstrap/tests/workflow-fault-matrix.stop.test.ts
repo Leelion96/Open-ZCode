@@ -6,6 +6,8 @@
 // 与 terminal-states 策略表的对应：auth / quota / model_unavailable / invalid_request。
 
 import type { ModelNetworkStatusEvent } from "@zcode/contracts";
+import type { FaultProgram, Verdict } from "./helpers/fake-provider-server.js";
+import { WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE } from "@zcode/adapters/model";
 import { describe, expect, it } from "vitest";
 import {
   startFakeProviderServer,
@@ -16,6 +18,8 @@ import {
   INVALID_REQUEST_3001,
   MODEL_NOT_FOUND_3006,
   QUOTA_1308,
+  SERVE,
+  UNKNOWN_1314,
   always,
   type StatusVerdict,
 } from "./helpers/fault-programs.js";
@@ -179,4 +183,111 @@ for (const row of STOP_ROWS) {
       CELL_TIMEOUT_MS,
     );
   });
+}
+
+// B14b（2026-10-19）：分类器不认识的业务码一直失败。原先无限重试（决策 10），一个确定性的服务端
+// 拒绝（2026-10-16 的 1113）让 run 永远挂着；现在同一次请求里它连续出现到第 N 次时停下，kind other，
+// 可 Resume。B14（失败若干次后成功）不受影响：那里每个请求都没连续到 N 次。
+describe(`fault matrix · B14b always(${UNKNOWN_1314.status}/${UNKNOWN_1314.code}) — 未知业务码连续失败到上限即停`, () => {
+  it(
+    "W4：在内重试到上限后 stopped(provider)，kind other，带业务码与原文",
+    async () => {
+      const server = await startFakeProviderServer({ program: always(UNKNOWN_1314) });
+      try {
+        const obs = await runCell(server, { shape: "W4" });
+        assertCommonInvariants(obs, { status: "stopped", stopReason: "provider", server });
+
+        expect(obs.settlement.status).toBe("stopped");
+        if (obs.settlement.status !== "stopped") return;
+        expect(obs.settlement.error?.code).toBe("ProviderStop");
+        const details = obs.settlement.error?.providerStop;
+        expect(details?.kind).toBe("other");
+        expect(details?.providerCode).toBe(UNKNOWN_1314.code);
+        expect(details?.rawMessage).toContain(UNKNOWN_1314.message);
+        expect(details?.resetAt).toBeUndefined();
+
+        // 先在内重试：至少有一个请求被试满上限次，期间排过重试。
+        expect(server.requests.length).toBeGreaterThanOrEqual(
+          WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE,
+        );
+        expect(statusCountOf(obs, "model_retry_scheduled")).toBeGreaterThanOrEqual(
+          WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE - 1,
+        );
+        // 停下的那一次报成不可重试失败，且带着这个业务码。
+        const finalFailures = obs.statusEvents.filter(
+          (event): event is Extract<ModelNetworkStatusEvent, { type: "model_request_failed" }> =>
+            event.type === "model_request_failed" &&
+            event.retryable === false &&
+            event.reason !== "cancelled",
+        );
+        expect(finalFailures.length).toBeGreaterThan(0);
+        expect(finalFailures.every((event) => event.providerErrorCode === UNKNOWN_1314.code)).toBe(
+          true,
+        );
+        expect(obs.journal.getRun(obs.runId)?.stopReason).toBe("provider");
+      } finally {
+        await server.close();
+      }
+    },
+    CELL_TIMEOUT_MS,
+  );
+});
+
+// B14c / B14d（MR !3072 评审 CR-02）：数的是**连续**出现的未知业务码，不是尝试次数。网络错误夹在
+// 中间就从零重数，所以下面两种混合序列都不该停，run 照常完成。W1 只有一个子代理，到达序号即第一个
+// 请求的尝试序号。
+const RESET: Verdict = { kind: "reset" };
+const MIXED_ROWS: { id: string; title: string; program: FaultProgram; unknownCount: number }[] = [
+  {
+    id: "B14c",
+    title: "9 次网络错误后一次未知业务码",
+    program: ({ ordinal }) =>
+      ordinal < WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE
+        ? RESET
+        : ordinal === WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE
+          ? UNKNOWN_1314
+          : SERVE,
+    unknownCount: 1,
+  },
+  {
+    id: "B14d",
+    title: "未知业务码与网络错误交替",
+    program: ({ ordinal }) =>
+      ordinal > 2 * WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE
+        ? SERVE
+        : ordinal % 2 === 1
+          ? UNKNOWN_1314
+          : RESET,
+    unknownCount: WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE,
+  },
+];
+
+for (const row of MIXED_ROWS) {
+  describe(`fault matrix · ${row.id} ${row.title} — 未知业务码不连续，不停`, () => {
+    it(
+      "W1：在内重试后 completed",
+      async () => {
+        const server = await startFakeProviderServer({ program: row.program });
+        try {
+          const obs = await runCell(server, { shape: "W1" });
+          assertCommonInvariants(obs, { status: "completed", server });
+          const unknown = server.requests.filter(
+            (entry) => entry.verdict.kind === "status" && entry.verdict.code === UNKNOWN_1314.code,
+          );
+          expect(unknown).toHaveLength(row.unknownCount);
+          // 第一个请求至少尝试了 N 次（尝试次数到了上限也不停）。
+          expect(server.requests.length).toBeGreaterThan(
+            WORKFLOW_UNRECOGNIZED_CODE_MAX_CONSECUTIVE,
+          );
+        } finally {
+          await server.close();
+        }
+      },
+      CELL_TIMEOUT_MS,
+    );
+  });
+}
+
+function statusCountOf(obs: FaultCellObservation, type: ModelNetworkStatusEvent["type"]): number {
+  return obs.statusEvents.filter((event) => event.type === type).length;
 }

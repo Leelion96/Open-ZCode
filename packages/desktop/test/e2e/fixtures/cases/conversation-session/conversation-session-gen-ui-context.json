@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-gen-ui-context",
+  "spec": "./test/e2e/conversation-session/conversation-session-gen-ui-context.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-gen-ui-context.json"
+  ],
+  "fileFixtures": [
+    "./test/e2e/fixtures/fs/conversation-session/conversation-session-gen-ui-context/context.html"
+  ],
+  "requests": [
+    {
+      "id": "gen-ui-context-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定标题旁路回复，避免状态快照用例依赖外部网络。"
+    },
+    {
+      "id": "gen-ui-create",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定页面引用与回复，用实际 UI 操作和 provider 请求验证状态快照。"
+    },
+    {
+      "id": "gen-ui-hold",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定页面引用与回复，用实际 UI 操作和 provider 请求验证状态快照。"
+    },
+    {
+      "id": "gen-ui-queue",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定页面引用与回复，用实际 UI 操作和 provider 请求验证状态快照。"
+    },
+    {
+      "id": "gen-ui-cold",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定页面引用与回复，用实际 UI 操作和 provider 请求验证状态快照。"
+    }
+  ]
+}

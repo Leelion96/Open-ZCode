@@ -12,12 +12,16 @@
         "source": "synthetic",
         "syntheticReason": "稳定制造 provider 已接收但 assistant 尚未输出的运行窗口。"
       },
-      "maxMatches": 1,
+      "maxMatches": 2,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_MODIFIED_KEY_BASE_"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "E2E_MODIFIED_KEY_SELECTED_"
+        ],
         "lastUserMessageIncludes": ["E2E_MODIFIED_KEY_BASE_"]
       },
       "response": {
@@ -40,17 +44,17 @@
         "source": "synthetic",
         "syntheticReason": "验证 Cmd/Ctrl+Enter 抢占后只启动一次新请求。"
       },
-      "maxMatches": 1,
+      "maxMatches": 2,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_MODIFIED_KEY_"],
+        "bodyIncludes": ["E2E_MODIFIED_KEY_BASE_", "E2E_MODIFIED_KEY_SELECTED_"],
         "bodyExcludes": [
-          "E2E_MODIFIED_KEY_BASE_",
           "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
+          "CRITICAL: Respond with TEXT ONLY",
+          "The user sent a new message while you were working:"
         ],
-        "lastUserMessageIncludes": ["E2E_MODIFIED_KEY_"]
+        "lastUserMessageIncludes": ["E2E_MODIFIED_KEY_SELECTED_"]
       },
       "response": {
         "statusCode": 200,
@@ -201,13 +205,12 @@
         "bodyIncludes": [
           "E2E_MODIFIED_TOOL_BASE_",
           "E2E_READONLY_TOOL_FILE_CONTENT",
-          "E2E_MODIFIED_TOOL_SELECTED_",
-          "The user sent a new message while you were working:",
-          "Address the message above as you continue this turn."
+          "E2E_MODIFIED_TOOL_SELECTED_"
         ],
         "bodyExcludes": [
           "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
+          "CRITICAL: Respond with TEXT ONLY",
+          "The user sent a new message while you were working:"
         ]
       },
       "response": {

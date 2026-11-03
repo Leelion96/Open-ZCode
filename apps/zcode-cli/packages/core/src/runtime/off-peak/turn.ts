@@ -1,6 +1,7 @@
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RegularTurnLoopState } from "../methods/turn-loop-state.js";
-import { createTurnModel } from "../methods/turn-model.js";
+import { rebuildContextPrefix } from "../methods/context-refresh.js";
+import { createTurnModel, sameModelSelection } from "../methods/turn-model.js";
 import { getOffPeakModelBinding } from "./model-binding.js";
 import { getOffPeakExecution } from "./runtime.js";
 
@@ -15,7 +16,16 @@ export function refreshOffPeakTurnAfterTakeover(
     return false;
   const model = createTurnModel(runtime);
   getOffPeakModelBinding(state.subagentModelOverride?.requestDependencies)?.release();
+  // 修复原因：Context Prefix 的 Harness 文案按请求模型的 mid-conversation system 能力生成；
+  // 只换 state.model 时，接管后的请求仍带闲时模型的文案，与实际的 reminder 通道不一致。
+  const selectionChanged = !sameModelSelection(state.model, model);
   state.model = model;
+  if (selectionChanged) {
+    state.turnRequestState.entries = rebuildContextPrefix(runtime, {
+      model,
+      turnRequestEntries: state.turnRequestState.entries,
+    });
+  }
   state.modelSelectionScope = undefined;
   state.subagentModelOverride = undefined;
   state.offPeakTaskId = undefined;

@@ -49,9 +49,47 @@ flowchart TD
 
 当前 API 类型只有 `anthropic-messages`、`openai-chat-completions`、`openai-responses`。Access 仍包含普通 `api-key`、手工套餐 `zhipu-coding-plan-api-key` 和固定账号 `zhipu-account`。手工套餐统一为普通 Key 的后续方案不能提前写成当前实现。
 
+地域与账号站点分别命名。TokenHub 的 `tencent-tokenhub-cn` / `tencent-tokenhub-intl` 分别表示中国站账号下的广州 / 新加坡 API，展示名称明确地域和中国站归属；模板 ID、API 地址和 Key 管理入口保持不变。中国站官方说明同时列出这两个地域，并要求在同一控制台选择对应地域创建 Key。国际站账户使用另一组域名，不因 API 地址包含 `intl` 就切换获取 Key 的站点。[中国站 API 说明](https://cloud.tencent.com/document/product/1823/130078)、[Key 管理](https://cloud.tencent.com/document/product/1823/130090)、[国际站 API 说明](https://intl.cloud.tencent.com/zh/document/product/1300/78941)。
+
+模板创建 E2E 从本次加载的 Built-in 配置取得预期模型 ID，验证完整成员集合，而不固定某一版目录的数量。成员排序和默认启停由配置专项验证；不在模板创建用例里重复维护清单。G149-01 同时保留协议、地址、唯一获取 Key 入口和假 Key 保存验证，按钮文案与当前中英文翻译保持一致。
+
 新增 Logo key 时核对[资源映射](../../packages/ui/src/settings/model-provider-section/ProviderLogo.tsx)、主题资源和来源记录；新名称核对本地化。纯配置动态更新不能凭空增加安装包内的图片资源。
 
 `builtinModelIds` 决定模板成员；`templateModelRules` 的 `templateId + modelId` 决定该成员默认启停及差异。增加规则不会添加成员；`modelOrder` 只排序已有成员。当前所有模板成员都有精确启停声明，新增时保持这一可审查性。
+
+### 供应商展示顺序
+
+2026-10-26 确认，revision 37 整理模板发布顺序。排序以查找入口为目的，不按接入时间、模型发布时间、价格、模型数量或实时热度重排品牌。最新模型优先维护和默认启用，不等于品牌随新品发布改变位置。
+
+**模板目录与已添加实例是两个顺序。** `providerConfigRules.templateRules` 数组顺序经 ProviderTemplateMap、ProviderSettingsView 传到添加供应商页面。页面单独提取智谱专区，其他模板保持发布顺序；不增加 Schema 外的 rank/category 字段或第二份运行时排序表。下述类别是维护约定，不表示界面新增分类标题。
+
+1. **智谱专区 → 国内供应商 → 海外原厂 → 聚合平台。** 百炼、TokenHub、方舟归对应国内品牌；独立聚合服务 SiliconFlow、OpenRouter、OpenCode 放在聚合区。
+2. **同品牌连续，普通 API 在前，套餐随后。** Coding/Token/Agent 等产品按下表稳定排列；新产品插在同品牌最相关产品之后，不追加到整个目录末尾。
+3. **先产品，再地区，再协议。** 同产品国内在前、国际在后；普通 API 国内/国际相邻，然后再排套餐。相同产品、地区已有多个协议时固定 Responses → Messages（界面可显示 Anthropic）→ Chat。此顺序不代表性能排名，不新增协议或改变请求路径。
+4. **新品牌进入所属类别尾部，保留已有品牌相对顺序。** 品牌移动、分类调整和排序例外先列具体差异并讨论；确认后同步规范、库存和排序断言。
+5. **正式单源，测试派生。** 两环境模板 ID 顺序完全一致。只移动模板块，不顺手排序有覆盖语义的模型规则数组；启停、模型成员顺序、能力、端点和参数保持独立维护。
+
+当前品牌块与产品顺序（每行保持连续）：
+
+| 类别       | 品牌                              | 产品入口顺序                                                            |
+| ---------- | --------------------------------- | ----------------------------------------------------------------------- |
+| 智谱专区   | BigModel / Z.ai                   | 保留客户端固定专区顺序，见下文                                          |
+| 国内供应商 | Kimi                              | API → Code 国内 → Code 国际                                             |
+| 国内供应商 | MiniMax                           | API → M Plan                                                            |
+| 国内供应商 | DeepSeek                          | API                                                                     |
+| 国内供应商 | 百炼                              | API 中国 → API 国际 → Coding Plan 中国 → Token Plan 团队版中国          |
+| 国内供应商 | 小米 MiMo                         | API → Token Plan                                                        |
+| 国内供应商 | 腾讯 TokenHub                     | 广州 API（中国站）→ 新加坡 API（中国站）                                                     |
+| 国内供应商 | 火山方舟                          | API → Coding Plan → Agent Plan                                          |
+| 国内供应商 | 阶跃星辰                          | API → Step Plan                                                         |
+| 海外原厂   | OpenAI、Anthropic、xAI            | 按此品牌顺序，各保留已有 API 入口                                       |
+| 聚合平台   | SiliconFlow、OpenRouter、OpenCode | 按此品牌顺序；OpenCode 内先 Go 后 Zen，各按 Responses → Messages → Chat |
+
+**智谱专区保留已有例外。** ProviderTemplatePicker 固定显示 BigModel Coding Plan → Z.ai Coding Plan → BigModel API → Z.ai API，不采用 JSON 内这四项的相对顺序。本轮保留四项原始数组顺序和专区 UI 行为，不能声称只改 JSON 就能改变专区次序。“创建自定义供应商”是其他供应商区第一张操作卡，不属于模板排序。
+
+**个人实例顺序归用户维护。** 设置侧栏和聊天模型菜单的普通供应商使用 Personal `providerOrder`，用户可拖拽调整。同模板多个实例分别按 providerId 排序。模板重排不迁移、不重写该字段，不重排已有实例或替换当前模型选择；固定账号 Provider 保留现有专区规则。模板内模型的 `builtinModelIds` / `modelOrder` 是另一维度，本轮不改。
+
+验证检查完整模板集合、品牌块、协议顺序、两环境一致性和 Decoder 输出顺序。revision 37 的纯排序变更与 revision 36 对账时，去除 revision 并按 templateId 规范化模板块后，全部内容必须相同。后续型号维护按对应批准差异更新完整内容保护基线，模板顺序继续独立逐项断言。库存摘要表按发布数组顺序排列，专区实际展示例外以上述说明为准。交付使用新 revision，不覆盖已发布 revision 36；随包或动态发布按[交付规范](./delivery.md)执行，Git 更新不等于线上更新。
 
 ### 字段归属与身份稳定性
 
@@ -62,6 +100,20 @@ flowchart TD
 `api` 保存 `type/baseUrl` 及可选静态 `headers`，URL 必须对应具体产品和协议，不将供应商宣传首页当作 API 地址。模板 ID、原始模型 ID 和实例名称分别维护；改模板展示名不能重命名已保存实例。模型 ID 中的前缀、斜杠和大小写原样用于请求。
 
 成员按内置在前、个人在后的来源顺序组成；单集合去重保留第一次，个人与内置重名时保留内置来源。`modelOrder` 排序已有成员，不创建成员。缺模板、缺 Key、坏 URL 或能力不完整的候选可以在设置页显示，但不能因此进入 Registry；禁用模型也不能执行。`selectable` 还受 Provider 可见性限制，隐藏不是删除或失去内部精确查找身份。
+
+### 内置成员移除与个人覆盖
+
+模型列表由 `builtinModelIds` 与 `personalModelIds` 的并集决定；个人精确规则只覆盖参数，不创建成员。修改内置模型的参数、启停或关闭推荐配置，都不会自动把它转为个人成员。
+
+内置移除成员后，如果同 ID 不在个人成员列表中，该模型会退出设置及可选模型列表，个人规则仍保留但不再赋予执行资格。个人手动添加的成员仍按当前有效规则解析；移除内置精确规则可能影响其继承字段。内置仅默认关闭时，用户显式保存的启用状态仍优先。维护操作不自动迁移用户选择，也不自动把已移除成员转为个人模型。
+
+删除、默认关闭、删除规则与迁移身份分别审核。用户改过参数并不保证删除内置成员后仍能继续使用；需要保留旧入口时优先明确保留成员及默认状态，只有已确认不可用的旧型号才按移除流程处理。
+
+### 稳定调用 ID 与版本维护
+
+优先使用供应商官方明确支持、会跟随升级的稳定调用 ID；不能为了名称简短自行删日期或猜测别名。滚动 ID 的实际后端变化后，仍需更新能力、档位和回归证据。原厂、聚合入口和套餐分别核验，不能把一个入口的别名复制到其他入口。
+
+2026-10-27 核验：DeepSeek 原厂使用 `deepseek-flash`（官方当前路由到 V4.1 Flash 1017）与 `deepseek-v4-pro`。Pro 没有在官方调用表中提供 `deepseek-pro`，因此保留现有 ID。其他入口只有在官方确认等价路由、协议与能力后才替换。日期 ID、版本系列 ID 与持续演进产品不是同一种承诺，不能仅因名称难看就互换。来源：[DeepSeek 官方调用说明](https://api-docs.deepseek.com/quick_start/pricing-details-cny/)。
 
 ## 规则层级
 
@@ -103,6 +155,14 @@ Personal 只允许具体 Provider/Model 的智能精确覆盖或手动配置，�
 ### 能力与 Option Map
 
 Properties 包括上下文容量、输入/输出形态、工具调用、结构化输出、原生搜索、对话中途 System 消息和 MFJS Schema 要求。不同字段分别核实：原生视觉徽标不等于媒体输入开关，支持图片不等于支持视频/PDF，支持工具不等于支持原生搜索。
+
+2026-10-27 经确认，OpenCode Go Chat 统一关闭 `supportsJsonSchemaOutput`。这是降低维护成本的入口策略，不表示所有模型都无法输出 JSON：同一 Schema 的实测存在成功、代码块和上游拒绝等差异。规则只匹配 Go 的 Chat 协议与精确站点，覆盖模板及同站点自建供应商；新增成员默认沿用。保留文本、工具调用、媒体与推理配置，不改 Go Messages、Go Responses、Zen 或原厂入口。个人显式覆盖仍按既有优先级生效。重新启用须先讨论，并用产品 Adapter 验证对应模型及 Schema。
+
+2026-10-27 经确认，方舟普通 API 模板 `volcengine-ark` 的 Seed 2.1 Pro/Lite/Turbo 默认关闭 `supportsVideo`：当前 `/api/compatible/v1/messages` 实测拒绝 `video` 内容块。能力声明必须同时满足模型、具体入口及产品现有适配，不能因为模型原生支持视频或另一协议支持视频就启用。保留图片、文本、工具和推理档位；不为视频切换协议或新增适配。Coding/Agent Plan 的独立入口未在这轮实测，不将普通 API 的结果扩大为套餐验证结论。个人显式覆盖仍按既有优先级生效。
+
+2026-10-27 经确认，revision 41 在 `volcengine-ark` 新增并默认启用官方滚动 ID `doubao-seed-evolving`，置于现有三个日期型号之前，不替换、停用或删除旧身份。继续使用普通 API 的 Messages 入口；沿用已验证候选的 1024000 上下文、256000 输出上限和 `none/low/medium/high` 四档映射。启用文本、图片、工具，关闭当前入口不接受的视频；音频、PDF、原生搜索、JSON Schema 和 MCS 不额外声明。真实产品链路单次回归已通过文本、图片、工具续接、固定长文、四档推理和输出预算；未做容量上界压测。滚动更新由供应商决定，后续仍需回归能力及参数变化。官方依据见[模型价格与输入范围](https://docs.volcengine.com/docs/ark/model-pricing?lang=zh)和[最新模型](https://docs.volcengine.com/docs/ark/latest-model?lang=zh)。
+
+2026-10-27 维护者核实：所有 Coding Plan 的 `GLM-5.3` 标准版均不支持视频。revision 42 在 Z.ai、BigModel 的套餐 Messages 站点和共用能力的加速卡站点，追加精确型号 `GLM-5.3` 的 `supportsVideo: false` 覆盖，放在站点通用视觉声明之后，防止 Fusion 图片能力误扩成视频能力。覆盖手动套餐模板、个人/团队账号、加速卡及相同站点的自建 Provider；测试地址由正式规则生成。低峰闲时入口的该型号原本已关闭视频，保持不变；Start Plan 当前只有 Flash，不扩大此次范围。图片、工具、搜索、思考档位以及 `GLM-5.3-Flash`、普通 API、聚合站点均保持原值。个人显式模型覆盖仍优先；此变更收窄内置默认能力，不新增禁止个人覆盖的机制。此前实际 App 视频不能识别的记录由这次产品能力确认收口，不再作为待定位适配故障。
 
 完整执行配置需要 `enabled`、完整 properties、非空有序 `reasoningLevel.values/map` 和 `maxOutputTokens.max/map`。无推理模型也需要合法选项合同，不按型号猜默认值。
 

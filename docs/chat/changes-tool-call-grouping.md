@@ -56,6 +56,7 @@ Write/Edit ── Write/Edit ── Write/Edit ── 可见非 file-write row
 - 父组展开期间，子 Write/Edit 的 diff count 必须保留首次流式统计的进入动画；分组不得因为
   child 延迟挂载而把运行过程退化成完成后静态显示最终统计。
 - 展开会立即停止父 summary 动画并显示唯一文件数，当前动作由下方 child summary 表达。
+- 最小窗口下若剩余宽度放不下一枚 file chip，完成态只显示 `+N`；E2E 校验可见文件数与隐藏数之和、首次出现顺序，以及变宽后的恢复，不假设窄窗口必定显示首个文件。
 - Changes 父组固定使用 16px 铅笔图标；运行中保持静态，不切换 loading spinner。
 - Edit 与 Changes 共用的 file chip 文件名使用 `text-foreground-subtle`；相对目录继续使用更低一级的 `text-foreground-subtlest`。
 

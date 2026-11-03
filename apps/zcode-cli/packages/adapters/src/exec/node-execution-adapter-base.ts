@@ -70,6 +70,7 @@ export class NodeExecutionAdapterBase {
       outputPath,
       persistOutput,
       aggregatePersistedBudget,
+      requestedTailBytes: request.outputLimit?.tailBytes,
     });
   }
 

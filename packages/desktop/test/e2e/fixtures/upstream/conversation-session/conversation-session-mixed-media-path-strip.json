@@ -21,9 +21,9 @@
         "statusCode": 200,
         "statusMessage": "OK",
         "headers": {
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"chatcmpl-mixed-media-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-v4-flash\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mixed-media-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-v4-flash\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"Mixed Media Path\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-mixed-media-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"deepseek-v4-flash\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"chatcmpl-mixed-media-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"deepseek-v4-flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Mixed Media Path\\\"}\"},\"finish_reason\":\"stop\"}]}"
       }
     },
     {

@@ -92,6 +92,12 @@ Active。Active 是可丢弃的缓存/LKG，不是启动前提：Active 缺失�
 再用 Bundled 重建 Active。只有 Bundled 本身也无法通过 Release Schema 与现有 Provider/Rule Parser 时才允许
 启动失败。客户端不增加发布者业务完整性规则；未来如需发布门禁，另立基于最终发布流程的新任务。
 
+Bundled 在进程生命周期内不可变（升级以退出旧进程为前提）。进程运行中 Bundled 文件被删除（ENOENT）时，
+继续使用本进程最近一次成功解析的同一 Bundled 路径内容作为基线，并照常用选中的候选重建 Active；不需要重启
+进程，也不向 Bundled 路径回写（Desktop 的 Bundled 位于只读安装资源内）。Bundled 存在但无效时仍按上文失败。
+本进程从未成功读取 Bundled 且两份文件都不可用时，错误必须携带具体原因（含缺失文件路径），不能产生空的
+AggregateError：锁内读取保留 Bundled 与 Active 两份原因；绕过 Active 边界的回退读取至少保留 Bundled 的原因。
+
 不同 Endpoint 的 Active/LKG 和 revision 互不比较、互不回退。切换到没有 Active 的 Endpoint 时先使用
 Bundled 完成 ready，再后台刷新该 Endpoint；切回旧 Endpoint 可以复用它自己的 LKG。旧的未分区缓存尚未
 形成正式发布兼容，不提供 dual-read。

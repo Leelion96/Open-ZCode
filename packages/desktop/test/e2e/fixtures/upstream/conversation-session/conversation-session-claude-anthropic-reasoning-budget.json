@@ -22,9 +22,9 @@
         "statusMessage": "OK",
         "headers": {
           "cache-control": "no-cache",
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"claude-anthropic-reasoning-budget-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"output_tokens\":0}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"{\\\"title\\\":\\\"Claude Reasoning\\\"}\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":8}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        "body": "{\"id\":\"claude-anthropic-reasoning-budget-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"claude-sonnet-4\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Claude Reasoning\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"output_tokens\":8}}"
       }
     },
     {
@@ -41,7 +41,11 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_CLAUDE_ANTHROPIC_REASONING_LOW"],
-        "bodyIncludes": ["E2E_CLAUDE_ANTHROPIC_REASONING_LOW", "upstream-e2e-ok", "claude-sonnet-4"],
+        "bodyIncludes": [
+          "E2E_CLAUDE_ANTHROPIC_REASONING_LOW",
+          "upstream-e2e-ok",
+          "claude-sonnet-4"
+        ],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
@@ -68,7 +72,11 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_CLAUDE_ANTHROPIC_REASONING_XHIGH"],
-        "bodyIncludes": ["E2E_CLAUDE_ANTHROPIC_REASONING_XHIGH", "upstream-e2e-ok", "claude-sonnet-4"],
+        "bodyIncludes": [
+          "E2E_CLAUDE_ANTHROPIC_REASONING_XHIGH",
+          "upstream-e2e-ok",
+          "claude-sonnet-4"
+        ],
         "bodyExcludes": ["Generate a concise title"]
       },
       "response": {

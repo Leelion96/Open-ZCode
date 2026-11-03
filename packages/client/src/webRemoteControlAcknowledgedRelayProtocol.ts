@@ -42,6 +42,8 @@ class AcknowledgedRelayProtocol implements AcknowledgedWebRemoteControlRelayProt
   private readonly saturatedEmitter = new Emitter<void>();
   private readonly drainedEmitter = new Emitter<void>();
   private readonly degradedEmitter = new Emitter<WebRemoteControlRpcTransportFault>();
+  private readonly lifetime = new AbortController();
+  readonly signal = this.lifetime.signal;
   private assembler: WebRemoteControlRpcTransportAssembler | null;
   private readonly outboundBatches = new AcknowledgedRelayBatchQueue();
   private queuedInbound: unknown[] = [];
@@ -89,9 +91,7 @@ class AcknowledgedRelayProtocol implements AcknowledgedWebRemoteControlRelayProt
       () => {
         const oldest = this.outboundBatches.oldest;
         return {
-          oldestData: oldest
-            ? { queuedAt: oldest.queuedAt, messageSeq: oldest.messageSeq }
-            : null,
+          oldestData: oldest ? { queuedAt: oldest.queuedAt, messageSeq: oldest.messageSeq } : null,
           pendingAck:
             this.pendingAckQueuedAt === null || this.pendingAckMessageSeq === null
               ? null
@@ -336,11 +336,14 @@ class AcknowledgedRelayProtocol implements AcknowledgedWebRemoteControlRelayProt
   private scheduleAssemblyTimer(): void {
     if (this.assemblyTimer || !this.assembler?.nextExpiryAt) return;
     const deadline = this.assembler.nextExpiryAt;
-    this.assemblyTimer = setTimeout(() => {
-      this.assemblyTimer = undefined;
-      const result = this.assembler?.expire(this.now());
-      if (result?.kind === "fault") this.enterDegraded(result.fault);
-    }, Math.max(0, deadline - this.now()));
+    this.assemblyTimer = setTimeout(
+      () => {
+        this.assemblyTimer = undefined;
+        const result = this.assembler?.expire(this.now());
+        if (result?.kind === "fault") this.enterDegraded(result.fault);
+      },
+      Math.max(0, deadline - this.now()),
+    );
   }
   private clearAssemblyTimer(): void {
     if (this.assemblyTimer) clearTimeout(this.assemblyTimer);
@@ -358,11 +361,14 @@ class AcknowledgedRelayProtocol implements AcknowledgedWebRemoteControlRelayProt
     this.unacknowledgedByteCount = 0;
     this.saturated = false;
     this.assembler = null;
+    // 先结束旧 RPC，让调用者恢复未提交草稿，再通知恢复 owner 创建下一代 bridge。
+    this.lifetime.abort();
     this.degradedEmitter.fire(fault);
   }
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.lifetime.abort();
     this.deadline.dispose();
     this.clearAssemblyTimer();
     this.outboundBatches.clear();

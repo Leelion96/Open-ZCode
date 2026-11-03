@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_V4_BGWORK"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_V4_BGWORK"]
       },
       "response": {
         "statusCode": 200,
@@ -74,7 +71,11 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_V4_BGWORK", "Command running in background"],
-        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "SYSTEM NOTIFICATION"
+        ]
       },
       "response": {
         "statusCode": 200,
@@ -83,6 +84,37 @@
           "inputTokens": 120,
           "outputTokens": 6,
           "text": "V4_BGWORK_STARTED_OK"
+        }
+      }
+    },
+    {
+      "id": "v4-bgwork-cancel-notification",
+      "description": "取消后台 Bash 后 CLI 自动投递的 background-task 完成通知请求；固定响应，避免 strict 回放把正常通知记为 gap。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "取消是 case 的最后一个动作；通知请求不属于产品断言，只需稳定收口，不能回真实 provider。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_V4_BGWORK",
+          "<task-notification>",
+          "<tool-use-id>toolu_v4_bgwork</tool-use-id>",
+          "<status>killed</status>"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "v4-bgwork-cancel-notification",
+          "inputTokens": 120,
+          "outputTokens": 6,
+          "text": "V4_BGWORK_CANCEL_NOTED"
         }
       }
     }

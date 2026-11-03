@@ -44,6 +44,27 @@
       "syntheticReason": "固定最终正文 marker，用于直接断言两条 guide、三个工作段与最终 assistant 的 live DOM 全序。 验证来源提示及非用户授权边界。"
     },
     {
+      "id": "upstream-running-guide-batch-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于 M06f guide 时序，只需稳定返回，避免后台重试给 provider 记录引入噪声。"
+    },
+    {
+      "id": "upstream-running-guide-batch-initial-read",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "两条 guide 必须都在首轮 active request 内进入等待，再在同一个 Read tool result batch 后一起 drain。"
+    },
+    {
+      "id": "upstream-running-guide-batch-final-text",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只在同一请求同时带两条 guide 与 Read 结果时返回最终回答；逐条 drain 不会命中。"
+    },
+    {
       "id": "upstream-running-guide-steer-base-slow-stream",
       "kind": "main",
       "timingPolicy": "controlled-stream",

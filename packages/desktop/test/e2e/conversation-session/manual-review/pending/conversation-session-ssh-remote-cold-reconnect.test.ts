@@ -30,6 +30,7 @@ import {
 
 import {
   getV4PaneSnapshot,
+  selectV4TaskById,
   waitForV4ConversationState,
   waitForV4AssistantMessageContaining,
   waitForV4Pane,
@@ -47,7 +48,7 @@ describe(`${CASE_MARKER}: SSH cold restart and automatic reconnect`, () => {
     await clearAppData();
   });
 
-  it("SSH-P0-LIFE-01 App 冷重启后由主窗口 Host 自动恢复原 task", async function () {
+  it("SSH-P0-LIFE-01 App 冷重启后连接原项目并进入草稿，手动打开原 task", async function () {
     this.timeout(35 * 60_000);
     await prepareSSHConnectionPage(CASE_MARKER);
     const prepared = await prepareSSHLifecycle(CASE_MARKER);
@@ -118,15 +119,16 @@ describe(`${CASE_MARKER}: SSH cold restart and automatic reconnect`, () => {
     expect(reconnectedB.remoteSessionId).not.toBe(taskB.remoteSessionId);
     expect(await readHostProcesses()).toHaveLength(1);
 
-    // 不点击任何项目或任务：直接证明冷启动恢复了最后的导航目标。
+    // 旧用例混淆冷启动与原地重连；冷启动保留项目，但必须由用户显式选择历史任务。
     expect((await readRemoteTabSnapshot(taskB.identity)).activeWorkspaceIdentity).toBe(
       taskB.identity,
     );
-    await waitForV4ConversationState(
-      (snapshot) => snapshot.taskId === taskB.taskId,
-      `${CASE_MARKER}: 冷启动没有自动回到 B 原会话`,
+    await waitForV4Pane(
+      (snapshot) => snapshot.sessionId === "draft",
+      `${CASE_MARKER}: 冷启动没有进入 B 项目草稿`,
       60_000,
     );
+    await selectV4TaskById(taskB.taskId, 60_000);
     await waitForV4AssistantMessageContaining(taskB.firstReply);
 
     expect((await readRemoteTabSnapshot(taskA.identity)).remoteSessionId).toBeNull();
@@ -170,13 +172,6 @@ describe(`${CASE_MARKER}: SSH cold restart and automatic reconnect`, () => {
     );
     expect(await getV4PaneSnapshot()).toMatchObject({ sessionId: null, rowCount: 0 });
     expect(await $('[data-testid="remote-conversation-banner"]').isDisplayed()).toBe(true);
-    // 在门禁关闭时保留恢复 ID，不用 task-list 点击补救导航。
-    expect(
-      await browser.execute(
-        (identity) => localStorage.getItem(`zcode-v4-last-session:v1:${identity}`),
-        taskB.identity,
-      ),
-    ).toBe(taskB.taskId);
     await browser.saveScreenshot(`${process.env.ZCODE_E2E_ARTIFACT_DIR}/rdux09-cold-offline.png`);
 
     await requestRemoteProjectConnection(taskB.identity, CASE_MARKER);
@@ -185,39 +180,16 @@ describe(`${CASE_MARKER}: SSH cold restart and automatic reconnect`, () => {
       expectedIdentity: taskB.identity,
       expectedPath: workspaceB,
     });
-    await waitForV4ConversationState(
-      (snapshot) => snapshot.taskId === taskB.taskId,
-      `${CASE_MARKER}: 未连接启动后挂回没有恢复原会话`,
-      60_000,
-    );
-
-    // 构造持久化导航指向失效会话的前置；查询仍走真实远端 task-index，不 mock 返回值。
-    await browser.execute(
-      (identity) =>
-        localStorage.setItem(`zcode-v4-last-session:v1:${identity}`, "e2e-removed-session-rdux09"),
-      taskB.identity,
-    );
-    await seedSettings({ remoteStartupAutoReconnectEnabled: true });
-    await reloadElectronSessionPreservingBrowserProfile(browser);
-    await waitForRendererAfterColdRestart(CASE_MARKER);
-    await waitForRemoteTab({
-      caseMarker: CASE_MARKER,
-      expectedIdentity: taskB.identity,
-      expectedPath: workspaceB,
-    });
     await waitForV4Pane(
       (snapshot) => snapshot.sessionId === "draft",
-      `${CASE_MARKER}: 失效会话没有回到本项目新任务`,
+      `${CASE_MARKER}: 未连接启动后挂回没有保持项目草稿`,
       60_000,
     );
-    expect((await readRemoteTabSnapshot(taskB.identity)).activeWorkspaceIdentity).toBe(
-      taskB.identity,
+    await selectV4TaskById(taskB.taskId, 60_000);
+    await waitForV4AssistantMessageContaining(taskB.firstReply);
+    await waitForV4ConversationState(
+      (snapshot) => snapshot.taskId === taskB.taskId,
+      `${CASE_MARKER}: 手动打开原任务后身份不一致`,
     );
-    expect(
-      await browser.execute(
-        (identity) => localStorage.getItem(`zcode-v4-last-session:v1:${identity}`),
-        taskB.identity,
-      ),
-    ).toBeNull();
   });
 });

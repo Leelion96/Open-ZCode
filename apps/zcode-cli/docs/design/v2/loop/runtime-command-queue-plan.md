@@ -207,7 +207,6 @@ export async function executeTaskNotificationCommand(
 ```bash
 test -f apps/zcode-cli/docs/design/v2/loop/runtime-command-queue-plan.md
 git diff -- apps/zcode-cli/docs/design/v2/tool/07-subagent-background-plan.md
-rg -n "[Cc][Ll][Aa][Uu][Dd][Ee]" apps/zcode-cli/docs/design/v2/loop/runtime-command-queue-plan.md || true
 git diff --check -- apps/zcode-cli/docs/design/v2/loop/runtime-command-queue-plan.md apps/zcode-cli/docs/design/v2/tool/07-subagent-background-plan.md
 ```
 
@@ -511,7 +510,6 @@ pnpm --filter @zcode/core exec vitest run tests/runtime-tool-loop.test.ts tests/
 **验证:**
 
 ```bash
-git diff -- apps/zcode-cli | rg -n "^\+.*[Cc][Ll][Aa][Uu][Dd][Ee]" || true
 git diff --check
 pnpm --filter @zcode/core exec vitest run tests/runtime-command-queue.test.ts tests/subagent-background.test.ts tests/subagent-explore.test.ts tests/subagent-profile.test.ts tests/runtime-hooks.test.ts tests/runtime-tool-loop.test.ts tests/bash-run-conformance.test.ts
 pnpm --filter @zcode/core typecheck

@@ -8,9 +8,7 @@ edge entry -> phase#1@1 next
 edge phase#1@1 -> ask#1@1 next
 edge ask#1@1 -> phase#2@1 next
 edge phase#2@1 -> ask#2@1 branch
-edge phase#2@1 -> sink jump via=return
 edge ask#2@1 -> sink join
 phase-edge entry -> phase#1 next
 phase-edge phase#1 -> phase#2 next
 phase-edge phase#2 -> sink join
-phase-edge phase#2 -> sink jump via=return

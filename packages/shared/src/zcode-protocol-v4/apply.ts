@@ -85,7 +85,9 @@ export function applyConversationDelta(
         },
       };
     case "row.upserted": {
-      const index = snapshot.rows.window.findIndex(
+      // 窗口内 rowId 唯一（rows.ts：session 内单调、永不复用），从尾部查找与从头查找结果相同。
+      // upsert/delta 的目标几乎总是尾部的流式行；从头 findIndex 会让每条 delta 都扫描整段历史。
+      const index = snapshot.rows.window.findLastIndex(
         (row) => row.rowId === delta.row.rowId,
       );
       // §4.3：未加载 rowId = no-op（被逐出的行只能经 rows/range 取回）。
@@ -117,7 +119,7 @@ export function applyConversationDelta(
       };
     }
     case "row.delta": {
-      const index = snapshot.rows.window.findIndex(
+      const index = snapshot.rows.window.findLastIndex(
         (row) => row.rowId === delta.rowId,
       );
       const target = snapshot.rows.window[index];

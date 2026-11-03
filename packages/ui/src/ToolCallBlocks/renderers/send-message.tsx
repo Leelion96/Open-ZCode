@@ -60,6 +60,14 @@ function readText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
+// summary 已改为可选：工具描述写明缺省时用 message 的第一行作预览，卡片标题与之一致。
+function readFirstLine(value: string | undefined): string | undefined {
+  return value
+    ?.split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+}
+
 function readRawResultContent(raw: unknown): unknown {
   const rawRecord = toRecord(raw);
   const result = toRecord(rawRecord?.result);
@@ -139,9 +147,12 @@ export function SendMessageToolCallBlock(context: ToolCallBlockRenderContext) {
       : isStopped
         ? "chat.toolCall.status.stopped"
         : undefined;
+  const previewText = summary ?? readFirstLine(message);
   const primaryText = useMemo(
-    () => <span className="min-w-0 truncate">{summary ?? toolCall.title ?? "SendMessage"}</span>,
-    [summary, toolCall.title],
+    () => (
+      <span className="min-w-0 truncate">{previewText ?? toolCall.title ?? "SendMessage"}</span>
+    ),
+    [previewText, toolCall.title],
   );
   const secondaryText = useMemo(
     () =>

@@ -61,7 +61,10 @@ describe("persistent custom-agent memory", () => {
 
     expect(prompt).toContain("## MEMORY.md\n\n- memory 1");
     expect(prompt).toContain("- memory 200\n\n> WARNING: MEMORY.md is 201 lines (limit: 200).");
-    expect(prompt).not.toContain("- memory 201");
+    expect(prompt.split("\n\n> WARNING:")[0]).not.toContain("- memory 201");
+    expect(prompt).toContain(
+      'Only part of it was loaded: 1 of 201 lines were cut off, starting at line 201 ("- memory 201").',
+    );
   });
 
   it("limits a single long MEMORY.md value and formats integer KB like the baseline", () => {

@@ -65,11 +65,16 @@ second request:                          provider request -> success SSE
 
 replay capture 只在 response handler 正常结束时回填 `responseEvents`。本组 stalled attempt 会先被客户端 idle watchdog abort，因此 capture 中该条记录保持 `pending` 且 `responseEventCount=0`；这不代表 cutoff event 没有到达。cutoff 是否到达由 fixtureId、live UI cutoff marker、runtime streaming 状态及 Agent streaming 日志交叉证明，随后出现的新 provider request 证明 watchdog 已取消旧 attempt 并进入恢复。
 
+正式隔离回放发现恢复请求也有建档窗口：SSE-ST-06 的恢复请求于 `06:28:53.931` 建立，
+于 `.960` 正常完成；只等请求数量增长可能读到 `fixtureId=null`。恢复结果须等该请求的
+capture 状态退出 `pending` 后判定，并断言响应为 200；不等待被 watchdog 取消的旧 stall 请求。
+原来的 5 秒哨兵上界、请求次数、历史与工具副作用断言仍生效，不增加延时或重试。
+
 ## Fixture 与 spec
 
 - provider fixture：`packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-sse-stall-diagnostic.json`
 - case manifest：`packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-sse-stall-diagnostic.json`
-- pending spec：`packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-sse-stall-diagnostic.test.ts`
+- pending spec：`packages/desktop/test/e2e/conversation-session/conversation-session-sse-stall-diagnostic.test.ts`
 
 运行命令：
 
@@ -77,7 +82,7 @@ replay capture 只在 response handler 正常结束时回填 `responseEvents`。
 desktop_dir="$PWD/packages/desktop"
 E2E_PROVIDER_REPLAY_FIXTURE_PATH="$desktop_dir/test/e2e/fixtures/upstream/common.json,$desktop_dir/test/e2e/fixtures/upstream/conversation-session/conversation-session-sse-stall-diagnostic.json" \
   pnpm --filter @zcode/desktop test:e2e:serial -- \
-  --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-sse-stall-diagnostic.test.ts
+  --spec ./test/e2e/conversation-session/conversation-session-sse-stall-diagnostic.test.ts
 ```
 
 ## 实测结果

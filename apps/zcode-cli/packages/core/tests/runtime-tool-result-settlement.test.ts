@@ -186,6 +186,24 @@ function createFixture(
   };
 }
 
+const TOOL_INTERRUPT_MARKER = "[Request interrupted by user for tool use]";
+// 用户停止时被取消的工具统一给模型这段文字。
+const USER_STOPPED_TOOL_RESULT =
+  "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.";
+
+function userTextsAfterResults(messages: readonly ModelInputMessage[]): string[] {
+  const lastResult = messages.findLastIndex((message) => message.role === "tool");
+  return messages
+    .slice(lastResult + 1)
+    .filter((message) => message.role === "user")
+    .map((message) =>
+      typeof message.content === "string"
+        ? message.content
+        : message.content.map((block) => (block.type === "text" ? block.text : "")).join(""),
+    )
+    .filter((text) => !text.startsWith("<system-reminder>"));
+}
+
 function pairedResults(messages: readonly ModelInputMessage[]) {
   const calls = messages.flatMap((message) =>
     message.role === "assistant" ? (message.toolCalls ?? []) : [],
@@ -253,11 +271,84 @@ describe("runtime tool result settlement", () => {
       await fixture.runtime.executeTurn("continue after stop");
       const live = pairedResults(fixture.requests[1]!);
       expect(live[0]).toMatchObject({ content: IMAGE_CONTENT, isError: false });
-      expect(live.slice(1).every((result) => result.isError)).toBe(true);
-      const cold = pairedResults(await fixture.coldResume());
+      expect(live.slice(1).map((result) => [result.isError, result.content])).toEqual([
+        [true, USER_STOPPED_TOOL_RESULT],
+        [true, USER_STOPPED_TOOL_RESULT],
+      ]);
+      // 只换模型文字；工具卡片仍显示各工具自己的取消原因。
+      const cancelledErrors = (await fixture.store.messages())
+        .flatMap((message) => message.parts)
+        .flatMap((part) =>
+          part.type === "tool" && part.callID !== CALL_IDS[0] && part.state.status === "error"
+            ? [part.state.error]
+            : [],
+        );
+      expect(cancelledErrors).toHaveLength(2);
+      expect(cancelledErrors).not.toContain(USER_STOPPED_TOOL_RESULT);
+      // 工具执行中停止：tool result 之后是工具阶段的中断标记，紧接下一条输入。
+      // 默认测试模型不合并相邻 user 内容，标记不补换行。
+      expect(userTextsAfterResults(fixture.requests[1]!)).toEqual([
+        TOOL_INTERRUPT_MARKER,
+        "continue after stop",
+      ]);
+      const coldRequest = await fixture.coldResume();
+      const cold = pairedResults(coldRequest);
       expect(cold[0]).toMatchObject({ content: IMAGE_CONTENT, isError: false });
-      expect(cold.slice(1).every((result) => result.isError)).toBe(true);
+      expect(cold.slice(1).map((result) => [result.isError, result.content])).toEqual([
+        [true, USER_STOPPED_TOOL_RESULT],
+        [true, USER_STOPPED_TOOL_RESULT],
+      ]);
+      expect(userTextsAfterResults(coldRequest).slice(0, 2)).toEqual([
+        TOOL_INTERRUPT_MARKER,
+        "continue after stop",
+      ]);
       for (const handler of fixture.handlers) expect(handler).toHaveBeenCalledTimes(1);
+    } finally {
+      controller.abort(new Error("test cleanup"));
+      await turn.catch(() => undefined);
+    }
+  });
+
+  it("returns a guide queued during a stopped tool batch to the queue", async () => {
+    const fixture = createFixture({ blockSiblings: true });
+    const controller = new AbortController();
+    const turn = fixture.runtime.executeTurn("run tools", undefined, {
+      abortSignal: controller.signal,
+    });
+    const rejection = expect(turn).rejects.toMatchObject({ type: "turn_cancelled" });
+    try {
+      await fixture.readyToStop();
+      const guide = await fixture.runtime.steerTurn({
+        delivery: "guide",
+        input: "guide while tools run",
+        intent: {
+          sourceCommandId: "command-guide-tool-stop",
+          queueItemId: "queue-guide-tool-stop",
+          clientId: "desktop",
+          kind: "sendText",
+          admissionSeq: 1,
+          admittedAt: 1,
+          requestedDelivery: "guide",
+          admittedDelivery: "guide",
+        },
+      });
+      expect(guide.kind).toBe("queued");
+      controller.abort(new Error("user stop"));
+      await rejection;
+      // 停止后不再消费挂起的 guide：它退回队列，不进入已停止的轮次。
+      const projection = await fixture.runtime.getProjection();
+      expect(projection.pendingSteerInputs.map((input) => input.intent)).toEqual([
+        expect.objectContaining({
+          queueItemId: "queue-guide-tool-stop",
+          admittedDelivery: "queue",
+          fallbackReasonCode: "guide.turnInterrupted",
+        }),
+      ]);
+      await fixture.runtime.executeTurn("continue after stop");
+      expect(userTextsAfterResults(fixture.requests[1]!)).toEqual([
+        TOOL_INTERRUPT_MARKER,
+        "continue after stop",
+      ]);
     } finally {
       controller.abort(new Error("test cleanup"));
       await turn.catch(() => undefined);

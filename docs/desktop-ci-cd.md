@@ -5,7 +5,7 @@
 ## 配置文件结构
 
 - `.gitlab-ci.yml`：只保留本地 include 入口，按顺序加载 CI 分片。
-- `.gitlab/ci/00-workflow.yml`：`workflow.rules`、`stages` 和全局变量。Node 依赖缓存不再使用 GitLab cache 模板，统一依赖 `GIT_CLEAN_FLAGS` 排除项的工作区持久化（策略与防回归守卫见 `docs/ci-cache-strategy.md`）。
+- `.gitlab/ci/00-workflow.yml`：`workflow.rules`、`stages` 和发布变量；共享工作区变量位于 `.gitlab/ci/05-workspace-variables.yml`。Node 依赖缓存不再使用 GitLab cache 模板，统一依赖 `GIT_CLEAN_FLAGS` 排除项的工作区持久化（策略与防回归守卫见 `docs/ci-cache-strategy.md`）。
 - `.gitlab/ci/10-scripts.yml`：跨 job 复用的 setup、guard、store maintenance 脚本片段。由于 GitLab include 文件之间不能共享 YAML anchor，这里使用 `!reference` 复用脚本，避免拆分后改变执行内容。
 - `.gitlab/ci/20-test.yml`：conversation-session 手动 E2E job（共享 macOS、四 shard Windows、单实例专用 macOS Runner），以及 Windows lint/typecheck/unit test job。
 - `.gitlab/ci/30-build.yml`：平台无关 desktop app 构建 job、macOS/Windows/Linux 打包 job和 remote assets 构建 job。macOS 打包 job 会在产物收集后直接完成 DMG 公证。
@@ -17,7 +17,7 @@ Desktop CI 不承载远控静态资源部署；测试与生产手机页面均通
 
 ## 流水线阶段
 
-- `test`：执行 Windows 上的 `pnpm lint`、`pnpm typecheck`、`pnpm test:unit`
+- `test`：保留 E2E 与质量任务配置；App 单测 job 已退役，工程测试使用 `pnpm test:engineering`，push 自动执行受影响工程测试（当前质量 job 的启用状态以 CI rules 为准）
 - `build-app`：`build:desktop:app` 构建平台无关的 `packages/desktop/out/`，并通过 DAG `needs` 只等待 MR 人工确认；conversation E2E 在 `approve-mr` 阶段提供共享 macOS、Windows 与专用 macOS Runner 三个手动 optional 入口，失败不会阻塞后续 build job 调度。
 - `build`：macOS / Windows / Linux runner 负责各自平台 runtime assets、签名与安装包生成；正式打包只执行资产准备、静态校验和产物构建，不运行 `test:native-search:e2e`、`test:sea-runtime-tools:e2e` 等行为 E2E，这些命令保留为独立验证入口；`build:cua-helper:arm64` 与 `build:cua-helper:x64` 在所有被 workflow 接纳的流水线中自动运行，同架构 macOS job 等待并消费本次流水线的 Helper artifact；macOS job 在收集产物后直接执行 DMG 公证；Windows 和 Linux 都按 x64 / arm64 两个并行 job 构建，Linux 同时产出 AppImage、deb、rpm 三种安装包；另有独立 `build:remote:assets` 只负责 Source Server descriptor 与四个平台 archive。
 - `notify`：构建成功时向飞书发送各平台产物通知；macOS 通知依赖对应的 `build:macos:*`，因此只在对应架构的打包与公证都成功后出现。每个平台另有失败通知 Job，在构建失败时发送同样的摘要并附 GitLab Job 地址，不展示下载地址。
@@ -51,7 +51,7 @@ Linux 桌面构建与 `notify:feishu:linux:*` 已启用；正式 tag 的 macOS�
 | `approve:merge-request`                      | 手动、blocking | 放行当前 MR 的 production 验收包 DAG                                                                                                                   |
 | `build:preview`                              | 手动、optional | 启动同一 MR commit 的 Preview child pipeline；不继承 parent 默认变量，只显式传递 Preview 控制变量，固定 `ZCODE_ENV=test`，不阻塞 production 验收包 DAG |
 | `test:e2e:conversation-session:auto`         | 手动、optional | 在共享 `macos + e2e` Runner 上单 job 执行正式 conversation/plugin/workspace-file-tree replay 集合                                                      |
-| `test:e2e:conversation-session:auto:windows` | 手动、optional | 生成四个 WDIO 原生 shard，调度到 `windows-e2e + e2e` Runner 池                                                                                         |
+| `test:e2e:conversation-session:auto:windows` | 手动、optional | 生成十个按历史耗时加权的 shard（每个约 40 个 spec），调度到 `windows-e2e + e2e` Runner 池                                                              |
 | `test:e2e:conversation-session:auto:mac`     | 手动、optional | 只生成一个 job，并调度到专用标签的 darwin/arm64 Runner                                                                                                 |
 
 ## 发布链路修改前后对比
@@ -182,8 +182,8 @@ sockets are minted as random `broker-<hex>.sock` files; do not hard-code
 ## Runner 约束
 
 - `build:desktop:app` 需要带 `macos` tag 的 shell runner，产出 `packages/desktop/out/` artifacts 供平台打包 job 复用
-- `test:e2e:conversation-session:auto` 需要带 `macos` tag 的 shell runner，使用普通 fixture replay，不访问真实模型上游，也不启动 Docker；默认只跑已稳定的 conversation replay 子集，长时序 stop/compact held queue case 需要单独 replay 稳定后再进入自动门禁。
-- `test:e2e:conversation-session:auto:windows` 需要同时带 `windows-e2e` 与 `e2e` tag 的 PowerShell runner pool，并通过 `parallel: 4` 将同一正式 replay 集合切成四个 WDIO 原生 shard。
+- `test:e2e:conversation-session:auto` 需要带 `macos` tag 的 shell runner，使用普通 fixture replay，不访问真实模型上游，也不启动 Docker，job 超时上限为 `timeout: 4h`（`:mac` 继承）；默认只跑已稳定的 conversation replay 子集，长时序 stop/compact held queue case 需要单独 replay 稳定后再进入自动门禁。
+- `test:e2e:conversation-session:auto:windows` 需要同时带 `windows-e2e` 与 `e2e` tag 的 PowerShell runner pool，并通过 `parallel: 10` 将同一正式 replay 集合按历史 spec 耗时（`scripts/ci/select-e2e-weighted-shard.mjs`）切成十个 LPT 子集，每个约 40 个 spec；每个 shard job 的超时上限为 `timeout: 4h`。
 - `test:e2e:conversation-session:auto:mac` 只匹配专用 macOS runner 的 tag（标签名见 `.gitlab/ci/20-test.yml`），复用 macOS Bash replay 合同并生成一个 job；它不会落到共享 `macos` runner，也不会参与构建/发布 job。
 - `build:macos:*` 需要带 `macos` tag 的 Apple Silicon shell runner，并预装 Node.js、corepack、pnpm、Xcode Command Line Tools、系统 `make` / `curl` / `tar` 与 Rosetta 2；arm64/x64 job 通常下载对应 native-search 预编译 sidecar，受信任流水线在共享 deps 缺少自产归档时才复用同一 runner 现场构建并发布 `bfs` / `ugrep`。自产 sidecar 固定 `MACOSX_DEPLOYMENT_TARGET=12.0`，Microsoft rg 可以使用更低 deployment target，但任何 sidecar 都不得高于 12.0；通过 Mach-O 依赖校验后再分别签名、打包并完成 DMG 公证
 - `build:remote:assets` 同样运行在 `macos` runner；其产物写入共享目录供 `release:upload:macos:arm64` 复用
@@ -245,7 +245,8 @@ rpm Requires 在 electron-builder 默认集（gtk3、nss、libnotify、libXScrnS
 - `OSS_CONFIG_FILE`：可选，控制每组 OSS 目标调用 `ossutil` 时使用的配置文件。支持单值复用，或配置为与 `CDN_DOMAIN` 等长的逗号列表；为空时使用 runner 默认 ossutil 配置。新旧 OSS AK/SK 或 region 不一致时，应把 AK/SK 和 region 写入对应配置文件，并按 `CDN_DOMAIN` 顺序配置文件路径。
 - `CDN_PRELOAD_PROFILE` / `ALIYUN_CDN_PROFILE`：可选，控制 `cdn-preload.sh` 调用阿里云 CDN OpenAPI 时使用的 aliyun CLI profile。`CDN_PRELOAD_PROFILE` 优先级更高；支持单值复用，或配置为与 `CDN_DOMAIN` 等长的逗号列表。预热脚本不显式传 `--region`，region 由对应 profile 或 aliyun CLI 默认配置决定，避免覆盖多账号迁移时每个 profile 自带的 endpoint 配置。
 - `CDN_PRELOAD_DOMAINS`：历史兼容变量；当前 upload/preload 链路不再读取，新 OSS/CDN 迁移通过 `CDN_DOMAIN` 列表展开预热域名。
-- `ZCODE_UPDATE_FEED_URL`：可选运行时诊断变量，用完整服务端 manifest 接口 URL 覆盖默认更新检查接口。客户端仍会写入当前 `platform` / `device_mid` / `channel` 查询参数和对应 header，不切换到旧 generic feed。
+- `ZCODE_UPDATE_FEED_URL`：仅限未打包开发态的可选诊断变量，用完整服务端 manifest 接口 URL 覆盖默认更新检查接口；打包应用忽略该变量及 `--zcode-update-feed-url` 启动参数，继续使用既有服务端 manifest 入口。开发态覆盖时仍会写入当前 `platform` / `device_mid` / `channel` 查询参数和对应 header，不切换到旧 generic feed。
+- Windows 签名与换证：更新授权依赖官方 HTTPS 清单，下载文件须通过清单哈希和有效 Authenticode 签名校验；不按历史发布者 DN 限制新签名者，也不需要用户预装换证过渡版。包内 `publisherName` 仅用于激活自定义校验并保留签名诊断信息，详见[Windows 更新信任边界与换证](desktop/auto-update-service-manifest.md#windows-更新信任边界与换证)。
 - `ZCODE_ENV`：可选，`production` 打正式包，`test` 打测试包。测试包文件名会追加 `_TEST`，构建产物飞书通知会把环境标识放进卡片标题；测试环境标题背景色使用红色，正式环境使用默认蓝色。`publish-release.sh` 会拒绝 `ZCODE_ENV=test` 调用正式 release API。
 - `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`：macOS notarytool 公证凭据
 - `APPLE_SIGNING_IDENTITY` 或 `CSC_NAME`：macOS 签名身份

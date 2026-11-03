@@ -41,6 +41,96 @@ import { buildDefaultPermissionUpdates } from "./permission-suggestions.js";
 import type { ToolExecutorDeps } from "./types.js";
 import { summarizeInput } from "./utils.js";
 
+const READ_TOOL_NAME = "Read";
+
+type PermissionFlowContext = ToolRuntimePermissionCapabilityContext & {
+  workingDirectory: string;
+  workspaceRoot: string;
+};
+
+/**
+ * 只判断 Read 是否被模式或权限规则直接拒绝，不跑 hook、不弹确认、不发事件；规则只加载一次。
+ * Read 不涉及 memory 文件写权限，所以不经过 applyMemoryFilePermission。
+ */
+export async function areReadsDeniedWithoutPrompt(
+  deps: ToolExecutorDeps,
+  filePaths: readonly string[],
+  traceContext: TraceContext,
+): Promise<boolean[]> {
+  const entry = deps.registry.get(READ_TOOL_NAME);
+  if (!entry) return filePaths.map(() => true);
+  const mode = deps.getMode();
+  const context = resolvePermissionFlowContext(deps, mode);
+  const projectRules = await loadProjectPermissionRuleset(deps);
+  return filePaths.map((filePath) => {
+    const { decision } = checkStaticToolPermission(deps, {
+      context,
+      entry,
+      executionInput: { file_path: filePath },
+      mode,
+      projectRules,
+      toolName: READ_TOOL_NAME,
+    });
+    deps.logger?.debug("Tool permission evaluated without prompt", {
+      ...traceContextToLogContext(traceContext),
+      decision: decision.decision,
+      event: "tool.permission.evaluated",
+      mode,
+      module: "core.tool.executor",
+      reason: decision.reason,
+      ruleId: decision.ruleId,
+      toolName: READ_TOOL_NAME,
+    });
+    return decision.decision === "deny";
+  });
+}
+
+function resolvePermissionFlowContext(
+  deps: ToolExecutorDeps,
+  mode: CollaborationMode,
+  preparedContext?: ToolRuntimePermissionCapabilityContext,
+): PermissionFlowContext {
+  return {
+    ...resolveRuntimePermissionContext(deps),
+    ...preparedContext,
+    mode,
+    workingDirectory: preparedContext?.workingDirectory ?? deps.getWorkingDirectory(),
+    workspaceRoot: preparedContext?.workspaceRoot ?? deps.getWorkspaceRoot(),
+  };
+}
+
+// 模式与权限规则的静态判定；工具调用和无确认的 Read 判定共用，保证两边结论一致。
+function checkStaticToolPermission(
+  deps: ToolExecutorDeps,
+  input: {
+    context: PermissionFlowContext;
+    entry: ToolEntry;
+    executionInput: unknown;
+    mode: CollaborationMode;
+    projectRules: PermissionRuleset | null;
+    toolName: string;
+  },
+) {
+  const { context, entry, executionInput } = input;
+  const rulePolicy = entry.resolvePermissionRulePolicy?.(executionInput, context);
+  const decision = deps.permissionService.checkPermission(
+    {
+      toolName: input.toolName,
+      input: executionInput,
+      riskLevel: entry.metadata.riskLevel,
+      mode: input.mode,
+      planEnabled: deps.sessionModePort?.isPlanEnabled?.(),
+      prePlanMode: deps.sessionModePort?.getPrePlanMode(),
+      // 草稿预批与实际工具输入共用已准备的 cwd，不能在合并 Guarded 时漏传。
+      workingDirectory: context.workingDirectory,
+    },
+    resolveRuntimePermissionCapability(entry, executionInput, context),
+    input.projectRules,
+    rulePolicy,
+  );
+  return { decision, rulePolicy };
+}
+
 export async function resolveToolPermission(
   deps: ToolExecutorDeps,
   toolCall: ExecutableToolCall,
@@ -53,13 +143,7 @@ export async function resolveToolPermission(
   telemetry?: ToolExecutionSpanWriter,
   preparedContext?: ToolRuntimePermissionCapabilityContext,
 ): Promise<PermissionFlowResult> {
-  const context = {
-    ...resolveRuntimePermissionContext(deps),
-    ...preparedContext,
-    mode,
-    workingDirectory: preparedContext?.workingDirectory ?? deps.getWorkingDirectory(),
-    workspaceRoot: preparedContext?.workspaceRoot ?? deps.getWorkspaceRoot(),
-  };
+  const context = resolvePermissionFlowContext(deps, mode, preparedContext);
   let projectRules: PermissionRuleset | null;
   try {
     projectRules = await loadProjectPermissionRuleset(deps);
@@ -90,22 +174,15 @@ export async function resolveToolPermission(
           }),
         ),
       };
-    const rulePolicy = entry.resolvePermissionRulePolicy?.(executionInput, context);
-    let decision = deps.permissionService.checkPermission(
-      {
-        toolName: toolCall.name,
-        input: executionInput,
-        riskLevel: entry.metadata.riskLevel,
-        mode,
-        planEnabled: deps.sessionModePort?.isPlanEnabled?.(),
-        prePlanMode: deps.sessionModePort?.getPrePlanMode(),
-        // 草稿预批与实际工具输入共用已准备的 cwd，不能在合并 Guarded 时漏传。
-        workingDirectory: context.workingDirectory,
-      },
-      resolveRuntimePermissionCapability(entry, executionInput, context),
+    const { decision: staticDecision, rulePolicy } = checkStaticToolPermission(deps, {
+      context,
+      entry,
+      executionInput,
+      mode,
       projectRules,
-      rulePolicy,
-    );
+      toolName: toolCall.name,
+    });
+    let decision = staticDecision;
     if (firstInput && decision.approvalMode !== "user-once") {
       decision = applyPreToolPermissionDecision(decision, preToolHookResult, mode);
     }

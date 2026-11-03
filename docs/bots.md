@@ -150,6 +150,7 @@ Delivery semantics:
 
 - Scheduled and manual runs of a Bot-origin automation both deliver their terminal result to the original chat.
 - The scheduler registers the Bot subscription before sending the prompt, so a fast terminal event cannot beat the listener.
+- The Agent `turn.started` event must preserve the Host-admitted `automationId` across the strict App protocol boundary. The services projection must emit `task_run_started` before that run's chunks or terminal event; a reused private subscription uses this start event to replace the previous input id and clear per-run buffers.
 - Automation delivery uses `summary_changes`: intermediate assistant chunks and tool traces do not create extra chat messages; completion sends the final assistant result plus change summary, and failure sends one localized failure message.
 - The persisted target survives application restart. Workspace isolation still uses `workspaceIdentity?.trim() || workspacePath`; filesystem execution continues to use `workspacePath`.
 - If the Bot was deleted, disabled, changed provider, lost credentials, or the provider send fails, the service records a throttled warning and leaves automation dispatch/outcome settlement untouched. Bot delivery is best-effort and is not a scheduler retry authority.

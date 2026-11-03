@@ -6,6 +6,7 @@ The Commands settings list shows user and plugin commands without exposing stora
 - User command rows do not display their backing directory path.
 - Plugin command rows and the plugin group header do not display “Registered by a plugin. Edit it in the plugin.” The plugin group heading and plugin-name label already communicate ownership.
 - Item descriptions use `text-ui-sm text-foreground-subtle` as secondary copy.
+- The User list queries only the user command directories and plugin commands. It does not pass the Scope target path or identity to `commandsService.list`: that path is only the service anchor (the home directory of a remote device, or any local project). If the anchor is passed, the user directory is first discovered as project commands and the name de-duplication keeps the project entry, so the User view hides the command. An anchor project command with the same name also hides the user command.
 - Commands 的顶部搜索工具栏与 `Installed` 分组统一使用内容区显式的 `mt-6`（24px）；共享 Tabs 根节点不再额外提供 `gap-2`，避免搜索框到 New 按钮叠加成 32px。
 - Command rows use the same `Terminal` icon as the Commands settings entry. Plugin artwork takes
   precedence when available; a missing or failed plugin image falls back to `Terminal`, not `Cable`.
@@ -62,3 +63,5 @@ Command form scope
 | CMD-SCOPE-04 | Existing Workspace Command | Open edit form | Actual owner is displayed, Scope is disabled, and save cannot migrate storage |
 | CMD-SCOPE-05 | Existing Workspace Command owner closes | Close the owner tab | Editor exits and performs no write |
 | CMD-SCOPE-06 | User scope | Save a new Command | Save omits project `workspacePath` and refreshes the current list |
+| CMD-SCOPE-07 | Remote device User (anchor is its home) | Open the Commands list | The list request omits project `workspacePath`; every command in the device's user directory shows in the User view (E2E: DSYNC-15-06) |
+| CMD-SCOPE-08 | Local User whose anchor project has a command with the same name as a user command | Open the Commands list | The list request omits project `workspacePath`; the user command shows in the User view (E2E: not covered yet; DSYNC-15-06 covers only two remote devices) |

@@ -131,6 +131,8 @@ cts.dispose(); // 释放资源
 
 支持的类型：Undefined、String (UTF-8)、Buffer、VSBuffer、Array (递归)、Object (JSON fallback)、Int (VQL 编码)。
 
+Object 内嵌的二进制字段（`Uint8Array`，包括 Node `Buffer`）按 base64 加标记编码，体积约为原始字节的 4/3，接收端还原为 `Uint8Array`。判断依据是字段的原值，不是 `JSON.stringify` 传给 replacer 的值：`Buffer` 有 `toJSON()`，会先被展开成 `{type:"Buffer",data:[...]}`。按数字数组传输时体积约为 3.6 倍，解码一个 15MB 的归档需要十几秒，超过约 28MB 时还会超出远端 WebSocket 单条消息 100MiB 的上限。
+
 VQL (Variable-Length Quantity) 编码：小整数只需 1 字节（vs JSON 的 4 字节），非常节省空间。
 
 ```typescript
@@ -242,7 +244,14 @@ calc.listen<string>("onDidLog")((msg) => console.log(msg)); // 订阅事件
   PromiseError(202)    调用失败 (Error)
   PromiseErrorObj(203) 调用失败 (非 Error)
   EventFire(204)       事件触发
+  EventError(205)      订阅建立失败，终结该次订阅
 ```
+
+事件订阅的失败属于请求边界。`ChannelServer` 在取得事件及绑定监听器时捕获同步错误，
+返回独立的 `EventError`，不建立活动订阅，也不让服务拒绝请求的错误退出 Host。
+`ChannelClient` 收到后释放对应事件监听器并记录频道、事件名和原因，错误不得作为
+业务事件交给监听器。调用方重新请求需创建新的订阅；失败不影响同通道的其他调用。
+旧客户端忽略未知的 `205` 响应；服务端仍不建立失败订阅，因此不会把错误伪装成正常事件。
 
 ---
 

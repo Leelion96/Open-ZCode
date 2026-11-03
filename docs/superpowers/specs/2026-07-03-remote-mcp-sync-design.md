@@ -1,5 +1,7 @@
 # SSH 远程 MCP 同步设计
 
+> **被取代（2026-10，票 14）**：MCP 同步已并入[数据同步规格](../../remote/data-sync.md)。本文的「服务边界」「UI 设计」「错误处理」和同名一律跳过的冲突策略已被取代：旧的 MCP 同步弹窗与 `listLocalUserMcpCandidates` 等旧方法已删除；同名 server 在数据同步弹窗里按内容比较，用户手动勾选后才覆盖。「filesystem MCP 路径改写」的规则仍然有效（只改写 filesystem 类 stdio MCP 的 `args`）。入口差异：连接向导、Header、侧栏项目菜单入口带 workspace 映射，先做 workspace 改写再做 home 改写；技能 / MCP / 插件设置页入口只做 home 改写（MCP 设置页入口原来会做 workspace 改写，现已不做）。
+
 ## 背景
 
 ZCode 当前已经支持把本地用户级 Skills 同步到 SSH 远端主机。MCP 的运行链路与 Skills 有相似处：本地设置页读取本机用户目录中的 MCP 配置，创建或恢复 ZCode Agent session 时把启用的 MCP 配置显式下发给 agent，agent 再在其所在运行时启动 stdio MCP 或连接 HTTP / SSE MCP。
@@ -57,7 +59,7 @@ ZCode 当前已经支持把本地用户级 Skills 同步到 SSH 远端主机。M
 同步的最小数据单元是单个用户级 MCP server 配置：
 
 - `name`
-- `enabled` 状态。禁用状态以现有兼容字段 `enable: false` 写入 server config；启用状态不额外写字段。
+- `enabled` 状态。禁用状态写为 server config 的 `enabled: false`；启用是默认态，不额外写字段。历史遗留的 `enable` 字段只在读取时兼容（`enable: false` 视为停用），写入时清除，不再产出。
 - `config` 原始字段，包括：
   - stdio: `type`、`command`、`args`、`env`、`timeout` / `timeoutMs` 等字段。
   - HTTP / SSE: `type`、`url`、`headers`、`http_headers`、`timeout` / `timeoutMs` 等字段。
@@ -94,8 +96,12 @@ filesystem MCP 识别规则：
       "filesystem": {
         "type": "stdio",
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/alice/workspace/z-code", "/Users/alice/Documents"],
-        "enable": true
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/Users/alice/workspace/z-code",
+          "/Users/alice/Documents"
+        ]
       },
       "context7": {
         "type": "stdio",
@@ -123,8 +129,12 @@ filesystem MCP 识别规则：
       "filesystem": {
         "type": "stdio",
         "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/dev/z-code", "/home/dev/Documents"],
-        "enable": true
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/home/dev/z-code",
+          "/home/dev/Documents"
+        ]
       },
       "context7": {
         "type": "stdio",

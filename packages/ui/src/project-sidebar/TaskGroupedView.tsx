@@ -1,9 +1,11 @@
+import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { useComposerClientNamespace } from "@/hooks/useServices.js";
 import { readComposerWorkspaceScope } from "@/v4/composer/composerDraftStore.js";
 import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -177,10 +179,10 @@ export function TaskGroupedView({
     onCollapsedGroupIdsChange: changeCollapsed,
     onMove: move,
   });
-  const groups = useMemo(
-    () => drag.view.nodes.flatMap((node) => (node.type === "group" ? [node.group] : [])),
-    [drag.view.nodes],
+  const selectGroups = useShallow((nodes: typeof drag.view.nodes) =>
+    nodes.flatMap((node) => (node.type === "group" ? [node.group] : [])),
   );
+  const groups = selectGroups(drag.view.nodes);
   const allExpanded = groups.every((group) => !collapsed.has(group.id));
   const toggleCollapsed = (id: string) =>
     changeCollapsed((current) => {
@@ -246,12 +248,7 @@ export function TaskGroupedView({
     task.workspacePurpose === "conversation"
       ? intl.formatMessage({ id: "workspaceSidebar.conversationsSection" })
       : task.workspacePath.split(/[\\/]/).filter(Boolean).at(-1) || task.workspacePath;
-  const rowCallbacks = {
-    groups,
-    activeWorkspacePath: workspacePath,
-    activeWorkspaceIdentity: workspaceIdentity,
-    activeTaskId,
-    mobileActiveTaskKey: presentation.mobileActiveTaskKey,
+  const rowActions = {
     onSelectTask: (path: string, id: string, identity?: string) => {
       const task = findTaskInGroupedView(
         authoritativeView,
@@ -275,7 +272,44 @@ export function TaskGroupedView({
     },
     onMarkTaskAsUnread: (task: ProjectTask) =>
       action(() => mutate(task, { kind: "mark-unread" }), "taskList.markAsUnreadFailed"),
+  };
+  // Bug 根因：一条任务活动会重建整组行回调，击穿所有未变任务的 memo。
+  // 行事件只转发到最近已提交的实现，既稳定引用，也不捕获过期的任务/分组和远端地址。
+  const rowActionsRef = useRef(rowActions);
+  useLayoutEffect(() => {
+    rowActionsRef.current = rowActions;
+  });
+  const stableRowActions = useMemo(
+    () => ({
+      onSelectTask: (...args: Parameters<typeof rowActions.onSelectTask>) =>
+        rowActionsRef.current.onSelectTask(...args),
+      onCloseTask: (task: ProjectTask) => rowActionsRef.current.onCloseTask(task),
+      onArchiveTask: (task: ProjectTask) => rowActionsRef.current.onArchiveTask(task),
+      onOpenFileTree: (task: ProjectTask) => rowActionsRef.current.onOpenFileTree?.(task),
+      onMoveTaskToGroup: (task: ProjectTask, id: string | null) =>
+        rowActionsRef.current.onMoveTaskToGroup(task, id),
+      onMoveTaskToTop: (task: ProjectTask) => rowActionsRef.current.onMoveTaskToTop(task),
+      onStartRenameTask: (task: ProjectTask) => rowActionsRef.current.onStartRenameTask(task),
+      onMarkTaskAsUnread: (task: ProjectTask) => rowActionsRef.current.onMarkTaskAsUnread(task),
+    }),
+    [],
+  );
+  const rowCallbacks = {
+    ...stableRowActions,
+    onOpenFileTree: presentation.onOpenTaskFiles ? stableRowActions.onOpenFileTree : undefined,
+    groups,
     tooltipsDisabled: drag.dragging,
+  };
+  // Bug 根因：首发接纳改变全局 activeTaskId，传到每行会连未选中行的外层一起刷新。
+  // 在列表装配时派生行自身选中状态，保持整条无关行的 memo 输入不变。
+  const rowSelection = (task: ProjectTask) => {
+    const key = buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity);
+    return {
+      isActive:
+        buildTaskWorkspaceKey(workspacePath, workspaceIdentity) === key &&
+        activeTaskId === task.taskId,
+      isMobileActive: presentation.mobileActiveTaskKey === `${key}:${task.taskId}`,
+    };
   };
   const [stickyId, setStickyId] = useState<string | null>(null);
   useEffect(() => {
@@ -427,6 +461,10 @@ export function TaskGroupedView({
                 <div key={node.group.id} data-grouped-layout-key={`group:${node.group.id}`}>
                   <GroupItem
                     {...rowCallbacks}
+                    activeWorkspacePath={workspacePath}
+                    activeWorkspaceIdentity={workspaceIdentity}
+                    activeTaskId={activeTaskId}
+                    mobileActiveTaskKey={presentation.mobileActiveTaskKey}
                     node={node}
                     getTaskRemoteSessionId={getTaskRemoteSessionId}
                     getTaskWorkspaceLabel={getWorkspaceLabel}
@@ -455,6 +493,7 @@ export function TaskGroupedView({
                 <GroupedTaskItem
                   {...rowCallbacks}
                   key={taskKey(node.task)}
+                  {...rowSelection(node.task)}
                   task={node.task}
                   remoteSessionId={getTaskRemoteSessionId(node.task)}
                   workspaceLabel={getWorkspaceLabel(node.task)}
@@ -484,6 +523,7 @@ export function TaskGroupedView({
               >
                 <GroupedTaskItem
                   {...rowCallbacks}
+                  {...rowSelection(activeTask)}
                   task={activeTask}
                   remoteSessionId={getTaskRemoteSessionId(activeTask)}
                   workspaceLabel={getWorkspaceLabel(activeTask)}

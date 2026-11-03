@@ -7,12 +7,12 @@ const REMOVED_REFERENCE_TEXTS = new Set([
 const ANNOUNCEMENT_PREFIX = "<system-reminder>\n";
 const ANNOUNCEMENT_SUFFIX = "\n</system-reminder>";
 const TOOL_SEARCH_LOADED_TEXT = "Tool loaded.";
-// 当前公告不再推断连接原因；离线工具同时识别新旧文案，避免关闭搜索后误判历史断链。
+// 删除公告按原因分段（断连、会话内不可用、本轮隐藏）；离线工具同时识别新旧文案，避免关闭搜索后误判历史断链。
 const ANNOUNCEMENT_HEADINGS = [
-  /^The following deferred tools are (?:now )?available via ToolSearch\./u,
-  /^The following deferred tools are no longer available(?: \(their MCP server disconnected\))?\./u,
+  /^The following deferred tools are (?:now )?available via (?:Local)?ToolSearch\./u,
+  /^The following deferred tools are no longer available(?: in this session| \(their MCP server disconnected\))?\./u,
   /^\d+ deferred tools are no longer available(?: \(MCP server disconnected\))?:/u,
-  /^\d+ deferred tools? (?:is|are) available again \((?:MCP server reconnected — )?names announced earlier in this conversation\):/u,
+  /^\d+ deferred tools? (?:is|are) available again (?:in this session )?\((?:MCP server reconnected — )?(?:names )?announced earlier in this conversation\):/u,
 ];
 
 /** 仅创建离线比较视图；最终轨迹必须继续使用原始请求，不输出这里过滤后的内容。 */
@@ -26,7 +26,7 @@ export function toolSearchComparisonMessages(
       if (
         isObject(block) &&
         block.type === "tool_use" &&
-        block.name === "ToolSearch" &&
+        (block.name === "ToolSearch" || block.name === "LocalToolSearch") &&
         typeof block.id === "string"
       ) {
         searchCallIds.add(block.id);

@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import {
   AMEND_TRANSCRIPT_QUIESCE_MS,
   createActorSessionQuiescence,
+  releaseActorSessions,
 } from "../src/app/workflow-driver-quiescence.js";
 
 /** 手动时钟：记下被排定的闹钟，测试自己决定它响不响。 */
@@ -125,4 +126,67 @@ describe("createActorSessionQuiescence", () => {
     expect(await ledger.quietSessions()).toEqual(new Set(["sess-a"]));
     expect(await ledger.quietSessions()).toEqual(new Set(["sess-a"]));
   });
+});
+
+it("owner drain waits beyond actor turn for resource cleanup and propagates failure", async () => {
+  const ledger = createActorSessionQuiescence();
+  const turn = deferredTurn();
+  const cleanup = deferredTurn();
+  let entered = false;
+  const release = releaseActorSessions(
+    {} as never,
+    [
+      {
+        sessionId: "closing-actor",
+        turn: turn.promise,
+        modelActivity: { unsubscribe() {} },
+        runtime: {
+          beginShutdown() {},
+          closeOwnedWork: async () => {},
+          close: async () => {
+            await turn.promise;
+            entered = true;
+            await cleanup.promise;
+            throw new Error("actor cleanup failed");
+          },
+        },
+      },
+    ] as never,
+    ledger,
+  );
+  let drained = false;
+  const drain = ledger.drain().then(() => {
+    drained = true;
+  });
+  const failed = expect(drain).rejects.toThrow("actor cleanup failed");
+  turn.settle();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  expect(entered).toBe(true);
+  expect(drained).toBe(false);
+  cleanup.settle();
+  await failed;
+  await expect(release).rejects.toThrow("actor cleanup failed");
+});
+
+it("retries the owned actor resource without replaying its completed turn", async () => {
+  const ledger = createActorSessionQuiescence();
+  let attempts = 0;
+  const close = async () => {
+    if (++attempts === 1) throw new Error("temporary browser failure");
+  };
+  const released = releaseActorSessions(
+    {} as never,
+    [
+      {
+        sessionId: "retry",
+        modelActivity: { unsubscribe() {} },
+        runtime: { beginShutdown() {}, close },
+      },
+    ] as never,
+    ledger,
+  );
+  await expect(released).rejects.toThrow("temporary browser failure");
+  await expect(ledger.drain()).resolves.toBeUndefined();
+  await ledger.drain();
+  expect(attempts).toBe(2);
 });

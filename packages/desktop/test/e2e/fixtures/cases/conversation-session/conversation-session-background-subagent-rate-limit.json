@@ -42,6 +42,55 @@
       "source": "synthetic",
       "timingPolicy": "task-notification",
       "syntheticReason": "证明 failed notification 经 runtime command queue 回到父模型并正常收口。"
+    },
+    {
+      "id": "background-subagent-rate-limit-merged-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题生成不属于本 case，只需稳定返回以免误匹配业务 fixture。"
+    },
+    {
+      "id": "background-subagent-rate-limit-merged-parent-launch",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-tool-use",
+      "syntheticReason": "同一 response 启动三个真实 Agent(run_in_background=true)，终止顺序由各 child 的延迟决定。"
+    },
+    {
+      "id": "background-subagent-rate-limit-merged-parent-launch-ack",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "delayed-text",
+      "syntheticReason": "九秒延迟让三个 child 都在父 launch turn 结束前终止，三条通知在父会话空闲时由同一次 drain 合并为一轮。"
+    },
+    {
+      "id": "background-subagent-rate-limit-merged-first-child-429",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "fault-stream",
+      "syntheticReason": "最先终止，失败通知排在批次第一条；BG26 worker 禁用模型 retry。"
+    },
+    {
+      "id": "background-subagent-rate-limit-merged-child-completed",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "delayed-text",
+      "syntheticReason": "第二个终止，完成通知排在批次第二条，紧跟第一条失败通知。"
+    },
+    {
+      "id": "background-subagent-rate-limit-merged-last-child-429",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "fault-stream",
+      "syntheticReason": "最后终止，失败通知排在批次第三条，覆盖后面的通知块取得终态。"
+    },
+    {
+      "id": "background-subagent-rate-limit-merged-parent-notification",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "task-notification",
+      "syntheticReason": "同一条 last user message 同时含三条通知与完成任务的结果，证明合并为一轮后父模型正常收口。"
     }
   ]
 }

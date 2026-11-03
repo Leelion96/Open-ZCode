@@ -314,7 +314,7 @@ A persona that names a model is the most specific statement there is: it is writ
 
 The engine takes no part in any of this. It records the persona's `model` name and never interprets it, and it never reads `subagentModel` or `modelBindings`: the strings travel the host-metadata road, from the run service through the harness into the engine config, and are recorded once on the `run-launched` event beside the launch anchor and the phase names, in the run-creating life only. There is no column for it. The head of the event log is where the host reads it back, which is why a resume, a detail read and a cold replay all recover the same choice for free.
 
-The subagent's tool surface is the parent's minus tools that would let it steer the parent or start workflows of its own: `EnterPlanMode`, `ExitPlanMode`, `CreateWorkflow`, `ReadSessionContext`, `ResolveWorkflowQuestion` are removed by the driver, and the child runtime's allowlist additionally excludes `SaveWorkflow` and `ResumeWorkflowRun`. `submit_result` is registered when the runtime was given a submit port, `escalate` when it was given an escalate port; the driver always injects both ports, so every subagent has `escalate`, and every non-`untyped` subagent has `submit_result`. `AskUserQuestion` stays: its questions reach the user through the parent session like the subagent's permission asks (`docs/dynamic-workflow/launch.md`, "Permissions inside a run").
+The subagent's tool surface is the parent's minus tools that would let it steer the parent, reach the user past the main agent, or start workflows of its own: `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode`, `CreateWorkflow`, `ReadSessionContext`, `ResolveWorkflowQuestion` are removed by the driver, and the child runtime's allowlist additionally excludes `SaveWorkflow` and `ResumeWorkflowRun`. `submit_result` is registered when the runtime was given a submit port, `escalate` when it was given an escalate port; the driver always injects both ports, so every subagent has `escalate`, and every non-`untyped` subagent has `submit_result`. A subagent that needs a person's judgment calls `escalate`; the main agent decides whether to ask the user (`docs/dynamic-workflow/launch.md`, "Permissions inside a run").
 
 **Browser Use.** A subagent can drive the built-in browser (`mcp__node_repl__js` with `agent.browsers`), and it does so under its **own** session id, which the browser backend uses as the tab owner. A subagent gets its own set of tabs, separate from the main agent's and from every other subagent's, in the one browser the window has (`docs/browser-use/2026-07-14-browser-tab-conversation-isolation-spec.md`). The storage partition is shared: logins, cookies and local storage are the app's, not the subagent's.
 
@@ -362,12 +362,12 @@ Caps are enforced in the driver by asking for one more than the cap, so "exactly
 | `files.grep` serialized bytes | 256 KB |
 | `git.diff` bytes | 512 KB |
 | `git.log` count | default 20, maximum 100 |
-| `world.run` stdout, stderr | 256 KB each |
+| `world.run` stdout, stderr | 16 MiB each with `output: "full"` (the default); `"discard"` and `{ tail: n }` have no limit on what the process prints, and n is at most 16 MiB |
 | `world.run` timeout | default 300 s, no maximum |
 
 Glob results are workspace-relative and sorted, so a journaled list does not depend on modification times.
 
-`world.run(cmd, args?, opts?)` differs from `git.*` in three deliberate ways. A non-zero exit is a value (`{exitCode, stdout, stderr}`), not an error, so a gating loop does not need exception control flow. The command is re-checked against the set of commands the compiler collected from literals and the user confirmed at submit; a command outside that set, or a missing set, is a `DriverError` naming a wiring error. The timeout has no upper bound. Authorization and the facade shape belong to `authoring.md`.
+`world.run(cmd, args?, opts?)` differs from `git.*` in three deliberate ways. A non-zero exit is a value (`{exitCode, stdout, stderr}`), not an error, so a gating loop does not need exception control flow. The command is authorized at compile time only (a string literal the user confirmed at submit); the driver keeps no second, runtime list. Output is bounded where the script declares it (`opts.output`), never by the driver, because the journal replays the result as stored and the script must see the same bytes. The timeout has no upper bound. Authorization and the facade shape belong to `authoring.md`.
 
 ### Artifact publish
 
@@ -545,7 +545,7 @@ The driver classifies every rejected model turn with `resolveWorkflowModelFailur
 
 | Verdict | Engine-side effect |
 | --- | --- |
-| stop, kind `auth`, `not_configured`, `model_unavailable`, `invalid_request`, `quota`, or `other` | `sink.stopRun(ProviderStop)`; the whole run becomes `stopped(provider)`. The error message is `Subagent <name> hit a permanent model-side error (<reason> [<code>]): <raw>` and carries `ProviderStopDetails`. |
+| stop, kind `auth`, `not_configured`, `model_unavailable`, `invalid_request`, `quota`, or `other` | `sink.stopRun(ProviderStop)`; the whole run becomes `stopped(provider)`. The error message is `Subagent <name> hit a permanent model-side error (<reason> [<code>]): <raw>` and carries `ProviderStopDetails`. Kind `other` is a provider code the classifier does not know, returned 10 times in a row within one request (`concurrency.md`, "The policy table"). |
 | `context_exceeded` | the ask fails with `ContextLimit`: "Subagent <name> exceeded the model's context window even after compaction. Give this ask a smaller input or split the work across subagents." The script may catch it; the run continues. |
 | anything else | the driver redrives the turn after a backoff (2 s doubling to 60 s, jittered by half, or the provider's `Retry-After`), reporting `askWaiting {cause: "backoff"}` meanwhile; the script never sees the failure |
 
@@ -579,6 +579,40 @@ A cancel travels one path regardless of who asked: the run service's `cancel(run
 `ResumeWorkflowRun {run_id}` is the model's entry; the CLI and the GUI reach the same port method. The gate is the table under "Resume by replay", plus one rule read from the settlement: a run stopped as `superseded` is refused with `superseded` and the successor's id, because its unfinished work now belongs to that successor and replaying it would do the same work twice against a workspace the successor is changing. One more rule is read from the script: the stored text is type-checked against the **current** facade before anything is touched, and a script that no longer compiles (the facade changed after the run) is refused with `compile_failed` and a bounded diagnostics message. Replaying it verbatim could only fail; the way forward is a script rewritten for the current facade and submitted with `AmendWorkflow`, which keeps the finished work. Success starts the run in the background and returns `{ok: true, runId, status: "backgrounded", backgroundTaskId}`; the tool card joins the resumed run to the original `CreateWorkflow` call through the journaled `toolCallId`. Whether a run is resumable is computed once, in the CLI, by `isResumableSettlement`, and shipped as a boolean: on the `run-settled` progress payload as `resumable: true`, and on each row of the session's run list. Neither the projection nor the UI derives it from status.
 
 Resuming re-arms the run in the background-task tracker: the terminal fields of the previous settlement are cleared when the `run-started` event of the resumed run arrives, so the card does not show a stale failure beside a running lamp.
+
+### Resuming after a quota reset
+
+A run stopped because the user's usage cap was reached (`stopped(provider)`, kind `quota`) resumes by itself once the cap resets, when the stop recorded a reset time. Before this, the main agent or the user had to remember to call `ResumeWorkflowRun` hours later; in one heavy user's 20 days of logs, 22 runs stopped on a cap, 17 were resumed by hand, and 5 were left.
+
+The reset time is `providerStop.resetAt`. The adapter takes it from the provider's `Retry-After` header when there is one, and otherwise from the message: BigModel writes `您的限额将在 YYYY-MM-DD HH:MM:SS 重置`, a time without a zone that is read as Beijing time (UTC+8). Both sources go through the same window, from one day ago to 35 days ahead: a `Retry-After` that lands outside it (an abnormal or hostile header, such as a value of years) is ignored and the message is read instead, and a message time outside it is ignored too. A quota stop without a reset time (an exhausted balance, `1005`) is not resumed by itself.
+
+The host module is `bootstrap/src/app/dynamic-workflow-quota-resume.ts`. It resumes the run `WORKFLOW_QUOTA_RESUME_MARGIN_MS` (one minute) after the reset, through the same path as the app's Resume (the session's execution boundary, `port.resume`, then the runtime re-arms tracking), so the resumed run has its terminal notification, its background-task entry and its residency.
+
+```text
+ run stops on 1308 ──► row: stopped(provider) { kind: quota, resetAt: T }
+        │
+        │ run-settled (this process)          session App constructed (cold start)
+        ▼                                                 │
+   read row ──► arm timer at T + 1 min ◄── scan the session's recent rows
+        │                                                 │ (T + 1 min already past → fire now)
+        ▼
+   timer fires ──► read row again
+        ├── still stopped(provider, quota) with the same T ──► resume (same path as the app's Resume)
+        ├── another T ──► arm again at the new T + 1 min
+        └── anything else (resumed by hand, superseded, …) ──► nothing
+```
+
+Seven rules keep it honest:
+
+- **The run row is the only source of truth.** The timer only wakes the module; the decision is made by reading the row when it fires.
+- **It lives in the session App.** A stopped run does not keep its App resident, so an idle session is closed after ten minutes and its timer with it. The scan at App construction is the catch-up: the run resumes the next time the session is opened. Nothing resumes a run of a session nobody opens.
+- **No loop.** When a resumed run stops on the same reset time again (or an earlier one), the module does not resume it again in that process, drops any retry still pending for it, and logs `dynamic_workflow.quota_resume.not_advancing`. A later reset time is a new window and is resumed as usual.
+- **Repeated resumes are spaced.** In one process, each auto-resume of a run pushes the earliest next one further out: `WORKFLOW_QUOTA_RESUME_MIN_SPACING_MS` (10 minutes) after the previous start, doubling each time, at most `WORKFLOW_QUOTA_RESUME_MAX_SPACING_MS` (one hour). The no-loop rule catches a reset time that does not move; this one catches a reset time that moves but is wrong, such as a provider that answers a quota stop with a `Retry-After` of a few seconds, which would otherwise resume the run and hit the cap once a minute. Real quota windows are hours apart, so the spacing does not delay them.
+- **A transient refusal is retried, a few times.** The resume can fail for reasons that pass: `already_running` (the run is in flight in this process, such as the user pressing Resume at the same moment), or a thrown error (the execution boundary, a close race). The module tries again `WORKFLOW_QUOTA_RESUME_MARGIN_MS` later, at most `WORKFLOW_QUOTA_RESUME_RETRY_LIMIT` (2) times, and each retry reads the row again like any firing, so a run that did start in the meantime is left alone. The other refusals (`not_found`, `not_resumable`, `superseded`, `script_missing`, `script_mismatch`, `compile_failed`) say the run cannot be resumed as it is, and are logged and not retried. After the last retry the module logs `dynamic_workflow.quota_resume.gave_up`; the row is still a quota stop, so the next cold start of the session tries again.
+- **A failed read ends the attempt, not the process.** Every journal read on the timer and run-settled paths is guarded like the cold-start scan: an exception is logged as `dynamic_workflow.quota_resume.read_failed` with a clipped message, and that run is not resumed this time. The module never lets an exception escape a timer callback or a subscription.
+- **Close stops it first.** App close disposes the module before it closes the run service, so a timer never fires into a closed service.
+
+The stop notification says the run resumes by itself after the reset and tells the main agent not to call `ResumeWorkflowRun` before then (`docs/dynamic-workflow/transcript-and-notifications.md`).
 
 ## Engine ownership
 

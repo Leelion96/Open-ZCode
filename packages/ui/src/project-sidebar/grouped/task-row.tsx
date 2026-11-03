@@ -42,10 +42,8 @@ function GroupedTaskRowComponent({
   currentGroupId,
   groups,
   remoteSessionId,
-  activeWorkspacePath,
-  activeWorkspaceIdentity,
-  activeTaskId,
-  mobileActiveTaskKey,
+  isActive,
+  isMobileActive,
   workspaceLabel,
   onSelectTask,
   onCloseTask,
@@ -64,10 +62,8 @@ function GroupedTaskRowComponent({
   currentGroupId?: string;
   groups: TaskGroupMenuItem[];
   remoteSessionId?: string;
-  activeWorkspacePath: string;
-  activeWorkspaceIdentity?: string;
-  activeTaskId: string | null;
-  mobileActiveTaskKey?: string | null;
+  isActive: boolean;
+  isMobileActive: boolean;
   workspaceLabel: string;
   onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
   onCloseTask: (task: ZCodeTaskMeta) => void;
@@ -129,10 +125,6 @@ function GroupedTaskRowComponent({
   // 月亮身份改为持久 meta 标记判断；off-peak store 反查在任务被删除后会丢失
   // 会话溯源，且让每一行多背一个全局 store 订阅。
   const isTaskOffPeak = isOffPeakTask(task);
-  const isActive =
-    buildTaskWorkspaceKey(activeWorkspacePath, activeWorkspaceIdentity) === workspaceKey &&
-    activeTaskId === task.taskId;
-  const isMobileActive = mobileActiveTaskKey === `${workspaceKey}:${task.taskId}`;
   const statusDotClassName =
     leadingIndicator === "error"
       ? "bg-destructive"

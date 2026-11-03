@@ -21,6 +21,8 @@ export interface RemoteProjectCache {
   projectId: string;
   name: string;
   roots: ProjectRoot[];
+  /** 远端项目已软删除；缺省为未删除。显式添加始终视为未删除。 */
+  deleted?: boolean;
 }
 export interface RemoteProjectEntry {
   id: string;
@@ -32,6 +34,8 @@ export interface RemoteProjectEntry {
   lastSyncedAt: number | null;
   /** 从 3.15 首次升级的混排位置；仅用作控制端排序初值。 */
   initialPosition?: number;
+  /** 远端删除态缓存，仅在为 true 时出现；离线回退据此隐藏，不改变入口归属。 */
+  deleted?: true;
 }
 export interface RemoteProjectDirectory {
   hosts: RemoteProjectHost[];
@@ -42,7 +46,7 @@ export interface IRemoteProjectService {
   readDirectory(): Promise<RemoteProjectDirectory>;
   /** 只重连仍保留的成员，复用既有连接器；不恢复项目入口。 */
   connectHost(id: string): Promise<RemoteProjectHost>;
-  /** 显式保存连接入口；单事务限制最多 20 个远端 host；不接收 secret。 */
+  /** 显式保存连接入口；单事务写入，不设保存数量上限；不接收 secret。 */
   saveHost(input: { id: string; target: RemoteTargetSnapshot }): Promise<RemoteProjectHost>;
   /** 握手只合并仍存在的同一成员实例；迟到或移除后重加返回 null。 */
   bindHost(input: {

@@ -14,7 +14,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "文本附件内容定位唯一主请求，network capture 结构化断言 user content parts 含精确 wire 空格。"
+      "syntheticReason": "matcher 以文本附件内容定位唯一主请求；spec 再对 network capture 结构化断言 user content parts 含精确 (no content)。"
     }
   ]
 }

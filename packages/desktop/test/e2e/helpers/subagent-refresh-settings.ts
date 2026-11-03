@@ -1,5 +1,5 @@
-import { subagentUpdateCursor } from "./subagent-snapshot-wait.js";
-import { basename, join } from "node:path";
+import { subagentSettingsReadyCursor, subagentUpdateCursor } from "./subagent-snapshot-wait.js";
+import { join } from "node:path";
 import { stat } from "node:fs/promises";
 import { Key } from "webdriverio";
 import { encodeCustomModelValue } from "@zcode/shared";
@@ -24,6 +24,7 @@ import {
   getE2EAppDataPaths,
 } from "./desktop-app.js";
 import { sel } from "./selectors.js";
+import { clickOpenScopeMenuOption } from "./settings-scope-menu.js";
 
 export interface RefreshProfile {
   name: string;
@@ -52,7 +53,7 @@ async function openSettings(workspacePath?: string) {
   await scope.waitForDisplayed({ timeout: 15000 });
   if ((await scope.getAttribute("data-plugin-scope-key")) !== (workspacePath ?? "user")) {
     await scope.click();
-    await $(`[role="menuitemradio"]=${workspacePath ? basename(workspacePath) : "User"}`).click();
+    await clickOpenScopeMenuOption(workspacePath ?? "user");
     await browser.waitUntil(
       async () => (await scope.getAttribute("data-plugin-scope-key")) === (workspacePath ?? "user"),
       { timeout: 15000 },
@@ -231,7 +232,11 @@ export async function setRefreshModelOverride(
   stateId: string,
   profile?: Pick<RefreshProfile, "provider" | "model" | "effort">,
 ) {
+  const settingsReady = await subagentSettingsReadyCursor();
   await openSettings();
+  // 原因：首次列表先出现，插件初始化随后再次刷新列表并关闭思考菜单。
+  // 按实际 overview → list 完成建立屏障，不能轮询重开菜单来碰运气。
+  await settingsReady();
   const row = $(sel(testId(TID_SUBAGENT_ROW, name)));
   const trigger = row.$(sel(TID_CHAT_MODEL_SELECT_TRIGGER));
   await trigger.waitForClickable({ timeout: 15000 });
@@ -247,24 +252,11 @@ export async function setRefreshModelOverride(
           encodeCustomModelValue(profile.provider, profile.model) && (await trigger.isEnabled()),
       { timeout: 15000 },
     );
-    // 插件 overview 的异步刷新会重建行并关闭菜单；重新定位控件，等实际选项出现再选择。
-    await browser.waitUntil(
-      async () => {
-        const item = $(sel(testId(TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM, profile.effort)));
-        if (await item.isExisting()) return true;
-        const thought = $(sel(testId(TID_SUBAGENT_ROW, name))).$(
-          sel(TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER),
-        );
-        if (
-          (await thought.isClickable()) &&
-          (await thought.getAttribute("aria-expanded")) !== "true"
-        ) {
-          await thought.click();
-        }
-        return item.isExisting();
-      },
-      { timeout: 15000, timeoutMsg: `Subagent ${name} 思考等级菜单未就绪` },
+    const thought = $(sel(testId(TID_SUBAGENT_ROW, name))).$(
+      sel(TID_CHAT_THOUGHT_LEVEL_SELECT_TRIGGER),
     );
+    await thought.waitForClickable({ timeout: 15000 });
+    await thought.click();
     await clickTestIdByDom(testId(TID_CHAT_THOUGHT_LEVEL_SELECT_ITEM, profile.effort));
   } else await $('[data-model-footer-action="subagent-model:built-in-default"]').click();
   await browser.waitUntil(

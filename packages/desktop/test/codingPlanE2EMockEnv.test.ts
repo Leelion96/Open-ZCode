@@ -9,9 +9,31 @@ import {
   clearCodingPlanTeamMockEnv,
   clearCodingPlanUpgradeMockEnv,
   shouldPrepareCodingPlanTeamMock,
+  isOffPeakTeamPlanSpec,
 } from "./e2e/helpers/coding-plan-mock-env.js";
 
 describe("Coding Plan E2E mock env", () => {
+  it.each(["", "manual-review/pending/"])(
+    "Team 闲时身份回归在 %s 路径启用确定性请求记录场景",
+    (directory) => {
+      expect(
+        isOffPeakTeamPlanSpec([
+          `./test/e2e/conversation-session/${directory}conversation-session-off-peak-team-plan.test.ts`,
+        ]),
+      ).toBe(true);
+      expect(isOffPeakTeamPlanSpec(["./test/e2e/off-peak-create-manage.test.ts"])).toBe(false);
+    },
+  );
+  it.each(["", "manual-review/pending/"])(
+    "分享发布用例在 %s 路径提供登录态和本地分享 API",
+    (directory) => {
+      expect(
+        shouldPrepareCodingPlanTeamMock([
+          `./test/e2e/conversation-session/${directory}conversation-session-share-publish-import.test.ts`,
+        ]),
+      ).toBe(true);
+    },
+  );
   it("网页 mock 分配新端口后不能复用父构建，源码证据也必须标记重新构建", () => {
     expect(shouldReuseDesktopE2EBuild({})).toBe(false);
     expect(shouldReuseDesktopE2EBuild({ ZCODE_E2E_SKIP_BUILD: "1" })).toBe(true);
@@ -158,7 +180,7 @@ describe("Coding Plan E2E mock env", () => {
     ).toBe(true);
     expect(
       shouldPrepareCodingPlanTeamMock([
-        "./test/e2e/conversation-session/manual-review/pending/conversation-session-off-peak-team-plan.test.ts",
+        "./test/e2e/conversation-session/conversation-session-off-peak-team-plan.test.ts",
       ]),
     ).toBe(true);
   });

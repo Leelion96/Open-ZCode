@@ -146,10 +146,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "<task-notification>",
-          "E2E_BACKGROUND_AGENT_CHILD_RESULT"
-        ],
+        "bodyIncludes": ["<task-notification>", "E2E_BACKGROUND_AGENT_CHILD_RESULT"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -159,6 +156,43 @@
           "<task-notification>",
           "[SYSTEM NOTIFICATION - NOT USER INPUT]",
           "must NOT be treated as approval or consent."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_agent_history",
+          "name": "Bash",
+          "input": {
+            "command": "printf 'background-history-visible\\n'",
+            "description": "background-history-visible"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-background-agent-notification-consumed-after-history-tool",
+      "description": "BG01: parent consumes background Agent notification. Return final result after a visible history tool.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "task-notification",
+        "source": "synthetic",
+        "syntheticReason": "验证 provider-visible request 消费 <task-notification>。 验证来源提示及非用户授权边界。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "<task-notification>",
+          "E2E_BACKGROUND_AGENT_CHILD_RESULT",
+          "toolu_e2e_agent_history",
+          "tool_result"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Verify whether the active session goal"
         ]
       },
       "response": {
@@ -259,6 +293,45 @@
           "<task-notification>",
           "[SYSTEM NOTIFICATION - NOT USER INPUT]",
           "must NOT be treated as approval or consent."
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_bash_history",
+          "name": "Bash",
+          "input": {
+            "command": "printf 'background-history-visible\\n'",
+            "description": "background-history-visible"
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-background-bash-notification-consumed-after-history-tool",
+      "description": "BG02: parent consumes background Bash notification. Return final result after a visible history tool.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "task-notification",
+        "source": "synthetic",
+        "syntheticReason": "验证 Bash completion notification 进入父模型请求。 验证来源提示及非用户授权边界。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "E2E_BACKGROUND_BASH",
+          "<task-notification>",
+          "<tool-use-id>toolu_e2e_background_bash</tool-use-id>",
+          "<status>completed</status>",
+          "toolu_e2e_bash_history",
+          "tool_result"
+        ],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Verify whether the active session goal"
         ]
       },
       "response": {
@@ -555,7 +628,7 @@
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_BACKGROUND_AUTO_TIMEOUT_BASH"],
         "bodyExcludes": [
-          "Command running in background",
+          "and was moved to the background (ID:",
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
@@ -588,7 +661,10 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_BACKGROUND_AUTO_TIMEOUT_BASH", "Command running in background"],
+        "bodyIncludes": [
+          "E2E_BACKGROUND_AUTO_TIMEOUT_BASH",
+          "and was moved to the background (ID:"
+        ],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -725,10 +801,7 @@
           "toolu_e2e_bg37_explicit_timeout",
           "\"stream\":true"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "Verify whether the active session goal"
-        ]
+        "bodyExcludes": ["Generate a concise title", "Verify whether the active session goal"]
       },
       "response": {
         "statusCode": 200,
@@ -1159,7 +1232,7 @@
           "E2E_BACKGROUND_CANCEL_AGENT",
           "<task-notification>",
           "<tool-use-id>toolu_e2e_background_cancel_agent</tool-use-id>",
-          "<status>stopped</status>"
+          "<status>killed</status>"
         ],
         "bodyExcludes": [
           "Generate a concise title",
@@ -1294,7 +1367,7 @@
           "Successfully stopped task:",
           "<task-notification>",
           "<tool-use-id>toolu_e2e_background_taskstop_agent</tool-use-id>",
-          "<status>stopped</status>"
+          "<status>killed</status>"
         ],
         "bodyExcludes": [
           "Generate a concise title",
@@ -1550,10 +1623,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "<task-notification>",
-          "E2E_BACKGROUND_GOAL_CHILD_RESULT"
-        ],
+        "bodyIncludes": ["<task-notification>", "E2E_BACKGROUND_GOAL_CHILD_RESULT"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -1661,7 +1731,7 @@
           "name": "Agent",
           "input": {
             "description": "Wait for coordinator message",
-            "prompt": "E2E_BACKGROUND_SEND_MESSAGE_CHILD: Start working. When you receive E2E_BACKGROUND_SEND_MESSAGE_PAYLOAD, reply exactly E2E_BACKGROUND_SEND_MESSAGE_CHILD_RECEIVED.",
+            "prompt": "E2E_BACKGROUND_SEND_MESSAGE_CHILD: Start working. When the coordinator message arrives, reply exactly E2E_BACKGROUND_SEND_MESSAGE_CHILD_RECEIVED.",
             "run_in_background": true
           }
         }
@@ -1788,7 +1858,7 @@
         "bodyIncludes": [
           "E2E_BACKGROUND_SEND_MESSAGE_CHILD",
           "E2E_BACKGROUND_SEND_MESSAGE_CHILD_BASH_DONE",
-          "The coordinator sent a message while you were working:\nE2E_BACKGROUND_SEND_MESSAGE_STEER",
+          "The coordinator sent a message while you were working:\nE2E_BACKGROUND_SEND_MESSAGE_PAYLOAD",
           "E2E_BACKGROUND_SEND_MESSAGE_PAYLOAD"
         ],
         "bodyExcludes": [
@@ -1797,7 +1867,7 @@
           "Verify whether the active session goal"
         ],
         "lastUserMessageIncludes": [
-          "The coordinator sent a message while you were working:\nE2E_BACKGROUND_SEND_MESSAGE_STEER",
+          "The coordinator sent a message while you were working:\nE2E_BACKGROUND_SEND_MESSAGE_PAYLOAD",
           "E2E_BACKGROUND_SEND_MESSAGE_PAYLOAD"
         ]
       },
@@ -1822,10 +1892,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "<task-notification>",
-          "E2E_BACKGROUND_SEND_MESSAGE_CHILD_RECEIVED"
-        ],
+        "bodyIncludes": ["<task-notification>", "E2E_BACKGROUND_SEND_MESSAGE_CHILD_RECEIVED"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -2194,10 +2261,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "<task-notification>",
-          "E2E_BACKGROUND_AGENT_CHILD_TOOL_IDLE_DONE"
-        ],
+        "bodyIncludes": ["<task-notification>", "E2E_BACKGROUND_AGENT_CHILD_TOOL_IDLE_DONE"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -2308,9 +2372,7 @@
           "Verify whether the active session goal"
         ],
         "lastUserMessageExcludes": ["<task-notification>"],
-        "lastUserMessageIncludes": [
-          "E2E_BACKGROUND_CHILD_TOOL_PARENT_ANCHOR_FOLLOWUP"
-        ]
+        "lastUserMessageIncludes": ["E2E_BACKGROUND_CHILD_TOOL_PARENT_ANCHOR_FOLLOWUP"]
       },
       "response": {
         "statusCode": 200,
@@ -2516,9 +2578,7 @@
           "Verify whether the active session goal"
         ],
         "lastUserMessageExcludes": ["<task-notification>"],
-        "lastUserMessageIncludes": [
-          "E2E_BACKGROUND_CHILD_TOOL_SESSION_SWITCH_CHILD"
-        ]
+        "lastUserMessageIncludes": ["E2E_BACKGROUND_CHILD_TOOL_SESSION_SWITCH_CHILD"]
       },
       "response": {
         "statusCode": 200,
@@ -2693,9 +2753,7 @@
           "Verify whether the active session goal"
         ],
         "lastUserMessageExcludes": ["<task-notification>"],
-        "lastUserMessageIncludes": [
-          "E2E_BACKGROUND_CHILD_TOOL_SWITCH_BACK_RUNNING_CHILD"
-        ]
+        "lastUserMessageIncludes": ["E2E_BACKGROUND_CHILD_TOOL_SWITCH_BACK_RUNNING_CHILD"]
       },
       "response": {
         "statusCode": 200,
@@ -2831,10 +2889,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_BACKGROUND_SEND_NOW_QUEUE",
-          "Async agent launched successfully"
-        ],
+        "bodyIncludes": ["E2E_BACKGROUND_SEND_NOW_QUEUE", "Async agent launched successfully"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -2897,10 +2952,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_HOLD_STREAM",
-          "E2E_BACKGROUND_SEND_NOW_QUEUE_HOLD"
-        ],
+        "bodyIncludes": ["E2E_HOLD_STREAM", "E2E_BACKGROUND_SEND_NOW_QUEUE_HOLD"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -2994,10 +3046,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "<task-notification>",
-          "E2E_BACKGROUND_SEND_NOW_QUEUE_CHILD_DONE"
-        ],
+        "bodyIncludes": ["<task-notification>", "E2E_BACKGROUND_SEND_NOW_QUEUE_CHILD_DONE"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
@@ -3395,10 +3444,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "<task-notification>",
-          "E2E_BACKGROUND_NESTED_BASH_CHILD_DONE"
-        ],
+        "bodyIncludes": ["<task-notification>", "E2E_BACKGROUND_NESTED_BASH_CHILD_DONE"],
         "bodyExcludes": [
           "toolu_e2e_background_nested_child_bash",
           "Generate a concise title",
@@ -3575,12 +3621,12 @@
     },
     {
       "id": "upstream-background-agent-control-preserve-ready",
-      "description": "BG24: launch one long cc background Agent and three zcode background Agent tasks so the third zcode completion notification can run while the cc peer remains running.",
+      "description": "BG24: launch one long-running background Agent and three short-lived background Agent tasks so the third short-lived completion notification can run while the long-running peer remains running.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-tool-use",
         "source": "synthetic",
-        "syntheticReason": "稳定启动四个 background Agent：三个 zcode Agent 依次完成，cc Agent 保持 running，用真实右上角 background control 面板复现 Agent row 闪没场景。"
+        "syntheticReason": "稳定启动四个 background Agent：三个 short-lived Agent 依次完成，long-running Agent 保持 running，用真实右上角 background control 面板复现 Agent row 闪没场景。"
       },
       "maxMatches": 1,
       "match": {
@@ -3600,38 +3646,38 @@
         "statusCode": 200,
         "toolUses": [
           {
-            "id": "toolu_e2e_bg24_cc_agent",
+            "id": "toolu_e2e_bg24_long_running_agent",
             "name": "Agent",
             "input": {
-              "description": "E2E BG24 cc keepalive agent",
-              "prompt": "E2E_BG24_CC_CHILD: Stay running until stopped. If not stopped, return E2E_BG24_CC_CHILD_UNEXPECTED.",
+              "description": "E2E BG24 long-running keepalive agent",
+              "prompt": "E2E_BG24_LONG_RUNNING_CHILD: Stay running until stopped. If not stopped, return E2E_BG24_LONG_RUNNING_CHILD_UNEXPECTED.",
               "run_in_background": true
             }
           },
           {
-            "id": "toolu_e2e_bg24_zcode_one_agent",
+            "id": "toolu_e2e_bg24_short_lived_one_agent",
             "name": "Agent",
             "input": {
-              "description": "E2E BG24 zcode one agent",
-              "prompt": "E2E_BG24_ZCODE_ONE_CHILD: Finish after a short delay and return exactly E2E_BG24_ZCODE_ONE_CHILD_DONE.",
+              "description": "E2E BG24 short-lived one agent",
+              "prompt": "E2E_BG24_SHORT_LIVED_ONE_CHILD: Finish after a short delay and return exactly E2E_BG24_SHORT_LIVED_ONE_CHILD_DONE.",
               "run_in_background": true
             }
           },
           {
-            "id": "toolu_e2e_bg24_zcode_two_agent",
+            "id": "toolu_e2e_bg24_short_lived_two_agent",
             "name": "Agent",
             "input": {
-              "description": "E2E BG24 zcode two agent",
-              "prompt": "E2E_BG24_ZCODE_TWO_CHILD: Finish after a short delay and return exactly E2E_BG24_ZCODE_TWO_CHILD_DONE.",
+              "description": "E2E BG24 short-lived two agent",
+              "prompt": "E2E_BG24_SHORT_LIVED_TWO_CHILD: Finish after a short delay and return exactly E2E_BG24_SHORT_LIVED_TWO_CHILD_DONE.",
               "run_in_background": true
             }
           },
           {
-            "id": "toolu_e2e_bg24_zcode_three_agent",
+            "id": "toolu_e2e_bg24_short_lived_three_agent",
             "name": "Agent",
             "input": {
-              "description": "E2E BG24 zcode three agent",
-              "prompt": "E2E_BG24_ZCODE_THREE_CHILD: Finish after a short delay and return exactly E2E_BG24_ZCODE_THREE_CHILD_DONE.",
+              "description": "E2E BG24 short-lived three agent",
+              "prompt": "E2E_BG24_SHORT_LIVED_THREE_CHILD: Finish after a short delay and return exactly E2E_BG24_SHORT_LIVED_THREE_CHILD_DONE.",
               "run_in_background": true
             }
           }
@@ -3639,105 +3685,105 @@
       }
     },
     {
-      "id": "upstream-background-agent-control-preserve-cc-child-keepalive-tool",
-      "description": "BG24: cc peer Agent stays running while zcode Agent completes.",
+      "id": "upstream-background-agent-control-preserve-long-running-child-keepalive-tool",
+      "description": "BG24: long-running peer Agent stays running while short-lived Agent completes.",
       "metadata": {
         "kind": "subagent",
         "timingPolicy": "fast-tool-use",
         "source": "synthetic",
-        "syntheticReason": "让 cc Agent 进入不会自行完成的 child Bash，保持 running，证明另一个 Agent completion notification 不会清掉它的 control row。"
+        "syntheticReason": "让 long-running Agent 进入不会自行完成的 child Bash，保持 running，证明另一个 Agent completion notification 不会清掉它的 control row。"
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_BG24_CC_CHILD"],
-        "lastUserMessageIncludes": ["E2E_BG24_CC_CHILD"]
+        "bodyIncludes": ["E2E_BG24_LONG_RUNNING_CHILD"],
+        "lastUserMessageIncludes": ["E2E_BG24_LONG_RUNNING_CHILD"]
       },
       "response": {
         "statusCode": 200,
         "toolUse": {
-          "id": "toolu_e2e_bg24_cc_keepalive_bash",
+          "id": "toolu_e2e_bg24_long_running_keepalive_bash",
           "name": "Bash",
           "input": {
             "command": "while true; do sleep 1; done",
-            "description": "E2E BG24 cc keepalive bash"
+            "description": "E2E BG24 long-running keepalive bash"
           }
         }
       }
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-one-child-result",
-      "description": "BG24: first zcode peer Agent completes first.",
+      "id": "upstream-background-agent-control-preserve-short-lived-one-child-result",
+      "description": "BG24: first short-lived peer Agent completes first.",
       "metadata": {
         "kind": "subagent",
         "timingPolicy": "delayed-text",
         "source": "synthetic",
-        "syntheticReason": "短延迟完成第一个 zcode background Agent，稳定触发 parent task-notification。"
+        "syntheticReason": "短延迟完成第一个 short-lived background Agent，稳定触发 parent task-notification。"
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_BG24_ZCODE_ONE_CHILD"],
-        "lastUserMessageIncludes": ["E2E_BG24_ZCODE_ONE_CHILD"]
+        "bodyIncludes": ["E2E_BG24_SHORT_LIVED_ONE_CHILD"],
+        "lastUserMessageIncludes": ["E2E_BG24_SHORT_LIVED_ONE_CHILD"]
       },
       "response": {
         "statusCode": 200,
         "delayMs": 4000,
         "text": {
           "id": "upstream-e2e-bg24-zcode-one-child-done",
-          "text": "E2E_BG24_ZCODE_ONE_CHILD_DONE"
+          "text": "E2E_BG24_SHORT_LIVED_ONE_CHILD_DONE"
         }
       }
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-two-child-result",
-      "description": "BG24: second zcode peer Agent completes second.",
+      "id": "upstream-background-agent-control-preserve-short-lived-two-child-result",
+      "description": "BG24: second short-lived peer Agent completes second.",
       "metadata": {
         "kind": "subagent",
         "timingPolicy": "delayed-text",
         "source": "synthetic",
-        "syntheticReason": "短延迟完成第二个 zcode background Agent，稳定触发 parent task-notification。"
+        "syntheticReason": "短延迟完成第二个 short-lived background Agent，稳定触发 parent task-notification。"
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_BG24_ZCODE_TWO_CHILD"],
-        "lastUserMessageIncludes": ["E2E_BG24_ZCODE_TWO_CHILD"]
+        "bodyIncludes": ["E2E_BG24_SHORT_LIVED_TWO_CHILD"],
+        "lastUserMessageIncludes": ["E2E_BG24_SHORT_LIVED_TWO_CHILD"]
       },
       "response": {
         "statusCode": 200,
         "delayMs": 14000,
         "text": {
           "id": "upstream-e2e-bg24-zcode-two-child-done",
-          "text": "E2E_BG24_ZCODE_TWO_CHILD_DONE"
+          "text": "E2E_BG24_SHORT_LIVED_TWO_CHILD_DONE"
         }
       }
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-three-child-result",
-      "description": "BG24: third zcode peer Agent completes third.",
+      "id": "upstream-background-agent-control-preserve-short-lived-three-child-result",
+      "description": "BG24: third short-lived peer Agent completes third.",
       "metadata": {
         "kind": "subagent",
         "timingPolicy": "delayed-text",
         "source": "synthetic",
-        "syntheticReason": "短延迟完成第三个 zcode background Agent，复现真实场景中第三个 completion notification 触发 UI 闪没。"
+        "syntheticReason": "短延迟完成第三个 short-lived background Agent，复现真实场景中第三个 completion notification 触发 UI 闪没。"
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_BG24_ZCODE_THREE_CHILD"],
-        "lastUserMessageIncludes": ["E2E_BG24_ZCODE_THREE_CHILD"]
+        "bodyIncludes": ["E2E_BG24_SHORT_LIVED_THREE_CHILD"],
+        "lastUserMessageIncludes": ["E2E_BG24_SHORT_LIVED_THREE_CHILD"]
       },
       "response": {
         "statusCode": 200,
         "delayMs": 24000,
         "text": {
           "id": "upstream-e2e-bg24-zcode-three-child-done",
-          "text": "E2E_BG24_ZCODE_THREE_CHILD_DONE"
+          "text": "E2E_BG24_SHORT_LIVED_THREE_CHILD_DONE"
         }
       }
     },
@@ -3756,10 +3802,10 @@
         "pathIncludes": "/messages",
         "bodyIncludes": [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
-          "toolu_e2e_bg24_cc_agent",
-          "toolu_e2e_bg24_zcode_one_agent",
-          "toolu_e2e_bg24_zcode_two_agent",
-          "toolu_e2e_bg24_zcode_three_agent",
+          "toolu_e2e_bg24_long_running_agent",
+          "toolu_e2e_bg24_short_lived_one_agent",
+          "toolu_e2e_bg24_short_lived_two_agent",
+          "toolu_e2e_bg24_short_lived_three_agent",
           "Async agent launched successfully"
         ],
         "bodyExcludes": [
@@ -3777,13 +3823,13 @@
       }
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-one-notification",
-      "description": "BG24: first zcode background Agent completion notification is consumed before the third completion reproducer.",
+      "id": "upstream-background-agent-control-preserve-short-lived-one-notification",
+      "description": "BG24: first short-lived background Agent completion notification is consumed before the third completion reproducer.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "task-notification",
         "source": "synthetic",
-        "syntheticReason": "先消费第一个 zcode Agent completion notification，复现真实场景中多个 zcode Agent 依次完成。 验证来源提示及非用户授权边界。"
+        "syntheticReason": "先消费第一个 short-lived Agent completion notification，复现真实场景中多个 short-lived Agent 依次完成。 验证来源提示及非用户授权边界。"
       },
       "maxMatches": 1,
       "match": {
@@ -3792,9 +3838,9 @@
         "bodyIncludes": [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
           "<task-notification>",
-          "<tool-use-id>toolu_e2e_bg24_zcode_one_agent</tool-use-id>",
+          "<tool-use-id>toolu_e2e_bg24_short_lived_one_agent</tool-use-id>",
           "<status>completed</status>",
-          "E2E_BG24_ZCODE_ONE_CHILD_DONE"
+          "E2E_BG24_SHORT_LIVED_ONE_CHILD_DONE"
         ],
         "bodyExcludes": [
           "Generate a concise title",
@@ -3810,19 +3856,19 @@
       "response": {
         "statusCode": 200,
         "text": {
-          "id": "upstream-e2e-background-agent-control-preserve-zcode-one-notification",
-          "text": "background-agent-control-preserve-zcode-one-notification-ok"
+          "id": "upstream-e2e-background-agent-control-preserve-short-lived-one-notification",
+          "text": "background-agent-control-preserve-short-lived-one-notification-ok"
         }
       }
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-two-notification",
-      "description": "BG24: second zcode background Agent completion notification is consumed before the third completion reproducer.",
+      "id": "upstream-background-agent-control-preserve-short-lived-two-notification",
+      "description": "BG24: second short-lived background Agent completion notification is consumed before the third completion reproducer.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "task-notification",
         "source": "synthetic",
-        "syntheticReason": "再消费第二个 zcode Agent completion notification，复现真实场景中多个 zcode Agent 依次完成。 验证来源提示及非用户授权边界。"
+        "syntheticReason": "再消费第二个 short-lived Agent completion notification，复现真实场景中多个 short-lived Agent 依次完成。 验证来源提示及非用户授权边界。"
       },
       "maxMatches": 1,
       "match": {
@@ -3831,9 +3877,9 @@
         "bodyIncludes": [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
           "<task-notification>",
-          "<tool-use-id>toolu_e2e_bg24_zcode_two_agent</tool-use-id>",
+          "<tool-use-id>toolu_e2e_bg24_short_lived_two_agent</tool-use-id>",
           "<status>completed</status>",
-          "E2E_BG24_ZCODE_TWO_CHILD_DONE"
+          "E2E_BG24_SHORT_LIVED_TWO_CHILD_DONE"
         ],
         "bodyExcludes": [
           "Generate a concise title",
@@ -3850,14 +3896,14 @@
         "statusCode": 200,
         "delayMs": 12000,
         "text": {
-          "id": "upstream-e2e-background-agent-control-preserve-zcode-two-notification",
-          "text": "background-agent-control-preserve-zcode-two-notification-ok"
+          "id": "upstream-e2e-background-agent-control-preserve-short-lived-two-notification",
+          "text": "background-agent-control-preserve-short-lived-two-notification-ok"
         }
       }
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-three-notification",
-      "description": "BG24: third zcode background Agent completion notification asks the main model to update todos before the final reply.",
+      "id": "upstream-background-agent-control-preserve-short-lived-three-notification",
+      "description": "BG24: third short-lived background Agent completion notification asks the main model to update todos before the final reply.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "task-notification",
@@ -3871,9 +3917,9 @@
         "bodyIncludes": [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
           "<task-notification>",
-          "<tool-use-id>toolu_e2e_bg24_zcode_three_agent</tool-use-id>",
+          "<tool-use-id>toolu_e2e_bg24_short_lived_three_agent</tool-use-id>",
           "<status>completed</status>",
-          "E2E_BG24_ZCODE_THREE_CHILD_DONE"
+          "E2E_BG24_SHORT_LIVED_THREE_CHILD_DONE"
         ],
         "bodyExcludes": [
           "Generate a concise title",
@@ -3905,7 +3951,7 @@
     },
     {
       "id": "upstream-background-agent-control-preserve-after-todo",
-      "description": "BG24: final notification-turn reply after TodoWrite is delayed so the UI can assert the cc peer row remains visible while main is still processing.",
+      "description": "BG24: final notification-turn reply after TodoWrite is delayed so the UI can assert the long-running peer row remains visible while main is still processing.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "delayed-text",
@@ -3931,19 +3977,19 @@
         "statusCode": 200,
         "delayMs": 15000,
         "text": {
-          "id": "upstream-e2e-background-agent-control-preserve-zcode-notification",
-          "text": "background-agent-control-preserve-zcode-notification-ok"
+          "id": "upstream-e2e-background-agent-control-preserve-short-lived-notification",
+          "text": "background-agent-control-preserve-short-lived-notification-ok"
         }
       }
     },
     {
-      "id": "upstream-background-agent-control-preserve-cc-stopped",
-      "description": "BG24: stop the cc Agent for deterministic cleanup.",
+      "id": "upstream-background-agent-control-preserve-long-running-stopped",
+      "description": "BG24: stop the long-running Agent for deterministic cleanup.",
       "metadata": {
         "kind": "main",
         "timingPolicy": "task-notification",
         "source": "synthetic",
-        "syntheticReason": "测试结束前收口仍 running 的 cc Agent，避免长 running task 泄漏到后续测试。 验证来源提示及非用户授权边界。"
+        "syntheticReason": "测试结束前收口仍 running 的 long-running Agent，避免长 running task 泄漏到后续测试。 验证来源提示及非用户授权边界。"
       },
       "maxMatches": 1,
       "match": {
@@ -3952,8 +3998,8 @@
         "bodyIncludes": [
           "E2E_BACKGROUND_AGENT_CONTROL_PRESERVE",
           "<task-notification>",
-          "<tool-use-id>toolu_e2e_bg24_cc_agent</tool-use-id>",
-          "<status>stopped</status>"
+          "<tool-use-id>toolu_e2e_bg24_long_running_agent</tool-use-id>",
+          "<status>killed</status>"
         ],
         "bodyExcludes": [
           "Generate a concise title",
@@ -3969,8 +4015,8 @@
       "response": {
         "statusCode": 200,
         "text": {
-          "id": "upstream-e2e-background-agent-control-preserve-cc-stopped",
-          "text": "background-agent-control-preserve-cc-stopped-ok"
+          "id": "upstream-e2e-background-agent-control-preserve-long-running-stopped",
+          "text": "background-agent-control-preserve-long-running-stopped-ok"
         }
       }
     },

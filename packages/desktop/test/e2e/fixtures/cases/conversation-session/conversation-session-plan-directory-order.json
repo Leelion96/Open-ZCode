@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-plan-directory-order",
+  "spec": "./test/e2e/conversation-session/conversation-session-plan-directory-order.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-plan-directory-order.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "plan-directory-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定标题响应，计划审批和原始工具顺序仍走真实执行链路。"
+    },
+    {
+      "id": "upstream-plan-directory-enter-plan-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "需要稳定制造 plan mode 状态，避免依赖真实模型是否选择 EnterPlanMode。"
+    },
+    {
+      "id": "upstream-plan-directory-exit-plan-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "需要稳定触发 ExitPlanMode 审批弹窗，并让已批准 plan 内容可在文件和 compact 后请求中被追踪。"
+    },
+    {
+      "id": "upstream-plan-directory-approval-final",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "审批通过后的回复内容不是本 case 核心，只需要稳定结束当前轮并保留 provider-visible approved plan。"
+    }
+  ]
+}

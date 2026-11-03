@@ -7,6 +7,7 @@ import {
   createProjectId,
   createSessionId,
   createTraceId,
+  ReadSessionContextInputSchema,
   modelMessageContentToText,
   type MessageWithParts,
   type Model,
@@ -30,6 +31,41 @@ import type { ToolExecutionContext } from "../src/tool/types.js";
 import { createTestModelFormatProperties } from "./test-runtime-model.js";
 
 describe("ReadSessionContext tool", () => {
+  it.each([
+    "session_0123456789abcdef0123456789abcdef",
+    "session_12345678-1234-4234-8234-123456789abc",
+  ])("reads persisted legacy ID %s without rewriting its identity", async (id) => {
+    const sessionId = id as SessionId;
+    const context = createToolContext(sessionId, { messages: createTranscript(sessionId) });
+    const getSession = vi.spyOn(context.sessionStore!, "getSession");
+    const messages = vi.spyOn(context.sessionStore!, "messages");
+    const input = { sessionId, query: "auth refresh fix", strategy: "relevant" };
+    expect(ReadSessionContextInputSchema.safeParse(input).success).toBe(true);
+    expect(validateInput(input, readSessionContextToolEntry)).toBeUndefined();
+    const output = await readSessionContextHandler(input, context);
+    expect(output).toMatchObject({ status: "success", sessionId });
+    expect(JSON.stringify(output)).toContain("auth-refresh.ts");
+    expect(getSession).toHaveBeenCalledExactlyOnceWith(sessionId);
+    expect(messages).toHaveBeenCalledExactlyOnceWith({ sessionID: sessionId });
+  });
+
+  it.each(["session_", "sess_", "session_../escape", "session_a/b", "session_a\\b", "other_123"])(
+    "rejects invalid explicit session ID %s",
+    (sessionId) => {
+      expect(ReadSessionContextInputSchema.safeParse({ sessionId, query: "history" }).success).toBe(
+        false,
+      );
+    },
+  );
+
+  it("keeps mixed-prefix references distinct and deduplicates exact IDs", () => {
+    const legacy = "session_0123456789abcdef0123456789abcdef";
+    const current = "sess_0123456789abcdef0123456789abcdef";
+    const input = `[#old](#${legacy}) #${current} #${legacy}.`;
+    expect(extractSessionReferences(input)).toEqual([legacy, current]);
+    expect(buildReferencedSessionContextReminderBody(input)).toContain(`- ${legacy}\n- ${current}`);
+  });
+
   it("accepts explicit current topic through the executor schema boundary", () => {
     expect(
       validateInput(

@@ -9,18 +9,25 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-virtual-project-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "vp17-remote",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "Fixed reply drives a real remote SourceServer Agent; assertions inspect remote execution, additional-root capability, persistence ownership and reopening, not model output quality."
+      "syntheticReason": "Fixed reply drives a real remote SourceServer Agent; assertions inspect remote execution, fixed-root capability, persistence ownership and reopening, not model output quality."
     },
     {
       "id": "vp18-cold",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "Fixed reply drives the real restarted remote Agent; assertions inspect changed root capabilities and actual runtime identity, not model output quality."
+      "syntheticReason": "Fixed reply drives the real restarted remote Agent; assertions inspect refreshed fixed-root skills and actual runtime identity, not model output quality."
     }
   ]
 }

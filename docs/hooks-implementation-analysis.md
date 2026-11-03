@@ -124,7 +124,7 @@ Hook 触发
 - **stdout**：空输出或非 JSON 文本作为成功 diagnostic；JSON 输出校验已知字段，未知字段忽略
 - **exit code 0**：正常，解析 stdout
 - **exit code 2**：阻断（PreToolUse / PermissionRequest / UserPromptSubmit；Stop 的 continue 语义另算）
-- **其他 exit code**：非阻断错误，记 diagnostic
+- **其他 exit code**：非阻断错误，记 diagnostic；`PreToolUse` Hook 配了 `onError: "deny"` 时按 exit code 2 拦截（见 `docs/hooks-runtime-contract.md`「stdout、退出码与事件效果」）
 
 Claude 兼容输入投影集中在 `configured-runner-input.ts`，避免不同事件分别拼接后产生字段漂移。
 

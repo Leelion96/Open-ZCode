@@ -38,6 +38,133 @@ const enUS: Record<string, string> = {
   "archives.loading": "Loading archived sessions…",
   "archives.empty": "No archived sessions",
   "archives.noResults": "No matching archived sessions",
+  "projectManagement.nav": "Projects",
+  "projectManagement.intro":
+    "Removing a project takes it out of the sidebar and the project picker. Its sessions stay in Recent and search, and nothing on disk is touched.",
+  "projectManagement.manage": "Manage projects…",
+  "projectManagement.suggestion.title": "{count} projects look unused",
+  "projectManagement.suggestion.titleOne": "1 project looks unused",
+  "projectManagement.suggestion.missing": "{count} have a missing folder",
+  "projectManagement.suggestion.missingOne": "1 has a missing folder",
+  "projectManagement.suggestion.empty": "{count} have no sessions",
+  "projectManagement.suggestion.emptyOne": "1 has no sessions",
+  "projectManagement.suggestion.idle": "{count} idle for 90+ days",
+  "projectManagement.suggestion.idleOne": "1 idle for 90+ days",
+  "projectManagement.review": "Review {count}",
+  "projectManagement.search": "Search projects, folders or devices",
+  "projectManagement.clearSearch": "Clear search",
+  "projectManagement.filterLabel": "Show",
+  "projectManagement.filter.all": "All projects",
+  "projectManagement.filter.unused": "Looks unused · {count}",
+  "projectManagement.sortLabel": "Sort by",
+  "projectManagement.sort.lastActive": "Last active",
+  "projectManagement.sort.name": "Name",
+  "projectManagement.sort.sessions": "Sessions",
+  "projectManagement.column.project": "Project",
+  "projectManagement.column.device": "Device",
+  "projectManagement.column.sessions": "Sessions",
+  "projectManagement.column.lastActive": "Last active",
+  "projectManagement.selectAll": "Select all",
+  "projectManagement.selectProject": "Select {name}",
+  "projectManagement.rowActions": "Actions for {name}",
+  "projectManagement.removeOne": "Remove…",
+  "projectManagement.pinned": "Pinned",
+  "projectManagement.moreRoots": "{count} more folders",
+  "projectManagement.moreRootsOne": "1 more folder",
+  "projectManagement.reason.missing": "Folder missing",
+  "projectManagement.reason.empty": "No sessions",
+  "projectManagement.reason.idle": "Idle {months} months",
+  "projectManagement.never": "Never",
+  "projectManagement.offline": "Device offline",
+  "projectManagement.unremovable": "This project can’t be removed here",
+  "projectManagement.sessionsCount": "{count} sessions",
+  "projectManagement.sessionsCountOne": "1 session",
+  "projectManagement.projectsCount": "{count} projects",
+  "projectManagement.projectsCountOne": "1 project",
+  "projectManagement.showMore": "Show {count} more",
+  "projectManagement.selected": "{count} selected",
+  "projectManagement.ofShown": "of {count} shown",
+  "projectManagement.clearSelection": "Clear",
+  "projectManagement.removeSelected": "Remove {count} projects",
+  "projectManagement.removeSelectedOne": "Remove 1 project",
+  "projectManagement.confirm.title": "Remove {count} projects?",
+  "projectManagement.confirm.titleOne": "Remove 1 project?",
+  "projectManagement.confirm.description":
+    "They leave the sidebar and the project picker. Their sessions ({sessions}) stay in Recent and search. Folders on disk are not touched.",
+  "projectManagement.confirm.remoteNote":
+    "Removed from this computer only. They stay on {device} for its other clients.",
+  "projectManagement.confirm.remoteNoteOne":
+    "Removed from this computer only. It stays on {device} for its other clients.",
+  "projectManagement.confirm.restoreLocal":
+    "Projects on this computer can be restored later from Removed projects on this page.",
+  "projectManagement.confirm.restoreRemote":
+    "To bring back a remote project later, add it again from its device.",
+  "projectManagement.confirm.data.option": "Also delete their {productName} data",
+  "projectManagement.confirm.data.optionOne": "Also delete its {productName} data",
+  "projectManagement.confirm.data.note":
+    "Sessions, session files, checkpoints and memory of the {count} projects on this computer.",
+  "projectManagement.confirm.data.noteOne":
+    "Sessions, session files, checkpoints and memory of the project on this computer.",
+  "projectManagement.confirm.data.calculating": "Calculating…",
+  "projectManagement.confirm.data.sessions": "{count} sessions and their files",
+  "projectManagement.confirm.data.sessionsOne": "1 session and its files",
+  "projectManagement.confirm.data.checkpoints": "File checkpoints",
+  "projectManagement.confirm.data.memory": "Memory",
+  "projectManagement.confirm.data.notDeleted": "Not deleted: your folders and app logs.",
+  "projectManagement.confirm.data.notDeletedRemote":
+    "Not deleted: your folders, app logs, and data on {devices}.",
+  "projectManagement.confirm.data.title": "Remove {count} projects and delete their data?",
+  "projectManagement.confirm.data.titleOne": "Remove 1 project and delete its data?",
+  "projectManagement.confirm.data.description":
+    "They leave the sidebar and the project picker. The {sessions} of the {count} projects on this computer are deleted with their files. Folders on disk are not touched.",
+  "projectManagement.confirm.data.descriptionOne":
+    "They leave the sidebar and the project picker. The {sessions} of the project on this computer are deleted with their files. Folders on disk are not touched.",
+  "projectManagement.confirm.data.noRestore":
+    "The {count} projects on this computer can’t be restored afterwards.",
+  "projectManagement.confirm.data.noRestoreOne":
+    "The project on this computer can’t be restored afterwards.",
+  "projectManagement.confirm.data.type": "Type {word} to confirm",
+  "projectManagement.confirm.data.word": "delete",
+  "projectManagement.confirm.data.confirm": "Remove and delete {size}",
+  "projectManagement.data.progress": "Deleting data of {count} projects…",
+  "projectManagement.data.progressOne": "Deleting data of 1 project…",
+  "projectManagement.data.progressAmount": "{done} of {total}",
+  "projectManagement.data.removedToast": "Removed {count} projects · freed {size}",
+  "projectManagement.data.removedToastOne": "Removed 1 project · freed {size}",
+  "projectManagement.data.deletedToast": "Deleted the data of {count} projects · freed {size}",
+  "projectManagement.data.deletedToastOne": "Deleted the data of 1 project · freed {size}",
+  "projectManagement.confirm.cancel": "Cancel",
+  "projectManagement.removedToast": "Removed {count} projects",
+  "projectManagement.removedToastOne": "Removed 1 project",
+  "projectManagement.restoredToast": "Restored {count} projects",
+  "projectManagement.restoredToastOne": "Restored 1 project",
+  "projectManagement.undo": "Undo",
+  "projectManagement.failure.remove": "{count} projects weren’t removed: {name} — {reason}",
+  "projectManagement.failure.removeOne": "1 project wasn’t removed: {name} — {reason}",
+  "projectManagement.failure.undo": "{count} projects couldn’t be restored: {name} — {reason}",
+  "projectManagement.failure.undoOne": "1 project couldn’t be restored: {name} — {reason}",
+  "projectManagement.failure.restore": "Couldn’t restore {name} — {reason}",
+  "projectManagement.failure.restoreOne": "Couldn’t restore {name} — {reason}",
+  "projectManagement.failure.purge":
+    "The data of {count} projects wasn’t deleted: {name} — {reason}",
+  "projectManagement.failure.purgeOne": "The data of 1 project wasn’t deleted: {name} — {reason}",
+  "projectManagement.retry": "Retry",
+  "projectManagement.dismiss": "Dismiss",
+  "projectManagement.removed.title": "Removed projects",
+  "projectManagement.removed.when": "Removed {time}",
+  "projectManagement.restore": "Restore",
+  "projectManagement.loading": "Loading projects…",
+  "projectManagement.loadFailed": "Could not load projects",
+  "projectManagement.empty": "No projects yet",
+  "projectManagement.noResults": "No matching projects",
+  "projectManagement.noUnused": "Nothing looks unused right now",
+  "project.dataSessionRunning": "a session is still running; try again when it finishes",
+  "project.dataSessionReferenced":
+    "a fork in another project still uses the attachments of a session, so that session was kept",
+  "project.dataDeleteFailed": "some files couldn’t be deleted",
+  "project.dataUnavailable": "this version of the agent can’t delete project data",
+  "project.undoUnavailable":
+    "This entry has no project identity, so it can’t be added back automatically.",
   "project.switchDevice": "Switch device?",
   "project.switchDeviceDescription":
     "The selected folders will be cleared. The project name will be kept.",
@@ -131,6 +258,7 @@ const enUS: Record<string, string> = {
   "taskGroup.color.purple": "Purple",
   "project.viewByProject": "By project",
   "project.viewRecentlyUpdated": "Recently updated",
+  "project.viewUnread": "Unread",
   "project.archived": "Archived",
   "project.sort": "Sort projects",
   "project.manual": "Project order",
@@ -198,6 +326,13 @@ const enUS: Record<string, string> = {
   "remote.action.cancel": "Cancel connection",
   "remote.action.update-server": "Update remote device",
   "remote.action.update-desktop": "Update desktop app",
+  "remote.action.downgrade-server": "Switch remote to {version}",
+  "remote.downgradeConfirmTitle": "Switch the remote to {version}?",
+  "remote.downgradeConfirmDescription":
+    "The remote {productName} service will switch from {current} to {version}, the same version as this desktop app. Devices that still use the newer desktop app must update the remote again when they connect. The older version may not fully show content that the newer version wrote.",
+  "remote.downgradeConfirm": "Switch",
+  "remote.downgradedHint":
+    "An older desktop app switched this remote from {from} to the current version. The remote updates only after you confirm.",
   "remote.action.install": "Install and connect",
   "remote.action.confirm-identity": "Use as a new device",
   "remote.reusedConnection":
@@ -212,6 +347,7 @@ const enUS: Record<string, string> = {
   "remote.action.retry": "Retry",
   "remote.action.none": "",
   "remote.error.authentication": "SSH authentication failed",
+  "remote.error.authenticationUnsupported": "Server requires additional verification",
   "remote.error.details": "Details",
   "remote.error.hostUnreachable.reason":
     "Check the device address and port, and make sure it is running and reachable.",
@@ -230,12 +366,16 @@ const enUS: Record<string, string> = {
   "remote.error.spaceInsufficient.reason": "Free up disk space on the device and retry.",
   "remote.error.permissionDenied.reason":
     "The current user cannot write to the installation directory. Check its permissions.",
+  "remote.error.platformUnsupported.reason":
+    "Remote connections support Linux and macOS on x64 and arm64. On Windows, connect through WSL or use a Linux device.",
   "remote.error.connectionCanceled.reason":
     "The connection was canceled. You can reconnect at any time.",
   "remote.error.credentialsRequired.reason":
     "Enter the password or key passphrase for this connection.",
   "remote.error.authentication.reason":
     "Check your SSH username, password or private key and retry.",
+  "remote.error.authenticationUnsupported.reason":
+    "After the password, this server asks for more verification (for example a one-time code). Only password, private key, and SSH agent sign-in are supported. Use a private key instead.",
   "remote.error.unknown.reason": "Unable to connect. Retry or view details.",
   "remote.error.hostUnreachable.wsl": "Cannot access WSL distribution",
   "remote.error.hostUnreachable.wsl.reason":
@@ -278,6 +418,8 @@ const enUS: Record<string, string> = {
     "View details, follow the instructions, and retry.",
   "remote.error.sourceServerRunningTasks.reason":
     "View details, follow the instructions, and retry.",
+  "remote.error.sourceServerDowngradeUnconfirmed.reason":
+    "Reconnect to read the latest version of the remote device.",
   "remote.error.workspaceTaskIdentityConflict.reason":
     "View details, follow the instructions, and retry.",
   "remote.error.workspaceConfigConflict.reason":
@@ -286,8 +428,14 @@ const enUS: Record<string, string> = {
   "remote.error.bindSessionMissing.reason": "View details, follow the instructions, and retry.",
   "remote.error.workspaceDirectoryUnavailable.reason":
     "View details, follow the instructions, and retry.",
+  "remote.error.workspaceDirectoryUnresponsive.reason":
+    "If the remote device is a Mac, check the Mac for a folder access prompt. If the folder is on a network or external drive, make sure the drive is available. Then retry.",
   "remote.error.recoveryBudgetExhausted.reason":
     "View details, follow the instructions, and retry.",
+  "remote.error.sourceServerStopFailed.reason":
+    "The remote service didn't exit cleanly. Try again later, or sign in to the device to check it.",
+  "remote.error.sourceServerControlUnresponsive.reason":
+    "The remote service didn't answer the request. Sign in to the device to check it, then try again.",
   "remote.error.workspaceMigrationPlanDiverged.reason":
     "View details, follow the instructions, and retry.",
   "remote.error.workspaceSessionGenerationChanged.reason":
@@ -1349,6 +1497,10 @@ const enUS: Record<string, string> = {
   "login.oauth.regionTag.zai": "Global",
   "login.oauth.regionTag.bigmodel": "CN",
   "login.oauth.waiting": "Waiting for {provider} authentication...",
+  "login.oauth.browserNotOpened": "Browser didn't open?",
+  "login.oauth.copyLoginLink": "Copy login link",
+  "login.oauth.copyLinkSuccess": "Copied. Paste and open it in your browser.",
+  "login.oauth.copyLinkFailed": "Could not copy the login link. Please try again.",
   "login.oauth.loginFailure": "Login failed, please try again",
   "login.oauth.cancel": "Cancel",
   "login.oauth.retry": "Retry login",
@@ -1511,6 +1663,7 @@ const enUS: Record<string, string> = {
   "sidePane.subagent": "Subagent",
   "sidePane.subagentDirectory": "Subagents",
   "sidePane.selectionChat": "Side conversation",
+  "sidePane.sites": "Sites",
   "sidePane.workflowRun": "Workflow run",
   "sidePane.workflowDirectory": "Workflow runs",
   "sidePane.workflowActor": "Workflow subagent",
@@ -1555,6 +1708,7 @@ const enUS: Record<string, string> = {
   "chat.selections.limit.total":
     "Conversation selections can contain at most 16,000 characters in total.",
   "sidePane.launcher.selection-side-conversation": "Continue a conversation in the side pane.",
+  "sidePane.launcher.sites": "View sites, deployments, and usage.",
   "sidePane.launcher.review": "Review code changes and diffs.",
   "sidePane.launcher.terminal": "Run commands and view output.",
   "sidePane.launcher.browser": "Browse websites and preview apps.",
@@ -1575,6 +1729,7 @@ const enUS: Record<string, string> = {
   "pluginUi.pin": "Keep expanded",
   "pluginUi.unpin": "Stop keeping expanded",
   "pluginUi.openInSidePane": "Open in side pane",
+  "pluginUi.open": "Open",
   "pluginUi.openedInSidePane": "Opened in side pane",
   "genUi.copyImage": "Copy image",
   "genUi.title": "Interactive view",
@@ -2072,6 +2227,17 @@ const enUS: Record<string, string> = {
   "appHeader.openInEditor": "Open in {editor}",
   "appHeader.selectOpenApp": "Choose app",
   "appHeader.copyPath": "Copy path",
+  "fileActions.saved": "Saved",
+  "fileActions.downloadStarted": "Download started",
+  "fileActions.saveAs": "Save as…",
+  "fileActions.saveAsUnavailable": "Saving files is unavailable here",
+  "fileActions.saveAsFailed":
+    "Could not save this file. Check the source connection and try again.",
+  "fileActions.saveAsTooLarge": "Files larger than 50 MiB cannot be saved here.",
+  "fileActions.moreOpenWith": "More apps",
+  "fileActions.scrollMoreApps": "Scroll to see more apps",
+  "fileActions.openInApplication": "Open in {application}",
+  "fileActions.defaultApp": "Default",
   "fileActions.copyAbsolutePath": "Copy absolute path",
   "fileActions.copyRelativePath": "Copy relative path",
   "appHeader.copyTaskPath": "Copy task path",
@@ -2096,6 +2262,10 @@ const enUS: Record<string, string> = {
   "workspaceHeader.help.productRequestDraft": "I would like to suggest: ",
   "workspaceHeader.help.community": "User community",
   "workspaceHeader.help.docs": "Product docs",
+  "workspaceHeader.help.copyDeviceMid": "Copy device MID",
+  "workspaceHeader.help.deviceMidCopied": "Device MID copied",
+  "workspaceHeader.help.deviceMidCopyFailed":
+    "Could not copy device MID. Check clipboard access and try again.",
   "titleBar.menu.file": "File",
   "titleBar.menu.view": "View",
   "titleBar.menu.help": "Help",
@@ -2258,6 +2428,8 @@ const enUS: Record<string, string> = {
     "remote device is incompatible with this {productName} Desktop version and must be upgraded.",
   "remote.error.sourceServerRunningTasks":
     "remote device still has running tasks. Wait for them to finish or confirm a forced update.",
+  "remote.error.sourceServerDowngradeUnconfirmed":
+    "The remote device was updated to a newer version. This operation did not downgrade it.",
   "remote.error.workspaceTaskIdentityConflict":
     "This remote directory contains task identity conflicts that cannot be merged automatically.",
   "remote.error.workspaceConfigConflict":
@@ -2267,8 +2439,12 @@ const enUS: Record<string, string> = {
     "The remote workspace session is no longer available. Reconnect and try again.",
   "remote.error.workspaceDirectoryUnavailable":
     "The remote project directory is missing, is not a folder, or cannot be accessed. Check the directory and permissions, then try again.",
+  "remote.error.workspaceDirectoryUnresponsive":
+    "The remote device did not respond for 30 seconds while reading the project folder",
   "remote.error.recoveryBudgetExhausted":
     "Automatic recovery stopped after {attempt}/{limit} attempts. Reconnect manually to try again.",
+  "remote.error.sourceServerStopFailed": "The remote service didn't stop",
+  "remote.error.sourceServerControlUnresponsive": "The remote service isn't responding",
   "remote.error.workspaceMigrationPlanDiverged":
     "A new workspace identity appeared while migration was paused. Review the migration report before retrying.",
   "remote.error.workspaceSessionGenerationChanged":
@@ -2283,6 +2459,7 @@ const enUS: Record<string, string> = {
   "remote.error.installFailed": "Remote installation failed",
   "remote.error.spaceInsufficient": "Not enough space on remote device",
   "remote.error.permissionDenied": "Remote write permission denied",
+  "remote.error.platformUnsupported": "This device's system is not supported",
   "remote.error.connectionCanceled": "Connection canceled",
   "remote.error.unknown": "Connection failed",
   "settings.source.recentLog": "View recent logs",
@@ -2420,6 +2597,8 @@ const enUS: Record<string, string> = {
   "remote.phase.identify": "Identify device",
   "remote.phase.deploy": "Install ZCode Server",
   "remote.phase.handshake": "Start and check compatibility",
+  "remote.phase.workspace": "Open project folder",
+  "remote.phaseSub.workspaceReading": "Reading {path}",
   "remote.progress.step": "Step {current}/{total}",
   "remote.progress.elapsedSeconds": "{seconds}s elapsed",
   "remote.progress.elapsedMinutesSeconds": "{minutes}m {seconds}s elapsed",
@@ -2552,6 +2731,7 @@ const enUS: Record<string, string> = {
   "webRemoteControl.refreshQr.success": "Remote control QR refreshed",
   "webRemoteControl.refreshQr.failed": "Could not refresh remote control QR: {error}",
   "webRemoteControl.stop": "Stop",
+  "webRemoteControl.pullMobileLogs": "Pull mobile logs",
   "webRemoteControl.switchWorkspace": "Switch workspace",
   "webRemoteControl.expandNavigation": "Expand tasks and workspaces",
   "webRemoteControl.collapseNavigation": "Collapse tasks and workspaces",
@@ -2595,7 +2775,7 @@ const enUS: Record<string, string> = {
   "remote.connectingConfirmTitle": "Stop the current connection?",
   "remote.sourceServerInstallTitle": "ZCode Server installation required",
   "remote.sourceServerInstallDescription":
-    "ZCode will upload the matching release, install it under ~/.zcode/server, and start the background daemon. Existing legacy remote files will be preserved.",
+    "{productName} will upload the matching release, install it under ~/.zcode/server, and start the remote service. Existing legacy remote files will be preserved.",
   "remote.sourceServerInstallConfirm": "Install and continue",
   "remote.installTarget": "Target account",
   "remote.installVersion": "Install version",
@@ -2641,13 +2821,30 @@ const enUS: Record<string, string> = {
     "Connection changes take effect the next time you connect. Existing projects and tasks are unchanged.",
   "settings.source.deviceName": "Device name",
   "settings.source.removeSourceServer": "Remove device",
+  "settings.source.restartRemoteService": "Restart remote service",
+  "settings.source.restartRemoteServiceTitle": "Restart the remote service?",
+  "settings.source.reinstallRemoteService": "Reinstall remote service",
+  "settings.source.reinstallRemoteServiceHint":
+    "Uses this computer's version. Projects and tasks are kept.",
+  "settings.source.reinstallRemoteServiceTitle": "Reinstall the remote service?",
+  "settings.source.reinstallRemoteServiceDescription":
+    "Source Server {version} will be reinstalled on {source}. Damaged program files are replaced. Projects, tasks, settings, and sign-in information are kept.",
+  "settings.source.reinstallRemoteServiceConfirm": "Reinstall",
+  "settings.source.stopRemoteService": "Stop remote service",
+  "settings.source.stopRemoteServiceTitle": "Stop the remote service?",
+  "settings.source.remoteServiceInterruptionDescription":
+    "This interrupts all running tasks on this device. They won't resume automatically.",
+  "settings.source.remoteServiceRunningTasksUnavailable": "The device didn't provide a task list.",
+  "settings.source.remoteServiceNoRunningTasks": "No tasks are running on this device right now.",
+  "settings.source.remoteServiceOtherClientsNotice":
+    "If {productName} on another computer is connected to this device, it may start the remote service again.",
+  "settings.source.stopRemoteServiceStartupReconnectNotice":
+    "“Reconnect automatically at startup” is on, so the remote service will start again the next time you open {productName}.",
+  "settings.source.remoteServiceUpdateRequired": "Available after updating the remote service",
   "settings.source.removeOpenProjects": "These open projects will be disconnected:\n{projects}",
   "settings.source.noOpenProjects": "This device has no open projects.",
   "settings.source.disconnectHint": "Remote tasks will continue running after you disconnect.",
-  "settings.machine.local": "This computer",
-  "settings.machine.remote": "{name} (remote)",
   "settings.machine.unknownRemote": "Remote device",
-  "settings.machine.scope": "{scope} · {machine}",
   "settings.source.connectionName": "Connection name",
   "settings.source.connectionAddress": "Address",
   "settings.source.connectionNameHint": "Used only to distinguish this connection in {productName}.",
@@ -2656,6 +2853,14 @@ const enUS: Record<string, string> = {
     "This connection is no longer available. Refresh and try again.",
   "settings.source.error.recent-project-unresolved":
     "The original project cannot be identified. Select a project from the sidebar.",
+  "settings.source.error.credentials-required":
+    "Couldn't get the SSH credentials automatically. Connect to this device once first.",
+  "settings.source.error.source-server-stop-failed":
+    "The remote service didn't stop. Try again later, or sign in to the device to check it.",
+  "settings.source.error.source-server-control-unresponsive":
+    "The remote service isn't responding. Sign in to the device to check it, then try again.",
+  "settings.source.error.source-server-operation-in-progress":
+    "Another operation is in progress on this device. Try again later.",
   "settings.source.connectionNameRequired": "Connection name is required.",
   "settings.source.keepSavedSecret": "Leave blank to keep the saved credential",
   "settings.source.otherSavedConnections": "Other saved connections",
@@ -2664,6 +2869,8 @@ const enUS: Record<string, string> = {
   "settings.source.lastConnected": "Last success {time}",
   "settings.source.lastConnectError": "Last failure: {error}",
   "settings.source.devicesHeading": "Devices",
+  "settings.source.searchPlaceholder": "Search devices, addresses, or projects",
+  "settings.source.searchEmpty": "No devices match “{query}”",
   "settings.source.recentProjects": "Recent projects",
   "settings.source.showAllProjects": "Show all ({count})",
   "settings.source.showLessProjects": "Show less",
@@ -2709,7 +2916,10 @@ const enUS: Record<string, string> = {
   "settings.source.removeSourceServerTitle": "Remove this device?",
   "settings.source.removeSourceServerDescription":
     "This removes all local connections, credentials, and project records. Remote services and data are not affected.",
-  "settings.source.connectionPreferences": "Connection preferences",
+  "settings.source.preferences": "Preferences",
+  "settings.source.hideProjectDeviceNames": "Hide device names in project rows",
+  "settings.source.hideProjectDeviceNamesDescription":
+    "Hide remote device names in task list project rows. Hover to view them.",
   "settings.source.startupAutoReconnect": "Reconnect automatically at startup",
   "settings.source.startupAutoReconnectDescription":
     "Reconnects devices seen online in the last 7 days at startup. Changes take effect on the next startup.",
@@ -2740,6 +2950,14 @@ const enUS: Record<string, string> = {
   "sourceServer.updateCompletedToast": "{source} was updated and reconnected.",
   "sourceServer.updateFailedToast":
     "{source} could not be updated. Review the log under Remote devices and try again.",
+  "sourceServer.reinstallCompletedToast": "{source} was reinstalled and reconnected.",
+  "sourceServer.reinstallFailedToast":
+    "{source} could not be reinstalled. Review the log under Remote devices and try again.",
+  "sourceServer.stopCompletedToast": "Stopped the remote service on {source}.",
+  "sourceServer.stopFailedToast": "Couldn't stop the remote service on {source}. View details.",
+  "sourceServer.restartCompletedToast": "Restarted the remote service on {source} and reconnected.",
+  "sourceServer.restartFailedToast":
+    "Couldn't restart the remote service on {source}. View details.",
   "sourceServer.controllerUpdateAvailableToast":
     "{productName} has an update for {source}\nDesktop {current} → {available}; update {productName} to match this Source.",
   "settings.source.forceUpdate": "Force update",
@@ -2871,17 +3089,24 @@ const enUS: Record<string, string> = {
     "An input submitted before the CLI restarted did not reach the conversation. Confirm whether to send it again.",
   "chat.pendingCommand.resend": "Send again",
   "chat.pendingCommand.dismiss": "Later",
-  // Soft gate (D4): persistent banner when workspace hooks are pending review
+  // 软门禁（D4）：工作区 Hook 待审核时 composer 图标与浮层
+  "chat.workspaceHookPending.label": "Workspace hooks pending review",
   "chat.workspaceHookPending.message":
     "{count} workspace hook(s) pending review; disabled for this session",
   "chat.workspaceHookPending.review": "Review",
   "chat.workspaceHookPending.dismiss": "Dismiss",
+  "chat.workspaceMcpPending.label": "Workspace MCP servers awaiting trust",
+  "chat.workspaceMcpPending.message":
+    "{count} workspace MCP server(s) await trust. Trust changes apply to new or restarted chats; you can continue chatting.",
+  "chat.workspaceMcpPending.review": "Review",
+  "chat.workspaceMcpPending.dismiss": "Dismiss",
 
   // Task list
   "taskList.title": "Task list",
   "taskList.newThread": "New task",
   "taskList.forkedUntitled": "New task",
   "taskList.noTasks": "No tasks yet",
+  "taskList.noUnreadTasks": "No unread tasks",
   "taskList.loading": "Loading tasks...",
   "taskList.remoteConnectionUnknown": "Remote connection unavailable",
   "taskList.showMore": "Show more",
@@ -2896,6 +3121,17 @@ const enUS: Record<string, string> = {
   "taskList.renamePlaceholder": "Task name",
   "taskList.renameFailed": "Could not rename task",
   "taskList.pinFailed": "Could not update pinned state",
+  "taskList.restartUnsupported":
+    "This Agent version does not support restarting tasks. Update it first.",
+  "taskList.recoverWorkspace": "Restart Agent process",
+  "taskList.recoverWorkspaceDescription":
+    "Task resources could not be safely released. Continuing stops every task sharing this Agent process, including tasks in other workspaces. Conversation history is kept.",
+  "taskList.restart": "Restart task",
+  "taskList.restarting": "Restarting task…",
+  "taskList.restartFailed": "Restart failed. Check the task status and try again.",
+  // 命令说明沿用 CLI 英文目录；任务菜单名称仍按界面语言展示。
+  "chat.slash.app.reload.description":
+    "Reload the task runtime, preserving history and stopping current execution.",
   "taskList.markAsUnread": "Mark as unread",
   "chat.toolCall.agent.openInSidePane": "Open in side pane",
   "v4Pane.renamePlaceholder": "Rename session…",
@@ -2993,12 +3229,14 @@ const enUS: Record<string, string> = {
   "chat.previewCards.video": "Video",
   "chat.previewCards.audio": "Audio",
   "chat.previewCards.openExternal": "Open in browser",
+  "chat.message.link.openIn{productName}": "Open in {productName}",
   "chat.previewCards.previewInSidePane": "Preview",
-  "chat.previewCards.openDefaultApp": "Open",
+  "chat.previewCards.openDefaultApp": "Open with default app",
   "chat.previewCards.openWith": "Open with",
   "chat.previewCards.copyLink": "Copy link",
   "chat.previewCards.openFileFailed": "Could not open this file",
   "chat.previewCards.noOpenApps": "No apps found",
+  "chat.previewCards.openCard": "Open {title}",
   "chat.turnNavigator.label": "Conversation query map",
   "chat.turnNavigator.jumpToQuery": "Jump to query {index}",
   "chat.turnNavigator.emptyAssistant": "No assistant text yet",
@@ -3146,6 +3384,20 @@ const enUS: Record<string, string> = {
   "settings.nativeSearchEnhancementsDescription":
     "Use enhanced Find and Grep in new sessions and sessions restored after an app restart. Active sessions keep their current setting; Find remains unchanged on Windows.",
   "settings.memory": "Memory",
+  "settings.personalization.title": "Personalization",
+  "settings.personalization.description":
+    "Add custom instructions to personalize Agent responses. Instructions apply to future conversations of the local Agent; remote devices need separate configuration.",
+  "settings.personalization.placeholder": "Add custom instructions...",
+  "settings.personalization.editorLabel": "Custom instructions editor",
+  "settings.personalization.saved": "Saved; effective for new conversations",
+  "settings.personalization.saveFailed": "Failed to save. Check the logs",
+  "settings.personalization.loadFailed": "Failed to load custom instructions. Check the logs",
+  "settings.personalization.localOnly":
+    "Custom instructions can only be edited on the local desktop. Open Settings → Personalization in the desktop app.",
+  "settings.personalization.unsaved": "Unsaved changes",
+  "settings.personalization.sizeCount": "{used} / {limit}",
+  "settings.personalization.sizeOverLimit":
+    "Content exceeds the 100 KB limit the Agent reads; anything beyond it is ignored. Trim before saving.",
   "settings.memory.workspaceMemory": "Workspace Memory",
   "settings.memoryDescription":
     "Save and reuse long-term context in workspaces. Applies to new sessions and may increase model requests and token costs.",
@@ -3529,6 +3781,16 @@ const enUS: Record<string, string> = {
   "settings.previewBadge.dark": "Dark",
   "settings.modelProviderTitle": "Model settings",
   "settings.mcpTitle": "MCP Servers",
+  "settings.mcp.trust.action": "Trust",
+  "settings.mcp.trust.revoke": "Revoke trust",
+  "settings.mcp.trust.title": "Trust workspace MCP: {name}",
+  "settings.mcp.trust.revokeTitle": "Revoke workspace MCP trust: {name}",
+  "settings.mcp.trust.description":
+    "Connections may run code or send data. Trust does not enable MCP. Existing chats keep their authorization. Changes apply to new or restarted chats.",
+  "settings.mcp.trust.pending": "Current declaration awaits trust",
+  "settings.mcp.trust.trusted": "Current declaration trusted",
+  "settings.mcp.trust.failed":
+    "The declaration changed or trust is unavailable. Refresh and try again.",
   "settings.mcp.description": "Manage MCP server configurations used by {productName} Agent.",
   "settings.mcp.create.open": "Add MCP server",
   "settings.mcp.import.open": "Import MCP servers from external agents",
@@ -3538,60 +3800,9 @@ const enUS: Record<string, string> = {
   "settings.mcp.searchPlaceholder": "Search MCP servers…",
   "settings.mcp.group.local": "Configured MCP servers",
   "settings.mcp.group.plugin": "Plugin MCP servers",
-  "settings.remoteSync.open": "Sync",
-  "settings.remoteSync.preflighting": "Checking remote write access...",
-  "settings.remoteSync.preflightTimeout":
-    "Remote write check timed out after {seconds}s. Check the remote connection and try again.",
-  "settings.remoteSync.preflightFailed": "Remote target is not writable: {path}. {error}",
   "settings.mcp.remoteSync.open": "Sync MCP",
-  "settings.mcp.remoteSync.title": "Sync MCP servers to remote target",
-  "settings.mcp.remoteSync.warningTitle": "MCP data and environment availability",
-  "settings.mcp.remoteSync.warningDescription":
-    "Sync copies local user MCP server configuration to the remote host. HTTP MCP URLs are copied, and filesystem MCP paths are rewritten for the selected remote workspace, but not all dependent data and system environment capabilities can be guaranteed. If an MCP server is unavailable because of the remote environment, permissions, or missing dependencies, install it or add the dependencies on the remote server.",
-  "settings.mcp.remoteSync.target": "Target: {target}",
-  "settings.mcp.remoteSync.loading": "Loading local MCP servers...",
-  "settings.mcp.remoteSync.empty": "No local user MCP servers found.",
-  "settings.mcp.remoteSync.filteredEmpty":
-    "All local user MCP servers already exist on the remote host.",
-  "settings.mcp.remoteSync.showExisting": "Show existing remote MCP servers",
-  "settings.mcp.remoteSync.selectAll": "Select all",
-  "settings.mcp.remoteSync.start": "Sync selected",
-  "settings.mcp.remoteSync.syncing": "Syncing MCP servers...",
-  "settings.mcp.remoteSync.existing": "Already exists on remote",
-  "settings.mcp.remoteSync.synced": "Synced",
-  "settings.mcp.remoteSync.skipped": "Skipped",
-  "settings.mcp.remoteSync.failed": "Failed",
-  "settings.mcp.remoteSync.resultEmpty": "No MCP sync results were returned.",
-  "settings.mcp.remoteSync.selectionCount": "{selected}/{total} selected",
-  "settings.mcp.remoteSync.noSelection": "Select at least one missing MCP server.",
   "settings.plugins.remoteContext": "Current remote workspace: {target}",
   "settings.plugins.remoteSync.open": "Sync Plugin",
-  "settings.plugins.remoteSync.title": "Sync Plugins to remote target",
-  "settings.plugins.remoteSync.warningTitle": "Remote execution reminder",
-  "settings.plugins.remoteSync.warningDescription":
-    "Synced plugins can load or run Skills, Commands, Hooks, and MCP servers in the remote environment. Marketplace plugins are reinstalled on the remote target and require remote access to their marketplace source.",
-  "settings.plugins.remoteSync.target": "Target: {target}",
-  "settings.plugins.remoteSync.loading": "Loading local Plugins...",
-  "settings.plugins.remoteSync.empty": "No local plugins available for remote sync.",
-  "settings.plugins.remoteSync.filteredEmpty":
-    "All local plugins already exist on the remote host.",
-  "settings.plugins.remoteSync.showExisting": "Show existing remote plugins",
-  "settings.plugins.remoteSync.selectAll": "Select all",
-  "settings.plugins.remoteSync.start": "Sync selected",
-  "settings.plugins.remoteSync.syncing": "Syncing plugins...",
-  "settings.plugins.remoteSync.queued": "Queued",
-  "settings.plugins.remoteSync.existing": "Already exists on remote",
-  "settings.plugins.remoteSync.synced": "Synced",
-  "settings.plugins.remoteSync.skipped": "Skipped",
-  "settings.plugins.remoteSync.failed": "Failed",
-  "settings.plugins.remoteSync.stopped": "Stopped",
-  "settings.plugins.remoteSync.stop": "Stop sync",
-  "settings.plugins.remoteSync.logTooltip": "Sync log",
-  "settings.plugins.remoteSync.optionsSummary":
-    "Options: {syncable} will be attempted; {manual} require manual setup on remote",
-  "settings.plugins.remoteSync.resultEmpty": "No plugin sync results were returned.",
-  "settings.plugins.remoteSync.selectionCount": "{selected}/{total} selected",
-  "settings.plugins.remoteSync.noSelection": "Select at least one missing plugin.",
   "settings.mcp.remoteContext": "Current remote workspace: {target}",
   "settings.mcp.plugin.active": "Built-in",
   "settings.mcp.plugin.activeDescription":
@@ -3722,13 +3933,17 @@ const enUS: Record<string, string> = {
   "settings.mcpServers.import.resultList": "MCP server results",
   "settings.mcpServers.import.resultEmpty": "No MCP server results were returned.",
   "settings.mcpServers.import.finish": "Done",
+  "settings.scope.deviceOffline":
+    "{device} is offline. Its configuration cannot be read or changed until it reconnects.",
+  "settings.scope.deviceConnecting": "Connecting to {device}…",
+  "settings.scope.localDevice": "This computer",
   "settings.scope.label": "Scope",
   "settings.scope.user": "User",
   "settings.scope.workspace": "Workspace",
   "settings.scope.default": "Default",
-  "settings.plugins.scope.inheritedUser": "Inherits User default",
-  "settings.plugins.scope.userDefault": "User default",
-  "settings.plugins.scope.workspaceOverride": "Workspace override",
+  "settings.scope.projects": "Projects",
+  "settings.scope.searchProjects": "Search projects",
+  "settings.scope.noMatchingProjects": "No matching projects",
   "settings.plugins.scope.restoreUserDefault": "Restore User default",
   "settings.plugins.scope.restored": "Restored {plugin} to User default",
   "settings.plugins.scope.workspaceHint":
@@ -4835,35 +5050,6 @@ const enUS: Record<string, string> = {
     "The skills list has been refreshed. Existing same-name skills were kept.",
   "settings.skills.import.finish": "Done",
   "settings.skills.remoteSync.open": "Sync Skill",
-  "settings.skills.remoteSync.title": "Sync Skills to remote target",
-  "settings.skills.remoteSync.warningTitle": "Skill data and environment availability",
-  "settings.skills.remoteSync.warningDescription":
-    "Sync migrates local user-level Skills to the remote host, but not all dependent data and system environment capabilities can be guaranteed. If a Skill is unavailable because of the remote environment, permissions, or missing dependencies, install it or add the dependencies on the remote server.",
-  "settings.skills.remoteSync.target": "Target: {target}",
-  "settings.skills.remoteSync.loading": "Loading local Skills...",
-  "settings.skills.remoteSync.empty": "No local user skills found.",
-  "settings.skills.remoteSync.filteredEmpty":
-    'Only Skills that already exist on the remote are available. Enable "Show existing remote skills" to view them.',
-  "settings.skills.remoteSync.showExisting": "Show existing remote skills",
-  "settings.skills.remoteSync.selectAll": "Select all",
-  "settings.skills.remoteSync.clearAll": "Clear all",
-  "settings.skills.remoteSync.start": "Sync selected",
-  "settings.skills.remoteSync.syncing": "Syncing skills...",
-  "settings.skills.remoteSync.existing": "Already exists on remote",
-  "settings.skills.remoteSync.expandDescription": "Show more",
-  "settings.skills.remoteSync.collapseDescription": "Show less",
-  "settings.skills.remoteSync.synced": "Synced",
-  "settings.skills.remoteSync.skipped": "Skipped",
-  "settings.skills.remoteSync.failed": "Failed",
-  "settings.skills.remoteSync.complete": "Skill sync complete.",
-  "settings.skills.remoteSync.selectionCount": "{selected}/{total} selected",
-  "settings.skills.remoteSync.noSelection": "Select at least one missing skill.",
-  "settings.skills.remoteSync.sizeLimit.selectedContent":
-    "Sync failed: the selected Skills contain about {actualSize} of content, exceeding the {maxSize} per-sync limit. Deselect some Skills and try again. Nothing was written to the remote host.",
-  "settings.skills.remoteSync.sizeLimit.archive":
-    "Sync failed: the generated sync archive is about {actualSize}, exceeding the {maxSize} per-sync limit. Deselect some Skills and try again. Nothing was written to the remote host.",
-  "settings.skills.remoteSync.sizeLimit.extractedContent":
-    "Sync failed: the extracted Skill content is about {actualSize}, exceeding the {maxSize} remote limit. Deselect some Skills and try again.",
   "settings.skills.userScopeDesktopOnly":
     "User-level skills are available on desktop only in this phase.",
   "settings.skills.detail.description": "Description",
@@ -5016,7 +5202,6 @@ const enUS: Record<string, string> = {
   "settings.plugin.plugins.emptyInstalledTitle": "No plugins installed",
   "settings.plugin.plugins.emptyInstalledDescription":
     "Discover and install plugins to add MCPs, skills, and more.",
-  "settings.plugin.plugins.browse": "Browse plugins",
   "settings.plugin.mcp.emptyInstalledTitle": "No MCP servers installed",
   "settings.plugin.mcp.emptyInstalledDescription":
     "Add a server manually or import an existing configuration.",
@@ -5064,7 +5249,6 @@ const enUS: Record<string, string> = {
   "settings.plugins.store.ui.capability":
     "Provides interactive interfaces that open in the side pane.",
   "settings.plugins.store.ui.title": "App plugins",
-  "settings.plugins.store.browseAll": "Browse all plugins",
   "settings.plugins.store.segment.public": "Public",
   "settings.plugins.store.segment.personal": "Personal",
   "settings.plugins.store.featured": "Featured",
@@ -5132,6 +5316,10 @@ const enUS: Record<string, string> = {
   "settings.plugins.marketplaces.dropHint": "Drag a file or folder here, or choose a directory.",
   "settings.plugins.marketplaces.validate": "Validate marketplace",
   "settings.plugins.marketplaces.add": "Add marketplace",
+  "settings.plugins.marketplaces.riskWarning":
+    "Unofficial plugin marketplaces may contain malicious plugins that can harm your device. Verify the source and take precautions before adding.",
+  "settings.plugins.marketplaces.riskAcknowledgement":
+    "I understand the risks, have verified the source, and have taken precautions.",
   "settings.plugins.marketplaces.update": "Update marketplace",
   "settings.plugins.marketplaces.remove": "Remove marketplace",
   "settings.plugins.marketplaces.empty": "No marketplaces added",
@@ -5165,6 +5353,11 @@ const enUS: Record<string, string> = {
   "settings.plugins.checkForUpdates": "Check for updates",
   "settings.plugins.checkForUpdates.found": "Found {count} plugin update(s) available",
   "settings.plugins.checkForUpdates.none": "All installed plugins are up to date",
+  "settings.plugins.updateAll": "Update all ({count})",
+  "settings.plugins.updateAll.done": "Updated {count} plugin(s)",
+  "settings.plugins.updateAll.partial": "Updated {succeeded}, failed {failed}: {plugins}",
+  "settings.plugins.updateAll.aborted":
+    "Update all stopped because the plugin scope changed; updated {count} plugin(s)",
   "settings.plugins.list.updateAvailable": "Update",
   "settings.plugins.list.versionChanged": "Changed",
   "settings.plugins.restore": "Restore",
@@ -5497,15 +5690,7 @@ const enUS: Record<string, string> = {
   "settingsSync.discovery.categoryCount": "Categories found: {count}",
   "settingsSync.discovery.error": "Scan failed: {error}",
   "settingsSync.discovery.continue": "Continue",
-  "onboarding.dialog.title": "Welcome to {productName}",
-  "onboarding.dialog.description": "Choose how to start your first session.",
   "onboarding.wizard.label": "Migration guide",
-  "onboarding.welcome.eyebrow": "First run setup",
-  "onboarding.welcome.title": "Welcome to {productName}",
-  "onboarding.welcome.start": "Start {productName}",
-  "onboarding.welcome.migrate": "Migration Guide",
-  "onboarding.welcome.helper":
-    "Import existing tool settings now, or skip and continue later from Settings.",
   "onboarding.step.session": "Sessions",
   "onboarding.step.skillsImport": "Skills",
   "onboarding.step.mcpImport": "MCP servers",
@@ -5563,6 +5748,8 @@ const enUS: Record<string, string> = {
   "onboarding.migration.confirmCloseConfirm": "Close anyway",
   "onboarding.finish.done": "Migration complete",
   "onboarding.finish.ready": "Review what was imported before you continue.",
+  "onboarding.finish.workspaceRequired":
+    "{count} items need a project and were not imported. Open a project, then migrate them again.",
   "onboarding.finish.currentWorkspace": "Migrating sessions from {workspace}",
   "onboarding.finish.currentAgentsFile": "Migrating AGENTS.md",
   "onboarding.finish.currentSettings": "Importing agent settings",
@@ -5692,6 +5879,7 @@ const enUS: Record<string, string> = {
   "chat.message.toolSnapshot.retry": "Load failed, retry",
   "chat.message.time.yesterday": "Yesterday {time}",
   "chat.message.retry": "Retry",
+  "chat.loading.working": "Working",
   "chat.history.workingFor": "Working for {duration}",
   "chat.history.workedFor": "Worked for {duration}",
   "chat.history.worked": "Worked",
@@ -5903,7 +6091,6 @@ const enUS: Record<string, string> = {
   "chat.toolbar.modelSwitch.lockedByRunningTask.short": "busy",
   "chat.goal.runningBlocked": "Set a goal after the current task finishes.",
   "chat.goal.planModeBlocked": "Goal is unavailable in Plan mode. Switch modes to continue.",
-  "chat.slash.app.plan.label": "Plan mode",
   "chat.slash.app.plan.description": "Enable Plan mode",
   "chat.compact.runningBlocked": "Compact context after the current task finishes.",
   "chat.compact.queued": "Compaction queued and will run in order.",
@@ -6855,6 +7042,23 @@ const enUS: Record<string, string> = {
   "chat.attachments.preview.pdfUnavailable": "This PDF is no longer available to preview.",
   "markdownImage.previous": "Previous image",
   "markdownImage.next": "Next image",
+  "imageEditor.tools": "Image editing tools",
+  "imageEditor.select": "Select and move",
+  "imageEditor.pen": "Pen",
+  "imageEditor.text": "Text",
+  "imageEditor.rectangle": "Rectangle",
+  "imageEditor.ellipse": "Ellipse",
+  "imageEditor.arrow": "Arrow",
+  "imageEditor.eraser": "Eraser",
+  "imageEditor.color": "Annotation color",
+  "imageEditor.undo": "Undo",
+  "imageEditor.redo": "Redo",
+  "imageEditor.save": "Save to chat",
+  "imageEditor.saving": "Saving…",
+  "imageEditor.saveFailed": "Could not save the image. Try again.",
+  "imageEditor.noComposer": "No chat input is available for this image",
+  "imageEditor.textValue": "Annotation text",
+  "imageEditor.applyText": "Add text",
   "markdownImage.zoomIn": "Zoom in",
   "markdownImage.zoomOut": "Zoom out",
   "markdownImage.download": "Download image",
@@ -6962,13 +7166,13 @@ const enUS: Record<string, string> = {
   "chat.quota.startPlan.modelVeryLow":
     "{model} has {percent} of its plan quota remaining ({remaining} tokens).",
   "chat.quota.startPlan.modelExhausted":
-    "All available quota for {model} has been used up. Switch models or upgrade your plan.",
+    "All available quota for {model} has been used up. Switch to another model or to a Coding Plan subscription.",
   "chat.quota.startPlan.dailyExhausted":
-    "Your Start Plan quota has been used up. Upgrade your plan or wait for the quota to reset.",
+    "Your Start Plan quota has been used up. Switch to a Coding Plan subscription, or wait for the quota to reset.",
   "chat.quota.startPlan.concurrentLimit":
-    "The system is busy. Please switch models, upgrade your account, or try again later.",
+    "The system is busy. Please switch models, switch to a Coding Plan subscription, or try again later.",
   "chat.quota.startPlan.concurrentLimit.retryExhausted":
-    "The system is busy, and automatic retries have reached the maximum count. Please try again later or upgrade your account.",
+    "The system is busy, and automatic retries have reached the maximum count. Please try again later or switch to a Coding Plan subscription.",
   "chat.quota.startPlan.concurrentLimit.switchModel":
     "The current model request concurrency limit has been reached. Switch models to continue your current task.",
   "chat.quota.mcp.quotaExhausted":
@@ -7127,6 +7331,22 @@ const enUS: Record<string, string> = {
   "mode.label.glm.plan": "Plan mode",
   "mode.label.glm.guarded": "Autonomous mode",
   "mode.description.glm.guarded": "Ask when there’s risk",
+  "mode.yoloConfirmation.title": "Enable full access?",
+  "mode.yoloConfirmation.description":
+    "Tasks can perform the following actions without asking for your approval each time.",
+  "mode.yoloConfirmation.files": "Files and folders",
+  "mode.yoloConfirmation.files.description": "Read, create, change, and delete accessible files.",
+  "mode.yoloConfirmation.commands": "Terminal commands",
+  "mode.yoloConfirmation.commands.description":
+    "Run commands, install software, or change system settings.",
+  "mode.yoloConfirmation.network": "Network and apps",
+  "mode.yoloConfirmation.network.description":
+    "Access the network, send data, and use connected apps.",
+  "mode.yoloConfirmation.risk":
+    "These actions may cause data loss or disclosure. Enable only for tasks you trust. You can switch to another permission mode at any time.",
+  "mode.yoloConfirmation.acknowledgement":
+    "I understand the risks and take responsibility for my data security.",
+  "mode.yoloConfirmation.confirm": "Confirm",
   "mode.label.glm.yolo": "Full access",
   "mode.description.glm.default": "Use default confirmations.",
   "mode.description.glm.build": "Ask before file changes.",
@@ -7177,7 +7397,7 @@ const enUS: Record<string, string> = {
     "Claude Code does not recognize {command} (args: {args}). Check the command name, or switch to an Agent/skill that supports it and try again.",
   "zcode.error.providerBusiness.1006": "Your login session has expired. Please sign in again.",
   "zcode.error.providerBusiness.1005":
-    "Today's free plan quota has been used up. Upgrade to continue now, or wait for the quota to reset.",
+    "Today's free plan quota has been used up. Switch to a Coding Plan subscription or another model, or wait for the quota to reset.",
   "zcode.error.providerBusiness.3006":
     "The current model is not included in this plan. Switch to an allowed model and try again.",
   "zcode.error.providerBusiness.3002":
@@ -7185,13 +7405,17 @@ const enUS: Record<string, string> = {
   "zcode.error.providerBusiness.3001":
     "The request parameters are invalid. Check the input and try again.",
   "zcode.error.providerBusiness.3008":
-    "The system is busy. Please switch models, upgrade your account, or try again later.",
+    "The system is busy. Please switch models, switch to a Coding Plan subscription, or try again later.",
   "zcode.error.providerBusiness.3009":
-    "The system is busy. Please switch models, upgrade your account, or try again later.",
+    "The system is busy. Please switch models, switch to a Coding Plan subscription, or try again later.",
   "zcode.error.providerBusiness.3010":
-    "The system is busy. Please switch models, upgrade your account, or try again later.",
+    "The system is busy. Please switch models, switch to a Coding Plan subscription, or try again later.",
   "zcode.error.providerBusiness.3102":
-    "This run exceeded the maximum single-run time. Create a new off-peak task to continue.",
+    "Your device was offline when this task reached the front of the queue. The quota has been returned. Keep your device online and create a new idle-time task.",
+  "zcode.error.providerBusiness.3106":
+    "This run exceeded the maximum single-run time. Create a new idle-time task to continue.",
+  "zcode.error.offPeakTicketExpired":
+    "This idle-time task can no longer continue. Create a new idle-time task.",
   "zcode.error.providerBusiness.2007":
     "The upstream service is temporarily unavailable. Please try again later.",
   "zcode.error.providerBusiness.429":
@@ -8099,6 +8323,124 @@ const enUS: Record<string, string> = {
     "I used the ZCode Highspeed card and saved {duration}s. Give it a try. Download ZCode https://zcode.z.ai",
   "globalNotice.highspeed.imageSummary": "{tokens} tokens · {duration}s saved",
   "globalNotice.highspeed.close": "Close Highspeed share card",
+  "remoteSync.title": "Data sync",
+  "remoteSync.description": "Sync local configuration to remote devices.",
+  "remoteSync.rules.title": "Sync rules",
+  "remoteSync.rules.description": "Only adds or updates items. Remote-only content is preserved.",
+  "remoteSync.device.status.online": "Connected",
+  "remoteSync.empty.title": "No connected devices",
+  "remoteSync.empty.description":
+    "Connect an SSH, WSL, or Docker device to push this device's configuration to its ~/.zcode directory.",
+  "remoteSync.empty.connect": "Connect remote device",
+  "remoteSync.device.neverSynced": "Not synced yet",
+  "remoteSync.device.lastSynced.today": "Synced today at {time}",
+  "remoteSync.device.lastSynced": "Synced {time}",
+  "remoteSync.device.status.failed": "Last sync failed",
+  "remoteSync.device.status.offline": "Not connected",
+  "remoteSync.device.status.connecting": "Connecting…",
+  "remoteSync.action.open": "Sync configuration",
+  "remoteSync.action.migrate": "Migrate data",
+  "remoteSync.action.retry": "Retry",
+  "remoteSync.action.connect": "Connect",
+  "remoteSync.action.connecting": "Connecting…",
+  "remoteSync.action.close": "Close",
+  "remoteSync.action.pushAll": "Push all",
+  "remoteSync.action.transferringAll": "Syncing all…",
+  "remoteSync.action.transferredAll": "All synced",
+  "remoteSync.action.pushCategory": "Push {category}",
+  "remoteSync.action.clear": "Clear selection",
+  "remoteSync.action.transferring": "Syncing…",
+  "remoteSync.action.transferAgain": "Sync again",
+  "remoteSync.action.stop": "Stop",
+  "remoteSync.dialog.title": "Data sync",
+  "remoteSync.dialog.categories": "Sync content",
+  "remoteSync.dialog.offline":
+    "The device is offline, so actions are disabled. The list refreshes automatically when the device is back online.",
+  "remoteSync.category.overview": "Overview",
+  "remoteSync.category.plugins": "Plugins",
+  "remoteSync.category.subagents": "Subagents",
+  "remoteSync.category.skills": "Skills",
+  "remoteSync.category.mcp": "MCP Servers",
+  "remoteSync.category.commands": "Commands",
+  "remoteSync.category.hooks": "Hooks",
+  "remoteSync.category.empty": "No items on this device to sync",
+  "remoteSync.category.loadFailed": "Failed to load: {error}",
+  "remoteSync.overview.description":
+    "Review configuration differences between this device and the target.",
+  "remoteSync.overview.column.category": "Category",
+  "remoteSync.overview.column.local": "Local",
+  "remoteSync.overview.column.remote": "Remote",
+  "remoteSync.overview.loading": "Loading…",
+  "remoteSync.overview.loadFailed": "Failed to load",
+  "remoteSync.difference.matching": "Identical",
+  "remoteSync.difference.changes": "{count} changes",
+  "remoteSync.selection.selectAll": "Select all",
+  "remoteSync.selection.empty": "No items selected",
+  "remoteSync.selection.summary": "{count} items to sync",
+  "remoteSync.selection.failed": "{count} failed",
+  "remoteSync.version.pushSourceOlder": "Local version is older",
+  "remoteSync.version.contentDiffers": "Content differs",
+  "remoteSync.operation.push": "Push",
+  "remoteSync.operation.update": "Update",
+  "remoteSync.operation.difference": "Difference",
+  "remoteSync.operation.synced": "Synced",
+  "remoteSync.blocked.sizeLimit": "Exceeds the size limit and cannot be synced",
+  "remoteSync.blocked.containsSymlink": "Contains a symbolic link and cannot be synced",
+  "remoteSync.blocked.targetSymlink":
+    "The remote item is a symbolic link and cannot be overwritten",
+  "remoteSync.blocked.compatDirectory":
+    "The remote item is in the ~/.agents compatibility directory and cannot be overwritten",
+  "remoteSync.blocked.externalDirectory":
+    "The remote plugin with the same name is outside ~/.zcode/plugins (for example a development checkout) and cannot be updated",
+  "remoteSync.blocked.targetCompatConfig":
+    "The remote device uses the ~/.agents compatibility config; pushing would disable it",
+  "remoteSync.blocked.sourceRemoved": "The source was removed and cannot be synced",
+  "remoteSync.blocked.remoteLatestMismatch":
+    "The latest version from the remote source differs from the version on this device",
+  "remoteSync.blocked.crossMarketplaceDependency":
+    "Depends on a plugin from another marketplace. Mirroring does not support cross-marketplace dependencies",
+  "remoteSync.blocked.unsupportedSource": "This source type cannot be synced",
+  "remoteSync.item.conflict": "The remote item changed. Refresh and try again.",
+  "remoteSync.item.failed": "Sync failed: {error}",
+  "remoteSync.item.unknownError": "Unknown error",
+  "remoteSync.item.stopped": "Stopped",
+  "remoteSync.dependency.missingMcp": "Missing MCP on remote: {names}",
+  "remoteSync.dependency.missingSkills": "Missing skills on remote: {names}",
+  "remoteSync.dependency.nameSeparator": ", ",
+  "remoteSync.dependency.groupSeparator": "; ",
+  "remoteSync.error.offline": "The device disconnected during the push. The push did not finish.",
+  "remoteSync.error.preflightTimeout":
+    "Checking remote write access timed out. Nothing was written.",
+  "remoteSync.error.pushFailed": "Push failed: {error}",
+  "remoteSync.category.providers": "Model providers",
+  "remoteSync.category.providers.warning":
+    "This device's model configuration is the source of truth and syncs to the remote automatically after you save. API keys and sign-in state sync with it.",
+  "remoteSync.overview.autoSync": "Auto sync",
+  "remoteSync.overview.syncFailed": "Sync failed",
+  "remoteSync.providers.empty": "No custom model providers on this device",
+  "remoteSync.providers.apiKey": "API key {key}",
+  "remoteSync.providers.status.noLane":
+    "Syncs automatically after you open a project on this device",
+  "remoteSync.providers.status.running": "Syncing automatically…",
+  "remoteSync.providers.status.never": "Not synced automatically yet",
+  "remoteSync.providers.status.success": "Synced automatically {time}",
+  "remoteSync.providers.status.failed": "Automatic sync failed {time}: {reason}",
+  "remoteSync.providers.status.loadFailed": "Could not read the automatic sync status",
+  "remoteSync.providers.error.sourceReadFailed": "Could not read the local model configuration",
+  "remoteSync.providers.error.targetCallFailed": "Could not reach the remote sync service",
+  "remoteSync.providers.error.targetWriteFailed":
+    "The remote device could not write the configuration",
+  "remoteSync.providers.error.targetRefreshFailed":
+    "The remote device could not reload the model configuration",
+  "remoteSync.providers.error.targetCommitFailed":
+    "The remote device could not record the sync result",
+  "remoteSync.providers.error.targetApplyFailed":
+    "The remote device could not apply the configuration",
+  "remoteSync.providers.error.capabilityUnavailable":
+    "The remote version does not support model configuration sync",
+  "remoteSync.providers.error.sessionUnavailable": "The remote connection is no longer available",
+  "remoteSync.providers.error.hostExecutionFailed": "The sync could not run on this device",
+  "remoteSync.providers.error.unknown": "Unknown error",
   ...requestSecurityMessagesEnUS,
 };
 

@@ -12,7 +12,7 @@ SPT-E2E-000 的圆角 token 验收区分 Side Pane 状态：展开时仅检查 S
 
 - Windows 工作区右侧、底部、顶部额外间隔和 Sidebar 收起后的左留白均为 6px；Linux 均保留 4px，主面板圆角保留 12px。
 - Windows 设置页同步右侧、底部和顶部 6px 留白与 6px 圆角；导航与内容相接的左侧不增加间距。macOS、Web、手机保持现有规则。
-- 新任务、会话、插件、Automations 复用共享工作区边界，终端和 Side Pane 同步圆角；面板之间的 4px 拖动热区不变。
+- 新任务、会话、插件、Automations 复用共享工作区边界，终端和 Side Pane 同步圆角；对话与 Side Pane 之间为 3px 拖动热区，Sidebar 和 Terminal 保留 4px。
 - 拖动指示线保留 2px、foreground-subtlest/50、沿边延伸及现有显隐规则。Sidebar 指示线端点按平台外沿留白加圆角内缩，Windows 为 12px，Linux 为 16px。
 - SPT-E2E-000 验证平台尺寸、收起左留白和拖动，UP-00 验证设置页；平台函数单测覆盖 Linux、Windows 能力未知、普通和最大化窗口。
 
@@ -20,7 +20,7 @@ macOS 版本必须通过 `IPlatformService.getDesktopWindowChromeState` 查询�
 
 ```text
 Window / Sidebar / transparent body layout
-                  + conversation frame ---+ 4px + side frame --------+
+                  + conversation frame ---+ 3px + side frame --------+
                   | WorkspaceHeader       |     | Side Pane tab bar  |
                   | conversation          |     | preview/browser    |
                   +-----------------------+     |                    |
@@ -34,8 +34,8 @@ Window / Sidebar / transparent body layout
 - macOS 窗口根背景使用 `bg-background-alt`；Windows、Linux 和 Web 继续使用 `bg-background-win-alt`。
 - Side Pane 的 launcher/标签栏/内容共用独立 `bg-background` 外框，两个面板顶部底部对齐。
 - 内部面板默认 `xl` 圆角、`border-border` 弱边框；贴 Windows 系统外沿的一侧继续遵循已有 native corner / maximized 规则。布局外框不计入内容圆角层级。
-- 面板间保留 4px 透明间距，间距承载 resize handle；关闭 Side Pane 时不保留间距，会话恢复填满。
-- 工作区 Sidebar、Side Pane、Terminal 保留 4px 透明拖拽热区，指示线宽 2px，使用第三层文字色 `foreground-subtlest/50`（在主题色基础上再降低至 50% 不透明度）。默认隐藏，hover、键盘聚焦和拖动时显示。指示线不使用 mask，竖线恢复沿面板高度延伸、横线恢复沿面板宽度延伸，两端按面板圆角内缩，端点圆润，拖拽、间距和手机隐藏规则不变。
+- 对话与 Side Pane 间保留 3px 透明间距，间距承载 resize handle；关闭 Side Pane 时不保留间距，会话恢复填满。
+- 工作区 Sidebar、Terminal 保留 4px 透明拖拽热区，Side Pane 使用 3px，指示线宽 2px，使用第三层文字色 `foreground-subtlest/50`（在主题色基础上再降低至 50% 不透明度）。默认隐藏，hover、键盘聚焦和拖动时显示。指示线不使用 mask，竖线恢复沿面板高度延伸、横线恢复沿面板宽度延伸，两端按面板圆角内缩，端点圆润，拖拽、间距和手机隐藏规则不变。
 
 - 保留 `workspace-body-layout`、`conversation-column`、`browser` 和会话/终端的现有持久化 key、最小宽度、拖动和显式关闭边界。Side Pane 不因开关或主视图切换卸载，Browser Guest 截图承载保持原路径。
 - Windows/Linux 窗控属于最右侧 Header 的内联操作组：Side Pane 关闭时由 WorkspaceHeader 承载，打开时由 Side Header/空态顶部承载；不保留独立悬浮层和原生窗控占位。
@@ -57,7 +57,7 @@ Window / Sidebar / transparent body layout
 
 ## 桌面拖动指示线颜色（2026-10-09）
 
-Sidebar、Side Pane 和底部终端统一使用 `resize-handle` token：浅色主题 sky-500、深色主题 sky-400；覆盖 macOS、Windows、Linux 桌面端。Web 保留 foreground-subtlest/50，手机隐藏规则不变。保留 2px 粗细、圆润端点、沿边长度及 hover、键盘聚焦、拖动时显示，默认隐藏。不改变 4px 热区或拖动逻辑。SPT-E2E-000 在双主题验证三条指示线颜色、长度、显隐及实际拖动。
+Sidebar、Side Pane 和底部终端统一使用 `resize-handle` token：浅色主题 sky-500、深色主题 sky-400；覆盖 macOS、Windows、Linux 桌面端。Web 保留 foreground-subtlest/50，手机隐藏规则不变。保留 2px 粗细、圆润端点、沿边长度及 hover、键盘聚焦、拖动时显示，默认隐藏。Sidebar、Terminal 保留 4px 热区，Side Pane 为 3px；不改变拖动逻辑。SPT-E2E-000 在双主题验证三条指示线颜色、长度、显隐及实际拖动。
 
 ## 兼容边界
 
@@ -103,7 +103,7 @@ Windows/Linux 复用同一内联窗控组件，28px 按钮、16px 图标、2px �
 
 - Windows 与 macOS 主工作区统一保留顶部、右侧、底部 4px 外层 padding；侧栏收起后左侧同样保留 4px。侧栏拖拽线端点同步计入这层留白。Linux、Web 和手机布局保持原有规则，Windows caption 控制区仍按原规则预留。
 
-- 展开 Side Pane：Header 属于会话面板，两面板独立圆角与背景；顶部/底部差 <= 1px，面板间距 4px。
+- 展开 Side Pane：Header 属于会话面板，两面板独立圆角与背景；顶部/底部差 <= 1px，面板间距 3px。
 - 关闭 Side Pane：左面板恢复原宽度；反复展开不丢失 tab、终端内容或会话。
 
 - 两种主题分别验证背景与边框；现有手机远控、Windows/Linux caption 单测通过。
@@ -188,3 +188,9 @@ Windows 和旧版本 macOS 的 6px 面板圆角使用 `rounded-md`，Windows 非
 验证记录：44 项相关单测通过；typecheck、typecheck:e2e、lint（0 errors）及架构检查通过。macOS SPT-E2E-000 尝试在 ChromeDriver 下载阶段因代理证书校验失败退出，0 项用例执行；Windows/Linux 真机与手机浏览器未执行。本次不改变平台半径计算或布局事件。
 
 窗控回归边界：OccupationOnboarding 全屏引导继续使用 4px 顶部/右侧偏移；设置页的独立面板按 Windows 6px、Linux 4px 外沿留白定位窗控。两者保持相同的 1px 边框补偿、48px 高度和 8px 横向内边距。旧测试误把两种容器的偏移强制相等，改为分别检查各自偏移与共享尺寸，不改变界面。
+
+## 2026-10-29 Side Pane 间距调整
+
+对话面板与 Side Pane 之间的竖向分隔区域由 2px 调整为 3px，让两个面板之间保留稍多留白。当前尺寸以本文上方布局规则为准；Sidebar 和底部 Terminal 的分隔尺寸不变。Side Pane 关闭或全屏时不保留此间距，手机堆叠布局继续隐藏该拖动条。
+
+Side Pane 的 2px 指示线固定距拖动条左边 1px，避免 3px 容器内居中引入半像素偏移。SPT-E2E-000 宽度断言同步为 3px；本次未重新运行该 E2E，旧运行记录不代表新断言已验证。

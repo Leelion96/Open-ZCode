@@ -1,0 +1,114 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 254378b7f5f915cfcae74c8ade9bd9f8927f79a5..1f3802fbe7e74cb5046c7c88f2d4f39f804e85dd 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -23055,6 +23055,7 @@ function XlsxGrid({
+   getCellStyle,
+   loadingComponent,
+   loadingState,
++  onOpenLink,
+   onFormControlAction,
+   onFormControlChange,
+   renderChartLoading,
+@@ -24990,10 +24991,12 @@ function XlsxGrid({
+       }
+     }
+     const externalTarget = target && !target.startsWith("#") ? target : null;
+-    if (externalTarget && typeof window !== "undefined") {
+-      window.open(externalTarget, "_blank", "noopener,noreferrer");
++    if (externalTarget) {
++      // Canvas 单元格、图片、形状共用此出口；宿主回调处理后不得回落到原生弹窗。
++      if (onOpenLink) onOpenLink(externalTarget);
++      else if (typeof window !== "undefined") window.open(externalTarget, "_blank", "noopener,noreferrer");
+     }
+-  }, [activeSheetIndex, selectCell, setActiveSheetIndex, sheets]);
++  }, [activeSheetIndex, onOpenLink, selectCell, setActiveSheetIndex, sheets]);
+   const startEditing = React4.useCallback(
+     (cell, initialValue) => {
+       if (readOnly) {
+@@ -30745,6 +30748,7 @@ function XlsxViewerInner({
+   isDark = false,
+   loadingComponent,
+   loadingState,
++  onOpenLink,
+   onFormControlAction,
+   onFormControlChange,
+   renderChartLoading,
+@@ -30810,6 +30814,7 @@ function XlsxViewerInner({
+             getCellStyle,
+             loadingComponent,
+             loadingState,
++            onOpenLink,
+             onFormControlAction,
+             onFormControlChange,
+             palette,
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index 9e88be3b8059526ca085346ba80eef92aeea8b29..8954a4deafdba61ac60ac7a5200d3c88d2f5893e 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -1422,6 +1422,8 @@ interface XlsxViewerProviderProps extends UseXlsxViewerControllerOptions {
+     isDark?: boolean;
+ }
+ interface XlsxViewerProps extends UseXlsxViewerControllerOptions {
++    /** 外部超链接交给宿主校验；内部工作表定位仍由查看器处理。 */
++    onOpenLink?: (url: string) => void;
+     /**
+      * Allows row and column resizing even while editing is disabled by `readOnly`.
+      *
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 9e88be3b8059526ca085346ba80eef92aeea8b29..8954a4deafdba61ac60ac7a5200d3c88d2f5893e 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -1422,6 +1422,8 @@ interface XlsxViewerProviderProps extends UseXlsxViewerControllerOptions {
+     isDark?: boolean;
+ }
+ interface XlsxViewerProps extends UseXlsxViewerControllerOptions {
++    /** 外部超链接交给宿主校验；内部工作表定位仍由查看器处理。 */
++    onOpenLink?: (url: string) => void;
+     /**
+      * Allows row and column resizing even while editing is disabled by `readOnly`.
+      *
+diff --git a/dist/index.js b/dist/index.js
+index e7eb59367f8c1f99d992ff6d518405f298191a83..83fd25a80b6ccdcfeeea075b25cb72aa9ac02e62 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -23021,6 +23021,7 @@ function XlsxGrid({
+   getCellStyle,
+   loadingComponent,
+   loadingState,
++  onOpenLink,
+   onFormControlAction,
+   onFormControlChange,
+   renderChartLoading,
+@@ -24956,10 +24957,12 @@ function XlsxGrid({
+       }
+     }
+     const externalTarget = target && !target.startsWith("#") ? target : null;
+-    if (externalTarget && typeof window !== "undefined") {
+-      window.open(externalTarget, "_blank", "noopener,noreferrer");
++    if (externalTarget) {
++      // Canvas 单元格、图片、形状共用此出口；宿主回调处理后不得回落到原生弹窗。
++      if (onOpenLink) onOpenLink(externalTarget);
++      else if (typeof window !== "undefined") window.open(externalTarget, "_blank", "noopener,noreferrer");
+     }
+-  }, [activeSheetIndex, selectCell, setActiveSheetIndex, sheets]);
++  }, [activeSheetIndex, onOpenLink, selectCell, setActiveSheetIndex, sheets]);
+   const startEditing = React4.useCallback(
+     (cell, initialValue) => {
+       if (readOnly) {
+@@ -30711,6 +30714,7 @@ function XlsxViewerInner({
+   isDark = false,
+   loadingComponent,
+   loadingState,
++  onOpenLink,
+   onFormControlAction,
+   onFormControlChange,
+   renderChartLoading,
+@@ -30776,6 +30780,7 @@ function XlsxViewerInner({
+             getCellStyle,
+             loadingComponent,
+             loadingState,
++            onOpenLink,
+             onFormControlAction,
+             onFormControlChange,
+             palette,

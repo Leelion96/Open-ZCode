@@ -6,6 +6,7 @@ import type { useSortable } from "@dnd-kit/sortable";
 import {
   Ellipsis,
   FolderMinus,
+  Folders,
   ListTree,
   Pin,
   PinOff,
@@ -32,12 +33,14 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu.js";
 import { ProjectTaskRows } from "@/project-sidebar/ProjectTaskRows.js";
@@ -53,6 +56,7 @@ export type ProjectNodeProps = {
   project: VirtualProject;
   remoteHost?: RemoteProjectHost;
   deviceLabel?: string;
+  hideDeviceName?: boolean;
   diagnostics?: { error?: string };
   expanded: boolean;
   onExpandedChange(value: boolean): void;
@@ -71,6 +75,8 @@ export type ProjectNodeProps = {
   onRemoveEntry?(): void;
   /** 仅桌面端远程项目提供：从菜单或待处理详情跳到“设置 › 远程设备”。 */
   onOpenDeviceSettings?(): void;
+  /** 仅桌面端提供：跳到“设置 › 项目”批量管理。 */
+  onManageProjects?(): void;
 };
 
 // 原因：useSortable 的激活/测量/落点更新曾让 41 个项目的菜单和 Tooltip 连续重渲染。
@@ -79,6 +85,7 @@ export const ProjectNodeContent = memo(function ProjectNodeContent({
   project,
   remoteHost,
   deviceLabel,
+  hideDeviceName = false,
   diagnostics,
   tasks,
   hasUnread = false,
@@ -92,6 +99,7 @@ export const ProjectNodeContent = memo(function ProjectNodeContent({
   availability = DEFAULT_AVAILABILITY,
   onRemoveEntry,
   onOpenDeviceSettings,
+  onManageProjects,
   additionalActions = EMPTY_ADDITIONAL_ACTIONS,
   editable,
   isOpen,
@@ -155,6 +163,17 @@ export const ProjectNodeContent = memo(function ProjectNodeContent({
     // 可编辑的远程项目菜单与本地项目一致；从本机移除只在不能删除项目时（离线、legacy 单 root）兜底。
     ...(!editable && availability.entryId && onRemoveEntry
       ? [{ id: "remove-entry", label: msg("removeEntry"), icon: FolderMinus, run: onRemoveEntry }]
+      : []),
+    ...(onManageProjects
+      ? [
+          {
+            id: "manage-projects",
+            label: intl.formatMessage({ id: "projectManagement.manage" }),
+            icon: Folders,
+            run: onManageProjects,
+            separatorBefore: true,
+          },
+        ]
       : []),
   ];
   const files: ProjectRowAction[] = project.roots.map((root, index) => ({
@@ -258,7 +277,7 @@ export const ProjectNodeContent = memo(function ProjectNodeContent({
                       <span className="truncate text-ui-base text-foreground-subtle">
                         {project.name}
                       </span>
-                      {remoteHost ? (
+                      {remoteHost && !hideDeviceName ? (
                         <span
                           data-testid="project-device"
                           className="max-w-24 truncate text-ui-sm text-remote-foreground-muted"
@@ -408,7 +427,9 @@ function ProjectMenuItems({
   context?: boolean;
 }) {
   const Item = context ? ContextMenuItem : DropdownMenuItem;
-  return actions.map((action) => (
+  const Separator = context ? ContextMenuSeparator : DropdownMenuSeparator;
+  return actions.map((action, index) => [
+    action.separatorBefore && index > 0 ? <Separator key={`${action.id}-separator`} /> : null,
     <Item
       key={action.id}
       disabled={action.disabled}
@@ -418,6 +439,6 @@ function ProjectMenuItems({
     >
       {action.icon ? <action.icon className="size-4 shrink-0" aria-hidden="true" /> : null}
       {action.label}
-    </Item>
-  ));
+    </Item>,
+  ]);
 }

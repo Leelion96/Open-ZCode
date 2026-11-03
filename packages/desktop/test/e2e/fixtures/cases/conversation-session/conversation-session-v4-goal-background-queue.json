@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-v4-goal-background-queue",
+  "spec": "./test/e2e/conversation-session/conversation-session-v4-goal-background-queue.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-v4-goal-background-queue.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "title-e2e_background_goal",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复和流式时序以复现用例动作窗口；真实 Agent、工具执行、队列与 UI 不被替换。"
+    },
+    {
+      "id": "upstream-background-goal-seed",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "V4 /goal 需要已有 session；首轮仅建立 BG34 的稳定会话边界。"
+    },
+    {
+      "id": "upstream-background-goal-agent-tool-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "goal continuation 中启动 background Agent。"
+    },
+    {
+      "id": "upstream-background-goal-agent-launch-ack",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "goal continuation 的当前 turn 在子任务完成前先结束。"
+    },
+    {
+      "id": "upstream-background-goal-direct-prompt",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "稳定证明 active goal 的 background-only 状态不等于 main busy，用户输入不经过 future queue。"
+    },
+    {
+      "id": "upstream-background-goal-child-delayed-result",
+      "kind": "subagent",
+      "timingPolicy": "delayed-text",
+      "source": "synthetic",
+      "syntheticReason": "延迟子 agent 完成，证明 verifier 会等 notification。"
+    },
+    {
+      "id": "upstream-background-goal-notification-consumed",
+      "kind": "main",
+      "timingPolicy": "task-notification",
+      "source": "synthetic",
+      "syntheticReason": "goal notification turn 消费子结果。 验证来源提示及非用户授权边界。"
+    },
+    {
+      "id": "upstream-background-goal-verifier-passed",
+      "kind": "goal-verifier",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "验证 verifier 只在 notification 后执行并通过，并稳定留出 future queue admission 窗口。"
+    },
+    {
+      "id": "upstream-background-goal-verifier-queue-drained",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "稳定验证 TargetChanged(complete) 本身会重新评估 CLI queue gate 并自动提升队首。"
+    }
+  ]
+}

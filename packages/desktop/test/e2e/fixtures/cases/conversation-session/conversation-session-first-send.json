@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-first-send",
+  "spec": "./test/e2e/conversation-session/conversation-session-first-send.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-first-send.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/shared/readonly-tool.txt",
+      "source": "created-by-helper",
+      "description": "真实 Read 工具读取的只读文件。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "first-send-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型回复用于验证真实发送、附件提交和会话完成路径；不模拟应用状态。"
+    },
+    {
+      "id": "upstream-conversation-readonly-first-send-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留旧共享回放的 Read 后响应，使首发用例在 case-local 回放中仍执行真实只读工具。"
+    },
+    {
+      "id": "first-send-second-turn",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型回复用于验证真实发送、附件提交和会话完成路径；不模拟应用状态。"
+    },
+    {
+      "id": "upstream-conversation-readonly-tool-call",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只读工具首段用于构造稳定 tool_use/tool_result 历史；工具业务由本地文件 fixture 决定，不依赖真实模型选择。"
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+import { createPage } from "../../../ui/src/plugin-ui/adapters/pluginUiManagedPage.js";
+import { acquirePluginUiPage } from "../../../ui/src/plugin-ui/adapters/pluginUiPageRegistry.js";
 import { attachPluginUiToolResults } from "../../../ui/src/plugin-ui/adapters/pluginUiBackground.js";
 import { buildPluginUiSurfaceKey } from "../../../ui/src/plugin-ui/contract.js";
 import { subscribePage } from "../../../ui/src/plugin-ui/adapters/pluginUiPageRegistry.js";
@@ -95,9 +97,9 @@ const realSetTimeout = window.setTimeout.bind(window),
   realClearTimeout = window.clearTimeout.bind(window);
 const fakeIds = new Map<number, () => void>();
 let nextTimer = -1;
-// 只控制产品的五分钟保活期限；握手、teardown、v4 keep-warm 仍用真实完成事件/时钟。
+// 只控制产品的五分钟/三十分钟期限；握手、teardown、keep-warm 仍用真实完成事件。
 window.setTimeout = ((run: () => void, ms: number, ...args: any[]) => {
-  if (ms !== 300_000) return realSetTimeout(run, ms, ...args);
+  if (ms < 300_000 || ms > 1_800_000) return realSetTimeout(run, ms, ...args);
   const id = nextTimer--;
   deadlines.add(run);
   fakeIds.set(id, run);
@@ -457,3 +459,50 @@ void harness
     );
   })
   .catch(ready.reject);
+
+const originalNow = Date.now;
+let retentionOffset = 0;
+(window as any).advanceRetention = (ms: number) => {
+  retentionOffset += ms;
+  Date.now = () => originalNow() + retentionOffset;
+  (window as any).expireOffscreen();
+};
+(window as any).addRetentionPages = async (count: number) => {
+  const keys: string[] = [];
+  for (let index = 0; index < count; index++) {
+    const input = {
+      ...config,
+      theme: "light",
+      locale: "en-US",
+      displayMode: "inline",
+      width: 400,
+      hostVersion: "fixture",
+      toolInput: undefined,
+      toolResult: undefined,
+      scope: { ...config.scope, scope: { kind: "toolCall", toolCallId: `retained-${index}` } },
+    } as UsePluginUiHostInput;
+    const key = buildPluginUiSurfaceKey(
+      { ...input.scope, ...input.presentation },
+      input.scope.scope,
+    );
+    const page = await acquirePluginUiPage(key, () =>
+      createPage(key, input, platform as any, services as any),
+    );
+    await new Promise<void>((resolve, reject) => {
+      const check = () => {
+        const { phase, error } = page.snapshot();
+        if (phase === "running" || phase === "error") {
+          off();
+          if (error) reject(new Error(error));
+          else resolve();
+        }
+      };
+      const off = page.subscribe(check);
+      check();
+    });
+    keys.push(key);
+  }
+  return keys;
+};
+(window as any).retentionStates = (keys: string[]) =>
+  keys.map((key) => pluginUiPages.get(key)?.snapshot().phase);

@@ -7,7 +7,7 @@
 外围要用 headless 模式在 Docker 容器里自动化评测插件（内置 + zcode 官方市场全量，真模型）。
 评测编排、任务设计、判分、凭据注入都在外围；CLI 内核只需要保证「镜像里能把插件装齐、
 每次运行能选插件、结果可结构化读取」。stream-json 事件面与 headless 权限模式（默认 yolo）已经够用，
-本次只补 `zcode plugins` 子命令树；命令面兼容 Claude Code 的 `claude plugin`，外围评测脚本换 CLI 二进制即可复用。
+本次只补 `zcode plugins` 子命令树；命令支持插件安装、启停、更新与查询，验收脚本使用公开命令契约。
 
 ## 命令面
 

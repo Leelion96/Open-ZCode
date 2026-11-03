@@ -12,7 +12,7 @@ import {
   sanitizeSystemReminderBody,
   wrapSystemReminder,
 } from "../../system-reminder/source.js";
-import { isPresentedInput, type ProviderEntryOrigins } from "./provider-entry-origins.js";
+import { isMidTurnInput, type ProviderEntryOrigins } from "./provider-entry-origins.js";
 
 interface PendingMidSystemEntry {
   entry: RuntimeMessageEntry;
@@ -72,15 +72,19 @@ export function projectMidConversationSystemEntries(
       return;
     }
 
-    projected.push(...pendingItems.map((item) => item.entry));
+    // 没有合法锚点时整组降级为一条 user reminder，只包一次。
+    projected.push(
+      midSystemFallbackEntry(
+        body,
+        pendingItems.map((item) => item.entry),
+        origins,
+      ),
+    );
   };
 
+  // 同一段 user run 的 MCS 文本只在 assistant / system 前或结尾落点，可以越过 run 内的 user 输入。
+  // 修复原因：在每个带标记的输入前截断时，通知前的公告留在通知之前，落点错误。
   for (const entry of entries) {
-    // 中途输入是因果边界：不能被普通 reminder 越过，也不能越过后来的 user。
-    const hasIncoming = pending.some((item) => isPresentedInput(item.entry));
-    const nextIsUser = !isRuntimeAttachmentEntry(entry) && entry.message.role === "user";
-    if (pending.length > 0 && (isPresentedInput(entry) || (hasIncoming && nextIsUser)))
-      flushPending();
     const projectedText = midConversationSystemText(entry);
     if (projectedText !== undefined) {
       pending.push({ entry, text: projectedText });
@@ -117,7 +121,8 @@ function shouldFlushMidConversationSystemBefore(entry: RuntimeMessageEntry): boo
 }
 
 function canAnchorMidConversationSystemAfter(entry: ProjectedRuntimeMessageEntry): boolean {
-  if (isRuntimeAttachmentEntry(entry)) return false;
+  // 留在 user 侧的 attachment 渲染为 user 消息，可以作为锚点。
+  if (isRuntimeAttachmentEntry(entry)) return true;
   const message = entry.message;
   // mid-conversation system 的合法 anchor 对齐 provider-visible role，
   // model-only user（如目标续跑）仍然是 user 消息，不能因内部 source metadata 被误降级。
@@ -147,21 +152,29 @@ function validateMidConversationSystemPositions(
 
     // mid-conversation system 只有在 provider 合法边界才保留；
     // 其他位置降级为旧的 user system-reminder，避免在请求体中生成非法 role 顺序。
-    const fallback: RuntimeMessageEntry = {
-      message: {
-        role: "user",
-        // MCS 正文未经过 user 包装，降级必须自行转义，不能假设 producer 已处理。
-        content: wrapSystemReminder(
-          sanitizeSystemReminderBody(entry.midSystemProjection.fallbackBody),
-        ),
-      },
-      metadata: { source: "legacy_synthetic" },
-    };
-    origins.set(fallback, [entry]);
-    projected.push(fallback);
+    projected.push(
+      midSystemFallbackEntry(entry.midSystemProjection.fallbackBody, [entry], origins),
+    );
   }
 
   return projected;
+}
+
+function midSystemFallbackEntry(
+  body: string,
+  inputs: readonly RuntimeMessageEntry[],
+  origins: ProviderEntryOrigins,
+): RuntimeMessageEntry {
+  const fallback: RuntimeMessageEntry = {
+    message: {
+      role: "user",
+      // MCS 正文未经过 user 包装，降级必须自行转义，不能假设 producer 已处理。
+      content: wrapSystemReminder(sanitizeSystemReminderBody(body)),
+    },
+    metadata: { source: "legacy_synthetic" },
+  };
+  origins.set(fallback, inputs);
+  return fallback;
 }
 
 function canKeepMidConversationSystemBetween(
@@ -220,7 +233,9 @@ export function moveLegacySystemRemindersAfterToolResultRun(
 
 function isLegacySystemReminderEntry(entry: ProjectedRuntimeMessageEntry): boolean {
   if (isRuntimeAttachmentEntry(entry)) return true;
-  return entry.message.role === "user" && entry.metadata?.source === "legacy_synthetic";
+  if (entry.message.role !== "user") return false;
+  // 带媒体的中途消息是 user 消息，同样不能拆开同一组 tool results。
+  return entry.metadata?.source === "legacy_synthetic" || isMidTurnInput(entry);
 }
 
 function isToolResultEntry(entry: ProjectedRuntimeMessageEntry | undefined): boolean {

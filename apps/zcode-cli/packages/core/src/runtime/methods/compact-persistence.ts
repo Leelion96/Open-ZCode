@@ -26,7 +26,7 @@ import type { CompactTimelineContext } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeMessageEntry } from "../../agent/message-history.js";
 import {
-  persistRuntimeReminderMessage,
+  buildRuntimeReminderMessage,
   removeRuntimePersistenceMessagesBestEffort,
   resolvePersistedReminderModel,
 } from "./runtime-reminder-persistence.js";
@@ -294,44 +294,45 @@ export async function persistCompactSummary(
   options?: {
     model?: Model;
     operationId?: string;
+    leadingReminderEntries?: readonly RuntimeMessageEntry[];
     postCompactReminderEntries?: readonly RuntimeMessageEntry[];
   },
 ): Promise<void> {
   if (!this.sessionStore) return;
 
   const created = Date.now();
-  const persistedModel = resolvePersistedReminderModel(this, options?.model);
-  // compact summary 和后续 reminder 是同一次历史替换；任一步失败都要一起回滚。
-  const persistedMessageIds: MessageId[] = [messageID];
-  try {
-    await this.persistMessage(
-      {
-        id: messageID,
-        sessionID: this.sessionId,
-        role: "user",
-        time: {
-          created,
-        },
-        summary: {
-          title: "Compact summary",
-          body: summary,
-          diffs: [],
-        },
-        agent: this.config.agentName ?? "zcode-agent",
-        modelSelection: persistedModel,
-        semantics: {
-          origin: "agent_runtime",
-          kind: "compact_summary",
-          uiVisibility: "hidden",
-          providerVisibility: "visible",
-          transcriptVisibility: "hidden",
-        },
-        system: this.config.systemPrompt,
-        tools: Object.fromEntries(this.getTools().map((tool) => [tool.name, true])),
+  const recordOptions = { created, model: options?.model };
+  const leading = buildReminderRecords(this, options?.leadingReminderEntries, recordOptions);
+  const attachments = buildReminderRecords(
+    this,
+    options?.postCompactReminderEntries,
+    recordOptions,
+  );
+  const summaryRecord: MessageWithParts = {
+    info: {
+      id: messageID,
+      sessionID: this.sessionId,
+      role: "user",
+      time: {
+        created,
       },
-      traceContext,
-    );
-    await this.persistPart(
+      summary: {
+        title: "Compact summary",
+        body: summary,
+        diffs: [],
+      },
+      agent: this.config.agentName ?? "zcode-agent",
+      modelSelection: resolvePersistedReminderModel(this, options?.model),
+      semantics: {
+        origin: "agent_runtime",
+        kind: "compact_summary",
+        uiVisibility: "hidden",
+        providerVisibility: "visible",
+        transcriptVisibility: "hidden",
+      },
+      system: this.config.systemPrompt,
+    },
+    parts: [
       {
         id: createPartId(),
         sessionID: this.sessionId,
@@ -344,9 +345,6 @@ export async function persistCompactSummary(
           end: created,
         },
       },
-      traceContext,
-    );
-    await this.persistPart(
       {
         id: createPartId(),
         sessionID: this.sessionId,
@@ -359,23 +357,45 @@ export async function persistCompactSummary(
         tail_start_id: compactBoundary.lastSummarizedMessageId,
         compactBoundary,
         operationId: options?.operationId,
+        ...(leading.length > 0
+          ? { metadata: { compactLeadingMessageIds: leading.map((record) => record.info.id) } }
+          : {}),
       },
-      traceContext,
-    );
-    for (const entry of options?.postCompactReminderEntries ?? []) {
-      const reminderMessageId = await persistRuntimeReminderMessage.call(
-        this,
-        entry,
-        traceContext,
-        {
-          created,
-          model: options?.model,
-        },
-      );
-      if (reminderMessageId) persistedMessageIds.push(reminderMessageId);
+    ],
+  };
+  // 存储顺序与 live 一致：请求前公告 → summary → compaction 附件，只在 summary 产出后整组写入。
+  const records = [...leading, summaryRecord, ...attachments];
+  if (this.sessionStore.commitMessageBundle) {
+    await this.sessionStore.commitMessageBundle({ sessionID: this.sessionId, messages: records });
+    this.logger?.debug("Compact bundle persisted", {
+      ...traceContextToLogContext(traceContext),
+      event: "session.compact_bundle.persisted",
+      messageCount: records.length,
+      module: "core.runtime",
+      status: "completed",
+    });
+    return;
+  }
+  // 没有事务入口的 store 逐条写入；任一步失败都尽力删除已写入的记录。
+  const persistedMessageIds: MessageId[] = [];
+  try {
+    for (const record of records) {
+      persistedMessageIds.push(record.info.id);
+      await this.persistMessage(record.info, traceContext);
+      for (const part of record.parts) await this.persistPart(part, traceContext);
     }
   } catch (error) {
     await removeRuntimePersistenceMessagesBestEffort.call(this, persistedMessageIds, traceContext);
     throw error;
   }
+}
+
+function buildReminderRecords(
+  runtime: AgentRuntimeInternal,
+  entries: readonly RuntimeMessageEntry[] | undefined,
+  options: { created: number; model?: Model },
+): MessageWithParts[] {
+  return (entries ?? []).flatMap(
+    (entry) => buildRuntimeReminderMessage(runtime, entry, options) ?? [],
+  );
 }

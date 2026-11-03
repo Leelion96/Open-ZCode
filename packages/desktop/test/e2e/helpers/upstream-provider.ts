@@ -1097,6 +1097,14 @@ async function waitForUpstreamProviderSaved(
   );
 }
 
+/** 主模型菜单已打开时，展开真实 Provider 子菜单供候选与选择态断言。 */
+export async function openComposerProviderList() {
+  const trigger = $('[data-testid="composer-provider-trigger"]');
+  await trigger.waitForClickable({ timeout: 15000 });
+  if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+  await $("[data-composer-provider-list]").waitForDisplayed({ timeout: 15000 });
+}
+
 async function openModelMenuUntilModelVisible(
   providerGroupTestIds: string[],
   modelItemTestIds: string[],

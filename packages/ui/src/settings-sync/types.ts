@@ -24,5 +24,7 @@ export interface SettingsSyncUiState {
   selectedKeys: string[];
   tasks: SettingsSyncUiTask[];
   result: SettingsSyncImportResult | null;
+  /** 没有打开项目时，需要项目才能导入、因此记为失败的条目数。 */
+  workspaceRequiredCount: number;
   error: string | null;
 }

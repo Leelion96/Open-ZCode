@@ -151,6 +151,18 @@ async function assertRemoteTerminal(workspacePath: string): Promise<void> {
       timeoutMsg: `${CASE_MARKER}: xterm 输入框没有就绪`,
     },
   );
+  // 慢机上 textarea 先于 terminal.create 完成出现；此时发出的首批按键没有 PTY 接收。
+  // 等真实 Shell 提示符，不用固定延时，且保持后面的命令、输出和文件断言不变。
+  await browser.waitUntil(
+    () =>
+      browser.execute((terminalTestId) => {
+        const text =
+          document.querySelector<HTMLElement>(`[data-testid="${terminalTestId}"] .xterm-rows`)
+            ?.textContent ?? "";
+        return /[$#]\s*$/.test(text);
+      }, TID_TERMINAL),
+    { timeout: 45_000, timeoutMsg: `${CASE_MARKER}: 远端 Shell 提示符没有就绪` },
+  );
 
   const command = [
     `printf '%s\\n' '${DIFF_MARKER}' >> README.txt`,
@@ -205,24 +217,10 @@ async function assertRemoteGitStatus(): Promise<void> {
   }
   expect(addTriggerClicked).toBe(true);
 
-  let reviewItemClicked = false;
-  await browser.waitUntil(
-    async () => {
-      for (const item of await $$('[role="menuitem"]')) {
-        if ((await item.isDisplayed()) && /审查|Review/i.test(await item.getText())) {
-          await item.click();
-          reviewItemClicked = true;
-          return true;
-        }
-      }
-      return false;
-    },
-    {
-      timeout: 30_000,
-      timeoutMsg: `${CASE_MARKER}: 侧边栏没有显示 Git Review 入口`,
-    },
-  );
-  expect(reviewItemClicked).toBe(true);
+  // 新标签页已替代旧下拉菜单；从真实审查卡片进入，不能继续查找已退役的 menuitem。
+  const reviewItem = $('[data-side-pane-open-tab-item="review"]');
+  await reviewItem.waitForClickable({ timeout: 30_000 });
+  await reviewItem.click();
   await waitForTestIdByDom(TID_GIT_PANE, {
     timeout: 30_000,
     timeoutMsg: `${CASE_MARKER}: Git pane 没有打开`,

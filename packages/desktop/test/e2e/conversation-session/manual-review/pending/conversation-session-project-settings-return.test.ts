@@ -34,6 +34,23 @@ async function waitForProjectReturn() {
   await browser.waitUntil(
     async () =>
       browser.execute(() => {
+        // 首连介绍在 SSH 向导外；旧 helper 只找安装按钮，永远无法完成握手。
+        const boundary = document.querySelector<HTMLButtonElement>(
+          '[data-confirm-intent="source-server-boundary"] [data-testid="confirm-dialog-confirm"]',
+        );
+        if (boundary?.getClientRects().length && !boundary.disabled) {
+          boundary.click();
+          return false;
+        }
+        // 换设备确认会阻塞向导完成回调；必须交还调用方确认/取消，不能等向导关闭后才处理。
+        const confirmation = document
+          .querySelector('[data-testid="confirm-dialog-confirm"]')
+          ?.closest('[role="dialog"]');
+        if (
+          confirmation?.getClientRects().length &&
+          confirmation.querySelector("h2")?.textContent?.trim() === "切换设备？"
+        )
+          return true;
         const dialog = document.querySelector('[data-testid="ssh-dialog"]');
         if (!dialog) return true;
         const error = dialog.querySelector<HTMLElement>('[data-testid="ssh-error"]');
@@ -129,6 +146,8 @@ describe(marker, () => {
     await waitForProjectReturn();
     await $('[data-testid="confirm-dialog-confirm"]').waitForDisplayed();
     await browser.keys("Escape");
+    await $('[data-testid="confirm-dialog-confirm"]').waitForExist({ reverse: true });
+    await $('[data-testid="virtual-project-name"]').waitForDisplayed();
     expect(await name()).toBe(marker);
     expect(await $('[data-testid="virtual-project-root-name"]').getAttribute("title")).toBe(root);
     expect(await $('[data-testid="virtual-project-device"]').getText()).toContain("此电脑");

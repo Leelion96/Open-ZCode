@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-switch-stability",
+  "spec": "./test/e2e/conversation-session/conversation-session-switch-stability.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-switch-stability.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-composer-draft-switching-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "稳定建立 completed 和 running 两个真实会话，验证切换期间的逐帧显示；不伪造会话快照或命令回执。"
+    },
+    {
+      "id": "upstream-composer-draft-completed-seed-final",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "稳定建立 completed 和 running 两个真实会话，验证切换期间的逐帧显示；不伪造会话快照或命令回执。"
+    },
+    {
+      "id": "upstream-model-switch-held-running-slow",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "稳定建立 completed 和 running 两个真实会话，验证切换期间的逐帧显示；不伪造会话快照或命令回执。"
+    }
+  ]
+}

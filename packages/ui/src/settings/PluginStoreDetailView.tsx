@@ -135,17 +135,17 @@ export function PluginStoreDetailView({
       <div className="space-y-3">
         <PluginStoreAvatar item={item} className="size-16 rounded-2xl" iconClassName="size-6" />
         <div
-          className="flex min-w-0 items-center justify-between gap-3"
+          className="flex min-w-0 flex-wrap items-center justify-between gap-3"
           data-testid="plugin-store-title-actions"
         >
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 className="min-w-0 truncate text-ui-xl font-semibold tracking-tight text-foreground">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h1 className="min-w-0 break-words text-ui-xl font-medium text-foreground">
               {displayName}
             </h1>
             <PluginStorePaidPlanBadge item={item} />
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <PluginStoreUpdateButton item={item} actions={actions} />
+          <div className="flex flex-wrap items-center gap-2">
+            <PluginStoreUpdateButton item={item} actions={actions} size="lg" />
             {item.installed ? (
               <>
                 <PluginStoreItemMenu
@@ -157,7 +157,7 @@ export function PluginStoreDetailView({
                 {/* 顶部试用与示例提示词共用同一 canonical 构造；空 prompt 表示只预填 Plugin mention。 */}
                 {/* 只有会话右侧市场提供 onOpenUi；主导航详情保留普通插件的「立即试用」。 */}
                 {isUiPluginItem(item) && actions.onOpenUi ? (
-                  <PluginStoreOpenUiButton item={item} actions={actions} />
+                  <PluginStoreOpenUiButton item={item} actions={actions} size="lg" />
                 ) : (
                   <Button
                     type="button"

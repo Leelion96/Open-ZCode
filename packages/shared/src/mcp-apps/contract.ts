@@ -98,6 +98,8 @@ export interface McpAppResourceMeta {
   heightHint?: number;
   minFrameHeight?: number;
   showInline?: boolean;
+  /** 资源级显式后台保留申请；缺省不保留，实际回收由宿主裁决。 */
+  backgroundRetention?: boolean;
 }
 /** 随沙箱句柄回到 renderer 的资源级呈现信息；CSP 与放宽只在 main 生效，不回传。 */
 export type PluginSandboxResourceMeta = Omit<McpAppResourceMeta, "csp" | "cspRelaxations">;
@@ -152,6 +154,11 @@ export {
 export const MCP_APPS_WIDGET_STATE_EXPERIMENTAL_KEY = "zcode/widgetState";
 export const MCP_APPS_RESOURCE_SUBSCRIBE_EXPERIMENTAL_KEY = "zcode/resourceSubscribe";
 export const MCP_APPS_SURFACE_EXPERIMENTAL_KEY = "zcode/surface";
+/**
+ * 宿主允许插件文档内部创建子 frame（srcdoc / about:blank 预览、声明的 frameDomains）而不把它当作页面重载撤销实例。
+ * 旧宿主会在子 frame 导航时停止页面；需要嵌套预览的插件据此键降级，而不是创建 frame 后被释放。
+ */
+export const MCP_APPS_NESTED_FRAMES_EXPERIMENTAL_KEY = "zcode/nestedFrames";
 /**
  * ZCode 扩展方法 `ui/set-widget-state { widgetState }`（MCP Apps 无 widgetState）：页面把界面状态交给宿主
  * renderer 内存保存（不持久化，会话内重挂载可恢复）；初值经 hostContext 的 `zcode/widgetState` 键随握手下发。
@@ -245,6 +252,7 @@ export interface PluginSandboxRegisterRequestPayload {
   minFrameHeight?: number;
   /** 资源级强制常驻标记，随句柄 resourceMeta 回 renderer。 */
   showInline?: boolean;
+  backgroundRetention?: boolean;
 }
 /** host 内部使用的登记输入：去掉传输层 requestId。 */
 export type PluginSandboxRegisterInput = Omit<PluginSandboxRegisterRequestPayload, "requestId">;

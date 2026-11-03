@@ -5,10 +5,11 @@
 ### 任务完成触发刷新（2026-09-18）
 
 MTC-TASK-COMPLETE 对应 [客户端约定](../marketing-touch-client.md#任务完成后刷新2026-09-18)。
-候选 spec：`packages/desktop/test/e2e/ui-shell/manual-review/pending/marketing-touch-task-completion.test.ts`。
+本轮待正式回放 spec：`packages/desktop/test/e2e/ui-shell/marketing-touch-task-completion.test.ts`。
 用例通过真实 composer 发起任务，由 case-local synthetic 延迟文本 fixture 返回成功，
 在运行中通过已有 online 入口重置轮询计时，再断言 15 秒内出现新的营销 HTTP 请求，
-排除 30 秒轮询假阳性。未转正；不代表真实服务端投放或手机实机已验证。
+排除 30 秒轮询假阳性。2026-10-19 人工复核后补齐标题 fixture，但正式回放尚未执行，阶段提交保留 pending；不代表真实服务端投放或手机实机已验证。
+根据已捕获的标题 Missing Fixture，补齐本例非流式标题响应及 manifest；主请求与完成刷新断言不变。
 
 单测覆盖：历史/重复完成不触发、失败/中断不触发、再次运行完成、同批完成合并、
 重连基线、RPC readiness、远程 workspaceIdentity/endpoint 传递及卸载引用释放。

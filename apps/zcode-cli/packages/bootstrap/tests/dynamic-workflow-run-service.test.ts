@@ -85,6 +85,10 @@ import { replayRunProgress } from "../src/app/dynamic-workflow-run-replay.js";
 import { workflowActorModelPolicy } from "../src/app/workflow-actor-model.js";
 import { workflowActorToolPolicy } from "../src/app/workflow-actor-tools.js";
 import {
+  WORKFLOW_QUOTA_RESUME_MARGIN_MS,
+  startWorkflowQuotaAutoResume,
+} from "../src/app/dynamic-workflow-quota-resume.js";
+import {
   fakeFileSystemPort,
   unsupportedExecutionPort,
   type PlannedResponse,
@@ -261,6 +265,7 @@ interface HarnessOptions {
   journal?: JournalStorePort;
   /** 让 actor runtime 的 turn 永不自行结束，用于取消用例。 */
   hangActors?: boolean;
+  actorCleanup?: () => Promise<void>;
   /**
    * 会话静默的有界等待上界（缺省 {@link AMEND_TRANSCRIPT_QUIESCE_MS} = 5 秒）。只有「修订一个
    * turn 落不了地的在飞前驱」这一条路会真的等满，所以只有那组用例需要把它缩下来。
@@ -552,8 +557,16 @@ function makeHarness(options: HarnessOptions = {}): Harness {
           },
           modelAdapter: (options.hangActors
             ? {
-                // 永不 resolve：模拟一个在飞 ask，直到 abort 把 turn 打断。
-                generateText: () => new Promise(() => {}),
+                // 模拟真实适配器：取消时结束请求，否则新的关闭合同会正确地一直等待它。
+                generateText: (request: { abortSignal?: AbortSignal }) =>
+                  new Promise((_resolve, reject) => {
+                    const signal = request.abortSignal;
+                    if (signal?.aborted) reject(signal.reason);
+                    else
+                      signal?.addEventListener("abort", () => reject(signal.reason), {
+                        once: true,
+                      });
+                  }),
               }
             : scriptedModelAdapter(
                 responses,
@@ -572,6 +585,13 @@ function makeHarness(options: HarnessOptions = {}): Harness {
       // 必须一次都不再发生（装在 seq 1 之后的订阅会让 v4 网关永远等 seq 1）。今天的订阅者只有
       // driver 的两个观察面（每 actor 各一次：限流观察读 ModelNetworkStatus，工具活动观察读
       // ToolCallStarted），下面的用例按此计数。
+      if (options.actorCleanup) {
+        const closeBrowserSession = runtime.closeBrowserSession.bind(runtime);
+        runtime.closeBrowserSession = async () => {
+          await closeBrowserSession();
+          await options.actorCleanup!();
+        };
+      }
       const originalSubscribe = runtime.subscribeEvents.bind(runtime);
       runtime.subscribeEvents = (sink) => {
         actorSubscribeCalls.push(input.sessionId);
@@ -6837,6 +6857,71 @@ describe("dynamic workflow run service — amend-resume 的温启动", () => {
   });
 });
 
+describe("dynamic workflow run service — 脚本读到的 run 身份", () => {
+  // facade 的 `run`（docs/dynamic-workflow/authoring.md「The run's identity」）：修订得到新 id、
+  // `resumedFrom` 指向前驱；resume 沿用同一个 id，前驱 id 从 journal 读回——resume 的入参里
+  // 没有它，读不回来脚本就会在续跑那一世看到 undefined。
+  // run 身份只进返回值、不进 ask 指令（缓存键）；修订靠改问题文本分叉，好让子代理真的派发。
+  const identityScript = (question: string): string =>
+    [
+      "interface Answer { text: string }",
+      `const a = await agent("worker").ask<Answer>(${JSON.stringify(question)});`,
+      'return `${run.id}|${run.resumedFrom ?? "-"}|${a.text}`;',
+    ].join("\n");
+
+  it("新 run 无前驱；amend 得新 id 并指向前驱；resume 沿用 id 与前驱", async () => {
+    // amend 要读前驱的消息边界，所以会话真的落库（同「前缀零派发命中」那条用例）。
+    const tempRoot = await mkdtemp(join(tmpdir(), "zcode-dwf-run-identity-"));
+    const store = await createSqliteSessionStore({ dbPath: join(tempRoot, "session.sqlite") });
+    try {
+      await runIdentityLifecycle(store);
+    } finally {
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
+  async function runIdentityLifecycle(
+    store: Awaited<ReturnType<typeof createSqliteSessionStore>>,
+  ): Promise<void> {
+    const journal = new SweepableJournalStore();
+    const options: HarnessOptions = {
+      journal,
+      sessionStore: store as never,
+      actorScripts: { "actor#1@1": [{ kind: "submit", result: { text: "a" } }] },
+    };
+    const harness = makeHarness(options);
+
+    const runA = await submitRun(harness, {
+      cwd: TEST_CWD,
+      scriptText: identityScript("first"),
+      trace: traceFor("run-identity-a"),
+    });
+    await settle(harness, runA);
+    expect((await harness.service.getTask(runA))?.output).toBe(`${runA}|-|a`);
+
+    // 修订后子代理挂住，好让 run 停在可恢复的位置。
+    options.actorScripts = { "actor#1@1": [{ kind: "hang" }] };
+    const { runId: runB } = await amendRun(harness, {
+      cwd: TEST_CWD,
+      predecessorRunId: runA,
+      scriptText: identityScript("amended"),
+      trace: traceFor("run-identity-b"),
+    });
+    expect(runB).not.toBe(runA);
+    await vi.waitFor(() => {
+      expect(harness.actorRuntimeInputs).toHaveLength(2);
+    });
+    expect(await harness.service.cancel(runB)).toBe(true);
+    await settle(harness, runB);
+
+    options.actorScripts = { "actor#1@1": [{ kind: "submit", result: { text: "b" } }] };
+    expect(await harness.service.resume!(runB)).toMatchObject({ ok: true, runId: runB });
+    await settle(harness, runB);
+    expect((await harness.service.getTask(runB))?.output).toBe(`${runB}|${runA}|b`);
+  }
+});
+
 describe("dynamic workflow run service — 用量沿 lineage 累计", () => {
   /**
    * 一轮 scripted turn 的 token 数（见本文件顶部 scriptedModelAdapter 的 usage）。
@@ -8954,4 +9039,147 @@ describe("dynamic workflow run service — 留白（FillWorkflowHole）", () => 
     ).filter((event) => event.eventType === "hole-reached" || event.eventType === "hole-filled");
     expect(replayed).toEqual(live);
   });
+});
+
+describe("dynamic workflow run service — 额度停止后到点自动续跑", () => {
+  // apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md「Resuming after a quota
+  // reset」：真实格式的 1308 原文（没有 Retry-After）→ 停止记录带上重置时刻 → 到点自动续跑。
+  const SCRIPT = [
+    "interface Answer { text: string }",
+    'const a = await agent("worker").ask<Answer>("go");',
+    "return a.text;",
+  ].join("\n");
+
+  /** 北京时间的「YYYY-MM-DD HH:MM:SS」，与服务端文案同形。 */
+  const beijingText = (at: number): string => {
+    const iso = new Date(at + 8 * 60 * 60 * 1000).toISOString();
+    return `${iso.slice(0, 10)} ${iso.slice(11, 19)}`;
+  };
+
+  it("原文里的重置时刻落进停止记录，到点后续跑并跑完", async () => {
+    const resetAt = Math.floor((Date.now() + 2 * 60 * 60 * 1000) / 1000) * 1000;
+    const quotaError = Object.assign(
+      new Error(
+        `[1308][已达到 5 小时的使用上限。您的限额将在 ${beijingText(resetAt)} 重置。][20261019120000abc]`,
+      ),
+      {
+        name: "AiSdkModelAdapterError",
+        code: "model_rate_limited",
+        context: { reason: "rate_limited", providerCode: "1308", retryable: false },
+      },
+    );
+    const options: HarnessOptions = {
+      actorScripts: { "actor#1@1": [{ kind: "throw", error: quotaError }] },
+    };
+    const harness = makeHarness(options);
+
+    let now = Date.now();
+    const timers: { at: number; callback: () => void }[] = [];
+    const auto = startWorkflowQuotaAutoResume({
+      journal: harness.journal,
+      parentSessionId: HARNESS_PARENT_SESSION,
+      resume: (runId) => harness.service.resume!(runId),
+      subscribeRunSettled: (listener) => harness.service.subscribeRunSettled(listener),
+      clock: {
+        now: () => now,
+        schedule: (callback, delayMs) => {
+          timers.push({ at: now + delayMs, callback });
+          return () => {};
+        },
+      },
+    });
+    try {
+      const runId = await submitRun(harness, {
+        cwd: TEST_CWD,
+        parentSessionId: HARNESS_PARENT_SESSION,
+        scriptText: SCRIPT,
+        trace: traceFor("quota-auto-resume"),
+      });
+      await settle(harness, runId);
+      expect(harness.journal.getRun(runId)).toMatchObject({
+        status: "stopped",
+        stopReason: "provider",
+        failure: { providerStop: { kind: "quota", providerCode: "1308", resetAt } },
+      });
+      await vi.waitFor(() => {
+        expect(timers).toHaveLength(1);
+      });
+      expect(timers[0]!.at).toBe(resetAt + WORKFLOW_QUOTA_RESUME_MARGIN_MS);
+
+      // 额度恢复了：子代理这次能答。时钟拨到重置时刻之后，定时器触发续跑。
+      options.actorScripts = { "actor#1@1": [{ kind: "submit", result: { text: "after reset" } }] };
+      now = timers[0]!.at;
+      timers.shift()!.callback();
+      await vi.waitFor(() => {
+        expect(harness.journal.getRun(runId)?.status).toBe("completed");
+      });
+      expect((await harness.service.getTask(runId))?.output).toBe("after reset");
+    } finally {
+      auto.dispose();
+    }
+  });
+});
+
+describe("session close waits for workflow actor resources", () => {
+  it.each([true, false])(
+    "drains actors even when run was already terminal=%s",
+    async (terminal) => {
+      let finish!: () => void;
+      const cleanup = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let cleanupStarted = false;
+      const harness = makeHarness({
+        hangActors: !terminal,
+        actorCleanup: async () => {
+          cleanupStarted = true;
+          await cleanup;
+        },
+      });
+      const runId = await submitRun(harness, {
+        cwd: TEST_CWD,
+        parentSessionId: HARNESS_PARENT_SESSION,
+        scriptText: TYPED_SCRIPT,
+        trace: traceFor("owned-workflow-close"),
+      });
+      await vi.waitFor(() => expect(harness.actorRuntimeInputs.length).toBeGreaterThan(0));
+      if (terminal) await settle(harness, runId);
+      let closed = false;
+      const closing = harness.service.close().then(() => {
+        closed = true;
+      });
+      try {
+        await vi.waitFor(() => expect(cleanupStarted).toBe(true));
+        expect(closed).toBe(false);
+        finish();
+        await closing;
+        expect(closed).toBe(true);
+      } finally {
+        finish();
+        await closing;
+      }
+    },
+  );
+});
+
+it("owner close prevents an in-flight amend from launching a successor", async () => {
+  const harness = makeHarness({ hangActors: true });
+  const runId = await submitRun(harness, {
+    cwd: TEST_CWD,
+    parentSessionId: HARNESS_PARENT_SESSION,
+    scriptText: TYPED_SCRIPT,
+    trace: traceFor("close-amend-race"),
+  });
+  await vi.waitFor(() => expect(harness.actorRuntimeInputs.length).toBeGreaterThan(0));
+  const amending = harness.service.amend!({
+    cwd: TEST_CWD,
+    parentSessionId: HARNESS_PARENT_SESSION,
+    predecessorRunId: runId,
+    scriptText: TYPED_SCRIPT,
+    trace: traceFor("closing-amend"),
+  });
+  const rejected = expect(amending).rejects.toThrow(/closed/);
+  await harness.service.close();
+  await rejected;
+  expect(harness.service.countLiveRuns()).toBe(0);
 });

@@ -221,7 +221,7 @@ const FAIL_FIRST_ROWS: FailFirstRow[] = [
   },
   {
     id: "B14",
-    title: "分类器判不可重试的未知业务码 1314 也在内重试（决策 10）",
+    title: "分类器判不可重试的未知业务码 1314 未到尝试上限前在内重试（上限见 B14b）",
     status: UNKNOWN_1314.status,
     code: UNKNOWN_1314.code,
     quick: [{ shape: "W4" }],

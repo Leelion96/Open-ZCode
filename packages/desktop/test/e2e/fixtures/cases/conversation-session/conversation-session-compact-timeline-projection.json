@@ -9,25 +9,43 @@
   "fileFixtures": [],
   "requests": [
     {
-      "id": "upstream-compact-timeline-projection-seed",
-      "kind": "main",
+      "id": "conversation-session-compact-timeline-projection-title-sidecar",
+      "kind": "common",
       "source": "synthetic",
       "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "upstream-compact-timeline-projection-seed",
+      "description": "两轮已完成历史提供可压缩前缀与高 usage。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "TP 的核心断言是 auto compact marker 的 UI 投影位置，真实模型 token usage 不稳定；DeepSeek v4 可能是 1M context，需要合成足够高的 provider usage。"
     },
     {
       "id": "upstream-compact-timeline-projection-pending",
+      "description": "TP auto compact 完成后继续 pending 主请求的固定回复。",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "该响应只需要稳定产出 pending assistant，核心断言在 compact marker 是否折进同一工作块。"
     },
     {
       "id": "upstream-compact-timeline-projection-manual-split-seed",
+      "description": "TP manual failed 投影样本前置真实 task 的固定回复。",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "manual failed compact 的核心样本由 renderer store 注入，真实模型只需先创建稳定 task。"
+      "source": "synthetic",
+      "syntheticReason": "创建真实会话后，在进程退出期间写入原生失败 compact part，用正式冷恢复验证投影。"
+    },
+    {
+      "id": "compact-timeline-projection-controlled-compact",
+      "description": "auto compact 的受控摘要，测试验证重复命令后显式放行。",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定 auto compact busy 窗口，不以模型耗时决定重复命令是否发生在压缩中。"
     }
   ]
 }

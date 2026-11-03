@@ -9,12 +9,19 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-spreadsheet-paste-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "spreadsheet-paste-text-priority",
       "description": "T11：Excel 多表示 clipboard 只把 TSV 发送给 provider。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "provider 文本 matcher 与合成 PNG 文件名排除共同证明 clipboard 文本优先。"
+      "syntheticReason": "lastUserMessage matcher 证明 TSV 进入 provider；bodyExcludes 合成 PNG 文件名证明没有误走附件链路。"
     }
   ]
 }

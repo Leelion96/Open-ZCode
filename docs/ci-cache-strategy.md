@@ -65,8 +65,14 @@ GitLab cache 打包 node 依赖             GIT_CLEAN_FLAGS 排除 + 工作区�
 - **R1**：任何 `cache:` 声明（块式、`paths:` 列表、flow 列表、`!reference` 引用）的路径中
   不得出现 `.pnpm-store` / `.npm-cache` / `.next/cache`。
 - **R2**：不得出现对 `.ci:npm-cache` / `.ci:npm-cache:pull` 的 `!reference` 引用（模板已删除，出现即坏引用）。
-- **R3**：`00-workflow.yml` 的 `GIT_CLEAN_FLAGS` 必须包含排除项
-  `.pnpm-store/`、`.npm-cache/`、`packages/desktop/mock-cdn/`（工作区持久化的前提，防止误删导致缓存全失效）。
+- **R3**：每个含顶层 `workflow:` 的入口，合并无条件本地 include 后的 `GIT_CLEAN_FLAGS` 必须包含排除项
+  `node_modules/`、`.pnpm-store/`、`.npm-cache/`、`.tmp/`、`.electron-cache/`、`.electron-builder-cache/`、`packages/desktop/mock-cdn/`。
+  入口本身的变量优先于 include；有条件的 include 不作为必定继承的缓存保护，避免保护随条件失效。
+- 普通流水线与 release MR / schedule 的独立安全流水线共同 include `.gitlab/ci/05-workspace-variables.yml`，
+  复用 Node 版本、依赖和 Electron 缓存位置、registry、清理排除项及 submodule 策略；产品发布变量仍由普通入口维护。
+- 普通构建与安全 job 都先安装依赖，再运行缓存守卫；守卫使用的 `yaml` 必须由根工程显式声明，不能依赖工作区缓存或子包的提升结果。
+  冷启动回归须在无 `node_modules` 的临时目录验证安装后可执行。验证除了配置测试，还必须查看实际 `get_sources` 日志，
+  确认复用 runner 时没有删除上述持久目录。
 
 若未来需要为某个目录恢复 GitLab cache，判定标准（满足全部才允许，且必须先更新本文与守卫）：
 1. 该目录会被 `get_sources` 的 git clean 清掉（无法靠工作区持久化）；且

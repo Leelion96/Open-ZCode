@@ -4,7 +4,7 @@
 // ② 顶部历史可达——scrollTop=0 后最早的行在 DOM 中可见（虚拟窗口正确回填）；
 // ③ 上滚不被流式拉回——turn2 慢流期间用户停留在顶部，scrollTop 不被增量拽回底部；
 // ④ 回到底部按钮——解除跟随后出现，点按恢复跟随并贴底。
-// 锚定状态机语义的完整覆盖在 L1 单测（packages/ui/test/v4TimelineScrollAnchor.test.ts）。
+// 原 L1 锚定状态机单测已退役；本 spec 只证明上述四项产品场景，不代表完整状态空间覆盖。
 import { skipOccupationOnboardingIfPresent } from "../helpers/occupation-onboarding.js";
 import { clearAppData } from "../helpers/desktop-app.js";
 import {

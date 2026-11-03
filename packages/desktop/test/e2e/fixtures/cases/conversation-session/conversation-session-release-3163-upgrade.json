@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-release-3163-upgrade",
+  "spec": "./test/e2e/conversation-session/conversation-session-release-3163-upgrade.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-release-3163-upgrade.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "release-3163-upgrade-title",
+      "description": "真实 v3.16.3 升级用例的 task 标题辅助响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于真实 v3.16.3 升级的断言。"
+    },
+    {
+      "id": "release-3163-upgrade-main",
+      "description": "旧版首发和升级后续发的通用响应。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "旧版首发与升级后续发都只需要稳定完成，用 task history 与真实 archive 换代断言路由。"
+    }
+  ]
+}

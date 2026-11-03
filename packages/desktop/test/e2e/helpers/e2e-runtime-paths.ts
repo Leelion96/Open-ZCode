@@ -1,4 +1,6 @@
 import { join, posix, resolve } from "node:path";
+import { readdir, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 export const E2E_RUNTIME_RELATIVE_ROOT = ".zcode-e2e";
 export const E2E_RUNTIME_ROOT_REPLAY_TOKEN = "{{e2eRuntimeRoot}}";
@@ -54,4 +56,38 @@ export function createE2EReplayFixtureVariables(
   return {
     e2eRuntimeRoot: resolveE2ERuntimeRoot(e2eHomeDir).replaceAll("\\", "/"),
   };
+}
+
+/** 前台 Bash 仍在运行时尚无 tool_result；按真实 session/tool 查找唯一输出，不能固定旧 HOME 根。 */
+export async function findE2EBashOutputPath(
+  sessionId: string,
+  toolCallId: string,
+  {
+    tempRoot = tmpdir(),
+    storageRoot = resolveE2EStorageRoot(),
+  }: { tempRoot?: string; storageRoot?: string } = {},
+): Promise<string | null> {
+  const directories = (await readdir(tempRoot, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith("zcode-bash-"))
+    .map((entry) => join(tempRoot, entry.name));
+  const candidates = [...directories, join(storageRoot, "cli", "exec")].map((root) =>
+    join(root, sessionId, `${toolCallId}-stdout.log`),
+  );
+  const existing = (
+    await Promise.all(
+      candidates.map(async (path) => {
+        try {
+          return (await stat(path)).isFile() ? path : null;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+          throw error;
+        }
+      }),
+    )
+  ).filter((path): path is string => path !== null);
+  if (existing.length > 1)
+    throw new Error(
+      `Bash 没有唯一实际输出文件: ${sessionId}/${toolCallId}; ${JSON.stringify(existing)}`,
+    );
+  return existing[0] ?? null;
 }

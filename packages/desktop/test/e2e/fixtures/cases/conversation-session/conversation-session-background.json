@@ -754,35 +754,35 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-tool-use",
-      "syntheticReason": "稳定启动四个 background Agent：三个 zcode Agent 依次完成，cc Agent 保持 running，用真实右上角 background control 面板复现 Agent row 闪没场景。"
+      "syntheticReason": "稳定启动四个 background Agent：三个 short-lived Agent 依次完成，long-running Agent 保持 running，用真实右上角 background control 面板复现 Agent row 闪没场景。"
     },
     {
-      "id": "upstream-background-agent-control-preserve-cc-child-keepalive-tool",
+      "id": "upstream-background-agent-control-preserve-long-running-child-keepalive-tool",
       "kind": "subagent",
       "source": "synthetic",
       "timingPolicy": "fast-tool-use",
-      "syntheticReason": "让 cc Agent 进入不会自行完成的 child Bash，保持 running，证明另一个 Agent completion notification 不会清掉它的 control row。"
+      "syntheticReason": "让 long-running Agent 进入不会自行完成的 child Bash，保持 running，证明另一个 Agent completion notification 不会清掉它的 control row。"
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-one-child-result",
+      "id": "upstream-background-agent-control-preserve-short-lived-one-child-result",
       "kind": "subagent",
       "source": "synthetic",
       "timingPolicy": "delayed-text",
-      "syntheticReason": "短延迟完成第一个 zcode background Agent，稳定触发 parent task-notification。"
+      "syntheticReason": "短延迟完成第一个 short-lived background Agent，稳定触发 parent task-notification。"
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-two-child-result",
+      "id": "upstream-background-agent-control-preserve-short-lived-two-child-result",
       "kind": "subagent",
       "source": "synthetic",
       "timingPolicy": "delayed-text",
-      "syntheticReason": "短延迟完成第二个 zcode background Agent，稳定触发 parent task-notification。"
+      "syntheticReason": "短延迟完成第二个 short-lived background Agent，稳定触发 parent task-notification。"
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-three-child-result",
+      "id": "upstream-background-agent-control-preserve-short-lived-three-child-result",
       "kind": "subagent",
       "source": "synthetic",
       "timingPolicy": "delayed-text",
-      "syntheticReason": "短延迟完成第三个 zcode background Agent，复现真实场景中第三个 completion notification 触发 UI 闪没。"
+      "syntheticReason": "短延迟完成第三个 short-lived background Agent，复现真实场景中第三个 completion notification 触发 UI 闪没。"
     },
     {
       "id": "upstream-background-agent-control-preserve-launch-ack",
@@ -792,21 +792,21 @@
       "syntheticReason": "让 main 回到 idle，同时右上角 background control 面板仍有多个 running Agent row。"
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-one-notification",
+      "id": "upstream-background-agent-control-preserve-short-lived-one-notification",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "task-notification",
-      "syntheticReason": "先消费第一个 zcode Agent completion notification，复现真实场景中多个 zcode Agent 依次完成。 验证来源提示及非用户授权边界。"
+      "syntheticReason": "先消费第一个 short-lived Agent completion notification，复现真实场景中多个 short-lived Agent 依次完成。 验证来源提示及非用户授权边界。"
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-two-notification",
+      "id": "upstream-background-agent-control-preserve-short-lived-two-notification",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "task-notification",
-      "syntheticReason": "再消费第二个 zcode Agent completion notification，复现真实场景中多个 zcode Agent 依次完成。 验证来源提示及非用户授权边界。"
+      "syntheticReason": "再消费第二个 short-lived Agent completion notification，复现真实场景中多个 short-lived Agent 依次完成。 验证来源提示及非用户授权边界。"
     },
     {
-      "id": "upstream-background-agent-control-preserve-zcode-three-notification",
+      "id": "upstream-background-agent-control-preserve-short-lived-three-notification",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "task-notification",
@@ -820,11 +820,11 @@
       "syntheticReason": "复现真实场景：TodoWrite 之后 main notification turn 仍在处理，另一个 still-running Agent row 不能从右上角闪没。"
     },
     {
-      "id": "upstream-background-agent-control-preserve-cc-stopped",
+      "id": "upstream-background-agent-control-preserve-long-running-stopped",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "task-notification",
-      "syntheticReason": "测试结束前收口仍 running 的 cc Agent，避免长 running task 泄漏到后续测试。 验证来源提示及非用户授权边界。"
+      "syntheticReason": "测试结束前收口仍 running 的 long-running Agent，避免长 running task 泄漏到后续测试。 验证来源提示及非用户授权边界。"
     },
     {
       "id": "upstream-agent-composition-mixed-launch",

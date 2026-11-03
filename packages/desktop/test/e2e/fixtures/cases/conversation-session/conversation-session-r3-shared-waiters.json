@@ -3,7 +3,10 @@
   "caseName": "conversation-session-r3-shared-waiters",
   "spec": "./test/e2e/conversation-session/conversation-session-r3-shared-waiters.test.ts",
   "providerRequestPolicy": "none",
-  "providerFixtures": ["./test/e2e/fixtures/upstream/common.json"],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-shared-waiters.json"
+  ],
   "fileFixtures": [],
   "requests": []
 }

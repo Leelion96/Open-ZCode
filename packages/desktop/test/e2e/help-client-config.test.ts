@@ -12,6 +12,7 @@ type DesktopBridge = {
   executeDesktopCommand(command: string): Promise<void>;
   canOpenCommunity(locale: "zh-CN" | "en-US"): Promise<boolean>;
   setApplicationLocale(locale: "zh-CN" | "en-US"): Promise<void>;
+  getDeviceId(): Promise<string>;
 };
 
 async function command(command: string) {
@@ -109,6 +110,19 @@ describe("帮助配置 client/configs", () => {
     expect(query.get("app_version")).toBeTruthy();
     expect(query.get("platform")).toBe(`${process.platform}-${process.arch}`);
     expect(helpRequests[0]!.headers.authorization).toBeUndefined();
+  });
+
+  it("HC-01-copy-device-mid: 真实帮助菜单复制当前设备 MID", async () => {
+    const expected = await browser.execute(async () => {
+      return (window as unknown as { zcode: DesktopBridge }).zcode.getDeviceId();
+    });
+    await $('button[aria-label="Help"]').click();
+    await $('[role="menuitem"]*=Copy device MID').click();
+    await browser.waitUntil(
+      async () =>
+        (await browser.electron.execute((electron) => electron.clipboard.readText())) === expected,
+      { timeout: 10_000, timeoutMsg: "系统剪贴板没有收到当前设备 MID" },
+    );
   });
 
   it("HC-02: 英文缺失只回退英文内置值", async () => {

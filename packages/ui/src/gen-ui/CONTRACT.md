@@ -13,3 +13,7 @@ Reference projection accepts the Unicode JSON marker, `::visualize{path="..." ti
 `collectGenUiSourcePaths` and `matchesGenUiSourcePath` expose the same validated references for conversation presentation. Complete references suppress duplicate HTML preview cards and file-summary entries by full path, including Windows separator normalization. They do not authorize file reads or change page admission, stored file changes, or whole-turn rewind. See `docs/specs/gen-ui-file-summary.md`.
 
 Gen UI control styling projects dedicated host tokens independently of standard MCP accent variables. Typography and visible container radius nesting follow DESIGN.md; the shared visualize stylesheet provides standalone defaults. See `docs/specs/gen-ui-styles.md`.
+
+Model state travels as bounded `genUiContext` input metadata, never appended to user text.
+The CLI owns legacy-tail decoding and reminder projection; queued inputs retain the snapshot
+captured at admission. Empty arrays identify new-format input. See `docs/specs/gen-ui-model-context.md`.

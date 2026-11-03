@@ -1,3 +1,4 @@
+import { drainMemoryExtractions } from "../src/runtime/helpers/project-memory-extraction.js";
 import { describe, expect, it } from "vitest";
 import {
   createPartId,
@@ -19,7 +20,7 @@ import {
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestModelSelection } from "./test-model-selection.js";
 import { resolveProjectMemoryRoot } from "../src/memory/project-root.js";
-import { createReadFileStateKey } from "../src/tool/read-file-state.js";
+import { createReadFileStatePathKey } from "../src/tool/read-file-state.js";
 import { createToolRegistry, type ToolRegistry } from "../src/tool/registry.js";
 import { MemoryFileSystem } from "./memory-test-utils.js";
 import { createTestImageArtifactStore } from "./test-image-artifact-store.js";
@@ -582,7 +583,7 @@ describe("AgentRuntime background Memory extraction", () => {
         return textResult(request, "Nothing to save.");
       },
     });
-    (runtime as any).readFileState.set(createReadFileStateKey(memoryPath, 1, undefined), {
+    (runtime as any).readFileState.set(createReadFileStatePathKey(memoryPath), {
       path: memoryPath,
       content: "old fact",
       isPartialView: false,
@@ -595,6 +596,113 @@ describe("AgentRuntime background Memory extraction", () => {
 
     expect(followupRequestText).not.toContain("has not been read");
     expect(fileSystemPort.files[memoryPath]).toBe("new fact");
+  });
+
+  // Memory Agent 与 Main 共用单步内核：同一批工具结果的批次提示、同一个渲染器、同一套调度。
+  it.each([
+    { label: "MCS", midConversationSystem: true, noticeRole: "system" },
+    { label: "non-MCS", midConversationSystem: false, noticeRole: "user" },
+  ])(
+    "delivers the Read partial-view notice to the next Extraction request ($label)",
+    async ({ midConversationSystem, noticeRole }) => {
+      const longPath = `${WORKSPACE_PATH}/long-notes.md`;
+      const fileSystemPort = new MemoryFileSystem({
+        [longPath]: Array.from(
+          { length: 1_800 },
+          (_, index) => `line ${index + 1} ${"durable project detail ".repeat(4)}`,
+        ).join("\n"),
+      });
+      let extractionTurn = 0;
+      let followup: ModelRequest | undefined;
+      const generateText = async (request: ModelRequest): Promise<ModelResult> => {
+        if (!isExtractionRequest(request)) return textResult(request, "main answer");
+        extractionTurn += 1;
+        if (extractionTurn === 1) {
+          return {
+            ...textResult(request, ""),
+            finishReason: "tool_calls",
+            toolCalls: [{ id: "read-long", name: "Read", input: { file_path: longPath } }],
+          };
+        }
+        followup = request;
+        return textResult(request, "Nothing to save.");
+      };
+      const runtime = createExtractionRuntime({
+        fileSystemPort,
+        generateText,
+        modelFactory: createTestModelFactory({
+          generateText,
+          properties: { supportsMidConversationSystem: midConversationSystem },
+        }),
+      });
+
+      await runtime.executeTurn("persist this durable project preference");
+      await runtime.drainMemoryExtractions();
+
+      const messages = followup!.messages;
+      const toolIndex = messages.findIndex(
+        (message) => message.role === "tool" && message.toolCallId === "read-long",
+      );
+      expect(toolIndex).toBeGreaterThan(0);
+      expect(providerMessagesToText([messages[toolIndex]!])).not.toContain("PARTIAL view");
+      const notice = messages[toolIndex + 1]!;
+      expect(notice.role).toBe(noticeRole);
+      expect(providerMessagesToText([notice])).toContain(
+        `[Truncated: PARTIAL view \u2014 ${longPath}: showing lines 1-`,
+      );
+    },
+  );
+
+  it("runs the Edits of one Extraction batch one after another", async () => {
+    const memoryRoot = resolveProjectMemoryRoot({
+      cliStorageRoot: CLI_STORAGE_ROOT,
+      workspacePath: WORKSPACE_PATH,
+    });
+    const memoryPath = `${memoryRoot}/fact.md`;
+    const fileSystemPort = new MemoryFileSystem({ [memoryPath]: "first" });
+    let extractionTurn = 0;
+    let followupRequestText = "";
+    const runtime = createExtractionRuntime({
+      fileSystemPort,
+      async generateText(request) {
+        if (!isExtractionRequest(request)) return textResult(request, "main answer");
+        extractionTurn += 1;
+        if (extractionTurn === 1) {
+          return {
+            ...textResult(request, ""),
+            finishReason: "tool_calls",
+            toolCalls: [
+              {
+                id: "edit-first",
+                name: "Edit",
+                input: { file_path: memoryPath, old_string: "first", new_string: "second" },
+              },
+              {
+                id: "edit-second",
+                name: "Edit",
+                input: { file_path: memoryPath, old_string: "second", new_string: "third" },
+              },
+            ],
+          };
+        }
+        followupRequestText = providerMessagesToText(request.messages);
+        return textResult(request, "Nothing to save.");
+      },
+    });
+    (runtime as any).readFileState.set(createReadFileStatePathKey(memoryPath), {
+      path: memoryPath,
+      content: "first",
+      isPartialView: false,
+      readAt: new Date(),
+      sizeBytes: Buffer.byteLength("first"),
+    });
+
+    await runtime.executeTurn("persist this durable project preference");
+    await runtime.drainMemoryExtractions();
+
+    // Edit 不是 concurrentSafe：与 Main 一样按顺序执行，第二个 Edit 看到第一个的结果。
+    expect(followupRequestText).not.toContain("String to replace not found");
+    expect(fileSystemPort.files[memoryPath]).toBe("third");
   });
 
   it("does not let discarded branch prose satisfy the Extraction gate after rewind", async () => {
@@ -670,8 +778,9 @@ describe("AgentRuntime background Memory extraction", () => {
 
     expect(extractionRequests).toHaveLength(3);
     const finalRequestText = providerMessagesToText(extractionRequests.at(-1)?.messages ?? []);
-    // durable 消息计数包含首次目录与 rewind 后补发的目录。
-    expect(finalRequestText).toContain("most recent ~6 messages");
+    // 只数当前路径上的对话消息（两轮各一问一答）；首次与 rewind 后补发的持久化公告
+    // （environment、model、agent 目录、date）不计入。
+    expect(finalRequestText).toContain("most recent ~4 messages");
   });
 
   it("reads durable messages and branch metadata at each schedule boundary only", async () => {
@@ -911,3 +1020,15 @@ async function waitForAbort(signal: AbortSignal | undefined): Promise<void> {
     signal.addEventListener("abort", () => resolve(), { once: true }),
   );
 }
+
+describe("memory cleanup deadline", () => {
+  it("reports an unresolved drain instead of declaring resources released", async () => {
+    const pending = Promise.withResolvers<void>();
+    const owner = { memoryExtractionScheduler: { drain: () => pending.promise } };
+    await expect(drainMemoryExtractions.call(owner as never, 5)).rejects.toThrow(
+      "Memory extraction drain timed out",
+    );
+    pending.resolve();
+    await drainMemoryExtractions.call(owner as never, null);
+  });
+});

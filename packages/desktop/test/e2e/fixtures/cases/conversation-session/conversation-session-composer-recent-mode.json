@@ -23,12 +23,27 @@
       "syntheticReason": "隔离模型输出，验证真实 Composer 提交、新任务初始化及 Write 权限行为。"
     },
     {
+      "id": "recent-mode-compact",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "实际切模型会触发压缩；保留 Write 历史供后续提交继续，避免缺少压缩 fixture 造成 500 重试。"
+    },
+    {
       "id": "recent-mode-seed",
       "description": "I74: 新任务继承最近提交权限的受控响应。",
       "kind": "main",
       "timingPolicy": "controlled-stream",
       "source": "synthetic",
       "syntheticReason": "隔离模型输出，验证真实 Composer 提交、新任务初始化及 Write 权限行为。"
+    },
+    {
+      "id": "recent-mode-second",
+      "description": "TD02 第二次切模型和权限后发送。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定输出验证第二次实际提交更新 Recent 后，空白页不覆盖模型与权限。"
     },
     {
       "id": "recent-mode-write",
@@ -45,14 +60,6 @@
       "timingPolicy": "fast-text",
       "source": "synthetic",
       "syntheticReason": "隔离模型输出，验证真实 Composer 提交、新任务初始化及 Write 权限行为。"
-    },
-    {
-      "id": "recent-mode-second",
-      "description": "TD02 第二次切模型和权限后发送。",
-      "kind": "main",
-      "timingPolicy": "fast-text",
-      "source": "synthetic",
-      "syntheticReason": "固定输出验证第二次实际提交更新 Recent 后，空白页不覆盖模型与权限。"
     }
   ]
 }

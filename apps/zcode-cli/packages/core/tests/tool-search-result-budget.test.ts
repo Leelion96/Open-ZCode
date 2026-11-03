@@ -33,7 +33,11 @@ it.each([
     expect(result.success).toBe(true);
     const names = catalog.slice(0, count).map((tool) => tool.name);
     const expected = names.map((toolName) => ({ type: "tool_reference", toolName }));
-    expect(result.modelContent).toEqual(count ? expected : "No matching deferred tools found");
+    expect(result.modelContent).toEqual(
+      count
+        ? expected
+        : "No matching deferred tools found. Loaded tools are not searchable here and need no loading. Check your loaded tool list and query; try corrected spelling, alternative names, or broader keywords before concluding a tool is missing.",
+    );
     expect(result.serialization?.truncated).toBe(false);
     expect(completedToolPartMetadata(result).modelContent).toEqual(count ? expected : undefined);
     expect([
@@ -51,27 +55,21 @@ it.each([
   },
 );
 
-it("keeps all references and counts the final content after an oversized Hook", async () => {
-  const result = await execute({ query: "lookup", max_results: -1 }, "说明".repeat(60_000));
+it("keeps all references unchanged when a Hook returns a large context", async () => {
+  const hookText = "说明".repeat(60_000);
+  const result = await execute({ query: "lookup", max_results: -1 }, hookText);
   expect(result.success).toBe(true);
-  expect(Array.isArray(result.modelContent)).toBe(true);
-  const blocks = result.modelContent as ModelMessageContentBlock[];
-  expect(blocks.filter((block) => block.type === "tool_reference")).toEqual(
+  // Hook 文本是工具批次后的附件，不占 tool result 预算，也不改变引用块。
+  expect(result.modelContent).toEqual(
     catalog.slice(0, -1).map((tool) => ({ type: "tool_reference", toolName: tool.name })),
   );
-  const text = modelMessageContentToText(blocks.filter((block) => block.type === "text"));
-  expect(text).toContain("[Hook additional context]");
-  expect(text).toContain("truncated");
-  expect(text).not.toContain("\uFFFD");
-  expect(Buffer.byteLength(text)).toBeLessThanOrEqual(100_000);
-  const content = modelMessageContentToText(blocks);
-  expect(result.serialization).toMatchObject({
-    content,
-    returnedBytes: Buffer.byteLength(content),
-    truncated: true,
-  });
-  expect(result.serialization!.returnedBytes).toBeGreaterThan(100_000);
-  expect(completedToolPartMetadata(result).modelContent).toEqual(blocks);
+  expect(result.serialization?.truncated).toBe(false);
+  expect(completedToolPartMetadata(result).modelContent).toEqual(result.modelContent);
+  // 单条 Hook 文本有自己的 10000 字符上限；这里没有 artifact store，按截断兜底。
+  expect(result.hookAdditionalContexts).toEqual([
+    `PostToolUse:ToolSearch hook additional context: ${hookText.slice(0, 10_000)}\n\n` +
+      "[Hook additionalContext truncated at 10000 chars — persist-to-disk failed: no artifact store]",
+  ]);
 });
 
 it.each(["head", "tail"] as const)(

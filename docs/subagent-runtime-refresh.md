@@ -2,9 +2,10 @@
 
 ## 合同与唯一数据源
 
-Local Host 的 subagents service 持有文件解析缓存及各 workspace 的内存 snapshot。
+每个 Host（本机或远端）的 subagents service 持有文件解析缓存及各 workspace 的内存 snapshot。
 用户文档/state 在 Host 内共享，项目按 `workspaceIdentity?.trim() || workspacePath` 隔离。
-本地来源以 Host/Settings 为准；其他 storage.dir 用途、独立 CLI/远程 workspace 来源不变。
+本机与远程 workspace（SSH、WSL、Docker）都以持有该 CLI stdio 的 Host 为准：本机 Host 观察
+本机文件，远端 Host 观察远端文件（见「远程 workspace」）。其他 storage.dir 用途、独立 CLI 来源不变。
 
 session 初始化和每个普通父 turn 开始时分别通过 `subagents/readRuntimeConfig` 读取一次。
 该轮 listing、Agent、SendMessage、plugin-reference 共用固定 definitions；后续模型请求、
@@ -28,6 +29,33 @@ sequenceDiagram
     S-->>P: 完整内存副本
     P->>P: 合并 inline / 内置 / 已加载插件，固定本轮
 ```
+
+### 远程 workspace（2026-10-18）
+
+SSH、WSL、Docker 远端由 R3 Source Server Core（`standalone-server`）托管。Core 与本机 Host 使用
+同一 subagents service、缓存和监听：Agent spawn 前准备快照，CLI 父轮 RPC 只在远端机器内部的
+stdio 上往返，不经过桌面端。推送和远端「用户」设置页都写远端磁盘，由远端 watcher 发布，已有
+task 和推送前打开的新建任务页在下一父轮生效，与本机一致。
+
+CLI 由 Host 在同一台机器上启动、读同一份文件，所以是否接入只看该 Host 是否持有快照；
+workspace 身份不参与判断（Core 的 workspace 都是 `remote:*` 身份）。Host 偏好回包和 CLI 接入
+都不再按身份排除远程。旧的直连模式（`desktop-attached-remote`，只服务未升级的旧 Desktop）不变。
+
+```text
+修复前  推送 / 远端设置写入 → 远端磁盘 → Core watcher → Core 快照（无人读取）
+        Core 偏好回包按远端身份关闭开关；CLI 也按身份不接入
+        CLI 会话创建 → 自己读磁盘 → 固定到会话结束（已有 task 看不到新配置）
+修复后  推送 / 远端设置写入 → 远端磁盘 → Core watcher → Core 快照
+        CLI 会话创建 / 每个父轮 → subagents/readRuntimeConfig（远端机器内 stdio）→ 本轮定义
+```
+
+限制：
+
+- 会话额外目录下的 `.zcode/agents` 不进入 Host 快照，本机与远端一致；远端此前由 CLI 自己读取
+  这些目录，改为 Host 快照后不再读取。
+- 收不到原生文件事件的目录（例如网络文件系统）里，已有和新建 task 都沿用旧快照；Agent 重启
+  （重新加载会话）后全量重读。远端此前每个新建 task 都重读磁盘。
+- Linux 原生监听由 DSYNC-17 和同镜像的缓存探针（目录已存在、首次创建两种）验证；真实跨机 SSH、WSL 未运行。
 
 ## 监听、解析与 I/O
 

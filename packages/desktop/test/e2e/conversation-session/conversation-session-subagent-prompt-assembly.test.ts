@@ -41,6 +41,12 @@ const ISOLATED_CUSTOM_CHILD_MARKER = "E2E_SUBAGENT_PROMPT_ASSEMBLY_ISOLATED_CHIL
 const ISOLATED_CUSTOM_CHILD_REPLY_TOKEN = "E2E_SUBAGENT_PROMPT_ASSEMBLY_ISOLATED_CHILD_OK";
 const ISOLATED_CUSTOM_FINAL_TOKEN = "subagent-prompt-assembly-isolated-done";
 const USER_AGENTS_MARKER = "E2E_SUBAGENT_USER_AGENTS_INSTRUCTION";
+const LAUNCHER_MESSAGES_NOTE = "Messages from the agent that launched you";
+const ENVIRONMENT_ANNOUNCEMENT =
+  "# Environment\nYou have been invoked in the following environment";
+const MODEL_ANNOUNCEMENT = "You are powered by the model named";
+const DATE_ANNOUNCEMENT = "Today's date is ";
+const INSTRUCTIONS_PREAMBLE = "Codebase and user instructions are shown below.";
 const WORKSPACE_AGENTS_MARKER = "E2E_SUBAGENT_WORKSPACE_AGENTS_INSTRUCTION";
 const TEST_HOME_DIR = resolveE2EHomeDir();
 const USER_AGENTS_PATH = join(TEST_HOME_DIR, ".zcode", "AGENTS.md");
@@ -157,6 +163,7 @@ describe("会话区 subagent prompt assembly E2E", () => {
     await prepareIncomingMessageCapability(true);
     const modelId = "claude-opus-4-8";
     await runSubagentPromptAssemblyScenario({
+      mcs: true,
       modelId,
       agentPromptIncludes: [
         "You are an agent for ZCode CLI",
@@ -214,6 +221,7 @@ async function removeSubagentInstructionFixtures() {
 }
 
 async function runSubagentPromptAssemblyScenario(input: {
+  mcs?: boolean;
   modelId?: string;
   agentPromptExcludes: string[];
   agentPromptIncludes: string[];
@@ -246,6 +254,7 @@ async function runSubagentPromptAssemblyScenario(input: {
   });
   assertChildUserInstructions(childRecord.requestJson, {
     childMarker: input.childMarker,
+    mcs: input.mcs ?? false,
     shouldInject: input.shouldInjectAgentsMd,
   });
 
@@ -337,73 +346,97 @@ function assertChildSystemPromptShape(
     { type: "ephemeral" },
     { type: "ephemeral" },
   ]);
-  expect(systems[0]).toBe("You are ZCode, an interactive coding agent");
+  expect(systems[0]).toBe("You are ZCode, an interactive agent");
   for (const expected of input.agentPromptIncludes) {
     expect(systems[1]).toContain(expected);
   }
   for (const forbidden of input.agentPromptExcludes) {
     expect(systems[1]).not.toContain(forbidden);
   }
+  expect(systems[1]).toContain(LAUNCHER_MESSAGES_NOTE);
   expect(systems[1]).toContain("\n\nNotes:");
-  expect(systems[1]).toContain("the parent agent reads your text output");
-  expect(systems[1]).toContain(
-    "\n\nHere is useful information about the environment you are running in:",
-  );
-  expect(systems[1]!.indexOf("\n\nHere is useful information")).toBeGreaterThan(
+  expect(systems[1]!.indexOf(LAUNCHER_MESSAGES_NOTE)).toBeLessThan(
     systems[1]!.indexOf("\n\nNotes:"),
   );
-  expect(systems[1]).toContain("Working directory:");
-  expect(systems[1]).toContain("Is directory a git repo:");
-  expect(systems[1]).toContain("Platform:");
-  expect(systems[1]).toContain("Shell:");
-  expect(systems[1]).toContain("OS Version:");
-  expect(systems[1]).toContain("You are powered by the model named");
+  expect(systems[1]).toContain("the parent agent reads your text output");
+  // 环境和执行模型走 child 自己的公告历史，不放进初始 system（见 07-subagent.md）。
+  expect(systems[1]).not.toContain("# Environment");
+  expect(systems[1]).not.toContain("Here is useful information about the environment");
+  expect(systems[1]).not.toContain(MODEL_ANNOUNCEMENT);
 }
 
 function assertChildUserInstructions(
   requestJson: unknown,
-  input: { childMarker: string; shouldInject: boolean },
+  input: { childMarker: string; mcs: boolean; shouldInject: boolean },
 ) {
   const systems = readSystemMessagesFromCapture(requestJson).join("\n");
   // Bug 根因：provider projection 会把 context_prefix 与真实任务编码为同一条 user
   // message 的相邻 text blocks；按 message 聚合文本会把两者误判为同一位置。
   const messageBlocks = readMessageTextBlocksFromCapture(requestJson);
-  const contextIndex = messageBlocks.findIndex(
-    (block) => block.role === "user" && block.text.includes("# currentDate"),
-  );
+  const findBlock = (text: string) => messageBlocks.findIndex((block) => block.text.includes(text));
   const taskIndex = messageBlocks.findIndex(
     (block) => block.role === "user" && block.text.includes(input.childMarker),
   );
-  expect(contextIndex).toBeGreaterThanOrEqual(0);
-  expect(taskIndex).toBeGreaterThan(contextIndex);
-  expect(messageBlocks[contextIndex]?.text).toContain("<system-reminder>");
-  expect(systems).not.toContain("# agentsMd");
-  expect(systems).not.toContain("# claudeMd");
+  const environmentIndex = findBlock(ENVIRONMENT_ANNOUNCEMENT);
+  const modelIndex = findBlock(MODEL_ANNOUNCEMENT);
+  const dateIndex = findBlock(DATE_ANNOUNCEMENT);
+  const contextIndex = findBlock(INSTRUCTIONS_PREAMBLE);
+  expect(taskIndex).toBeGreaterThanOrEqual(0);
+  expect(environmentIndex).toBeGreaterThanOrEqual(0);
+  expect(modelIndex).toBeGreaterThanOrEqual(0);
+  expect(dateIndex).toBeGreaterThanOrEqual(0);
+  if (input.mcs) {
+    // MCS 开：环境、模型、技能和日期合成一条 system 消息，排在 child 任务之后。
+    expect(messageBlocks[environmentIndex]?.role).toBe("system");
+    expect(environmentIndex).toBeGreaterThan(taskIndex);
+    expect(modelIndex).toBe(environmentIndex);
+    expect(dateIndex).toBe(environmentIndex);
+  } else {
+    // MCS 关：每条公告是 child 任务之前的一个 user reminder 块，日期紧挨任务。
+    for (const index of [environmentIndex, modelIndex, dateIndex]) {
+      expect(messageBlocks[index]?.role).toBe("user");
+      expect(messageBlocks[index]?.text).toContain("<system-reminder>");
+    }
+    expect(environmentIndex).toBeLessThan(modelIndex);
+    expect(modelIndex).toBeLessThan(dateIndex);
+    expect(dateIndex).toBe(taskIndex - 1);
+  }
+  // child 任务的位置等同 Main 的真实用户 prompt：前面紧挨的 user 文本以换行结尾。
+  if (taskIndex > 0) {
+    expect(messageBlocks[taskIndex - 1]?.role).toBe("user");
+    expect(messageBlocks[taskIndex - 1]?.text.endsWith("\n")).toBe(true);
+  }
+  expect(systems).not.toContain(INSTRUCTIONS_PREAMBLE);
   expect(systems).not.toContain(USER_AGENTS_MARKER);
   expect(systems).not.toContain(WORKSPACE_AGENTS_MARKER);
+  expect(countCaptureOccurrences(requestJson, "# agentsMd")).toBe(0);
+  expect(countCaptureOccurrences(requestJson, "# claudeMd")).toBe(0);
 
   if (!input.shouldInject) {
-    expect(countCaptureOccurrences(requestJson, "# agentsMd")).toBe(0);
-    expect(countCaptureOccurrences(requestJson, "# claudeMd")).toBe(0);
+    expect(contextIndex).toBe(-1);
     expect(countCaptureOccurrences(requestJson, USER_AGENTS_MARKER)).toBe(0);
     expect(countCaptureOccurrences(requestJson, WORKSPACE_AGENTS_MARKER)).toBe(0);
     return;
   }
 
+  // 指令段复用 Main 的 formatter：一个 user reminder 块，在日期和任务之前。
   const contextText = messageBlocks[contextIndex]?.text ?? "";
-  expect(countCaptureOccurrences(requestJson, "# agentsMd")).toBe(1);
-  expect(countCaptureOccurrences(requestJson, "# claudeMd")).toBe(0);
+  expect(messageBlocks[contextIndex]?.role).toBe("user");
+  expect(contextText).toContain("<system-reminder>");
+  expect(contextIndex).toBeLessThan(taskIndex);
+  if (!input.mcs) {
+    expect(modelIndex).toBeLessThan(contextIndex);
+    expect(contextIndex).toBeLessThan(dateIndex);
+  }
   expect(countCaptureOccurrences(requestJson, USER_AGENTS_MARKER)).toBe(1);
   expect(countCaptureOccurrences(requestJson, WORKSPACE_AGENTS_MARKER)).toBe(1);
-  expect(contextText).toContain("# agentsMd");
-  expect(contextText).toContain("Codebase and user instructions are shown below.");
-  expect(contextText.indexOf("# agentsMd")).toBeLessThan(contextText.indexOf(USER_AGENTS_MARKER));
+  expect(contextText.indexOf(INSTRUCTIONS_PREAMBLE)).toBeLessThan(
+    contextText.indexOf(USER_AGENTS_MARKER),
+  );
   expect(contextText.indexOf(USER_AGENTS_MARKER)).toBeLessThan(
     contextText.indexOf(WORKSPACE_AGENTS_MARKER),
   );
-  expect(contextText.indexOf(WORKSPACE_AGENTS_MARKER)).toBeLessThan(
-    contextText.indexOf("# currentDate"),
-  );
+  expect(contextText).not.toContain(DATE_ANNOUNCEMENT);
 }
 
 async function assertCompleteSubagentInstructionTrajectory() {

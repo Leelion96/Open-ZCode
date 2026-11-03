@@ -9,6 +9,7 @@ import {
   buildFormalAdmissionAuditIntegration,
   getCoverageAuditExitCode,
 } from "./lib/conversation-session-formal-admission-audit.mjs";
+import { inspectCoverageMatrices } from "./lib/retired-app-unit-evidence.mjs";
 import { inspectConversationSessionFormalAdmission } from "./lib/conversation-session-formal-admission.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -63,9 +64,8 @@ const GENERATED_MARKDOWN_DOCS = {
 };
 const MAIN_AUTOMATION_SPEC_PATH_PREFIXES = [
   "packages/desktop/test/e2e/",
-  // A12 的 accepted-input recovery 由 focused UI unit 独立证明；只放行该文件，
-  // 避免把 coverage matrix 中以 `、` 聚合的 UI 辅助清单误当成单个 spec 路径。
-  "packages/ui/test/v4SessionDataLayer.test.ts",
+  // 修复原因：App 单测退役后不能继续接纳已删 UI 文件；正文退役说明不会移除机器索引。
+  // A12 的自动化缺口记为 missing，保留的 CLI 证据仍按下列明确路径接纳。
   "apps/zcode-cli/packages/core/tests/",
   // 修复原因：普通 retry UI 退役后，K10/K11 的稳定命令门禁证据只保留在
   // bootstrap 原生命令 focused suite；精确放行该文件，避免把其它补充证据误计入 formal E2E。
@@ -2045,7 +2045,7 @@ async function main() {
     ].map((path) => readFile(resolve(REPO_ROOT, path), "utf8")),
   );
 
-  const errors = [];
+  const errors = await inspectCoverageMatrices(REPO_ROOT);
   const formalAdmission =
     await inspectConversationSessionFormalAdmission(formalAdmissionRoot);
   const formalAdmissionAudit =

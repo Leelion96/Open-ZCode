@@ -136,6 +136,19 @@ function Fixture() {
   const { order, refresh } = usePluginStoreOrder();
   const [query, setQuery] = useState("");
   const [segment, setSegment] = useState<PluginStoreSegment>("public");
+  const [enabled, setEnabled] = useState(true);
+  const [action, setAction] = useState("");
+  const visibleItems =
+    params.get("installedActions") === "1"
+      ? [
+          {
+            ...item("installed-example", "productivity"),
+            installed: true,
+            info: { id: `installed-example@${official}`, name: "installed-example", enabled },
+          } as StorePluginItem,
+          item("new-example", "productivity"),
+        ]
+      : items;
   return (
     <main className="@container/plugin-store min-h-screen bg-background p-4 text-foreground">
       <button data-testid="code" onClick={() => store.getState().setInterfaceMode("coding")}>
@@ -148,8 +161,9 @@ function Fixture() {
         Refresh
       </button>
       <output data-testid="requests">{requests}</output>
+      <output data-testid="last-action">{action}</output>
       <PluginStoreListView
-        items={items}
+        items={visibleItems}
         order={order}
         marketplaces={[
           {
@@ -166,11 +180,11 @@ function Fixture() {
         segment={segment}
         onSegmentChange={setSegment}
         actions={{
-          onOpenDetail: () => {},
+          onOpenDetail: () => setAction("detail"),
           onUpdate: () => {},
           onInstall: () => {},
-          onUninstall: () => {},
-          onSetEnabled: () => {},
+          onUninstall: () => setAction("uninstall"),
+          onSetEnabled: (_id, next) => setEnabled(next),
           activeOperations: [],
           togglingPluginId: null,
         }}

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-config-and-multisession",
+  "spec": "./test/e2e/conversation-session/conversation-session-config-and-multisession.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-config-and-multisession.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "title-e2e_multi_session_",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复和流式时序以复现用例动作窗口；真实 Agent、工具执行、队列与 UI 不被替换。"
+    },
+    {
+      "id": "slow-e2e_multi_session_",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定上游回复和流式时序以复现用例动作窗口；真实 Agent、工具执行、队列与 UI 不被替换。"
+    }
+  ]
+}

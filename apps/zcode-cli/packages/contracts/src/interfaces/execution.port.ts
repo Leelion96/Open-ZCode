@@ -130,6 +130,12 @@ export interface ExecutionOutputLimit {
    * 仅控制通用 collector 执行。Bash 的文件软阈值在前后台都生效，不受此开关影响。
    */
   killProcessOnPersistedLimit?: boolean;
+  /**
+   * 通用 collector 执行：额外保留每路最后 tailBytes 字节，结算时放进
+   * {@link ExecutionStreamResult.tail}。与 inline 上限无关——inline 截断照常计数、照常读到退出，
+   * 尾部不受总输出量影响。Bash 合并文件输出不使用此字段。缺席即不保留。
+   */
+  tailBytes?: number;
 }
 
 export interface ExecutionRequest {
@@ -177,6 +183,8 @@ export interface ExecutionStreamResult {
   artifactPath?: string;
   artifactBytes?: number;
   artifactTruncated?: boolean;
+  /** 请求了 {@link ExecutionOutputLimit.tailBytes} 时，该路最后 tailBytes 字节（字节边界切，解码后首字符可能是 U+FFFD）。 */
+  tail?: string;
 }
 
 export interface ExecutionResult {

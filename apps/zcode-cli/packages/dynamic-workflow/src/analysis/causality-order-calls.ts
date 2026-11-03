@@ -13,10 +13,12 @@ import {
   issuesSince,
   jump,
   locOf,
+  noteSiteVisit,
   openRegion,
   type TraceState,
 } from "./causality-order-state.js";
 import { barrier, settlesAt } from "./causality-order-settle.js";
+import { activationFor } from "./causality-order-bindings.js";
 import {
   closeStrand,
   isAsyncFunction,
@@ -34,6 +36,8 @@ export function walkCall(
   chain: readonly string[],
 ): void {
   const { walk } = state;
+  // A site's `within` is read off where the walk meets its call (docs/analysis.md "Sites").
+  if (state.siteCalls.has(node)) noteSiteVisit(state, node, chain);
   // Receiver and arguments first, then the call itself — JavaScript's own order. (A
   // function-like argument is deferred by `walk` itself: its body runs when applied.)
   const receiverMark = state.events.length;
@@ -56,6 +60,7 @@ export function walkCall(
       loc: cand.loc,
       ...(strand ? { strand: true as const } : {}),
     });
+    state.candidateByRegion.set(id, cand.order);
     const inside = [...chain, id];
     if (cand.callback !== undefined) {
       const record = strand ? openStrand(state, id) : undefined;
@@ -256,8 +261,18 @@ interface InlineOptions {
 
 /**
  * Inline one function body at a site: the `call` region (positioned at the SITE — it is
- * this occurrence, not the declaration), inside a `loop` region when the function is
+ * this occurrence, not the declaration), inside a `loop` region when the activation is
  * recursive, with re-entry cut to a `recur` jump.
+ *
+ * The body is an ACTIVATION carrying what this call bound to each parameter (resolved against
+ * the enclosing activations), so a call through a parameter inside it inlines only what this
+ * call passed. Re-entry is recursion only with the same bindings: a helper applied again inside
+ * its own callback with a different callback is a second activation, not a loop.
+ *
+ * 修复原因：此前按函数声明判重入（`fnStack.includes(decl)`）并按神谕的合并记录内联。一个被
+ * 多处调用、各传回调的 helper，在 `fn()` 处把所有调用者的回调都内联成一个 exhaustive choice
+ * （k 处调用 k² 份函数体，40 处 4.4 秒、80 处跑不完），嵌套使用的那个调用者还把 helper 判成递归，
+ * 其内层 ask 被 recur 剪掉、落到别的调用者的 fan-out 里。
  *
  * The body is a STRAND when the applied function is `async` or the caller forces it (a
  * deferred callback): it then gets a frame of its own, so the `await`s inside it suspend
@@ -271,12 +286,13 @@ function inlineBody(
   site: ts.Node,
   options: InlineOptions = {},
 ): void {
-  const { fnStack, sccLoopByDecl } = state;
+  const { activations, sccLoopByKey } = state;
   const { label, prologue } = options;
-  if (fnStack.includes(decl)) {
+  const activation = activationFor(state, decl, site);
+  if (activations.some((open) => open.key === activation.key)) {
     // Recursion: the enclosing `loop` region carries it; the re-entrant call itself is a
     // back edge to that loop for the control-flow projection.
-    const loop = sccLoopByDecl.get(decl);
+    const loop = sccLoopByKey.get(activation.key);
     if (loop !== undefined) jump(state, "recur", loop, chain);
     return;
   }
@@ -284,7 +300,7 @@ function inlineBody(
   const strand = options.strand === true || isAsyncFunction(decl);
   let inside = chain;
   let sccLoop: string | undefined;
-  if (state.recursive.has(decl)) {
+  if (state.recursive.has(activation.key)) {
     // A call-graph SCC containing a step is a `loop` region, never unrolled.
     sccLoop = openRegion(state, "loop", innermost(state, chain), {
       entered: true,
@@ -305,15 +321,15 @@ function inlineBody(
   inside = [...inside, call];
   const record: StrandRecord | undefined = strand ? openStrand(state, call) : undefined;
   if (prologue !== undefined) prologue(inside);
-  fnStack.push(decl);
+  activations.push(activation);
   state.walkedFns.add(decl);
-  const outerSccLoop = sccLoopByDecl.get(decl);
-  if (sccLoop !== undefined) sccLoopByDecl.set(decl, sccLoop);
+  const outerSccLoop = sccLoopByKey.get(activation.key);
+  if (sccLoop !== undefined) sccLoopByKey.set(activation.key, sccLoop);
   state.returnTargets.push(call);
   state.walk(decl.body as ts.Node, inside);
   state.returnTargets.pop();
-  if (outerSccLoop === undefined) sccLoopByDecl.delete(decl);
-  else sccLoopByDecl.set(decl, outerSccLoop);
-  fnStack.pop();
+  if (outerSccLoop === undefined) sccLoopByKey.delete(activation.key);
+  else sccLoopByKey.set(activation.key, outerSccLoop);
+  activations.pop();
   if (record !== undefined) closeStrand(state, record);
 }

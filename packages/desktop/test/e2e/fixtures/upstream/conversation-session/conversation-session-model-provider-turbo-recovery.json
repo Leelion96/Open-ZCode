@@ -21,9 +21,9 @@
         "statusCode": 200,
         "statusMessage": "OK",
         "headers": {
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"model-provider-turbo-recovery-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5-Turbo\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"Turbo recovery\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"model-provider-turbo-recovery-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5-Turbo\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"model-provider-turbo-recovery-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"deepseek-v4-flash\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Turbo recovery\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":32,\"completion_tokens\":8,\"total_tokens\":40}}"
       }
     },
     {

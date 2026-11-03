@@ -4,10 +4,12 @@ import {
   type BashOutput,
   type ModelMessageContent,
 } from "@zcode/contracts";
-import { formatPersistedOutputEnvelope } from "../result-persistence-format.js";
+import {
+  formatCompactPersistedOutputContent,
+  truncateMiddleForModel,
+} from "../result-persistence-format.js";
 import { isBashProviderErrorStatus } from "./bash-semantics.js";
 
-const MODEL_RESULT_PREVIEW_CHARS = 2_000;
 const ASSISTANT_BLOCKING_BUDGET_MS = 15_000;
 const READ_TOOL_NAME = "Read";
 
@@ -16,7 +18,7 @@ export function formatBashModelContent(output: unknown): ModelMessageContent {
   if (!parsed.success) return stringifyFallback(output);
 
   const result = parsed.data;
-  if (Array.isArray(result.structuredContent) && result.structuredContent.length > 0) {
+  if (hasStructuredContent(result)) {
     return result.structuredContent as ModelMessageContent;
   }
 
@@ -31,6 +33,18 @@ export function formatBashModelContent(output: unknown): ModelMessageContent {
   return formatTextContentForModel(result);
 }
 
+/** formatBashModelContent 走失败分支时为 true：正文已按字符保留头尾，有确定上限。 */
+export function isBashModelContentBounded(output: unknown): boolean {
+  const parsed = BashOutputSchema.safeParse(output);
+  return (
+    parsed.success && !hasStructuredContent(parsed.data) && isBashOutputProviderError(parsed.data)
+  );
+}
+
+function hasStructuredContent(result: BashOutput): boolean {
+  return Array.isArray(result.structuredContent) && result.structuredContent.length > 0;
+}
+
 export function formatPersistedBashModelContent(input: {
   content: string;
   output: unknown;
@@ -40,24 +54,26 @@ export function formatPersistedBashModelContent(input: {
   if (!BashOutputSchema.safeParse(input.output).success) return undefined;
   // serializer 已经把完整 Bash provider-visible content 写入 artifact；
   // 这里必须只预览该 content，不能重进普通 formatter 后把 stderr/provider-error 文本完整追加回模型上下文。
-  return formatBashPersistedOutputContent({
+  return formatCompactPersistedOutputContent({
     content: input.content,
     originalBytes: input.originalBytes,
     persistedPath: input.persistedPath,
   });
 }
 
+// 失败命令的输出不落盘：用内联采集的前 30000 字节，超长时保留这段的头尾；超出 30000 字节的部分看不到。
+// 修复原因：超过 30000 字节就落盘、只给 2KB 开头时，模型看不到这段后部的错误原因。
 function formatProviderErrorContent(result: BashOutput): string {
-  return [
-    `Exit code ${result.exitCode}`,
-    formatStdoutContentForModel(result),
-    formatStderrForModel(result),
-    formatBackgroundInfoForModel(result),
-    result.staleReadFileStateHint?.trim() ?? "",
-    result.ghRateLimitHint?.trim() ?? "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return truncateMiddleForModel(
+    [
+      `Exit code ${result.exitCode}`,
+      formatStdoutForModel(result.stdout),
+      formatStderrForModel(result),
+    ]
+      .filter(Boolean)
+      .join("\n")
+      .trim(),
+  );
 }
 
 function formatTextContentForModel(result: BashOutput): string {
@@ -79,7 +95,7 @@ function formatStdoutContentForModel(result: BashOutput): string {
       ? undefined
       : (result.persistedOutputPath ?? result.rawOutputPath);
   if (persistedOutputPath) {
-    processedStdout = formatBashPersistedOutputContent({
+    processedStdout = formatCompactPersistedOutputContent({
       content: processedStdout,
       originalBytes: observedOutputBytes(result),
       persistedPath: persistedOutputPath,
@@ -128,6 +144,10 @@ function formatBackgroundInfoForModel(result: BashOutput): string {
   const readHint = outputText
     ? ` To check interim output, use ${READ_TOOL_NAME} on that file path.`
     : "";
+  if (result.timedOutAfterMs !== undefined) {
+    const timeoutSeconds = Math.max(1, Math.round(result.timedOutAfterMs / 1000));
+    return `Command did not complete within its ${timeoutSeconds}s timeout and was moved to the background (ID: ${result.backgroundTaskId}).${outputText} You will be notified when it completes.${readHint}`;
+  }
   return `Command running in background with ID: ${result.backgroundTaskId}.${outputText} You will be notified when it completes.${readHint}`;
 }
 
@@ -158,34 +178,6 @@ function observedOutputBytes(result: BashOutput): number {
     (result.stdoutBytes ?? Buffer.byteLength(result.stdout, "utf8")) +
     (result.stderrBytes ?? Buffer.byteLength(result.stderr, "utf8"))
   );
-}
-
-function formatBashPersistedOutputContent(input: {
-  content: string;
-  originalBytes: number;
-  persistedPath: string;
-}): string {
-  return formatPersistedOutputEnvelope({
-    content: input.content,
-    formatBytes: formatBashOutputByteSize,
-    originalBytes: input.originalBytes,
-    persistedPath: input.persistedPath,
-    previewChars: MODEL_RESULT_PREVIEW_CHARS,
-  });
-}
-
-function formatBashOutputByteSize(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 bytes";
-  const kb = bytes / 1024;
-  if (kb < 1) return `${bytes} bytes`;
-  if (kb < 1024) return `${trimUnit(kb)}KB`;
-  const mb = kb / 1024;
-  if (mb < 1024) return `${trimUnit(mb)}MB`;
-  return `${trimUnit(mb / 1024)}GB`;
-}
-
-function trimUnit(value: number): string {
-  return value.toFixed(1).replace(/\.0$/, "");
 }
 
 function maybeImageContent(result: BashOutput): ModelMessageContent | undefined {

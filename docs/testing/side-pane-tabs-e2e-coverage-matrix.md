@@ -1,5 +1,9 @@
 # Side Pane Tabs E2E Coverage Matrix
 
+> `retired:` 逐处标记已退役 App 单测，仅供追溯；原通过记录不代表现行覆盖。独立断言缺口需由后续验收补齐。
+
+> 2026-10-26：App 业务单测已按[测试规格](unit-test-quality.md)退役。本文中的相关单测路径和历史通过记录不再代表现行覆盖；CLI/CUA、工程测试、E2E 与浏览器验收证据仍按各自状态解释。未补验收的场景不得自动视为已覆盖。
+
 | Case ID     | Default 156px | Equal shrink | 60px floor    | Horizontal scroll | `+` placement | Active close | Inactive close | Tooltip reset | Middle-click close | Spec                                                      |
 | ----------- | ------------- | ------------ | ------------- | ----------------- | ------------- | ------------ | -------------- | ------------- | ------------------ | --------------------------------------------------------- |
 | SPT-E2E-001 | covered       | n/a          | n/a           | asserts absent    | follows tabs  | n/a          | n/a            | n/a           | n/a                | `ui-shell/side-pane-tabs-responsive-interactions.test.ts` |
@@ -17,10 +21,12 @@
 
 - 2026-10-19 SPT-E2E-007 并发安装回归：推荐区删除独立全局锁，与市场共用管理 store 的按插件忙碌判定。浏览器 16/16 通过，覆盖两个不同插件同时待处理、后一次失败不清理前一次、安装中打开其他已启用插件，以及原有重复点击、同插件双 surface、启用、失败恢复和减少动画偏好；1200px/英文/Zai Light 与 390px/中文/Zai Dark，默认新标签页和主动新增标签页均覆盖。Hook 定向 8/8 通过，含服务切换后旧操作完成隔离；最终 affected 90 个文件、1379 条通过。根 typecheck、architecture 和变更文件格式检查通过；lint 无错误，188 条警告与原基线一致。夹具按当前面板 owner 初始化默认 new-tab，避免旧空面板状态不再挂载入口。服务仍由 fixture 注入，未启动真实 Agent/沙箱或手机远控，保留 pending。
 
+- 2026-10-21 SPT-E2E-007 推荐展示回归：浏览器 18/18、Hook 9/9、受影响单测 75 个文件 1181 条通过；根 typecheck、architecture、格式检查通过，lint 0 错误（188 条既有警告）。补充已安装/暂停条目优先、组内稳定顺序，以及描述前社区标签的来源隔离与本地化断言。原进度/并发用例改为按插件 ID 定位，避免安装态改变顺序后误点其他条目。Hook 另覆盖安装完成后的重新排序；浏览器仍使用注入服务，不代表真实 Agent 或手机远控验证，保留 pending。
+
 - SPT-E2E-007：`packages/ui/test/browser/manual-review/pending/side-pane-plugin-menu.test.mjs`，空态 launcher + active new-tab launcher 使用真实 reducer 创建标签，覆盖鼠标、Tab/Enter、作用域与重复打开、安装/启用、草稿/无宿主门禁及冷加载；1200px/en-US/亮色与 390px/zh-CN/暗色。2026-10-14 自动浏览器 E2E 11/11 通过，其中 8 组以可控响应验证安装/启用进度仅归属目标插件、其他插件保留原文案、全局禁用、失败后换插件重试及成功后不自动打开。仍为 pending，未提升 CI admission，未声明插件沙箱或真实手机远控覆盖。
 - Logo 样式迁移：SPT-E2E-000 在 Windows/Linux 验证旧 28px 点击区域及位置、18px 底座、11px 静态 SVG、真实 hover 和点击收起/恢复 Sidebar。Windows 实测通过：`desktop-e2e-20261009065750634-p17396-21ed3ac7f4753068`，1/1；Linux 真机待补，平台条件由组件测试覆盖。
 
-- SPT-E2E-008：`manual-review/pending/side-pane-scope.test.ts`，覆盖对话隔离的关闭与恢复；2026-09-30 macOS Electron 1/1 通过（`desktop-e2e-20260930-063101-322`），保留 manual-review/pending。跨工作区及异步 authority 由 `useAppPanelsScope.test.ts` 覆盖，归属类型由 `workspaceSidePane.test.ts` 覆盖。未宣称 Windows/Linux 或手机实机验证。
+- SPT-E2E-008：`packages/desktop/test/e2e/side-pane-scope.test.ts`，覆盖对话隔离的关闭与恢复；2026-09-30 macOS Electron 1/1 通过（`desktop-e2e-20260930-063101-322`），保留 manual-review/pending。跨工作区及异步 authority 由 `retired:packages/ui/test/useAppPanelsScope.test.ts` 覆盖，归属类型由 `retired:packages/ui/test/workspaceSidePane.test.ts` 覆盖。未宣称 Windows/Linux 或手机实机验证。（retired: 为退役历史证据，不计现行覆盖。）
 - 本轮小重构回归：552/552 相关单测；原侧栏交互 7 通过、1 非 macOS 窗口控件用例跳过（`desktop-e2e-20260930-062902-680`）；完整权限 22/22（`desktop-e2e-20260930-063214-472`）。根 typecheck、E2E typecheck、lint（63 个已有 warning）、architecture check 和变更代码格式检查通过。
 - 修复前证据：Hook 7/8 失败；旧构建 `desktop-e2e-20260930-061702-522` 在 B 关闭其他后找不到 A 设置 tab。快捷 Browser 入口遗漏工作区另有先红后绿的单测。运行报告与逐次日志：`packages/desktop/.e2e-artifacts/side-pane-scope-20260930/README.md`。
 
@@ -36,11 +42,11 @@
 
 - 2026-09-10 CR-01：SPT-E2E-000 平台期望为 Windows 5px、Sequoia/更早 macOS 6px、Tahoe 26+ 与 Linux 12px；三处指示线为 foreground-subtlest/50、沿边原长度、无 mask。useAppChromeStateAutoUpdate.test.ts 补齐平台查询→hook→半径的数据链路，验证 macOS 15/26 的异步结果和订阅清理；macOS 真机视觉待补。
 
-- 2026-09-07 补齐 resize handle 与平台圆角覆盖：SPT-E2E-000 接受 Windows 5px、macOS/Linux/Web 12px；验证 Sidebar、Side Pane、Terminal 三个 handle 的 4px 热区、2px `bg-foreground` 指示线、默认隐藏及 hover/拖动态显示，并以真实指针分别改变 Sidebar 宽度、左右面板宽度和会话/终端高度。设置页 Sidebar 的 268px 桌面宽度由 `settings/settings-ui-polish.test.ts` 覆盖，紧凑 68px 继续由组件测试覆盖。
+- 2026-09-07 补齐 resize handle 与平台圆角覆盖：SPT-E2E-000 接受 Windows 5px、macOS/Linux/Web 12px；验证 Sidebar、Terminal 的 4px 热区和 Side Pane 热区（当前期望为 3px，2026-10-29 更新断言后尚未重跑）、2px `bg-foreground` 指示线、默认隐藏及 hover/拖动态显示，并以真实指针分别改变 Sidebar 宽度、左右面板宽度和会话/终端高度。设置页 Sidebar 的 268px 桌面宽度由 `settings/settings-ui-polish.test.ts` 覆盖，紧凑 68px 继续由组件测试覆盖。
 - 2026-09-07 补齐验收：Workspace suite 7/7 通过，运行 ID `desktop-e2e-20260907065558567-p30371-3b85b0c85fbbae83`；Settings suite 5/5 通过，运行 ID `desktop-e2e-20260907065702167-p33040-7fa462d329a4436b`。47 项相关单测通过。
 - 开关按钮迁移：SPT-E2E-000 检查空态展开后 WorkspaceHeader 不再显示开关、Side Header 可收起；SPT-E2E-001 覆盖有标签时在 Side Header 收起、从 WorkspaceHeader 再展开并保留标签。
 - 迁移验证：`desktop-e2e-20260904085939961-p43497-9ecade9b51e2c858`，macOS Electron 7/7；相关单测 33/33、typecheck、E2E typecheck、lint 通过（41 个已有警告）。已检查深色空态截图；Windows/Linux 与手机端未单独执行视觉 E2E。
-  依据 `docs/design/workspace-independent-panels.md`，SPT-E2E-000 增加面板上下对齐、4px 间距、Header 归属、xl 圆角与关闭恢复宽度断言。现有 tab 展开/关闭、缩放、拖动用例继续覆盖持久挂载行为；手机分支和 Windows/Linux 控制区由针对性单测覆盖。
+  依据 `docs/design/workspace-independent-panels.md`，SPT-E2E-000 增加面板上下对齐、3px 间距（当前规格）、Header 归属、xl 圆角与关闭恢复宽度断言。现有 tab 展开/关闭、缩放、拖动用例继续覆盖持久挂载行为；手机分支和 Windows/Linux 控制区由针对性单测覆盖。
 
 最终验收：`desktop-e2e-20260904084050358-p6937-68e000533efda13e`，7/7 通过。SPT-E2E-000 同时覆盖真实拖动、底部终端、双主题截图；截图文件为该 artifact 目录下 `independent-panels-zai-light.png` / `independent-panels-zai-dark.png`。其他平台独立视觉验证待补，详见布局 spec。
 
@@ -59,7 +65,7 @@
 ## 默认新标签页
 
 - SPT-E2E-009：`ui-shell/side-pane-tabs-responsive-interactions.test.ts`，覆盖首次展开、工具替换、收起恢复、加号及最后一个标签关闭。
-- `useAppPanelsBrowserViewLifecycle.test.ts` 覆盖真实 hook 的默认入口、工具替换和异步关闭。
+- `retired:packages/ui/test/useAppPanelsBrowserViewLifecycle.test.ts` 覆盖真实 hook 的默认入口、工具替换和异步关闭。（retired: 为退役历史证据，不计现行覆盖。）
 - macOS Electron 本轮 9 通过、1 平台条件跳过（Windows 菜单），含 SPT-E2E-009 与 SPT-E2E-000 深浅主题截图；run `desktop-e2e-20261016082511861-p45212-c004286dcc3d9c01`。手机实机、Windows/Linux 真机和卡顿归因未验证。
 
 2026-10-16 评审修复：SPT-E2E-009 定向通过（1/1），run `desktop-e2e-20261016-091135-357`。覆盖末标签关闭收起、再次展开补建、真实关闭菜单命令，以及后续关闭上下文事件不被 App 拦截；测试未实际关闭宿主窗口。受影响单测 79 文件、1320 条通过。此前整文件运行其余 8 条通过、1 条平台跳过；009 的菜单回调和动画等待问题在上述定向重跑中修正。手机实机、Windows/Linux 真机未新增验证。

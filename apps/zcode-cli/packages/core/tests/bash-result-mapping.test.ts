@@ -208,8 +208,8 @@ describe("Bash result mapping", () => {
     expect(result.modelContent).toBe(result.content);
   });
 
-  it("uses Bash persisted-output projection for failed oversized Bash results", async () => {
-    const stdout = "O".repeat(30_001);
+  it("keeps the head and tail of large failed Bash output inline", async () => {
+    const stdout = `${"H".repeat(6_000)}${"M".repeat(18_000)}${"T".repeat(6_001)}`;
     const artifactStore = new RecordingArtifactStore();
 
     const result = await serializeOutput(
@@ -231,12 +231,120 @@ describe("Bash result mapping", () => {
       new AbortController().signal,
     );
 
-    expect(artifactStore.requests).toHaveLength(1);
-    expect(result.content).toContain(
-      "Output too large (29.3KB). Full output saved to: /artifacts/artifact-1.json",
+    // 失败命令不落盘：完整文本超过 1 万 + 1024 字符时，保留头尾各 5000 字符，中间写明截掉的字符数。
+    const full = `Exit code 2\n${stdout}\nbad command`;
+    expect(artifactStore.requests).toHaveLength(0);
+    expect(result.content).toBe(
+      `${full.slice(0, 5_000)}\n\n... [${full.length - 10_000} characters truncated] ...\n\n${full.slice(-5_000)}`,
     );
-    expect(result.content).toContain(`Preview (first 2KB):\nExit code 2\n${"O".repeat(1_988)}`);
     expect(result.modelContent).toBe(result.content);
+  });
+
+  it.each([10_500, 20_000])(
+    "keeps a failed Bash output of %i CJK characters inline instead of persisting it",
+    async (length) => {
+      const stdout = "错".repeat(length);
+      const artifactStore = new RecordingArtifactStore();
+
+      const result = await serializeOutput(
+        { ...minimalToolExecutorDeps(), artifactStore },
+        bashOutput({ exitCode: 1, status: "failed", stdout }),
+        bashToolEntry,
+        {},
+        "tool_bash",
+        new AbortController().signal,
+      );
+
+      // 失败正文已按字符保留头尾；多字节文本超过 30000 字节也不能再被落盘成 2KB 开头预览。
+      const full = `Exit code 1\n${stdout}`;
+      const expected =
+        full.length <= 11_024
+          ? full
+          : `${full.slice(0, 5_000)}\n\n... [${full.length - 10_000} characters truncated] ...\n\n${full.slice(-5_000)}`;
+      expect(Buffer.byteLength(expected, "utf8")).toBeGreaterThan(30_000);
+      expect(artifactStore.requests).toHaveLength(0);
+      expect(result.content).toBe(expected);
+      expect(result.content).not.toContain("<persisted-output>");
+      expect(result.truncated).toBe(false);
+      expect(result.modelContent).toBe(result.content);
+    },
+  );
+
+  it("still persists a successful CJK Bash output over the byte budget", async () => {
+    const stdout = "错".repeat(10_500);
+    const artifactStore = new RecordingArtifactStore();
+
+    const result = await serializeOutput(
+      { ...minimalToolExecutorDeps(), artifactStore },
+      bashOutput({ stdout }),
+      bashToolEntry,
+      {},
+      "tool_bash",
+      new AbortController().signal,
+    );
+
+    expect(artifactStore.requests).toHaveLength(1);
+    expect(result.content).toContain("<persisted-output>");
+  });
+
+  it("keeps the byte budget for a failed Bash result that returns structuredContent", async () => {
+    const artifactStore = new RecordingArtifactStore();
+
+    const result = await serializeOutput(
+      { ...minimalToolExecutorDeps(), artifactStore },
+      bashOutput({
+        exitCode: 1,
+        status: "failed",
+        structuredContent: [{ type: "text", text: "structured".repeat(10_000) }],
+      }),
+      bashToolEntry,
+      {},
+      "tool_bash",
+      new AbortController().signal,
+    );
+
+    // structuredContent 不经过失败正文的头尾截断，没有字符上限，仍按字节预算落盘。
+    expect(artifactStore.requests).toHaveLength(1);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("shows failed Bash output in full up to the truncation slack", () => {
+    const stdout = "x".repeat(11_000);
+    expect(formatText(bashOutput({ exitCode: 1, status: "failed", stdout }))).toBe(
+      `Exit code 1\n${stdout}`,
+    );
+  });
+
+  it("uses the inline output of an adapter-persisted failure instead of the saved-file preview", () => {
+    const stdout = "y".repeat(30_000);
+    const text = formatText(
+      bashOutput({
+        exitCode: 1,
+        status: "failed",
+        stdout,
+        persistedOutputPath: "/tmp/exec_fail.output",
+        persistedOutputSize: 90_000,
+      }),
+    );
+    expect(text).not.toContain("<persisted-output>");
+    expect(text).toBe(
+      `Exit code 1\n${"y".repeat(4_988)}\n\n... [20012 characters truncated] ...\n\n${"y".repeat(5_000)}`,
+    );
+  });
+
+  it("names the timeout when a foreground command is moved to the background", () => {
+    expect(
+      formatText(
+        bashOutput({
+          status: "backgrounded",
+          backgroundTaskId: "exec_bg",
+          persistedOutputPath: "/tmp/exec_bg.output",
+          timedOutAfterMs: 120_000,
+        }),
+      ),
+    ).toBe(
+      "Command did not complete within its 120s timeout and was moved to the background (ID: exec_bg). Output is being written to: /tmp/exec_bg.output. You will be notified when it completes. To check interim output, use Read on that file path.",
+    );
   });
 
   it("does not rehydrate structuredContent after serializer persists a large Bash result", async () => {

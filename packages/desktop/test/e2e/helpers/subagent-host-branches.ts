@@ -357,7 +357,8 @@ export async function exerciseSubagentHostBranches(
   // 初始化各一次，之后每个父 turn 一次配置 RPC；失败/迟到结果不增加 turn 或替换 CLI。
   for (const [key, peer] of Object.entries(peers) as Array<["a" | "b", Peer]>) {
     const reads = (await boundaryRpcReads()).filter(
-      (r) => r.sessionId === peer.sessionId && r.kind === "read",
+      // 计数属于当前 Host；另一窗口恢复同一历史时的初始化读取应单独归属。
+      (r) => r.sessionId === peer.sessionId && r.hostPid === peer.hostPid && r.kind === "read",
     );
     expect(reads).toHaveLength(1 + (key === "a" ? 2 : 6) + extraTurns[key]);
     expect(new Set(reads.map((r) => `${r.hostPid}/${r.pid}`))).toEqual(

@@ -31,28 +31,39 @@ export function usePublishRemoteConnectionProgress(progress: RemoteConnectionPro
   useEffect(() => () => publish?.(null), [publish]);
 }
 
-export function RemoteConnectionMinimizedProgress({
-  view,
-  cancelled,
-  target,
-  name,
-  logs,
-  error,
-  reason,
-  waiting,
-  onResume,
-  onCancel,
-  ready,
-}: RemoteConnectionProgress) {
-  const { intl } = useZCodeIntl();
-  const phases = resolveRemoteConnectionPhases(logs);
+/**
+ * 后台连接进度的唯一摘要：进度块与设置页设备行共用，避免两处各算一份阶段和百分比。
+ * waiting 只在连接仍在进行且没有失败时成立，表示流程停下来等用户补充信息或确认。
+ */
+export function summarizeRemoteConnectionProgress(
+  progress: Pick<
+    RemoteConnectionProgress,
+    "view" | "cancelled" | "ready" | "logs" | "workspacePath" | "error" | "waiting"
+  >,
+) {
+  const phases = resolveRemoteConnectionPhases(progress.logs, {
+    includeWorkspace: Boolean(progress.workspacePath),
+  });
   const active =
     phases.find((phase) => phase.status === "active" || phase.status === "failed") ?? phases[0]!;
   const percent = Math.round(
     (phases.filter((phase) => phase.status === "complete").length / phases.length) * 100,
   );
+  const progressing = progress.view === "connecting" && !progress.cancelled && !progress.ready;
+  return {
+    active,
+    percent,
+    progressing,
+    waiting: progressing && progress.waiting && !progress.error,
+  };
+}
+
+export function RemoteConnectionMinimizedProgress(props: RemoteConnectionProgress) {
+  const { view, cancelled, target, name, error, reason, waiting, onResume, onCancel, ready } =
+    props;
+  const { intl } = useZCodeIntl();
+  const { active, percent, progressing } = summarizeRemoteConnectionProgress(props);
   const device = name ?? (target ? formatRemoteLinkRailTarget(target) : "");
-  const progressing = view === "connecting" && !cancelled && !ready;
   const title = intl.formatMessage(
     {
       id: ready
@@ -91,7 +102,7 @@ export function RemoteConnectionMinimizedProgress({
           <span className="min-w-0 flex-1 truncate">{title}</span>
           {!error && progressing ? <span>{percent}%</span> : null}
         </span>
-        <span className="mt-1 block break-words text-ui-xs">
+        <span className="mt-1 block break-words text-ui-sm">
           {(error ? `${error} · ${reason}` : "") ||
             intl.formatMessage({
               id: !progressing

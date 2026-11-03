@@ -39,6 +39,22 @@
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
       "syntheticReason": "固定 ToolSearch 模型输出以验证真实工具执行后的卡片显示；受控流由测试显式释放，不依赖模型响应速度。"
+    },
+    {
+      "id": "tool-discovery-card-deferred",
+      "description": "包装参数生成期隐藏临时卡片",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "受控参数流验证包装卡片可见性；真实 Runtime 执行 TodoWrite 并拒绝常驻目标包装调用。"
+    },
+    {
+      "id": "tool-discovery-card-deferred-done",
+      "description": "包装调用结果返回后结束轮次",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "受控参数流验证包装卡片可见性；真实 Runtime 执行 TodoWrite 并拒绝常驻目标包装调用。"
     }
   ]
 }

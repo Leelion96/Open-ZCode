@@ -12,7 +12,7 @@ import {
   INCOMING_MESSAGE_MODES,
   prepareIncomingMessageCapability,
 } from "../helpers/incoming-message-capability.js";
-import { assertIncomingMessage } from "../helpers/incoming-message-evidence.js";
+import { assertAppendOnly, assertPlainUserInput } from "../helpers/incoming-message-evidence.js";
 import {
   E2E_READONLY_TOOL_FILE_CONTENT,
   ensureReadonlyToolFixtureFile,
@@ -70,24 +70,37 @@ describe("会话区修饰键单条 delivery E2E", () => {
     await clearAppData();
   });
 
-  it("M06k：running 且尚无输出时 Cmd/Ctrl+Enter 直接抢占，不经过 QueueItem", async () => {
-    const runId = Date.now();
-    await startPreOutputTurn(`E2E_MODIFIED_KEY_BASE_${runId}`);
-    const marker = `E2E_MODIFIED_KEY_${runId}`;
-    await setV4ComposerText(marker);
+  for (const { label, mcs } of INCOMING_MESSAGE_MODES) {
+    it(`M06k ${label}：running 且尚无输出时 Cmd/Ctrl+Enter 直接抢占，不经过 QueueItem`, async function () {
+      this.timeout(TEST_TIMEOUT_MS);
+      await prepareIncomingMessageCapability(mcs, "queue");
+      const runId = Date.now();
+      const baseMarker = `E2E_MODIFIED_KEY_BASE_${runId}`;
+      await startPreOutputTurn(baseMarker);
+      const marker = `E2E_MODIFIED_KEY_SELECTED_${runId}`;
+      await setV4ComposerText(marker);
 
-    await submitWithModifiedEnter();
+      await submitWithModifiedEnter();
 
-    await waitForV4ComposerText("", "pre-output 快捷键提交后 composer 没有立即清空", 3000);
-    expect((await getQueueItems()).some((item) => item.content.includes(marker))).toBe(false);
-    await waitForUpstreamRequestContaining(marker, 45000);
-    await waitForV4UserMessageContaining(marker);
-    expect((await getQueueItems()).some((item) => item.content.includes(marker))).toBe(false);
-    expect(await countUpstreamRequestsContaining(marker)).toBe(1);
-  });
+      await waitForV4ComposerText("", "pre-output 快捷键提交后 composer 没有立即清空", 3000);
+      expect((await getQueueItems()).some((item) => item.content.includes(marker))).toBe(false);
+      await waitForUpstreamRequestContaining(marker, 45000);
+      await waitForV4UserMessageContaining(marker);
+      expect((await getQueueItems()).some((item) => item.content.includes(marker))).toBe(false);
+      expect(await countUpstreamRequestsContaining(marker)).toBe(1);
+      // 被抢占的 base prompt 还没有输出：新消息仍排在它之后，按人类输入的时间顺序。
+      const [evidence] = await getUpstreamRequestEvidence({
+        includes: [marker],
+        excludes: ["Generate a concise title"],
+      });
+      const wire = JSON.stringify((evidence!.requestJson as { messages: unknown[] }).messages);
+      expect(wire.indexOf(baseMarker)).toBeGreaterThanOrEqual(0);
+      expect(wire.indexOf(marker)).toBeGreaterThan(wire.indexOf(baseMarker));
+    });
+  }
 
   for (const { label, mcs } of INCOMING_MESSAGE_MODES) {
-    it(`M06k ${label}：工具结果后 Cmd/Ctrl+Enter 抢占，human reminder 全文与角色正确`, async function () {
+    it(`M06k ${label}：工具结果后 Cmd/Ctrl+Enter 抢占，新消息是普通用户文本且不改写已发出的工具结果`, async function () {
       this.timeout(TEST_TIMEOUT_MS);
       await prepareIncomingMessageCapability(mcs, "queue");
       await ensureReadonlyToolFixtureFile();
@@ -115,16 +128,20 @@ describe("会话区修饰键单条 delivery E2E", () => {
         excludes: ["Generate a concise title"],
       });
       expect(evidence).toHaveLength(1);
-      const wire = await assertIncomingMessage(evidence[0]!.requestJson, {
-        presentation: "user_steer",
-        marker,
+      const wire = await assertPlainUserInput(evidence[0]!.requestJson, {
         body: marker,
-        role: mcs ? "system" : "user",
         evidenceLabel: `send-now-tool-${label}`,
       });
       expect(JSON.stringify(wire.messages.slice(0, wire.index + 1))).toContain(
         '"type":"tool_result"',
       );
+      // 被抢占的那次请求已发出的 tool_result 原样保留，新请求只在末尾追加。
+      const [heldRequest] = await getUpstreamRequestEvidence({
+        includes: [baseMarker, E2E_READONLY_TOOL_FILE_CONTENT],
+        excludes: [marker, "Generate a concise title"],
+      });
+      expect(heldRequest).toBeDefined();
+      assertAppendOnly(heldRequest!.requestJson, evidence[0]!.requestJson);
       expect((await getQueueItems()).some((item) => item.content.includes(marker))).toBe(false);
       const userRows = (await getV4Messages("user")).filter((message) =>
         message.text.includes(marker),
@@ -137,6 +154,9 @@ describe("会话区修饰键单条 delivery E2E", () => {
   }
 
   it("M06n：guide running 下 Cmd/Ctrl+Enter 只反向进入 future queue", async () => {
+    // Bug 原因：beforeEach 的全局新建按当前导航决定 cwd，单独运行时落在独立目录；
+    // 设置页返回后等待夹具项目就会超时（“主界面没有切到工作区”）。先回到夹具项目草稿。
+    await prepareV4ConversationE2E();
     await setInteractionBehavior("guide");
     await startNewV4Draft();
     const runId = Date.now();

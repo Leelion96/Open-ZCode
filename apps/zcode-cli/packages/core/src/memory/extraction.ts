@@ -1,4 +1,6 @@
 import type { MessageId, MessageWithParts, ToolPart } from "@zcode/contracts";
+import { INTERRUPT_MARKER_SOURCE } from "../agent/message-history.js";
+import { isHiddenReminderMessage } from "../runtime/helpers/conversation.js";
 import { resolveContainedMemoryFilePath } from "./memory-file-path.js";
 import { formatMemoryManifest } from "./recall/manifest.js";
 import type { MemoryManifestEntry } from "./recall/types.js";
@@ -220,9 +222,16 @@ function countMessagesAfterCursor(
   messages: readonly MessageWithParts[],
   cursor: MessageId | undefined,
 ): number {
-  if (!cursor) return messages.length;
-  const cursorIndex = messages.findIndex((message) => message.info.id === cursor);
-  return cursorIndex < 0 ? messages.length : messages.length - cursorIndex - 1;
+  const cursorIndex = cursor ? messages.findIndex((message) => message.info.id === cursor) : -1;
+  return messages.slice(cursorIndex + 1).filter(isConversationMessage).length;
+}
+
+// 修复原因：公告持久化成隐藏记录后，"~N messages" 把它们也算进去，数字比实际对话多。
+// 只数对话消息：隐藏提醒记录不计入；中断标记是普通 user 文本，照常计入。
+function isConversationMessage(message: MessageWithParts): boolean {
+  return (
+    !isHiddenReminderMessage(message) || message.info.semantics?.source === INTERRUPT_MARKER_SOURCE
+  );
 }
 
 function containsDirectMemoryWrite(

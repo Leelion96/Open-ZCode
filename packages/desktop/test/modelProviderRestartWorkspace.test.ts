@@ -45,3 +45,30 @@ it.each([
     mocks.workspace.mock.invocationCallOrder[0]!,
   );
 });
+
+it("重启恢复项目 Recent 和作用域映射，不复制其他 renderer 状态", async () => {
+  const preferences = {
+    'zcode-composer-recent:v2:["desktop","local","project-a"]': '{"mode":"yolo"}',
+    'zcode-composer-workspace-scope:v1:["desktop","/active-project"]':
+      '{"clientNamespace":"desktop","hostId":"local","projectId":"project-a"}',
+  };
+  const values: Record<string, string> = { ...preferences, unrelated: "do-not-restore" };
+  const storage = Object.defineProperty(values, "setItem", {
+    value: (key: string, value: string) => {
+      values[key] = value;
+    },
+    enumerable: false,
+  });
+  vi.stubGlobal("window", { localStorage: storage, location: { reload: vi.fn() } });
+  vi.stubGlobal("browser", {
+    execute: async (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
+      Reflect.apply(fn, undefined, args),
+  });
+  mocks.reload.mockImplementationOnce(async () => {
+    for (const key of Object.keys(values)) delete values[key];
+  });
+  const { restartIntoWorkspaceRestoringPreferences } =
+    await import("./e2e/helpers/model-provider-restart-runtime.js");
+  await restartIntoWorkspaceRestoringPreferences("/active-project");
+  expect({ ...values }).toEqual(preferences);
+});

@@ -6,6 +6,7 @@
 @import "katex/dist/katex.min.css";
 @import "./highspeed/highspeed-activation.css";
 @import "./highspeed/highspeed-share.css";
+@import "./nativeMediaControls.css";
 @source "../../../node_modules/streamdown/dist/*.js"; /* 感觉这行也是不好使呢*/
 
 @plugin "@tailwindcss/typography";
@@ -73,6 +74,7 @@ body,
 }
 
 :root {
+  --shadow-composer-soft: 0 0 #0000;
   --ui-font-size: 14px;
   --color-remote-continuity-panel: #202124;
   --color-remote-continuity-panel-surface: #2c2d30;
@@ -194,6 +196,7 @@ html[data-document-hidden] *::after {
   --color-panel: var(--color-neutral-100);
   --color-sidebar: var(--color-neutral-100);
   --color-surface: color-mix(in oklab, var(--color-neutral-950) 3%, transparent);
+  --color-user-message-bubble: color-mix(in oklab, var(--color-neutral-950) 5%, transparent);
   --color-surface-hover: color-mix(in oklab, var(--color-neutral-950) 5%, transparent);
   --color-markdown-inline-code: var(--color-tag);
   --color-card: var(--color-white);
@@ -364,6 +367,7 @@ html[data-document-hidden] *::after {
   --color-panel: var(--color-neutral-900);
   --color-sidebar: var(--color-neutral-950);
   --color-surface: color-mix(in oklab, var(--color-white) 5%, transparent);
+  --color-user-message-bubble: color-mix(in oklab, var(--color-white) 8%, transparent);
   --color-surface-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
   --color-card: var(--color-neutral-800);
   --color-card-selected: var(--color-neutral-700);
@@ -511,6 +515,7 @@ html[data-document-hidden] *::after {
 }
 
 .theme-zai-light {
+  --shadow-composer-soft: 0 1px 3px rgb(0 0 0 / 4%), 0 6px 18px rgb(0 0 0 / 4%);
   --animated-gradient-text-strong: rgba(13, 13, 13, 1);
   --animated-gradient-text-soft: rgba(13, 13, 13, 0.22);
   --color-background: #f8f8f8;
@@ -536,6 +541,7 @@ html[data-document-hidden] *::after {
   --color-panel: #ffffff;
   --color-sidebar: #f0f0f0;
   --color-surface: rgba(13, 13, 13, 0.03);
+  --color-user-message-bubble: rgba(13, 13, 13, 0.05);
   --color-surface-hover: rgba(13, 13, 13, 0.05);
   --color-card: #ffffff;
   --color-card-selected: var(--color-input);
@@ -700,6 +706,7 @@ html[data-document-hidden] *::after {
   --color-panel: #202020;
   --color-sidebar: #161616;
   --color-surface: rgba(255, 255, 255, 0.05);
+  --color-user-message-bubble: rgba(255, 255, 255, 0.08);
   --color-surface-hover: rgba(255, 255, 255, 0.1);
   --color-card: #2b2b2b;
   --color-card-selected: var(--color-input);
@@ -2276,4 +2283,139 @@ html[data-document-hidden] *::after {
 [data-workspace-shell]:has([data-project-sidebar-panel="navigation"][aria-hidden="true"])
   [data-sidebar-divider-extension] {
   display: none;
+}
+
+/* 连续圆角下增大半径，保留不支持 corner-shape 的浏览器原有回退。 */
+@supports (corner-shape: squircle) {
+  [data-v4-user-input-bubble] {
+    corner-shape: squircle;
+    border-radius: 24px;
+  }
+
+  [data-composer-layout] {
+    corner-shape: squircle;
+    border-radius: 32px;
+  }
+}
+
+@keyframes zcode-loading-pixel-on {
+  0%,
+  100% {
+    opacity: 0.15;
+    transform: scale(1);
+  }
+  35% {
+    opacity: var(--loading-pixel-peak, 0.75);
+    transform: scale(1.08);
+  }
+}
+.dark .zcode-loading-pixel,
+.theme-zai-dark .zcode-loading-pixel {
+  --loading-pixel-peak: 1;
+}
+.zcode-loading-pixel {
+  animation: zcode-loading-pixel-on 650ms ease-in-out infinite;
+}
+@keyframes zcode-loading-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+.zcode-loading-label {
+  display: inline-block;
+  font-weight: 500;
+  background-image: linear-gradient(
+    90deg,
+    var(--color-foreground-subtle) 35%,
+    var(--color-foreground) 50%,
+    var(--color-foreground-subtle) 65%
+  );
+  background-position: 200% 0;
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: zcode-loading-shimmer 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zcode-loading-pixel,
+  .zcode-loading-label {
+    animation: none;
+  }
+}
+
+[data-v4-user-input-bubble] {
+  border-width: 0;
+  border-top-right-radius: 12px;
+  background-color: var(--color-user-message-bubble);
+}
+
+@supports (corner-shape: squircle) {
+  [data-v4-user-input-bubble] {
+    border-top-right-radius: 24px;
+  }
+}
+
+/* thumb 伪元素需继承容器颜色；每个真实子元素重置透明，隔离嵌套滚动区。 */
+@property --zcode-scrollbar-thumb {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: transparent;
+}
+:is([data-project-sidebar-panel], [data-workspace-conversation-frame], [data-workspace-side-frame]),
+:is([data-project-sidebar-panel], [data-workspace-conversation-frame], [data-workspace-side-frame])
+  * {
+  --zcode-scrollbar-thumb: transparent;
+  scrollbar-color: auto;
+}
+:is(
+  [data-project-sidebar-panel],
+  [data-workspace-conversation-frame],
+  [data-workspace-side-frame]
+)::-webkit-scrollbar-thumb,
+:is([data-project-sidebar-panel], [data-workspace-conversation-frame], [data-workspace-side-frame])
+  *::-webkit-scrollbar-thumb {
+  background-color: var(--zcode-scrollbar-thumb);
+}
+[data-scrollbar-active] {
+  --zcode-scrollbar-thumb: var(--color-border);
+}
+
+/* 只在滑块本身悬停/拖动时增强反馈，不改变轨道与内容尺寸。 */
+:is(
+    [data-project-sidebar-panel],
+    [data-workspace-conversation-frame],
+    [data-workspace-side-frame]
+  )::-webkit-scrollbar-thumb:hover,
+:is([data-project-sidebar-panel], [data-workspace-conversation-frame], [data-workspace-side-frame])
+  *::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in oklab, var(--color-foreground) 30%, transparent);
+}
+:is(
+    [data-project-sidebar-panel],
+    [data-workspace-conversation-frame],
+    [data-workspace-side-frame]
+  )::-webkit-scrollbar-thumb:active,
+:is([data-project-sidebar-panel], [data-workspace-conversation-frame], [data-workspace-side-frame])
+  *::-webkit-scrollbar-thumb:active {
+  background-color: color-mix(in oklab, var(--color-foreground) 45%, transparent);
+}
+
+[data-scrollbar-hover]::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--color-foreground) 30%, transparent);
+}
+[data-scrollbar-dragging]::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklab, var(--color-foreground) 45%, transparent);
+}
+
+[data-scrollbar-active][data-scrollbar-hover] {
+  --zcode-scrollbar-thumb: color-mix(in oklab, var(--color-foreground) 30%, transparent);
+}
+[data-scrollbar-active][data-scrollbar-dragging] {
+  --zcode-scrollbar-thumb: color-mix(in oklab, var(--color-foreground) 45%, transparent);
 }

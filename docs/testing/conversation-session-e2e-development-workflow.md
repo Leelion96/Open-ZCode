@@ -2,6 +2,10 @@
 
 本文定义 conversation session 从“覆盖面枚举”到“正式 E2E”的开发流水线。目标是让新增 case 能按固定步骤推进，避免在转正时临时修改共享 replay fixture、反复等待长 E2E 才发现数据不匹配。
 
+列表 SQLite 夹具应在 Host 启动前写入。若用例需先初始化 schema，再在隔离目录播种，播种后应完整重启 Electron/Host；只刷新 renderer 不会让已有 Controller 的 source snapshot 失效。不得用延时、重复打开面板或直接修改 Controller 投影代替冷启动读盘。
+
+`controlled-stream` 可用 `response.releaseAfterChunks` 指定一个 chunk 边界，或递增的边界数组。每个边界由测试完成对应 UI 操作后单独释放；一次释放不能越过后续观察点。工具参数流需要先输出真实正文，越过 Provider 的 retry-safe prelude，才能验证桌面流式预览。此机制不适用于 recorded/fault stream，也不改变业务时钟或重试策略。
+
 ## 两条流水线
 
 ### 覆盖面生成
@@ -36,7 +40,56 @@ E2E 落地回答“怎么稳定测”：
 
 ## 共享初始化合同
 
+ChromeDriver 必须自己以 `--port=0` 绑定端口，启动器从该子进程的就绪消息取得实际端口后再连接。
+不要先探测并释放空闲端口，再交给另一个进程绑定；2026-10-19 连续回放已出现驱动绑定失败、
+随后 WDIO 仍报启动成功的现场。每个 worker 持有自己的驱动，冷重启 Electron 时复用，
+worker 结束或启动失败时回收。启动上限只用于报告挂起，不增加重试或固定等待。
+
+数据目录冷重启用例的临时目录放在隔离 HOME 内。spec 的 `after` 只保存证据并交还清理所有权；
+不能删除仍被新 Main/Host 使用的数据目录。runner 在进程退出后统一删除 HOME，失败时保留现场。
+R3A-DEV-06-desktop-authority 已复现断言全部通过、随后 `rm` 与运行中写入竞争导致 `ENOTEMPTY`；
+修复删除这次提前清理，不增加删除重试或等待。
+
+Lexical 输入 helper 必须遵守真实 DOM 的可编辑状态。冷恢复时 pane 已绑定任务、E2E bridge 已挂载，不代表 Composer 已开放输入；先等 `contenteditable=true`，再写入。不能通过 bridge 越过禁用态，也不能在草稿恢复覆盖输入后再次写入补偿。该顺序由 helper 回归测试和原生 Fork 冷恢复诊断共同验证。
+
+手机 shared-host 的测试 Web 服务器在首轮依赖预构建中显式包含 `@pierre/diffs/worker/worker.js`。
+冷缓存现场曾在长按期间才发现该 Worker，Vite 发送 full-reload 并打断操作。
+该配置仅属于 E2E 启动入口；回归同时记录导航来源，并拒绝用例期间的 Vite full-reload，
+不能靠预热旧缓存、延时或重复长按让用例通过。
+
+使用 loopback 账号/relay fixture 的手机用例，新建 BrowserContext 时必须通过
+`seedMobileFixtureLogin` 同步播种与 Desktop 相同的合成账号。只写 Desktop credentials 文件
+会让手机停在登录页，无法验证后续恢复；无 loopback fixture 时不播种，不绕过真实登录门禁。
+
+响应式截图用例恢复视口后，必须等实际视口尺寸与被测弹窗的 CSS 动画均收口，再进行原生点击。
+Start Plan 诊断已证明 `max-width` 仍在过渡时按钮会移动，点击返回成功却未命中；
+测试等待浏览器动画状态，不增加固定暂停、不重复点击，也不关闭产品动画。
+
 ### 正式回放契约维护（2026-10-15）
+
+正式回放修复遵循当前可观察合同：模型 Recent 夹具按当前项目的 Composer scope 读写
+`zcode-composer-recent:v2`，重启同时保留 scope 映射，不再播种旧 workspace 键。
+项目新建草稿的持久化检查使用 `zcode-v4-composer-project-drafts:v1`，核对 client/host/project
+及 `__draft__` 正文；不能继续只查正式 session 使用的 workspace 草稿 key。
+需要验证新草稿继承模型时，首轮和后续草稿必须显式从同一个项目创建；模型断言读取当前
+Composer，不读取 legacy 初始化诊断。非流式标题请求必须有对应 JSON fixture，不能以
+主流程断言通过代替完整的请求回放检查。
+后台 Bash 从详情文件入口读取实际输出路径；前台尚未返回结果时，只接受当前 session/tool
+对应的唯一实际输出文件，不把旧数据目录当成固定输出根。内置插件卸载完成以
+`restorableBuiltins` 出现目标为准，不能以本来就不包含内置插件的 `installedPlugins` 判定。
+
+```text
+当前项目 scope → Recent 夹具 → 退出屏障 → 重启恢复 → Composer / 请求断言
+真实卸载操作 → 服务更新 restorableBuiltins → 测试继续检查清理与重启
+```
+
+界面回放使用可见徽标文本、当前帮助菜单顺序和直接编辑器入口；任务建立后重新打开文件标签。
+项目删除的冷启动验证等待项目列表加载，不要求启动时激活某个项目。文件树回放验证右侧文件
+标签、关闭卸载、刷新和 watcher，不再要求已经移除的左侧文件面板动画。
+
+插件设置入口先完成首次职业引导退出，再等待全局设置按钮；不要求返回固定项目。状态面板的自动布局可能以胶囊显示，即使 `data-state` 为 expanded，目录项仍可能隐藏；应通过可见的“展开状态”入口打开目录。C02 自动消费以受控流固定入队边界：观察到首轮正文后入队，验证 queue=1 后放行首轮，再验证第二轮请求、可见消息与队列清空。
+
+插件夹具显式创建所需 CLI 用户配置，不能依赖 Provider Registry 初始化写入该文件。市场搜索限定当前来源分段，个人 fixture 必须先选择个人来源；配置修改通过管理页详情进行，市场浏览详情只展示信息。行内推理档位编辑通过全选输入完成，避免 WebDriver clear 引发失焦提交并卸载编辑框。
 
 TUI 的输入与 Enter 分开执行：使用终端粘贴协议并等待本次输入内容绘制，不能把动画产生的新帧当成输入已完成。命令完成等待其明确回执；终端增量绘制可能只输出占位文字的变化后缀，不要求完整占位文字重复出现。
 
@@ -47,8 +100,10 @@ Provider 允许合并相邻 system 消息；incoming reminder 在 wire 中校验
 营销触达属于全局应用界面，隔离 fixture 预置已完成职业引导的账号，防止启动弹窗抢占引导焦点；冷启动后等待应用设置入口就绪，不要求激活固定项目。窗口恢复到未选项目草稿时，固定 cwd 的等待会错误终止 beforeEach，令整份营销用例无法继续。
 
 - Coding Plan 数据面代理按当前 worker 的 spec 启动，位于上游回放网络配置之后、HOME 播种之前。混合批次包含 ToolSearch 时，只让 ToolSearch worker 使用自己的 capture proxy，不能关闭其他 worker 的账号模型回放。
+- 需要受控流的账号用例保留真实 HTTPS Endpoint 与鉴权路径，由测试代理按精确 host/path 转发到本例 replay server。代理保留原请求地址证据，响应逐块转发；不以固定快速回复或固定延时模拟 running。
 
 - 团队 Provider 共用 Provider ID，模型菜单项按完整团队连接身份分组；专项 helper 由夹具传入连接 key，不能仍用 `registry-provider:<id>` 定位团队行。空白 Composer 不保存未提交改选；跨任务或重启验证未提交选择时，保留非空文字草稿。
+- 合并模型菜单的 Provider 列表是二级菜单。列表断言先打开 `composer-provider-trigger`，选择态读取 radio 的 `aria-checked`；选中 Provider 后回到模型列表再断言模型。不能把尚未展开的 Provider 列表当成候选缺失，也不能依赖旧分组的 `data-model-provider-selected`。
 
 - Plugin mention 图标改由 CSS 装饰变量渲染后，读取 `--mention-image` 的实际 URL；不再查找已移除的子 `img`。商店试用会创建独立草稿，后续固定 cwd 用例须重新准备夹具项目。
 
@@ -94,6 +149,11 @@ Coding Plan mock 必须在 launcher 的 `onPrepare` 阶段启动，再通过 `ru
 分隔符和可选的 `./` 前缀。正式 CI 的目录通配符尚未展开，不能仅依赖其中出现工具名。
 worker 仍按具体 spec 使用或清理 mock 环境，无关 spec 不因本次修复启用 mock。
 
+账号模型的数据面 mock 必须按请求的 `stream` 字段返回对应协议：普通流式正文返回 SSE，
+未指定 stream 或明确为 false 的标题旁路返回该协议的 JSON message，text 中包含标题 JSON。
+默认账号响应与按轮次回放使用同一协议选择，不能只为专项 fixture 修正标题响应。
+验收同时检查实际抓包的 Content-Type 与响应体，不能仅凭主用例断言通过判定可转正。
+
 ```text
 launcher 收到批次 glob → onPrepare 启动 mock → runnerEnv 传递地址
                                                 ↓
@@ -131,6 +191,52 @@ owner 换代。全局新建按虚拟项目规格 D3 创建独立目录，不能�
 
 工具用例的完全访问准备复用 `switchV4Mode("yolo")`，从当前 V4 composer 的 `data-mode`
 确认命令回流；不得查询旧 Select option 或聚合其他 workspace 的配置来判断当前权限。
+必须先创建实际发送的草稿，再设置并断言其权限模式。新建草稿有自己的初始模式，不能沿用
+前一个草稿的完全访问状态；否则工具执行会停在权限确认，误报为 Provider 没有返回。
+
+Subagent 设置中的模型推荐和思考档位用例，先复用 `subagentSettingsReadyCursor` 等同一 Host
+的初始插件 overview 与随后列表回流，再操作行内控件。首次列表可早于插件初始化出现；
+保存模型覆盖的磁盘记录也不能代替该屏障。初始化期间的刷新会禁用控件并关闭档位菜单。
+
+原生划词前须等主 pane 及其祖先的布局过渡结束，再滚动并读取文本坐标。关闭辅助面板后，
+主时间线和 Composer 仍可能因容器断点继续执行宽度过渡；仅检查辅助面板零宽不能证明
+文字坐标稳定。保留一次真实拖选及精确选中文本断言，不用补拖、固定延时或直接设置选区。
+
+模型编辑器的高级区先确认 `aria-expanded=true` 且区域内实际动画结束，再点击能力开关。
+展开期间 `grid-template-rows` 会改变裁切与命中区域；保留每个开关的 UI 状态和落盘值断言，
+不能只用原生 click 返回成功判断切换已生效。
+
+新项目指定主要目录并激活后，刷新应等待该主要目录的导航 owner，不再等待最初的夹具目录。
+项目顺序、目录顺序和主要目录标记继续独立校验；启动回到登录页属于另一个待定位问题。
+信任弹窗的宽窄屏截图及还原窗口后点击，均等待实际视口和弹窗布局过渡完成；
+原生窗口 resize 返回不代表 renderer 中 max-width/max-height 过渡结束。保留一次原生点击。
+
+远程连接 helper 默认从项目表单打开向导；测试独立设置等待者时必须显式传入
+`openSSHRemoteDialog(marker, { entry: "settings" })`，并确认设置页仍在，再操作连接。
+取消后返回来源页，不能把项目表单误当成设置页并查找不存在的返回按钮。
+远程 symlink 身份用例先核对创建命令退出码、实际符号链接和 realpath，再判断执行身份是否收敛，
+失败时分别记录活动 tab 与预期 canonical tab，避免把夹具失败或读取旧 tab 混为业务根因。
+远程项目设备名按当前 RDUX-12 契约验证可见文本和真实悬停身份详情中的完整设备名、路径，
+不再读取已移除的原生 `title`。操作项目菜单前移出详情并等待其关闭；焦点、布局、离线与重连断言保留。
+首次连接走查将“安装结束、介绍页出现”作为进度采集的终点，截图并真实点击“知道了”后，
+再等待向导关闭。不能在介绍页尚待用户确认时只等整个向导消失，也不能预写已读设置跳过该步骤。
+后台连接按当前 #22 契约在设置设备卡或未完成连接项中验收进度与错误，不再把旧侧栏 slot
+作为目标。走查限定设置页内的进度卡，并直接断言失败后向导保持关闭，不能吞掉该断言的超时。
+验证远程选择流程中的禁发门禁时，先在可编辑的原草稿输入正文，再打开连接/目录选择流程。
+弹层已打开且 Composer 只读后只读取原正文、检查提交门禁与任务数量，不能通过 Lexical bridge
+强写正文制造用户无法产生的输入。取消后继续核对原草稿保留及真实远端提交归属。
+
+横幅错误归类用例需要稳定注入读侧 `ECONNRESET`：代理接受新连接后，先收到客户端 SSH
+标识数据，再发送 RST。刚接受连接就重置可能与客户端首写竞争，实际变成 `write EPIPE`，
+不能把它当成已注入目标错误。顺序为 `接受连接 → 收到客户端数据 → RST → 恢复预算耗尽
+→ 核对横幅原因`；保留精确文案和禁止误报安装预检的断言，不使用延时或重试控制故障形状。
+
+身份换代确认成功后，从项目表单选择新身份的已保存设备并浏览目录，复用
+`openSSHSourceDirectory`。旧 `openRemoteProjectSelection` 会进入“添加远程设备”的空连接表单，
+其中不再提供已保存设备卡。继续校验旧线路已归档、新 session 与新身份一致、旧历史未混入；
+不能删除旧设备或重新填写连接来替代选择已保存的新设备。
+缺失密码的恢复用例同样从项目表单选已保存设备并点击“连接并浏览”，由原连接流程提示补充密码；
+保留密码框自动聚焦、实际连接成功及在线复用断言，不在空的新建连接表单查找旧设备卡。
 
 窗口尺寸准备复用 `setCurrentElectronRendererContentSize`，按当前 WebDriver URL 选择窗口，
 设置内容区尺寸并按实际 zoom factor 校验 renderer viewport。不得用外框尺寸减固定误差估算内容区。
@@ -391,3 +497,29 @@ fault-stream、性能/时序敏感、会污染全局配置或依赖特殊网络/
 ```text
 child 分配 mock 端口 → 获得构建锁 → 编译对应 origin → 复制隔离产物 → 释放锁 → 回放
 ```
+
+## 2026-10-19 已审阅候选的正式回放
+
+用户已完成人工复核的通过项按原领域迁入正式目录；业务失败和环境阻塞继续保留 pending。
+正式回放先使用 common + 本例 fixture，再验证默认 fixture 解析。插件和 UI shell 的已有
+case-local fixture 也按 spec 文件名加载，根目录 UI 用例使用 ui-shell fixture；不能因移走
+pending 或取消显式 fixture 环境变量而丢失本例响应。没有模型请求的领域继续使用其现有
+平台/文件/HTTP fixture。生产 renderer 堆保留检查使用独立 node:test 入口，不能混入 WDIO。
+人工复核、正式本地回放和 Linux Docker admission 分别记录；本地通过不自动代表 Docker 准入。
+
+旧版升级/回退用例需要 `R3_STAGING_SERVER_BASE` 指向已验真的
+`7a6e2eb3f1946aba9155155178e86cd947cee655` Desktop、Server、Agent 构建，
+并核对 `.deployed-commit`。当前源码构建不能代替旧版资产。2026-10-20 的四个历史迁移变体
+均在该前置检查退出，按环境阻塞记录，不能归为迁移业务失败或转正证据。
+
+正式目录 glob 属于批量回归，缺 SSH 环境时按远程队列目标类型排除需真实目标的文件；无目标的离线/合成用例仍纳入。明确指定单个文件时不排除，缺变量直接失败，避免定向运行静默漏测。
+
+远程候选转正必须同步 `run-all-remote.sh` 的 `$PENDING` / `$FORMAL` 引用及 `DEDICATED_FIXTURE_SPECS` 中的
+相对路径。只替换完整 `test/e2e/...` 路径会遗漏这两种写法，使独立正式回放通过但全量队列找不到文件。
+
+多文件 case 转正时，同时迁移同名 `.cases.ts` / `.dom.ts`，并保留它们的相互导入；promotion 工具只移动主 spec，最终 E2E 类型检查须覆盖这些辅助模块。
+
+迁移同时核对 `new URL(..., import.meta.url)` 和 `resolve(import.meta.dirname, ...)` 的数据文件引用；类型检查不会发现 fixture、打包入口或根 `package.json` 的相对路径仍按旧目录计算。
+
+隔离回放同时检查网络记录中的 Missing Fixture。标题旁路虽然不阻塞主用例，缺失响应仍会触发无意义的网络重试；
+不验证标题的用例应在自己的 fixture/manifest 中登记 common 标题响应，不能把旧共享池的隐式响应当作隔离证据。

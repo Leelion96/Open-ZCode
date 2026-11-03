@@ -1,10 +1,10 @@
 # Official Guides
 
 > **ZCode repository notice:** this directory is a vendored Electron upstream development-branch
-> snapshot, not the authoritative documentation for this project's installed Electron **41.0.3**.
-> It contains planned 42/43 APIs and behavior. For implementation decisions, use the installed
-> `node_modules/electron/electron.d.ts` and Electron v41 tagged documentation. This mirror is not
-> self-contained and is not built as part of the ZCode workspace.
+> snapshot, not the authoritative documentation for this project's installed Electron **44.7.0**.
+> It contains APIs and behavior from a different upstream snapshot. For implementation decisions,
+> use the installed `node_modules/electron/electron.d.ts` and Electron v44.7.0 tagged documentation.
+> This mirror is not self-contained and is not built as part of the ZCode workspace.
 
 Please make sure that you use the documents that match your Electron version.
 The version number should be a part of the page URL. If it's not, you are

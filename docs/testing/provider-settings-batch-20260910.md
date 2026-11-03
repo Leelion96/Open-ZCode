@@ -1,5 +1,15 @@
 # Provider 设置本批浏览器用例
 
+## 重命名关闭动画焦点回归（2026-10-28）
+
+PRN-01（accepted，pending）：390px 中文浅色／1200px 英文深色，真实 Header/Card 点击重命名后，在菜单关闭动画内移动鼠标，再移动到菜单外。菜单完成关闭后，名称输入框必须保留且拥有焦点；直接键盘输入应写入名称，Enter 只保存一次且不改变启停状态。再次使用键盘选择重命名，Esc 放弃输入且不额外保存。
+
+测试通过 Web Animations API 暂停并完成真实关闭动画，明确命中仍挂载的关闭菜单，不靠固定等待猜测动画窗口；不主动聚焦或 fill 名称输入框来掩盖焦点丢失。复用隔离保存路由，不写真实配置。焦点交接规格见 [标题栏操作](../working-memory/provider-refactor/steps/todo-115-provider-header-actions-and-toggle-hit-area.md)。
+
+运行：`node --test --test-name-pattern='provider rename keeps focus|header name and option feedback' packages/ui/test/browser/manual-review/pending/provider-settings-batch.test.mjs`。覆盖共享组件桌面／手机宽度，不替代完整 Electron 或手机 shared-host 验证。
+
+验证结果：旧实现两例均在鼠标移动后失去名称输入焦点；修复后新增两例与既有标题栏两例合跑 4/4 通过。未新增产品延时、重试或全局菜单行为，保持浏览器 pending 分类。
+
 ## MiMo 模板拆分（2026-10-14）
 
 MIMO-03（accepted，pending）：390px 中文浅色 / 1200px 英文深色，真实模板选择器分别显示 Xiaomi MiMo API 和 Xiaomi MiMo Token Plan，tooltip 和图标一致；分别点击后仅发送对应 templateId 的创建动作，详情 Base URL 分别为按量与中国 Token Plan 地址；无横向溢出、页面错误或额外写入。规格及官方核验见 [MiMo 模板](../provider-mimo-templates.md)。复用现有浏览器 fixture，不宣称原生 Electron、手机 shared-host 或真实付费请求已验证。
@@ -50,7 +60,7 @@ K116-N01（accepted，pending）：在隔离 Electron profile 写入两个预设
     -> 系统默认浏览器 -> 本机唯一 canary GET
 ```
 
-用例：`packages/desktop/test/e2e/settings/manual-review/pending/provider-key-native-open.test.ts`。需要有默认浏览器的交互桌面，不纳入无桌面的 Docker gate；请求抵达只证明原生打开链路，不证明官方控制台登录态或手机 shared-host。模板官方 URL 的精确值及有／无 Key 双尺寸组合复用既有测试，不作额外排列。测试会打开两张无账号内容的本机验收页。
+用例：`packages/desktop/test/e2e/settings/provider-key-native-open.test.ts`。需要有默认浏览器的交互桌面，不纳入无桌面的 Docker gate；请求抵达只证明原生打开链路，不证明官方控制台登录态或手机 shared-host。模板官方 URL 的精确值及有／无 Key 双尺寸组合复用既有测试，不作额外排列。测试会打开两张无账号内容的本机验收页。
 
 Todo131/125：真实编辑 Hook+弹窗增加6例（双尺寸各3）：原子恢复及失败保留；编辑/模式/供应商/关闭/重复恢复/保存开始/ID 变化时旧成功和失败均失效；9处帮助 hover/focus/tap、Escape、定稿富文本、视口边界与不修改草稿。原130两例补空 ID 恢复无请求/无写入。新增6例定向通过，合批结果见 Goal 账本；布局截图在同一临时目录。已更新三个 Electron 设置用例，但本组尚未实跑 Electron；中文字体显示仍受 Linux 字库限制。
 
@@ -80,7 +90,6 @@ Todo126 新增两个 coding plan vision badge 用例：相同双尺寸/主题下
 运行：`CHROME_EXECUTABLE_PATH=<Chromium> node --test packages/ui/test/browser/manual-review/pending/provider-settings-batch.test.mjs`。Linux 需 Chromium 运行依赖及中文字库。本次使用环境已有隔离共享库和临时官方发行版 Noto CJK 字库。
 
 既有 Electron `settings-ui-polish` 已按最终 DeepSeek 两成员、菜单与帮助标题更新并在 Pro 实跑通过，`provider-settings-write-recovery` 也已在 Pro 合批通过。前者 SSH 分支仍跳过；二者不等于手机 shared-host 联合验证。原生控制台打开由 K116-N01 单独证明，不借此宣称官方登录态通过。
-
 
 2026-09-12 Todo137 已确认新增覆盖：现有 vision badge 浏览器用例增加 Z.ai／BigModel Start Plan。两个尺寸/语言/主题下，设置列表和模型菜单均隐藏 GLM-5.3 视觉标，Flash 仍显示；只验证共用展示组件，实际图片能力由单测验证不变。先红后绿，2项浏览器用例通过；保持 pending 分类。
 

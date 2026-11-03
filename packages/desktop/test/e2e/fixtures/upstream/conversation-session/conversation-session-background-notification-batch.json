@@ -231,7 +231,7 @@
         "kind": "main",
         "timingPolicy": "delayed-text",
         "source": "synthetic",
-        "syntheticReason": "五秒受控延迟让第二、三条 child completion 在该 request 处理中进入 pending queue。 验证来源提示及非用户授权边界。 新轮通知完整正文只包一对 system-reminder，MCS 开关下均保持 user。 CLI 实际统计的 Messages 字符增量包含通知全文且只计一次，静态上下文分类保持不变，并核对 V4 面板中的 Messages 占比。"
+        "syntheticReason": "五秒受控延迟让第二、三条 child completion 在该 request 处理中进入 pending queue。 验证来源提示及非用户授权边界。 每条新轮通知各包一对 system-reminder，MCS 开关下均保持 user。 CLI 实际统计的 Messages 字符增量包含通知全文且只计一次，静态上下文分类保持不变，并核对 V4 面板中的 Messages 占比。"
       },
       "maxMatches": 2,
       "match": {
@@ -312,7 +312,7 @@
         "kind": "main",
         "timingPolicy": "task-notification",
         "source": "synthetic",
-        "syntheticReason": "精确约束同一 last user message 同时含第二、三条 notification，证明只启动一个 batch model turn。 验证来源提示及非用户授权边界。 新轮通知完整正文只包一对 system-reminder，MCS 开关下均保持 user。 CLI 实际统计的 Messages 字符增量包含通知全文且只计一次，静态上下文分类保持不变，并核对 V4 面板中的 Messages 占比。"
+        "syntheticReason": "精确约束同一 last user message 同时含第二、三条 notification，证明只启动一个 batch model turn。 验证来源提示及非用户授权边界。 每条新轮通知各包一对 system-reminder，MCS 开关下均保持 user。 CLI 实际统计的 Messages 字符增量包含通知全文且只计一次，静态上下文分类保持不变，并核对 V4 面板中的 Messages 占比。"
       },
       "maxMatches": 2,
       "match": {

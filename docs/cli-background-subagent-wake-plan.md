@@ -110,7 +110,7 @@ scheduleBackgroundTaskNotificationWake(reason): void;
 
 - 以 `taskId + toolUseId + terminal status` 或 notification `id` 做幂等，避免 completion/failure path 重复入队。
 - active turn drain 和 idle wake 都从同一个 queue 消费；idle wake 需要先 claim，再启动 model-only turn，避免 pre-turn drain 再次注入。
-- 外层 runtime command drain 每次可用时同步形成队列快照；若下一条可执行 command 是 `task-notification`，一次 claim 快照内全部同优先级 `task-notification`，按 queuedAt/admission 顺序用空行拼成一个 batch input。
+- 外层 runtime command drain 每次可用时同步形成队列快照；若下一条可执行 command 是 `task-notification`，一次 claim 快照内全部同优先级 `task-notification`，按 queuedAt/admission 顺序合成一个 batch input：持久化消息的每个文本块是一条通知，这一轮的输入文本（`TurnStarted.input`）仍按空行相连。
 - batch 不跨 priority，也不吸收 claim 返回后才入队的 notification；不增加 microtask、debounce 或其它等待窗口。迟到结果留给下一次**合法的 notification drain**：当前 outer batch 若产生 tool continuation，它可以被既有 active-loop drain 合流到同一 turn 的下一次 provider request；若当前 request 直接 terminal，才由下一轮 outer drain claim。
 - batch 只覆盖 `task-notification` mode；`prompt`、`target-continuation` 与 `subagent-message` 保持各自消费语义。若同优先级队列以 notification 开头，可以跨过其它 mode 收集同 mode 项；若先选中其它 mode，则先执行该 command。
 - 整批只持久化一条 `background_task` / `model-only` synthetic user message；每个 notification ledger 输入独立结算并共同指向该 message，避免 cold hydration 把一批结果重建成多个空 turn。

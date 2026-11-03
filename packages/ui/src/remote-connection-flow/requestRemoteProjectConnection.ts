@@ -87,6 +87,11 @@ export async function requestRemoteProjectConnection({
         );
       openWizard({
         ...preference,
+        // Bug 原因（缺陷 A，ZCT-2113085028132474880）：迁移来的 SSH Profile 尚无 sourceServerId 时，
+        // 入口找不到线路，只交出不含凭据的目标；向导确认安装后用空认证拨号，报“SSH 认证失败”。
+        // Host 等待点的 profileId 就是实际操作线路，按规格交接精确 Profile，向导才会先加载它的凭据。
+        // WSL/Docker 目标不含凭据，沿用原有目标交接。
+        ...(profileId && target?.kind === "ssh" ? { preferredProfileId: profileId } : {}),
         initialFailure: {
           code,
           message: getErrorMessage(error),

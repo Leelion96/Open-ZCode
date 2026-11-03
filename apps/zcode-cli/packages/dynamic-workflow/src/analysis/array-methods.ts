@@ -103,6 +103,10 @@ export function handleArrayMethod(
     // the element still flows to the result as it did before.
     const fns = [...ev.evalExpr(cand.callbackExpr, ctx).fns].filter((fn) => ev.s.fnId.has(fn));
     if (fns.length > 0) {
+      // `xs.map(fn)` with `fn` a parameter of the enclosing helper: record which parameter, so
+      // each call of the helper inlines its own callback inside this fan-out (see applyCall).
+      const ref = ev.s.parameterRefOf(cand.callbackExpr);
+      if (ref !== undefined) ev.s.recordThroughParam(node, ref, "argument", fns);
       const slots = Math.max(-1, ...elementParams, ...wholeParams, semantics?.accumulatorParam ?? -1) + 1;
       const actuals: AbstractValue[] = Array.from({ length: slots }, () => emptyValue());
       if (isReduce) actuals[semantics?.accumulatorParam ?? 0] = accumulator().value;

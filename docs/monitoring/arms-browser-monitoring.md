@@ -44,6 +44,40 @@ console.error(prefix, message, context/Error)
 - `clean-exit` / `killed` 等受控退出属于生命周期信息，使用 `info`；可恢复异常退出使用
   `warn`；只有确认的 crash、OOM、启动失败等才使用 `error`。
 
+## 上报排除规则
+
+主进程 `beforeReport` 统一过滤 main 与 Renderer 汇总的事件。本地日志保持原样。
+
+- `exception / error / console.error` 的 message 精确匹配
+  `browser tab 'browser:…' is unavailable for renderer scope` 或
+  `browser tab 'iab-tab:…' is unavailable for renderer scope` 时不上报。
+  该规则只消除已确认的 tab 生命周期噪音，不代表 tab 登记或 scope 问题已修复；
+  同文案的未捕获异常仍保留。
+- `exception / error` 的 message 精确匹配 `Telemetry report failed: network`、
+  `Telemetry report failed: timeout` 或 `Telemetry report failed with status <三位 HTTP 状态码>`
+  时不上报。这些是 telemetry 传输层生成的固定错误，不扩大为通用 network / timeout 过滤。
+- `exception / error / console.error` 中 Node 的
+  `ExperimentalWarning: SQLite is an experimental feature and might change at any time`
+  不上报，兼容 `(node:<pid>)` 前缀和下一行 `--trace-warnings` 提示；
+  Error 对象形式则要求 name 为 `ExperimentalWarning` 且 message 为同一条 SQLite 固定文案。
+  其他实验性警告、SQLite 数据库错误、混有其他错误的日志和未捕获异常继续上报。
+- `api` 或 `resource / api` 事件的 URL 命中配置中的 `ZCODE_TELEMETRY_REPORT_ENDPOINT`、
+  `ZCODE_ARMS_RUM_ENDPOINT` 时不上报，也不进入 `perf_network_window`。
+  匹配 URL 的 origin 与 pathname，忽略 query 和 fragment；其他域名或路径的请求保留。
+- 已有 agent 生命周期包装日志与原生 crash 过滤规则继续生效；自定义指标与其他异常继续上报。
+
+```text
+main / Renderer SDK 事件
+          ↓
+beforeReport：排除已知噪音与上报接口自身的请求
+          ↓
+网络聚合 → longTask 归因 → 脱敏 → ARMS
+          └─ 过滤后为空：返回 null，SDK 不发送空批次
+```
+
+过滤只读取已有事件与配置，不增加网络请求、IO、定时器或日志。回归测试覆盖两类 tab ID、
+telemetry 传输错误、SQLite 实验性警告、接口 URL 匹配边界、普通业务错误保留、聚合顺序和空批次。
+
 ## 依赖补丁安装约束
 
 仓库使用 `node-linker=hoisted`，当前 ZCode 补丁固定基于 `@arms/rum-electron@0.0.3`。修改补丁时

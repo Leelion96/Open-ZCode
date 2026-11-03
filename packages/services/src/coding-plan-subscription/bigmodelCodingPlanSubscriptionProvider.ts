@@ -1,5 +1,6 @@
 import {
-  readRequestVerificationConfig,
+  ApiError,
+  readValidatedRequestVerificationConfig,
   requestVerificationClaimHeaders,
   isRequestVerificationMessage,
   type RequestVerificationClientConfig,
@@ -472,7 +473,12 @@ export class BigModelCodingPlanSubscriptionProvider {
   }
 
   async getRequestVerificationConfig(): Promise<RequestVerificationConfig | null> {
-    return readRequestVerificationConfig((await this.getClientConfigs()).data?.configs);
+    const payload = await this.getClientConfigs();
+    // HTTP 成功不等于配置有效；坏配置不能按网络故障自动重试，更不能打开跳过校验。
+    if ((payload.code !== undefined && payload.code !== 0) || payload.success === false) {
+      throw new Error("Request verification configuration is invalid");
+    }
+    return readValidatedRequestVerificationConfig(payload.data?.configs);
   }
 
   async getForceUpdateConfig(): Promise<ForceUpdateConfig | null> {
@@ -1495,6 +1501,18 @@ async function readCodingPlanApiJson<T>(
     if (isUnrenderableRemoteErrorMessage(message)) {
       // 支付接口偶发返回 WAF/HTML 页面或非 JSON 响应，原样透传会把整段
       // HTML 渲到确认支付页。服务边界先收敛为稳定错误码，UI 再做本地化提示。
+      // HTML 只影响展示，不能丢掉 HTTP 状态和传输原因，否则配置读取无法区分 503 与 401。
+      if (error instanceof ApiError) {
+        throw new ApiError({
+          message: CODING_PLAN_SYSTEM_BUSY,
+          url: error.url,
+          method: error.method,
+          status: error.status,
+          responseHeaders: error.responseHeaders,
+          // 原 ApiError.message 可能是完整 HTML；只延续底层 cause，不把正文重新带入错误链。
+          cause: error.cause,
+        });
+      }
       throw new Error(CODING_PLAN_SYSTEM_BUSY);
     }
     throw error;

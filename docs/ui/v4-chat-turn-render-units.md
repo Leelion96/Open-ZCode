@@ -58,10 +58,10 @@ turn actions 逐行消费 `row.actions`。任何带 action 的 assistant row 都
 - `historyRows`：该 turn 中 latest assistant text 之前的 reasoning、toolCall、subagent、compact marker 和较早 assistantText row。
 - `tailRows`：该 turn 中 latest assistant text 之后的 boundary rows，例如 fork notice / goal verification。它们属于本轮结尾，但不是 assistant work history，不能被“已工作 N 秒”折叠到正文上方。
 - 如果没有 latest assistant text，则所有 assistant rows 都是 history rows，必须展开，避免出现只有“已工作”但没有内容的空 assistant。
-- 当前 running segment 必须展开 history；新的 guide 到达后，前一 segment 收口并可独立折叠，新 segment 使用自己的展开状态。
+- 整个 product turn 运行期间所有 segment 的 history 保持展开，顶部不显示工作时长与分割线；整轮结束后才显示各 segment 的完成状态和折叠入口。guided input 仍保留独立 segment，不改变协议边界。
 - `completedInterrupted`、`failed`、`error` 异常终态必须强制展开 history，即使已经存在 interrupted / failed assistant partial；异常上下文不能隐藏在“已工作”折叠内。`completedSuccess` 继续遵循正常完成的默认折叠规则。
 - 冷恢复发现 transcript assistant message 缺少完成时间时，表示应用或 Agent 在 turn 收口前退出；hydration 必须将该 orphan turn 归一化为 `completedInterrupted`，禁止伪造 `completedSuccess` 后触发正常折叠。
-- assistant work history 的状态标签必须区分运行中、正常完成和中断：运行中显示“工作中 N 秒”，正常结束显示“已工作 N 秒”，`completedInterrupted` 的末段只显示“已停止”/`Stopped`，不得附带耗时。guide turn 优先消费 `turnHeader.workSegments` 的权威分段时间；无分段事实的普通/旧 snapshot 才回退到 turn 级 `activeMs`、`endedAt - startedAt` 或运行时 UI 时钟。
+- assistant work history 的状态标签必须区分运行中、正常完成和中断：运行中仅底部显示 Orbit、“工作中”及持续计时，顶部不显示标签；正常结束顶部显示“已工作 N 秒”，`completedInterrupted` 的末段只显示“已停止”/`Stopped`，不得附带耗时。guide turn 优先消费 `turnHeader.workSegments` 的权威分段时间；无分段事实的普通/旧 snapshot 才回退到 turn 级 `activeMs`、`endedAt - startedAt` 或运行时 UI 时钟。
 - `turnHeader.executionKind` 是是否存在 Agent 工作生命周期的权威事实。`controlOnly` 轮只承载可见控制输入，不产生 work status；字段缺失的旧 snapshot 只在有真实 work row、running 或正工时时兼容派生。
 - `lightBoundary`（例如 model change）先从 assistant work rows 分离，再计算 work status；边界行本身不能把 control-only query 推成“工作中/已工作”。
 
@@ -69,7 +69,7 @@ turn actions 逐行消费 `row.actions`。任何带 action 的 assistant row 都
 turn
   workSegment(initial)
     userInput(real user)
-    historyStatus(running ? "工作中 11 秒" : "已工作 11 秒")
+    historyStatus(仅整轮结束后显示 "已工作 11 秒")
     historyRows(collapsed by default)
     assistantText
   workSegment(guide-1)
@@ -87,7 +87,7 @@ ConversationSnapshot.rows
   -> split leadingBoundaryRows / assistantWorkRows
   -> unit.workSegments[].workStatus { state, durationMs } | undefined
   -> each segment AssistantHistoryStatus
-       state=running   => "工作中 N 秒"
+       state=running   => 顶部隐藏；整轮底部显示 Orbit、工作中与连续计时
        state=completed => "已工作 N 秒"
        state=interrupted => "已停止"
        undefined       => 不渲染工作状态
@@ -177,3 +177,17 @@ Git Tools 只在 worktree `added + removed > 0` 时展示；clean repository 不
 - Desktop `desktop-continuous` 仍使用 direct continuous 主链路。
 - Mobile `web-remote-replayable` 仍由 replayable snapshot / gap 恢复，不因为 UI 虚拟滚动拉取全量历史。
 - `workspaceIdentity?.trim() || workspacePath` 只用于 workspace 身份隔离；文件展示和命令 cwd 仍使用 `workspacePath`。
+
+## 完成态折叠与底部运行反馈
+
+运行期间底部持续展示 13px Orbit 方块、工作中文案与每 100ms 刷新的计时，一分钟后显示分钟和秒。时长以权威 workStatus.durationMs 为起点，本地时钟只用于展示插值，不写回业务状态。反馈与上方过程间距为 12px，异常重试仍使用已有提示。运行中的顶部状态标签和分割线不展示，避免重复状态。
+
+后台结果唤醒轮沿用相同完成态：运行中不显示顶部横线，完成后过程默认收起，最后回复完整留在折叠区外；异常或无最终回复沿用强制展开规则。统计本次唤醒轮耗时，不把后台等待时间算进来。工具内部 Explore、thinking 与连续工具聚合保持原逻辑，本次不引入二次分组。
+
+## 面板与滚动呈现
+
+桌面对话与侧边面板描边 0.5px，对话与 Side Pane 间距 3px（见[独立面板布局规格](../design/workspace-independent-panels.md)），面板使用微弱阴影。输入框左右对称预留滚动条空间，额外留白 8px；普通对话输入区沿用 release 原有的 sticky 布局，滚动条沿用完整滚动区域；浮窗保持原有 absolute 定位、输入区高度避让及遮罩豁免。撤销区域截短及其衍生的队列、输入框和交互卡高度预算；保留滚动时显示、停止后 1 秒隐藏。输入框及用户气泡使用支持检测后的连续圆角，发送与停止按钮外形为圆形，停止图标仍为方块。
+
+侧栏、对话及 side pane 中滚动容器默认隐藏滑块，滚动时显示，停止 1 秒后以 200ms 淡出；悬停滑块增强颜色，拖动进一步增强且保持可见。仅改变颜色，不切换 overflow 或轨道宽度，避免横向布局抖动。减少动态效果偏好下取消动画。手机 Web 复用消息呈现但保留现有无面板描边布局。
+
+后台身份标题、workflow 通知卡及其打开 run/产物入口始终留在过程折叠之外；尾随行保持位于最终正文之后。缺少 workStatus、因而没有折叠入口时过程强制展开。底部计时先按十分之一秒取整再拆分小时、分钟、秒，单位本地化；变化计时对读屏器隐藏，只播报稳定运行状态。浮窗占位使用原有整秒摘要，不与底部小数格式作文本相等比较。输入区使用 CSS scrollbar-gutter: stable both-edges 对称预留空间，不新增 gutter 测量逻辑。

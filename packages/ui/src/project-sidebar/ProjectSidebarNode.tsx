@@ -18,6 +18,7 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { setPendingSettingsSectionIntent } from "@/lib/settingsNavigation.js";
 import { toast } from "@/components/ui/toast.js";
 import { logger } from "@/logger.js";
+import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 
 export function runProjectAction(body: () => Promise<void>) {
   void body().catch((cause) => {
@@ -74,16 +75,30 @@ export const ProjectSidebarNode = memo(
     const tabStore = useTabStoreApi();
     const msg = (id: string) => intl.formatMessage({ id: `project.${id}` });
     const sourceServerId = projectSourceServerId(project);
+    // 本机偏好只控制桌面行内标签，手机与完整身份详情仍保留设备名。
+    const hideDeviceName = useZCodeStoreWithDefault(
+      (state) => Boolean(isDesktop) && state.hideProjectDeviceNames,
+      false,
+    );
     const { refresh, availability } = display;
     return (
       <ProjectNode
         {...display}
         project={project}
         remoteHost={remoteHost}
+        hideDeviceName={hideDeviceName}
         onOpenDeviceSettings={
           isDesktop && sourceServerId
             ? () => {
                 setPendingSettingsSectionIntent("remoteDevices", { sourceServerId });
+                tabStore.getState().openSettingsTab();
+              }
+            : undefined
+        }
+        onManageProjects={
+          isDesktop
+            ? () => {
+                setPendingSettingsSectionIntent("projects");
                 tabStore.getState().openSettingsTab();
               }
             : undefined

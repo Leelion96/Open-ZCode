@@ -21,9 +21,9 @@
         "statusCode": 200,
         "statusMessage": "OK",
         "headers": {
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"chatcmpl-gpt-openai-compatible-reasoning-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"gpt-5\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-gpt-openai-compatible-reasoning-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"gpt-5\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"GPT OpenAI-compatible Reasoning\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-gpt-openai-compatible-reasoning-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"gpt-5\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"chatcmpl-gpt-openai-compatible-reasoning-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"gpt-5\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"GPT OpenAI-compatible Reasoning\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}"
       }
     },
     {

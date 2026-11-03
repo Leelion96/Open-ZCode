@@ -9,6 +9,13 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-thought-level-cold-resume-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实抓包确认标题经 GLM-5.2 的 Chat Completions 端点发送；按该非流式协议固定响应，不能套用 Messages 的 matcher 或响应体。"
+    },
+    {
       "id": "thought-cold-resume-seed-main",
       "kind": "main",
       "source": "synthetic",

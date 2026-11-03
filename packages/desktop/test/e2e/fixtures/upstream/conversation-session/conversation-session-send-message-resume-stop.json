@@ -149,7 +149,6 @@
           "inputTokens": 32,
           "input": {
             "to": "{{latestAgentId}}",
-            "summary": "resume stopped agent for stop check",
             "message": "You MUST invoke the Bash tool with command \"sleep 120\". Do not send any text before the Bash tool finishes. After it finishes, reply with exactly E2E_SEND_MESSAGE_RESUME_STOP_CHILD_DONE."
           }
         }
@@ -173,7 +172,7 @@
           "resumed it in the background"
         ],
         "bodyExcludes": [
-          "<status>stopped</status>",
+          "<status>killed</status>",
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY"
         ]
@@ -202,13 +201,13 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": [
           "<task-notification>",
-          "<status>stopped</status>"
+          "<status>killed</status>"
         ],
         "bodyIncludes": [
           "E2E_SEND_MESSAGE_RESUME_STOP_PARENT",
           "<task-notification>",
           "<tool-use-id>toolu_e2e_send_message_resume_stop_send_message</tool-use-id>",
-          "<status>stopped</status>"
+          "<status>killed</status>"
         ],
         "bodyExcludes": [
           "Generate a concise title",
@@ -246,7 +245,7 @@
         "bodyExcludes": [
           "E2E_SEND_MESSAGE_RESUME_STOP_RESUME",
           "resumed it in the background",
-          "<status>stopped</status>"
+          "<status>killed</status>"
         ]
       },
       "response": {
@@ -276,7 +275,7 @@
           "E2E_SEND_MESSAGE_RESUME_STOP_RESUME",
           "agentId: agent_"
         ],
-        "bodyExcludes": ["<status>stopped</status>"]
+        "bodyExcludes": ["<status>killed</status>"]
       },
       "response": {
         "statusCode": 200,
@@ -307,7 +306,7 @@
           "resumed it in the background",
           "agentId: agent_"
         ],
-        "bodyExcludes": ["<status>stopped</status>"]
+        "bodyExcludes": ["<status>killed</status>"]
       },
       "response": {
         "statusCode": 200,

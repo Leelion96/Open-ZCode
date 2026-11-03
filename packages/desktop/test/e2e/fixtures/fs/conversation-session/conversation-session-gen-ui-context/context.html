@@ -1,0 +1,12 @@
+<button id="entry" onclick="save('GEN_UI_ENTRY')">Entry</button>
+<button id="queued" onclick="save('GEN_UI_QUEUED')">Queued</button>
+<button id="later" onclick="save('GEN_UI_LATER')">Later</button>
+<script>
+  async function save(stage) {
+    await window.zcode.setWidgetState({
+      modelContent: { stage },
+      privateContent: { secret: "GEN_UI_PRIVATE_ONLY" },
+    });
+    document.body.dataset.saved = stage;
+  }
+</script>

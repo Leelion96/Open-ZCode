@@ -3,7 +3,10 @@
   "caseName": "conversation-session-remote-project-handoff",
   "spec": "./test/e2e/conversation-session/conversation-session-remote-project-handoff.test.ts",
   "providerRequestPolicy": "none",
-  "providerFixtures": ["./test/e2e/fixtures/upstream/common.json"],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-project-handoff.json"
+  ],
   "fileFixtures": [],
   "requests": []
 }

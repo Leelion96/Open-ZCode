@@ -81,7 +81,7 @@ describe("SendMessage resume Stop", () => {
     await sendV4Prompt(
       [
         `${resumeRunMarker}: read the agentId from the completed Agent result and call SendMessage exactly once for that same agent.`,
-        'Use summary "resume stopped agent for stop check".',
+        "Omit the optional summary.",
         `Use this exact message verbatim: You MUST invoke the Bash tool with command "sleep 120". Do not send any text before the Bash tool finishes. After it finishes, reply with exactly ${CHILD_DONE}_${runId}.`,
         "After SendMessage returns, call no more tools and finish this turn without waiting for the resumed agent.",
       ].join(" "),
@@ -93,7 +93,12 @@ describe("SendMessage resume Stop", () => {
       "SendMessage resume 后父 turn 没有回到 idle",
       90000,
     );
-    expect((await waitForToolCallBlockByToolName("SendMessage", 30000)).status).toBe("completed");
+    const sendMessageBlock = await waitForToolCallBlockByToolName("SendMessage", 30000);
+    expect(sendMessageBlock.status).toBe("completed");
+    // SendMessage 的 summary 可选：省略时卡片标题显示 message 的第一行。
+    expect(sendMessageBlock.text).toContain(
+      'You MUST invoke the Bash tool with command "sleep 120".',
+    );
     expect(await waitForSingleSubagentSummaryChildSessionId(30000)).toBe(
       foregroundChildSessionId,
     );
@@ -122,9 +127,11 @@ describe("SendMessage resume Stop", () => {
           PARENT_MARKER,
           "<task-notification>",
           "<tool-use-id>toolu_e2e_send_message_resume_stop_send_message</tool-use-id>",
-          "<status>stopped</status>",
+          // 停止状态词是 killed，summary 写明是用户停止的。
+          "<status>killed</status>",
+          "was stopped by user</summary>",
         ],
-        lastUserMessageIncludes: ["<task-notification>", "<status>stopped</status>"],
+        lastUserMessageIncludes: ["<task-notification>", "<status>killed</status>"],
       },
       "Stop 后 resumed subagent completion notification 没有进入父模型请求",
       60000,

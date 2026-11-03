@@ -10,6 +10,14 @@ import {
 import { createTestAgentRuntime } from "./test-agent-runtime.js";
 import { createTestSessionEventStore } from "./test-event-store.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
+import { createRecordingMessageStore } from "./runtime-output-token-continuation-test-helpers.js";
+import { modelMessageContentToText, type ModelInputMessage } from "@zcode/contracts";
+import type { ToolExecutionResult } from "../src/runtime/deps.js";
+import {
+  USER_STOPPED_TOOL_RESULT_CONTENT,
+  withUserStoppedToolResultContent,
+} from "../src/runtime/methods/interrupt-marker.js";
+import { createExternalTurnFaultError } from "../src/runtime/helpers/turn-errors.js";
 
 describe("AgentRuntime turn cancellation", () => {
   // Bugfix 回归：用户主动取消（TurnCancelled）属于正常结束，事件流应以 TurnComplete(cancelled)
@@ -48,6 +56,155 @@ describe("AgentRuntime turn cancellation", () => {
 
     const completeEvent = events[events.length - 1];
     expect((completeEvent.payload as { resultType?: string }).resultType).toBe("cancelled");
+  });
+
+  describe("interrupt marker", () => {
+    // 默认测试模型不合并相邻 user 内容，所以标记和前一条 prompt 都不补换行。
+    // 只替换被取消的工具结果；已完成的结果、未停止的批次和 send-now 抢占都不动。
+    it("rewrites only cancelled tool results of a user-stopped batch", () => {
+      const result = (id: string, errorType?: string): ToolExecutionResult => ({
+        toolCallId: id,
+        toolName: "Bash",
+        success: errorType === undefined,
+        output: errorType === undefined ? "done" : null,
+        ...(errorType === undefined ? {} : { error: { type: errorType, message: "cancelled" } }),
+        durationMs: 0,
+        startedAt: new Date(0),
+        completedAt: new Date(0),
+      });
+      const results = [
+        result("completed"),
+        result("cancelled", CoreErrorType.ToolCancelled),
+        result("timeout", CoreErrorType.ToolTimeout),
+      ];
+      const stopped = new AbortController();
+      stopped.abort();
+      const run = (signal: AbortSignal, preempt: boolean) =>
+        withUserStoppedToolResultContent(
+          {
+            activeForegroundExecution: preempt
+              ? { preserveQueueAutoDrainOnCancel: true }
+              : undefined,
+          } as never,
+          { turnAbortSignal: signal } as never,
+          results,
+        ).map((item) => item.modelContent);
+
+      expect(run(stopped.signal, false)).toEqual([
+        undefined,
+        USER_STOPPED_TOOL_RESULT_CONTENT,
+        undefined,
+      ]);
+      expect(run(new AbortController().signal, false)).toEqual([undefined, undefined, undefined]);
+      expect(run(stopped.signal, true)).toEqual([undefined, undefined, undefined]);
+    });
+
+    const MARKER = "[Request interrupted by user]";
+    const userTexts = (messages: readonly ModelInputMessage[]) =>
+      messages
+        .filter((message) => message.role === "user")
+        .map((message) => modelMessageContentToText(message.content))
+        .filter((text) => !text.startsWith("<system-reminder>"));
+
+    function createCancelRuntime(
+      store: ReturnType<typeof createRecordingMessageStore>,
+      requests: ModelInputMessage[][],
+      stop: (runtime: ReturnType<typeof createTestAgentRuntime>) => void,
+    ) {
+      const sessionId = createSessionId("runtime-cancel-interrupt-marker");
+      const build = () => {
+        const runtime: ReturnType<typeof createTestAgentRuntime> = createTestAgentRuntime(
+          sessionId,
+          { titleGeneration: { enabled: false } },
+          {
+            eventStore: createTestSessionEventStore(),
+            sessionStore: store as unknown as SessionStorePort,
+            modelFactory: createTestModelFactory({
+              async generateText(request: { messages: ModelInputMessage[] }) {
+                requests.push(structuredClone(request.messages));
+                if (requests.length === 1) {
+                  // 模拟模型请求进行中被停止，没有收到任何输出。
+                  stop(runtime);
+                  throw new Error("stopped");
+                }
+                return modelTextResult("answer");
+              },
+            } as never),
+          },
+        );
+        return runtime;
+      };
+      return { build };
+    }
+
+    it("records the marker after a cancelled request and keeps it after cold resume", async () => {
+      const store = createRecordingMessageStore();
+      const requests: ModelInputMessage[][] = [];
+      const { build } = createCancelRuntime(store, requests, (runtime) =>
+        runtime.stopActiveForegroundExecution({ reason: "v4 session stopped" }),
+      );
+      const runtime = build();
+      await expect(runtime.executeTurn("first prompt")).rejects.toMatchObject({
+        type: CoreErrorType.TurnCancelled,
+      });
+      await runtime.executeTurn("next prompt");
+      // 前一条 user 文本以换行结尾，标记自身也以换行结尾。
+      expect(userTexts(requests[1]!)).toEqual(["first prompt", MARKER, "next prompt"]);
+      // 标记按隐藏提醒落盘：不写顶层 source（旧版本 App 按封闭列表校验它），类型在 runtimeMessage。
+      const markerPart = store.savedParts.find(
+        (part) => part.metadata?.runtimeMessage?.source === "interrupt_marker",
+      );
+      const markerInfo = store.savedMessages.find(
+        (message) => message.id === markerPart?.messageID,
+      );
+      expect(markerInfo?.source).toBeUndefined();
+      expect(markerInfo).toMatchObject({
+        visibility: "model-only",
+        semantics: {
+          origin: "agent_runtime",
+          kind: "system_reminder",
+          source: "interrupt_marker",
+          uiVisibility: "hidden",
+          providerVisibility: "visible",
+          transcriptVisibility: "hidden",
+        },
+      });
+
+      const resumed = build();
+      await resumed.resumeFromStore();
+      await resumed.executeTurn("after resume");
+      expect(userTexts(requests[2]!).slice(0, 2)).toEqual(["first prompt", MARKER]);
+    });
+
+    it("records the marker when a host fault aborts the turn", async () => {
+      const store = createRecordingMessageStore();
+      const requests: ModelInputMessage[][] = [];
+      const fault = new AbortController();
+      const { build } = createCancelRuntime(store, requests, () =>
+        fault.abort(createExternalTurnFaultError("proto.payloadTooLarge")),
+      );
+      const runtime = build();
+      await expect(
+        runtime.executeTurn("first prompt", undefined, { abortSignal: fault.signal }),
+      ).rejects.toMatchObject({ type: CoreErrorType.UnknownError });
+      await runtime.executeTurn("next prompt");
+      // 宿主故障中止本轮也是中止：与用户停止一样留中断标记。
+      expect(userTexts(requests[1]!)).toEqual(["first prompt", MARKER, "next prompt"]);
+    });
+
+    it("records no marker when a send-now preempts the turn", async () => {
+      const store = createRecordingMessageStore();
+      const requests: ModelInputMessage[][] = [];
+      const { build } = createCancelRuntime(store, requests, (runtime) =>
+        runtime.stopActiveForegroundExecution({ preserveQueueAutoDrainOnCancel: true }),
+      );
+      const runtime = build();
+      await expect(runtime.executeTurn("first prompt")).rejects.toMatchObject({
+        type: CoreErrorType.TurnCancelled,
+      });
+      await runtime.executeTurn("next prompt");
+      expect(userTexts(requests[1]!)).toEqual(["first prompt", "next prompt"]);
+    });
   });
 
   it("keeps a cancelled goal paused when resuming the session", async () => {

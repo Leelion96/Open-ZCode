@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-automation-pause-self",
+  "spec": "./test/e2e/conversation-session/conversation-session-automation-pause-self.test.ts",
+  "fixtures": [
+    {
+      "id": "upstream-conversation-automation-pause-self-tool",
+      "description": "automation 执行轮首个响应固定调用无参数 CronPauseSelf，暂停目标只能来自 Host 准入注入的本轮 automationId。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "真实 provider 对停止条件的判断不稳定；固定首个响应为 CronPauseSelf，并延迟响应，让 UI 能先选中刚派发的运行会话。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AUTOMATION_PAUSE_SELF"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "CRITICAL: Respond with TEXT ONLY",
+          "Paused automation"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "delayMs": 3000,
+        "toolUse": {
+          "id": "toolu_e2e_automation_pause_self",
+          "messageId": "msg_e2e_automation_pause_self",
+          "name": "CronPauseSelf",
+          "input": {}
+        }
+      }
+    },
+    {
+      "id": "upstream-conversation-automation-pause-self-final",
+      "description": "CronPauseSelf 成功结果进入历史后返回简短普通文本，稳定完成整轮。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "最终回复只用于结束 case，并验证工具行之外不生成卡片。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_AUTOMATION_PAUSE_SELF", "Paused automation"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-automation-pause-self-final",
+          "inputTokens": 180,
+          "outputTokens": 8,
+          "text": "E2E_AUTOMATION_PAUSE_SELF_DONE"
+        }
+      }
+    }
+  ]
+}

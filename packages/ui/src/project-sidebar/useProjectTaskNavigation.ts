@@ -107,6 +107,13 @@ export function useProjectTaskNavigation(
       props.onSelectTask(path, taskId, identity, remoteSessionId, unreadAt);
     };
     void open().catch((error) => {
+      // Bug 原因：首连等待期间连点任务，被替代的旧点击会抛 navigation-cancelled，或与新点击共享
+      // 同一连接失败，每次都弹错误。被替代是用户的新意图，结果只由最新导航提示。
+      if (
+        sequence.current !== request ||
+        (error instanceof Error && error.message === "project.navigation-cancelled")
+      )
+        return;
       logger.error("[project-sidebar] 打开任务失败", error);
       toast(String(error));
     });

@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { writeDerivedTrajectories } from "./derive.js";
@@ -16,8 +17,9 @@ import {
 import { MessageLedger } from "./message-ledger.js";
 import { startOpenAiProviderProxy } from "./openai-provider-proxy.js";
 
+const RECORDER_REASONING_LEVEL = "disabled";
+
 interface ZCodeBootstrapModule {
-  createModelAdapter(input: unknown): unknown;
   createZCodeApp(input: unknown): Promise<{
     close?: () => Promise<void>;
     submitPrompt(prompt: RecorderPromptInput): Promise<unknown>;
@@ -30,10 +32,6 @@ type RecorderPromptInput =
       attachments?: PromptTrajectoryAttachment[];
       text: string;
     };
-
-interface ZCodeContractsModule {
-  parseModelSelection(input: string): unknown;
-}
 
 interface ConfigConstructor {
   new (input?: unknown): unknown;
@@ -65,19 +63,16 @@ interface RuntimeEventObserver {
 }
 
 export async function recordPromptTrajectory(input: {
-  ccRequestPath?: string;
   fixturePath: string;
   outDir: string;
 }): Promise<void> {
   await recordPromptTrajectoryFromFixture({
-    ccRequestPath: input.ccRequestPath,
     fixture: await loadFixture(input.fixturePath),
     outDir: input.outDir,
   });
 }
 
 export async function recordPromptTrajectoryFromFixture(input: {
-  ccRequestPath?: string;
   fixture: PromptTrajectoryFixture;
   outDir: string;
 }): Promise<void> {
@@ -88,8 +83,14 @@ export async function recordPromptTrajectoryFromFixture(input: {
   let closeProxy: (() => Promise<void>) | undefined;
   let closeApp: (() => Promise<void>) | undefined;
 
+  // 每个 case 用独立的家目录与存储目录：会话库、插件、用户 skill 与 AGENTS.md 都不读写真实用户目录。
+  // 修复原因：skill 根目录按 os.homedir() 解析，只改传给 app 的 env 挡不住；
+  // 原来录制会把用户自己的 skill、插件写进请求，还会在用户的会话库里留下会话。
+  const isolatedHome = await mkdtemp(join(tmpdir(), "zcode-prompt-trajectory-home-"));
+  const restoreHome = useIsolatedHome(isolatedHome);
+
   try {
-    const { bootstrap, contracts, provider } = await loadZCodeModules();
+    const { bootstrap, provider } = await loadZCodeModules();
     const proxy = await startOpenAiProviderProxy({
       ledger,
       mockResponses: fixture.mockResponses,
@@ -101,21 +102,16 @@ export async function recordPromptTrajectoryFromFixture(input: {
       fixture,
       proxyBaseURL: proxy.baseURL,
     });
-    const modelAdapter = bootstrap.createModelAdapter({
-      env: process.env,
-      registryConfig: {
-        providers: {},
-      },
-    });
-    const recorderModelAdapter = wrapModelAdapterConnectionForFixture(modelAdapter, fixture);
     const workspace = await createFixtureWorkspace(fixture);
-    const modelSelection = contracts.parseModelSelection(resolveModelSelection(fixture));
+    const modelSelection = {
+      ...resolveModelSelection(fixture),
+      options: { reasoningLevel: RECORDER_REASONING_LEVEL },
+    };
     const eventObserver = createRuntimeEventObserver();
     const providerRegistry = createRecorderProviderRegistry(provider, modelConfig, fixture);
     const app = await bootstrap.createZCodeApp({
       eventSink: eventObserver.sink,
       env: process.env,
-      modelAdapter: recorderModelAdapter,
       providerRegistry,
       runtimeConfig: buildRecorderRuntimeConfig({
         fixture,
@@ -133,44 +129,29 @@ export async function recordPromptTrajectoryFromFixture(input: {
     await closeApp?.();
     await closeProxy?.();
     await ledger.close();
+    restoreHome();
   }
 
   await writeDerivedTrajectories({
-    ccRequestPath: input.ccRequestPath,
     inputPath: jsonlPath,
     outDir: input.outDir,
   });
 }
 
-function wrapModelAdapterConnectionForFixture(
-  modelAdapter: unknown,
-  fixture: PromptTrajectoryFixture,
-): unknown {
-  const connectionBaseURL = fixture.model?.connectionBaseURL;
-  const connectionProviderKind = fixture.model?.connectionProviderKind;
-  if (!connectionBaseURL && !connectionProviderKind) return modelAdapter;
+const HOME_ENV_KEYS = ["HOME", "USERPROFILE"] as const;
 
-  return new Proxy(modelAdapter as Record<PropertyKey, unknown>, {
-    get(target, property, receiver) {
-      if (property === "resolveConnection") {
-        return (model: unknown) => {
-          const baseResolve = Reflect.get(target, property, receiver);
-          if (typeof baseResolve !== "function") {
-            throw new Error("Model adapter does not expose resolveConnection.");
-          }
-          const connection = baseResolve.call(target, model) as Record<string, unknown>;
-          return {
-            ...connection,
-            ...(connectionBaseURL ? { baseURL: connectionBaseURL } : {}),
-            ...(connectionProviderKind ? { providerKind: connectionProviderKind } : {}),
-          };
-        };
-      }
-
-      const value = Reflect.get(target, property, target);
-      return typeof value === "function" ? value.bind(target) : value;
-    },
-  });
+/** 进程内切换家目录与存储目录，返回恢复函数；录制按 case 顺序执行，不并发。 */
+function useIsolatedHome(home: string): () => void {
+  const keys = [...HOME_ENV_KEYS, "ZCODE_STORAGE_DIR"] as const;
+  const previous = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of HOME_ENV_KEYS) process.env[key] = home;
+  process.env.ZCODE_STORAGE_DIR = join(home, ".zcode");
+  return () => {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  };
 }
 
 export async function executeFixtureSteps(input: {
@@ -258,33 +239,22 @@ function assertNever(value: never): never {
 
 async function loadZCodeModules(): Promise<{
   bootstrap: ZCodeBootstrapModule;
-  contracts: ZCodeContractsModule;
   provider: ZCodeProviderModule;
 }> {
   const bootstrapPath = pathToFileURL(
     join(import.meta.dirname, "../../../packages/bootstrap/dist/index.js"),
   ).href;
-  const contractsPath = pathToFileURL(
-    join(import.meta.dirname, "../../../packages/contracts/dist/index.js"),
-  ).href;
-  const providerConfigPath = pathToFileURL(
-    join(import.meta.dirname, "../../../../../packages/provider/dist/config/index.js"),
-  ).href;
-  const providerRegistryPath = pathToFileURL(
-    join(import.meta.dirname, "../../../../../packages/provider/dist/registry.js"),
+  // @zcode/provider 只发布 src 入口，bootstrap dist 运行时也加载这份 src。
+  // 修复原因：读旧的 provider dist 会得到另一份配置类，Registry 的 instanceof 校验对不上。
+  const providerPath = pathToFileURL(
+    join(import.meta.dirname, "../../../../../packages/provider/src/index.ts"),
   ).href;
   try {
-    const [bootstrap, contracts, providerConfig, providerRegistry] = await Promise.all([
+    const [bootstrap, provider] = await Promise.all([
       import(bootstrapPath) as Promise<ZCodeBootstrapModule>,
-      import(contractsPath) as Promise<ZCodeContractsModule>,
-      import(providerConfigPath) as Promise<Omit<ZCodeProviderModule, "ProviderRegistry">>,
-      import(providerRegistryPath) as Promise<Pick<ZCodeProviderModule, "ProviderRegistry">>,
+      import(providerPath) as Promise<ZCodeProviderModule>,
     ]);
-    return {
-      bootstrap,
-      contracts,
-      provider: { ...providerConfig, ...providerRegistry },
-    };
+    return { bootstrap, provider };
   } catch (error) {
     throw new Error(
       "Missing built zcode-cli packages. Run `pnpm --filter @zcode/bootstrap^... build && pnpm --filter @zcode/bootstrap build` before `record`.",
@@ -314,11 +284,13 @@ function createRecorderProviderRegistry(
     }),
     api: new provider.ProviderApiConfig({
       type: apiFormat,
-      baseURL: target.baseURL,
+      baseUrl: target.baseURL,
       headers: target.headers,
     }),
-    models: [target.model],
+    builtinModelIds: [target.model],
+    personalModelIds: [],
     enabled: true,
+    visibility: "visible",
   });
   const registryModelConfig = new provider.ModelConfig({
     properties: new provider.ModelPropertiesConfig({
@@ -336,9 +308,15 @@ function createRecorderProviderRegistry(
       supportsJsonSchemaOutput: true,
       supportsNativeWebSearch: false,
       supportsMidConversationSystem: true,
+      // 修复原因：能力只来自 Registry 模型声明；原来改写连接 baseURL/providerKind 的包装
+      // 依赖已删除的 resolveConnection，从未生效，WebSearch 用例因此看不到 WebSearch。
+      ...fixture.modelProperties,
     }),
+    // Registry 要求每个 Selection 都带推理档位；不支持推理的模型只声明 disabled 一档。
     optionSpecs: new provider.ModelOptionSpecsConfig({
-      maxOutputTokens: { max: 1_000_000 },
+      reasoningLevel: { values: [RECORDER_REASONING_LEVEL], map: "{}" },
+      // 选项映射为必填；空映射表示不把该选项写进请求体。
+      maxOutputTokens: { max: 1_000_000, map: "{}" },
     }),
   });
   return new provider.ProviderRegistry([

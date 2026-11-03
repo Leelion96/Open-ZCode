@@ -23,7 +23,7 @@ import {
   isToolHandlerFailure,
 } from "../src/tool/executor/errors.js";
 import { editHandler, editToolEntry } from "../src/tool/handlers/edit.js";
-import { createReadFileStateKey } from "../src/tool/read-file-state.js";
+import { createReadFileStatePathKey } from "../src/tool/read-file-state.js";
 import type {
   ExecutableToolCall,
   ReadFileStateMap,
@@ -164,7 +164,7 @@ describe("Edit tool contract", () => {
     const revision = revisionFor(file, "original\n");
     const readFileState: ReadFileStateMap = new Map([
       [
-        createReadFileStateKey(file, 1, undefined),
+        createReadFileStatePathKey(file),
         {
           path: `${tmpDir}/nested/../existing-normalized-key.txt`,
           content: "original\n",
@@ -463,7 +463,7 @@ describe("Edit tool contract", () => {
       readAt: new Date(1),
     });
     const latestRevision = revisionFor(file, "line one\nline two\n", 3);
-    readFileState.set(createReadFileStateKey(file, 2, 1), {
+    readFileState.set(createReadFileStatePathKey(file), {
       path: file,
       content: "line two",
       offset: 2,
@@ -834,11 +834,7 @@ function createReadFileState(
   const revisionContent = options.revisionContent ?? content;
   return new Map([
     [
-      [
-        filePath,
-        String(options.offset ?? 1),
-        options.limit === undefined ? "" : String(options.limit),
-      ].join("\0"),
+      createReadFileStatePathKey(filePath),
       {
         path: filePath,
         content,

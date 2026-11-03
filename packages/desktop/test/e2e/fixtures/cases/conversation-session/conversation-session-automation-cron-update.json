@@ -26,7 +26,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "动态 ID 来自真实 CronList tool_result，固定 patch 用于验证原地更新和详情回显。"
+      "syntheticReason": "动态 ID 来自真实 CronList tool_result，固定 200 天 interval carrier patch 用于验证原地更新和详情回显。"
     },
     {
       "id": "upstream-conversation-automation-cron-update-compact",

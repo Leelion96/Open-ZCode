@@ -31,6 +31,8 @@ export async function runScriptWorkflowChild(input: {
   signal?: AbortSignal;
   workingDirectory: string;
 }): Promise<ScriptWorkflowChildRunResult> {
+  input.signal?.throwIfAborted();
+  const pending = new Set<Promise<void>>();
   const payload = Buffer.from(
     JSON.stringify({
       args: input.args,
@@ -64,6 +66,13 @@ export async function runScriptWorkflowChild(input: {
     child.kill();
   };
   input.signal?.addEventListener("abort", abort, { once: true });
+  if (input.signal?.aborted) abort();
+
+  // 子进程退出与宿主 agent 收尾可并发。管道错误必须留在本 run，不能冒泡成进程级异常。
+  child.stdin.on("error", (error: Error) => {
+    completed = { error: error.message, ok: false };
+    child.kill();
+  });
 
   child.stderr.on("data", (chunk: Buffer) => {
     stderr = trimStderr(stderr + chunk.toString("utf8"));
@@ -71,7 +80,7 @@ export async function runScriptWorkflowChild(input: {
 
   const reader = createInterface({ input: child.stdout });
   reader.on("line", (line) => {
-    void handleChildLine(line, {
+    const handling = handleChildLine(line, {
       child,
       complete: (message) => {
         completed = message;
@@ -85,6 +94,8 @@ export async function runScriptWorkflowChild(input: {
       };
       child.kill();
     });
+    pending.add(handling);
+    void handling.finally(() => pending.delete(handling));
   });
 
   try {
@@ -116,6 +127,9 @@ export async function runScriptWorkflowChild(input: {
   } finally {
     input.signal?.removeEventListener("abort", abort);
     if (!settled) child.kill();
+    reader.close();
+    // 脚本进程已退出，先前派发到宿主的 agent / journal 写入仍可能在飞。
+    while (pending.size > 0) await Promise.allSettled(pending);
   }
 }
 
@@ -178,7 +192,14 @@ function writeResponse(
   child: ReturnType<typeof spawn>,
   message: { error?: string; id: string; ok: boolean; value?: unknown },
 ): void {
-  if (!child.stdin) return;
+  if (
+    child.killed ||
+    child.exitCode !== null ||
+    !child.stdin ||
+    child.stdin.destroyed ||
+    child.stdin.writableEnded
+  )
+    return;
   child.stdin.write(`${JSON.stringify({ kind: "response", ...message })}\n`);
 }
 

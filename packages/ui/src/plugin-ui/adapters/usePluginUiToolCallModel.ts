@@ -1,4 +1,5 @@
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { usePluginReferenceIconProjection } from "@/v4/pluginReferenceIconContext.js";
 import {
   buildTaskSidePaneMemoryKey,
   claimPluginUiSidePaneAutoOpen,
@@ -57,7 +58,7 @@ export function usePluginUiToolCallModel(
   const onOpenSidePane = context.pluginUi?.onOpenSidePane;
   const toolCall = context.toolCallNode.toolCall;
   const [width, setWidth] = useState(0);
-  const [displayMode, setDisplayMode] = useState<McpAppsDisplayMode>("inline");
+  const pluginCatalog = usePluginReferenceIconProjection();
   // 资源级 showInline 只随句柄到达；经 ref 读避免把 host 结果卷进渲染期的派生。
   const hostHandleRef = useRef<PluginSandboxHandle | null>(null);
   const sessionId = scope?.sessionId ?? "";
@@ -143,8 +144,7 @@ export function usePluginUiToolCallModel(
         openInSidePane();
         return "fullscreen";
       }
-      setDisplayMode(mode);
-      return mode;
+      return "inline";
     },
     [onOpenSidePane, openInSidePane],
   );
@@ -160,10 +160,6 @@ export function usePluginUiToolCallModel(
     toolCall.status !== "failed" &&
     !isPluginUiToolCancelled(toolCall) &&
     presentation?.isError !== true;
-  // 页面握手声明的 availableDisplayModes 是硬约束（规范 MUST NOT）：不含 fullscreen 时不给侧栏入口、不自动打开。
-  // 能力在 initialized 后才到，先按"都支持"起步；到达后经 availableDisplayModes 变化推 host-context-changed。
-  const [appAllowsFullscreen, setAppAllowsFullscreen] = useState(true);
-  const canOpenSidePane = Boolean(onOpenSidePane) && appAllowsFullscreen;
   const interactions = useMemo(
     () =>
       scope?.sessionId && presentation
@@ -191,14 +187,14 @@ export function usePluginUiToolCallModel(
     },
     theme: resolveTheme(context.theme ?? "system"),
     locale,
-    displayMode,
+    displayMode: "inline",
     toolInput,
     toolResult,
     toolCallId: toolCall.toolId,
     toolCancelled: isPluginUiToolCancelled(toolCall),
     hostVersion: "zcode",
-    // 没有侧栏入口（如只读 / 非桌面壳）或页面不支持 fullscreen 时只声明 inline。
-    availableDisplayModes: canOpenSidePane ? INLINE_AND_FULLSCREEN : INLINE_ONLY,
+    // 此处声明宿主入口；controller 在握手后与页面能力取交集。
+    availableDisplayModes: onOpenSidePane ? INLINE_AND_FULLSCREEN : INLINE_ONLY,
     onDisplayModeRequest: handleDisplayModeRequest,
     onOpenExternal: handleOpenExternal,
     width,
@@ -206,9 +202,17 @@ export function usePluginUiToolCallModel(
     ...(interactions ? { interactions } : {}),
   });
   hostHandleRef.current = host.handle;
-  useEffect(() => {
-    setAppAllowsFullscreen(appAllowsDisplayMode(host.appCapabilities, "fullscreen"));
-  }, [host.appCapabilities]);
+  // capabilities 是页面 owner 的快照；关闭侧栏、重挂工具行不另存副本，也不恢复禁止的 inline。
+  const capabilitiesReady = host.appCapabilities !== undefined;
+  const inlineAllowed = appAllowsDisplayMode(
+    host.appCapabilities,
+    "inline",
+    presentation?.preferredDisplayMode,
+  );
+  const canOpenSidePane =
+    Boolean(onOpenSidePane) &&
+    capabilitiesReady &&
+    appAllowsDisplayMode(host.appCapabilities, "fullscreen");
   // 资源级 showInline（随句柄到达）：没有手动记录时写成固定，之后折叠边界据此重算。
   useEffect(() => {
     if (!supportedScope || host.handle?.resourceMeta?.showInline !== true || !sessionId) return;
@@ -218,13 +222,12 @@ export function usePluginUiToolCallModel(
   }, [host.handle, sessionId, supportedScope, toolCall.toolId]);
 
   useEffect(() => {
-    if (!inlineActive || !host.supported) return;
+    if (!inlineActive || !host.supported || !inlineAllowed || !capabilitiesReady) return;
     return claimPluginUiSurface(toolSurfaceKey, "inline");
-  }, [inlineActive, host.supported, toolSurfaceKey]);
+  }, [inlineActive, host.supported, inlineAllowed, capabilitiesReady, toolSurfaceKey]);
 
   // preferredDisplayMode: fullscreen → 工具卡片一出现就自动打开侧栏一次。
-  // 不等结果：replay / 极快模型下结果到达与回合收起可能在同一批提交，等结果会让 effect 永远没机会跑。
-  // 结果稍后由侧栏从实时投影按 toolCallId / surfaceId 自行读取。
+  // 必须等能力握手完成，不能让默认偏好先把 inline-only 页面打开到侧栏。
   const autoOpenKey =
     presentation?.preferredDisplayMode === "fullscreen"
       ? buildPluginUiSurfaceKey(surfaceTarget, { kind: "toolCall", toolCallId: toolCall.toolId })
@@ -261,15 +264,27 @@ export function usePluginUiToolCallModel(
   ]);
 
   return {
-    supported: supportedScope && host.supported,
+    supported: supportedScope && host.supported && (inlineAllowed || canOpenSidePane),
     surface: presentation?.surface,
     preferredDisplayMode: presentation?.preferredDisplayMode ?? "inline",
     sidePaneActive,
+    inlineAllowed,
+    pluginId: presentation?.pluginId ?? "",
+    pluginName:
+      (pluginCatalog?.sessionId === sessionId
+        ? pluginCatalog.nameByPluginId?.get(presentation?.pluginId ?? "")
+        : undefined) ??
+      presentation?.pluginId.split("@")[0] ??
+      "",
+    pluginIcon:
+      pluginCatalog?.sessionId === sessionId
+        ? pluginCatalog.iconByPluginId.get(presentation?.pluginId ?? "")
+        : undefined,
     host,
     // 资源级声明优先，工具级兜底，都没有默认画边框。
     prefersBorder: host.handle?.resourceMeta?.prefersBorder ?? presentation?.prefersBorder ?? true,
     superseded,
-    ...(supportedScope && !superseded ? { pinned, onTogglePin: togglePin } : {}),
+    ...(supportedScope && !superseded && inlineAllowed ? { pinned, onTogglePin: togglePin } : {}),
     pinLabel: intl.formatMessage({ id: "pluginUi.pin" }),
     unpinLabel: intl.formatMessage({ id: "pluginUi.unpin" }),
     loadingLabel: intl.formatMessage({ id: "pluginUi.loading" }),
@@ -277,6 +292,7 @@ export function usePluginUiToolCallModel(
     retryLabel: intl.formatMessage({ id: "pluginUi.retry" }),
     openedLabel: intl.formatMessage({ id: "pluginUi.openedInSidePane" }),
     openLabel: intl.formatMessage({ id: "pluginUi.openInSidePane" }),
+    openButtonLabel: intl.formatMessage({ id: "pluginUi.open" }),
     onWidthChange: setWidth,
     onOpenSidePane: canOpenSidePane ? openInSidePane : undefined,
   };

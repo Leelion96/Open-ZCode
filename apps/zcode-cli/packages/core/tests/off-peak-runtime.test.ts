@@ -268,6 +268,76 @@ describe("闲时 Runtime 生命周期接入", () => {
     expect(runtime.getSessionModelSelection()?.providerId).toBe("paid");
   });
 
+  it("用户接管后续跑的请求按用户模型重建 Context Prefix 的 Harness 文案", async () => {
+    const events: OffPeakLifecycleEvent[] = [];
+    const requests: Array<{ providerId: string; messages: string }> = [];
+    const runtime = createTestAgentRuntime(
+      createSessionId("offpeak-takeover-harness"),
+      {
+        modelSelection: createTestModelSelection("user/normal"),
+        titleGeneration: { enabled: false },
+        workingDirectory: "/workspace",
+      },
+      {
+        eventStore: createTestSessionEventStore(),
+        onOffPeakLifecycleEvent: (event) => events.push(event),
+        modelFactory: createTestModelFactory({
+          // 闲时模型支持 mid-conversation system，用户模型不支持。
+          properties: (input) => ({
+            supportsMidConversationSystem: input.selection.providerId === "idle",
+          }),
+          async generateText(request, observation) {
+            const providerId = String(observation.model.providerId);
+            requests.push({ providerId, messages: JSON.stringify(request.messages) });
+            if (providerId === "idle")
+              throw Object.assign(new Error("expired"), {
+                code: "invalid_model_request",
+                context: { providerCode: "3102", providerId: "idle" },
+              });
+            return {
+              text: "user continued",
+              finishReason: "stop",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        }),
+      },
+    );
+    const pending = runtime.executeTurn("idle", undefined, {
+      offPeakTaskId: "idle-task",
+      intent: {
+        sourceCommandId: "idle-input",
+        kind: "sendText",
+        modelSelection: createTestModelSelection("idle/model"),
+      } as never,
+      modelExecution: {
+        selectionScope: "execution",
+        offPeak: { executionId: "execution", ticketId: "one", providerErrorCode: "3102" },
+        requestDependencies: {
+          requestAuth: { source: { resolve: async () => ({ headers: { ticket: "one" } }) } },
+        },
+      },
+    });
+    await expect.poll(() => events.some((e) => e.type === "ticket_needed")).toBe(true);
+    await runtime.enqueueDeferredInput({
+      input: "take over",
+      intent: {
+        sourceCommandId: "user-input",
+        kind: "sendText",
+        admissionSeq: 2,
+        modelSelection: createTestModelSelection("paid/new"),
+      } as never,
+    });
+    expect((await pending).response).toBe("user continued");
+    expect(requests.map((request) => request.providerId)).toEqual(["idle", "paid"]);
+    expect(requests[0]?.messages).toContain("mid-conversation system turns");
+    expect(requests[1]?.messages).toContain(
+      "tags in messages and tool results are injected by the harness",
+    );
+    expect(requests[1]?.messages).not.toContain("mid-conversation system turns");
+    await runtime.clearAllPendingInputs(runtime.rootTraceContext);
+  });
+
   it.each([false, true])(
     "主轮结束后等待后台，任务取消后迟到通知不能唤起（取消=%s）",
     async (cancel) => {

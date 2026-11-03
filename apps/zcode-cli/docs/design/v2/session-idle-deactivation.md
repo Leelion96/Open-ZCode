@@ -233,7 +233,7 @@ promise = record.app.close()
 
 `assertSessionRuntimeDeactivatable` 是纯校验，必须位于第一个副作用之前。若校验拒绝，record、
 runtime event subscription 与 gateway 运行态全部保持可用；`app.close()` 是摘除后的异步收尾，
-失败由 pool 隔离记录，不纳入可回滚的同步预检事务。
+失败由 [session 生命周期 owner](session-runtime-lifecycle.md) 记录为 faulted，不纳入可回滚的同步预检事务。
 
 `deactivateSession` 复用 `disposeSession` 的 runtime cleanup，但
 `notifyIndexRemoved=false`。清理 publisher、hydration、flush state、projection waiter、attachment
@@ -241,8 +241,9 @@ cache、raw sequence、telemetry 归一化状态，以及 `CommandInbox` 的 per
 admission 序号，不调用 `indexPublisher.removeSession`。`CommandInbox` 若仍有 in-flight/live pin，
 fresh facts 必须阻止去激活；执行面也会在拆 publisher 前再次拒绝。
 
-`app.close()` 的 Promise 存入 pool 的 in-flight map。后续同 session 请求先等待它 settle。close
-失败经 `onError` 记录 warn；闸门必须释放，不能永久阻塞 cold resume。
+pool 的 in-flight map 只跟踪策略任务；真正的释放和恢复互斥归 session 生命周期 owner。
+close 失败经 `onError` 记录 warn，策略闸门结束后，生命周期仍保留 faulted；cold resume 明确返回
+recoveryRequired，不能因为池的日志处理已经完成就创建新实例。其他 session 的回收继续执行。
 
 ## Detached subagent child publisher
 

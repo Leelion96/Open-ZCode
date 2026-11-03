@@ -1,9 +1,4 @@
-import type {
-  ICommandsService,
-  IMcpSyncService,
-  ISkillsService,
-  IZCodeAgentService,
-} from "@zcode/services";
+import type { ICommandsService, ISkillsService, IZCodeAgentService } from "@zcode/services";
 import { logger } from "@/logger.js";
 import { invalidateDeferredDraftSessionForSkillChange } from "@/lib/zcodeDraftSkillInvalidation.js";
 import { refreshSharedSkillStoreForWorkspace } from "@/lib/skillStoreRefresh.js";
@@ -17,7 +12,8 @@ function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-async function refreshSlashCommandsAfterRemotePluginSync(params: {
+/** 重新拉取远端 workspace 的命令并写回 commandsStore 与输入框 `/` 面板（插件、命令推送后共用）。 */
+export async function refreshSlashCommandsAfterRemoteSync(params: {
   commandsService: ICommandsService;
   reason: string;
   workspacePath: string;
@@ -33,9 +29,11 @@ async function refreshSlashCommandsAfterRemotePluginSync(params: {
     });
 
     const commandsStore = useCommandsStore.getState();
+    // 这里刷新的是项目（没有 authority）；store 指向同路径的远端「用户」时属于另一个目标，不写回。
     if (
       commandsStore.workspacePath === workspacePath &&
-      commandsStore.workspaceIdentity === workspaceIdentity
+      commandsStore.workspaceIdentity === workspaceIdentity &&
+      commandsStore.authorityKey === null
     ) {
       useCommandsStore.setState({
         commands: result.commands,
@@ -44,6 +42,7 @@ async function refreshSlashCommandsAfterRemotePluginSync(params: {
         capability: result.capability,
         loadedWorkspacePath: workspacePath,
         loadedWorkspaceIdentity: workspaceIdentity,
+        loadedAuthorityKey: null,
         loading: false,
         error: null,
       });
@@ -66,7 +65,8 @@ async function refreshSlashCommandsAfterRemotePluginSync(params: {
     const commandsStore = useCommandsStore.getState();
     if (
       commandsStore.workspacePath === workspacePath &&
-      commandsStore.workspaceIdentity === workspaceIdentity
+      commandsStore.workspaceIdentity === workspaceIdentity &&
+      commandsStore.authorityKey === null
     ) {
       useCommandsStore.setState({
         loading: false,
@@ -82,9 +82,32 @@ async function refreshSlashCommandsAfterRemotePluginSync(params: {
   }
 }
 
+/**
+ * MCP store 是全局单例，只跟踪一个当前项目：只在它正指向该 workspace 时重新加载。
+ * Bug 原因：数据同步推送插件后对该设备每个已打开的项目调用 ensureLoadedForWorkspace，
+ * 它会把 store 切到最后一个被刷新的项目，改掉用户当前正在看的项目的 MCP 列表。
+ * 修法：不切换当前项目；不是当前项目的 workspace 由切换项目时的正常加载拿到新配置。
+ *
+ * Bug 原因：store 的目录服务与目标一起绑定后，这里传入推送用的 source-settings 服务会把当前
+ * 项目换绑到它，之后该项目的读写不再走项目自己的服务。修法：只重读已绑定的目标，不传服务。
+ */
+export async function reloadMcpStoreIfCurrentWorkspace(params: {
+  workspacePath: string;
+  workspaceIdentity?: string | null;
+}): Promise<void> {
+  const { currentProjectPath, currentWorkspaceIdentity } = useMcpStore.getState();
+  const workspaceIdentity = params.workspaceIdentity?.trim() || undefined;
+  if (
+    params.workspacePath !== currentProjectPath ||
+    workspaceIdentity !== currentWorkspaceIdentity
+  ) {
+    return;
+  }
+  await useMcpStore.getState().loadMcpFromUserDirectory();
+}
+
 export async function refreshWorkspacePluginCapabilitiesAfterRemoteSync(params: {
   commandsService: ICommandsService;
-  mcpSyncService: IMcpSyncService;
   reason: string;
   skillsService: ISkillsService;
   workspaceIdentity?: string | null;
@@ -107,15 +130,16 @@ export async function refreshWorkspacePluginCapabilitiesAfterRemoteSync(params: 
     workspaceIdentity: workspaceIdentityParam,
     skillsService: params.skillsService,
   });
-  await refreshSlashCommandsAfterRemotePluginSync({
+  await refreshSlashCommandsAfterRemoteSync({
     commandsService: params.commandsService,
     reason: params.reason,
     workspacePath,
     workspaceIdentity,
   });
-  await useMcpStore
-    .getState()
-    .ensureLoadedForWorkspace(workspacePath, params.mcpSyncService, workspaceIdentityParam);
+  await reloadMcpStoreIfCurrentWorkspace({
+    workspacePath,
+    workspaceIdentity,
+  });
   // 同步入口可能没有打开全局设置；按真实目标通知所有已挂载投影。
   notifyPluginManagementChange({
     workspacePath,

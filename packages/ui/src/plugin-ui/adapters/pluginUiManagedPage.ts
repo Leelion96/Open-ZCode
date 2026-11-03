@@ -29,7 +29,10 @@ import {
   PLUGIN_UI_CARD_MIN_HEIGHT_PX,
 } from "../contract.js";
 import { buildPluginUiHostCapabilities } from "../domain/buildPluginUiHostCapabilities.js";
-import { buildPluginUiHostContext } from "../domain/buildPluginUiHostContext.js";
+import {
+  appAllowsDisplayMode,
+  buildPluginUiHostContext,
+} from "@/plugin-ui/domain/buildPluginUiHostContext.js";
 
 import { acquireWorkspaceConnection } from "@/v4/workspaceConnectionRegistry.js";
 import type { IServiceAccessor } from "@zcode/services";
@@ -80,6 +83,8 @@ export function createPage(
   let starting = false;
   let incarnation = 0;
   let releasing: Promise<unknown> = Promise.resolve();
+  let recycling: Promise<boolean> | undefined;
+  let activityFeed = "";
   let contextInputs = "";
   let lastFeed = "";
   let lastContext = "";
@@ -108,14 +113,40 @@ export function createPage(
   const setHandle = (handle: PluginSandboxHandle) => {
     if (appIdentity && appIdentity !== handle.instance.appIdentity) clearPluginUiWidgetState(key);
     appIdentity = handle.instance.appIdentity;
+    const fresh =
+      snapshot.handle?.sandboxId !== handle.sandboxId || snapshot.handle?.initId !== handle.initId;
     patch({ handle });
+    if (fresh) pluginUiPages.prepared(page, handle.resourceMeta?.backgroundRetention === true);
     plane.mount(handle);
     syncExecution();
   };
   const setHeight = (height: number) => patch({ height });
   const setError = (error: string) => patch({ error });
-  const setAppCapabilities = (appCapabilities: McpUiAppCapabilities | undefined) =>
+  const syncDisplayModes = (appCapabilities: McpUiAppCapabilities | undefined) => {
+    // 能力只有握手后才可知；之前在后台加载，避免 fullscreen-only 页面先闪现 inline。
+    plane.setAllowedDisplayModes(
+      appCapabilities === undefined
+        ? []
+        : (["inline", "fullscreen"] as const).filter((mode) =>
+            appAllowsDisplayMode(
+              appCapabilities,
+              mode,
+              latest.current.presentation.preferredDisplayMode,
+            ),
+          ),
+    );
+  };
+  const setAppCapabilities = (appCapabilities: McpUiAppCapabilities | undefined) => {
+    syncDisplayModes(appCapabilities);
     patch({ appCapabilities });
+    if (appCapabilities)
+      logger.lifecycle.info("[plugin-ui] display modes registered", {
+        pluginId: latest.current.presentation.pluginId,
+        scopeId: buildPluginSandboxScopeId(latest.current.scope.scope),
+        availableDisplayModes: appCapabilities.availableDisplayModes ?? ["inline", "fullscreen"],
+        preferredDisplayMode: latest.current.presentation.preferredDisplayMode,
+      });
+  };
   const plane = createPluginUiPagePlane({
     onVisibility(visible) {
       if (page.visible !== visible) pluginUiPages.visibility(page, visible);
@@ -128,9 +159,12 @@ export function createPage(
     },
   });
   function syncExecution() {
-    // 握手完成和 session 空闲都不能证明插件内部已无工作；宿主保留页面时必须允许它执行。
-    const active = controller !== null;
-    plane.setExecutionActive(active);
+    // 过去对所有页面强制维持后台帧，隐藏页也持续消耗 CPU；只有资源显式申请才启用。
+    const active =
+      controller !== null && snapshot.handle?.resourceMeta?.backgroundRetention === true;
+    // 无锚点的冷启动也要完成握手；display:none 会让 Electron guest 无法首次挂载。
+    // 仅启动阶段提供不可交互的承载面，握手后未声明的页面立即恢复普通隐藏策略。
+    plane.setExecutionActive(active || (controller !== null && snapshot.phase !== "running"));
     const handle = snapshot.handle;
     if (!handle || !sandboxPlatform.setExecutionActive) return;
     const background = active && (!page.visible || document.hidden);
@@ -148,6 +182,10 @@ export function createPage(
         if (snapshot.handle !== handle || disposed) return;
         logger.warn("[plugin-ui] background execution failed", { error: String(error) });
       });
+  }
+  function onWindowVisibility() {
+    if (!document.hidden && plane.hasVisibleAnchor()) void ensure();
+    syncExecution();
   }
   async function ensure() {
     if (disposed || controller || starting || snapshot.phase === "error") return;
@@ -239,6 +277,7 @@ export function createPage(
         presentation.serverName,
       ),
       initialHostContext,
+      getPreferredDisplayMode: () => latest.current.presentation.preferredDisplayMode,
       hostVersion: latest.current.hostVersion,
       getToolFeed: () => ({
         ...(latest.current.toolInput ? { toolInput: { arguments: latest.current.toolInput } } : {}),
@@ -311,6 +350,9 @@ export function createPage(
         clearPluginUiWidgetState(key);
         patch({ phase: "error", error: "MCP App connection is no longer available" });
       },
+      onActivity: () => {
+        if (controller === nextController) pluginUiPages.activity(page);
+      },
       onBusyChange: () => {
         if (controller === nextController) pluginUiPages.settled(page);
       },
@@ -365,6 +407,8 @@ export function createPage(
       // 背景内联锚点不能覆盖侧栏当前的交互上下文。
       if (next.enabled === false) return;
       latest.current = next;
+      // 只重选展示锚点，绝不销毁或重载 WebView；插件的未保存状态仍留在同一 guest。
+      syncDisplayModes(snapshot.appCapabilities);
       const nextContextInputs = JSON.stringify([
         next.theme,
         next.locale,
@@ -372,6 +416,7 @@ export function createPage(
         next.width,
         next.titleBar,
         next.availableDisplayModes,
+        next.presentation.preferredDisplayMode,
       ]);
       if (nextContextInputs !== contextInputs) {
         contextInputs = nextContextInputs;
@@ -394,6 +439,16 @@ export function createPage(
     },
     updateToolFeed(next) {
       if (disposed) return;
+      const activityKey = JSON.stringify([
+        next.toolCallId,
+        Boolean(next.toolResult),
+        next.toolCancelled,
+      ]);
+      if (next.toolCallId && activityKey !== activityFeed) {
+        activityFeed = activityKey;
+        pluginUiPages.activity(page);
+        void ensure();
+      }
       latest.current = {
         ...latest.current,
         toolCallId: next.toolCallId,
@@ -415,9 +470,27 @@ export function createPage(
       }
     },
     async suspend(force = false) {
-      // 编辑器的未保存文档在 guest 内存中；即使 session 空闲，也不能按离屏期限或容量回收。
-      // 管理器沿用 false 拒绝淘汰；删除、重载与来源失效仍显式 force 清理。
-      if (!force) return false;
+      if (!force) {
+        if (recycling) return recycling;
+        if (starting || !pluginUiPages.claimRecycle(page)) return false;
+        const candidate = controller;
+        const attempt = (async () => {
+          if (candidate && !(await candidate.tryRecycle().catch(() => false))) return false;
+          // Agent 原子裁决 busy/审批；等待期间被重载或删除的旧 controller 不得释放新实例。
+          if (candidate !== controller || disposed) return false;
+          await page.suspend(true);
+          // 裁决期间用户可能重新打开；旧凭证已撤销，必须从同一 owner 重建。
+          if (!document.hidden && !disposed && plane.hasVisibleAnchor()) void ensure();
+          return true;
+        })();
+        recycling = attempt;
+        try {
+          return await attempt;
+        } finally {
+          if (recycling === attempt) recycling = undefined;
+          pluginUiPages.finishRecycle(page);
+        }
+      }
       incarnation++;
       starting = false;
       const previous = controller;
@@ -430,6 +503,7 @@ export function createPage(
       releaseFeed = undefined;
       releaseLease = undefined;
       patch({ phase: "idle", handle: null, appCapabilities: undefined });
+      plane.setAllowedDisplayModes([]);
       // 先前释放未完成时不能重新预备；反复重试也只等待同一个释放链。
       // Main 主动导航到 about:blank 会触发 navigation；先解除旧代际观察，避免回收被误报为崩溃。
       if (previousHandle) plane.prepareUnmount(previousHandle.sandboxId);
@@ -445,7 +519,7 @@ export function createPage(
       return true;
     },
     destroy() {
-      document.removeEventListener("visibilitychange", syncExecution);
+      document.removeEventListener("visibilitychange", onWindowVisibility);
       workspaceEvents.dispose();
       clearPluginUiSurfaceFeed(key);
       disposed = true;
@@ -454,7 +528,8 @@ export function createPage(
       listeners.clear();
     },
   };
-  document.addEventListener("visibilitychange", syncExecution);
+  plane.setAllowedDisplayModes([]);
+  document.addEventListener("visibilitychange", onWindowVisibility);
   return page;
 }
 

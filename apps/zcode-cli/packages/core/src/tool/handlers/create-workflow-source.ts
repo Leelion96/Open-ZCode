@@ -8,7 +8,8 @@
 
 import {
   CREATE_WORKFLOW_ARGS_WITHOUT_PATH_ERROR,
-  CREATE_WORKFLOW_SOURCE_ERROR,
+  CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR,
+  CREATE_WORKFLOW_SOURCE_MISSING_ERROR,
   CreateWorkflowInputSchema,
   type CreateWorkflowInput,
   type ModelCatalogPort,
@@ -47,7 +48,10 @@ export function validateCreateWorkflowSource(
   const sources = [parsed.data.script, parsed.data.saved, parsed.data.path].filter(
     (source) => source !== undefined,
   );
-  if (sources.length !== 1) return failure(CREATE_WORKFLOW_SOURCE_ERROR);
+  // 「没给」与「多给」分开报：没给多半是参数 JSON 没解析出来、被 adapter 恢复成 `{}`
+  // （见 WORKFLOW_SOURCE_MISSING_HINT），并成一句时写了脚本的模型读不出原因。
+  if (sources.length === 0) return failure(CREATE_WORKFLOW_SOURCE_MISSING_ERROR);
+  if (sources.length > 1) return failure(CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR);
   // `args` 与 `path` 同进同退：`saved` 的实参走 `saved.args`，内联脚本没有声明可校验。静默
   // 忽略会让调用方以为参数生效了，而脚本读到的 `args` 是空的。
   if (parsed.data.args !== undefined && parsed.data.path === undefined) {

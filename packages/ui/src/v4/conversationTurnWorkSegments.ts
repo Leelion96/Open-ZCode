@@ -86,11 +86,30 @@ function isAssistantWorkRow(row: ConversationRow): row is AssistantWorkRow {
   return row.kind !== "turnHeader" && row.kind !== "userInput";
 }
 
-function splitVisualWorkSegments(rows: readonly ConversationRow[]): DraftVisualWorkSegment[] {
+function isGuidedUserInputRow(row: ConversationRow | undefined): row is UserInputRow {
+  return row !== undefined && isUserInputRow(row) && row.guided === true;
+}
+
+function splitVisualWorkSegments(
+  rows: readonly ConversationRow[],
+  header: TurnHeaderRow | undefined,
+): DraftVisualWorkSegment[] {
+  // 工作段边界只认 CLI 下发的 workSegments：哪几条 guide 是同一次取出，只有 CLI 知道。
+  // 修复原因：原来每条 guided user 都开一段，与 CLI 每条 guide 一段的分段一致。runtime 改为一个边界
+  // 按 FIFO 取出全部已等待的 guide 后，逐条切分会把一次取出拆成多段；这里只在 CLI 声明的段首切分。
+  // 没有 workSegments 的旧快照才回退：上一行已是 guided user 时并入当前段。
+  const triggerEntityIds = header?.workSegments
+    ? new Set(header.workSegments.flatMap((segment) => segment.triggerEntityId ?? []))
+    : undefined;
   const segments: DraftVisualWorkSegment[] = [];
   let current: DraftVisualWorkSegment = { orderedRows: [] };
   for (const row of rows) {
-    if (isUserInputRow(row) && row.guided === true && current.orderedRows.length > 0) {
+    const opensSegment =
+      isUserInputRow(row) &&
+      (triggerEntityIds
+        ? row.entityId !== undefined && triggerEntityIds.has(row.entityId)
+        : row.guided === true && !isGuidedUserInputRow(current.orderedRows.at(-1)));
+    if (opensSegment && current.orderedRows.length > 0) {
       segments.push(current);
       current = { orderedRows: [], triggerRow: row };
     }
@@ -153,7 +172,7 @@ export function buildConversationTurnWorkSegments(options: {
   /** 插件卡片进不进折叠区的裁决；缺省沿用"全部常驻"。 */
   pluginUiPinResolver?: PluginUiRowPinResolver;
 }): ConversationTurnWorkSegment[] {
-  const visualDrafts = splitVisualWorkSegments(options.orderedRows);
+  const visualDrafts = splitVisualWorkSegments(options.orderedRows, options.header);
   const tailRowIds = new Set(options.assistantTailRows.map((row) => row.rowId));
   return visualDrafts.map((segment, segmentIndex) => {
     const segmentAssistantRows = segment.orderedRows.filter(isAssistantWorkRow);

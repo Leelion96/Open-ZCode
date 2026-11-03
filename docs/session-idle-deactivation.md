@@ -2,6 +2,10 @@
 
 状态：**已确认，按本 spec 实现**
 
+运行实例的统一状态、查询和变更接口见
+[Session runtime 生命周期](../apps/zcode-cli/docs/design/v2/session-runtime-lifecycle.md)。
+本文中的 protected/idle/LRU 分类只表达回收策略，不是第二套生命周期状态。
+
 ## 问题
 
 每个 workspace runtime 对应一个常驻 `zcode-cli app-server --stdio` 进程。进程内每个已加载
@@ -278,8 +282,8 @@ explicit close/delete
 纯安全校验必须位于第一个副作用之前；校验拒绝时，record、runtime event subscription 和 gateway
 运行态全部保持可用。校验通过后的 `unsubscribe`、gateway 清理和 `sessions.delete` 在同一个同步
 执行片中完成。新请求要么先取得 operation lease 而阻止回收，要么看到 DEACTIVATING 并等待，
-然后走 cold resume；不会命中半拆除 record。`app.close()` 属于摘除后的异步收尾，其失败由 pool
-隔离和记录，不属于可回滚的同步预检事务。
+释放成功后走 cold resume；不会命中半拆除 record。`app.close()` 属于摘除后的异步收尾，失败后
+生命周期 owner 保留 faulted，禁止冷恢复创建替代实例；pool 记录错误并继续其他候选。
 
 ## Renderer 内存边界
 

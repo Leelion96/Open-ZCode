@@ -16,10 +16,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_BROWSER_SUBAGENT_BOUNDARY_PARENT"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_BROWSER_SUBAGENT_BOUNDARY_PARENT"]
       },
       "response": {
         "statusCode": 200,
@@ -37,7 +34,7 @@
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "必须用真实共享 Node REPL 与 IAB guest 建立主 Agent 的 Tab，供 child 列出并在 child 结束后复验。"
+        "syntheticReason": "通过真实 Node REPL 与 IAB guest 建立主 Agent 的 Tab，返回稳定 ID 供后续独立 Worker 找回同一页面。"
       },
       "maxMatches": 1,
       "match": {
@@ -47,9 +44,7 @@
           "E2E_BROWSER_SUBAGENT_BOUNDARY_PARENT",
           "E2E_BROWSER_FIXTURE_URL:"
         ],
-        "bodyIncludes": [
-          "mcp__node_repl__js"
-        ],
+        "bodyIncludes": ["mcp__node_repl__js"],
         "bodyExcludes": [
           "toolu_e2e_browser_subagent_parent_init",
           "Generate a concise title",
@@ -63,7 +58,7 @@
           "name": "mcp__node_repl__js",
           "input": {
             "title": "主 Agent 缓存 Browser 与 Tab",
-            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nglobalThis.boundaryBrowserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst browserClientModule = await import(boundaryBrowserClientUrl);\nglobalThis.boundarySetupBrowserRuntime = browserClientModule.setupBrowserRuntime;\nif (globalThis.agent?.browsers == null) await boundarySetupBrowserRuntime({ globals: globalThis });\nglobalThis.boundaryBrowser = await agent.browsers.get('iab');\nglobalThis.boundaryTab = await boundaryBrowser.tabs.new();\nawait boundaryTab.goto('{{browserFixtureUrl}}');\nawait boundaryTab.playwright.getByLabel('State').fill('parent-before');\nconst parentTabsBefore = await boundaryBrowser.tabs.list();\nglobalThis.boundaryParentTabId = boundaryTab.id;\n({ marker: parentTabsBefore.length === 1 && parentTabsBefore[0]?.id === boundaryParentTabId ? 'E2E_BROWSER_SUBAGENT_PARENT_INIT_OK' : 'E2E_BROWSER_SUBAGENT_PARENT_INIT_FAILED', tabId: boundaryParentTabId, tabs: parentTabsBefore });"
+            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nglobalThis.boundaryBrowserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst browserClientModule = await import(boundaryBrowserClientUrl);\nglobalThis.boundarySetupBrowserRuntime = browserClientModule.setupBrowserRuntime;\nif (globalThis.agent?.browsers == null) await boundarySetupBrowserRuntime({ globals: globalThis });\nglobalThis.boundaryBrowser = await agent.browsers.get('iab');\nglobalThis.boundaryTab = await boundaryBrowser.tabs.new();\nawait boundaryTab.goto('{{browserFixtureUrl}}');\nawait boundaryTab.playwright.getByLabel('State').fill('parent-before');\nconst parentTabsBefore = await boundaryBrowser.tabs.list();\nglobalThis.boundaryParentTabId = boundaryTab.id;\n({ marker: parentTabsBefore.length === 1 && parentTabsBefore[0]?.id === boundaryParentTabId ? 'E2E_BROWSER_SUBAGENT_PARENT_INIT_OK' : 'E2E_BROWSER_SUBAGENT_PARENT_INIT_FAILED', tabId: boundaryParentTabId, e2eBrowserTabAId: boundaryParentTabId, tabs: parentTabsBefore });"
           }
         }
       }
@@ -75,7 +70,7 @@
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "稳定制造共享 Node REPL 内核中的 runtime_scope=subagent 请求。"
+        "syntheticReason": "显式传递页面 URL 和主 Tab ID，子代理在独立 Worker 中验证当前对话的浏览器归属。"
       },
       "maxMatches": 1,
       "match": {
@@ -85,13 +80,8 @@
           "E2E_BROWSER_SUBAGENT_BOUNDARY_PARENT",
           "toolu_e2e_browser_subagent_parent_init"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_BROWSER_SUBAGENT_PARENT_INIT_OK"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_BROWSER_SUBAGENT_PARENT_INIT_OK"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -100,7 +90,7 @@
           "name": "Agent",
           "input": {
             "description": "Verify Browser Use in subagent",
-            "prompt": "E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD: list the conversation's Browser tabs and open one more with Node REPL as instructed. Reply exactly E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD_DONE after the checks pass.",
+            "prompt": "E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD: list the conversation's Browser tabs and open one more with Node REPL as instructed. Reply exactly E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD_DONE after the checks pass. E2E_BROWSER_FIXTURE_URL:{{browserFixtureUrl}} Parent tab facts: {\"e2eBrowserTabAId\":\"{{latestBrowserTabAId}}\"}.",
             "subagent_type": "general-purpose"
           }
         }
@@ -119,13 +109,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD"
-        ],
-        "bodyIncludes": [
-          "E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD",
-          "mcp__node_repl__js"
-        ],
+        "lastUserMessageIncludes": ["E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD"],
+        "bodyIncludes": ["E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD", "mcp__node_repl__js"],
         "bodyExcludes": [
           "toolu_e2e_browser_subagent_child_check",
           "Generate a concise title",
@@ -139,7 +124,7 @@
           "name": "mcp__node_repl__js",
           "input": {
             "title": "Child 在对话 Browser 中开 Tab",
-            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst { setupBrowserRuntime } = await import(pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href);\nif (globalThis.agent?.browsers == null) await setupBrowserRuntime({ globals: globalThis });\nconst ordinaryValue = 6 * 7;\nconst childBrowser = await agent.browsers.get('iab');\nconst tabsBefore = await childBrowser.tabs.list();\nconst seesParentTab = tabsBefore.some((tab) => tab.id === globalThis.boundaryParentTabId);\nconst childTab = await childBrowser.tabs.new();\nawait childTab.goto('{{browserFixtureUrl}}?child=1');\nawait childTab.playwright.getByLabel('State').fill('child-owned');\nconst childState = await childTab.playwright.getByRole('status').innerText();\nconst tabsAfter = await childBrowser.tabs.list();\nconst sharesConversationTabs = tabsAfter.some((tab) => tab.id === childTab.id) && tabsAfter.some((tab) => tab.id === globalThis.boundaryParentTabId);\n({ marker: ordinaryValue === 42 && seesParentTab && childState === 'child-owned' && sharesConversationTabs ? 'E2E_BROWSER_SUBAGENT_BOUNDARY_CHECKS_OK' : 'E2E_BROWSER_SUBAGENT_BOUNDARY_CHECKS_FAILED', ordinaryValue, seesParentTab, childState, childTabId: childTab.id, tabsAfter });"
+            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst { setupBrowserRuntime } = await import(pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href);\nif (globalThis.agent?.browsers == null) await setupBrowserRuntime({ globals: globalThis });\nconst ordinaryValue = 6 * 7;\nconst childBrowser = await agent.browsers.get('iab');\nconst tabsBefore = await childBrowser.tabs.list();\nconst seesParentTab = tabsBefore.some((tab) => tab.id === '{{latestBrowserTabAId}}');\nconst childTab = await childBrowser.tabs.new();\nawait childTab.goto('{{browserFixtureUrl}}?child=1');\nawait childTab.playwright.getByLabel('State').fill('child-owned');\nconst childState = await childTab.playwright.getByRole('status').innerText();\nconst tabsAfter = await childBrowser.tabs.list();\nconst sharesConversationTabs = tabsAfter.some((tab) => tab.id === childTab.id) && tabsAfter.some((tab) => tab.id === '{{latestBrowserTabAId}}');\n({ marker: ordinaryValue === 42 && seesParentTab && childState === 'child-owned' && sharesConversationTabs ? 'E2E_BROWSER_SUBAGENT_BOUNDARY_CHECKS_OK' : 'E2E_BROWSER_SUBAGENT_BOUNDARY_CHECKS_FAILED', ordinaryValue, seesParentTab, childState, childTabId: childTab.id, tabsAfter });"
           }
         }
       }
@@ -161,13 +146,8 @@
           "E2E_BROWSER_SUBAGENT_BOUNDARY_CHILD",
           "toolu_e2e_browser_subagent_child_check"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_BROWSER_SUBAGENT_BOUNDARY_CHECKS_OK"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_BROWSER_SUBAGENT_BOUNDARY_CHECKS_OK"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -204,8 +184,8 @@
           "id": "toolu_e2e_browser_subagent_parent_resume",
           "name": "mcp__node_repl__js",
           "input": {
-            "title": "主 Agent 复用原 Browser Tab",
-            "code": "const stateBeforeResume = await boundaryTab.playwright.getByRole('status').innerText();\nawait boundaryTab.playwright.getByLabel('State').fill('parent-after');\nconst parentTabsAfter = await boundaryBrowser.tabs.list();\nconst keepsParentTab = parentTabsAfter.some((tab) => tab.id === boundaryParentTabId) && boundaryTab.id === boundaryParentTabId;\nconst keepsChildTab = parentTabsAfter.some((tab) => tab.id !== boundaryParentTabId && String(tab.url ?? '').includes('child=1'));\n({ marker: stateBeforeResume === 'parent-before' && keepsParentTab && keepsChildTab ? 'E2E_BROWSER_SUBAGENT_PARENT_RESUME_OK' : 'E2E_BROWSER_SUBAGENT_PARENT_RESUME_FAILED', stateBeforeResume, tabId: boundaryTab.id, tabs: parentTabsAfter });"
+            "title": "主 Agent 按稳定 ID 找回原 Browser Tab",
+            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst { setupBrowserRuntime } = await import(pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href);\nif (globalThis.agent?.browsers == null) await setupBrowserRuntime({ globals: globalThis });\nconst boundaryBrowser = await agent.browsers.get('iab');\nconst boundaryParentTabId = '{{latestBrowserTabAId}}';\nconst boundaryTab = await boundaryBrowser.tabs.get(boundaryParentTabId);\nconst stateBeforeResume = await boundaryTab.playwright.getByRole('status').innerText();\nawait boundaryTab.playwright.getByLabel('State').fill('parent-after');\nconst parentTabsAfter = await boundaryBrowser.tabs.list();\nconst keepsParentTab = parentTabsAfter.some((tab) => tab.id === boundaryParentTabId) && boundaryTab.id === boundaryParentTabId;\nconst keepsChildTab = parentTabsAfter.some((tab) => tab.id !== boundaryParentTabId && String(tab.url ?? '').includes('child=1'));\n({ marker: stateBeforeResume === 'parent-before' && keepsParentTab && keepsChildTab ? 'E2E_BROWSER_SUBAGENT_PARENT_RESUME_OK' : 'E2E_BROWSER_SUBAGENT_PARENT_RESUME_FAILED', stateBeforeResume, tabId: boundaryTab.id, tabs: parentTabsAfter });"
           }
         }
       }
@@ -227,13 +207,8 @@
           "E2E_BROWSER_SUBAGENT_BOUNDARY_PARENT",
           "toolu_e2e_browser_subagent_parent_resume"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_BROWSER_SUBAGENT_PARENT_RESUME_OK"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "lastUserMessageIncludes": ["E2E_BROWSER_SUBAGENT_PARENT_RESUME_OK"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

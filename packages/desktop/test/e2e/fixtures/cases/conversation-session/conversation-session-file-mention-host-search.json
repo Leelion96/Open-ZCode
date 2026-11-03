@@ -2,7 +2,11 @@
   "version": 1,
   "caseName": "conversation-session-file-mention-host-search",
   "spec": "./test/e2e/conversation-session/conversation-session-file-mention-host-search.test.ts",
-  "noProviderRequests": true,
   "requests": [],
-  "fixtures": []
+  "providerRequestPolicy": "none",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-file-mention-host-search.json"
+  ],
+  "fileFixtures": []
 }

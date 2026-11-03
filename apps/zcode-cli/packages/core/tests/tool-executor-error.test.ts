@@ -39,6 +39,22 @@ describe("tool executor error projection", () => {
     expect(result.error?.message).toMatch(/\.\.\.$/);
   });
 
+  it("sends thrown error text to the model with line breaks, cut only past 10k chars", () => {
+    const multiline = `first line\n  second line\n${"z".repeat(600)}`;
+    const short = createErrorResult(agentToolCall(), new Error(multiline));
+    // UI/日志仍用折叠后的摘要；模型收到原文。
+    expect(short.error?.message).toHaveLength(500);
+    expect(stringifyToolResultOutput(short)).toBe(multiline);
+
+    const long = `${"h".repeat(6_000)}${"m".repeat(10_000)}${"t".repeat(6_000)}`;
+    const truncated = stringifyToolResultOutput(
+      createErrorResult(agentToolCall(), new Error(long)),
+    );
+    expect(truncated).toBe(
+      `${"h".repeat(5_000)}\n\n... [12000 characters truncated] ...\n\n${"t".repeat(5_000)}`,
+    );
+  });
+
   it("surfaces provider/model cause details for failed parent Agent tool calls", () => {
     const providerError = Object.assign(
       new Error("Model provider is not configured: old-provider"),

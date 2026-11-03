@@ -1,6 +1,6 @@
 # Browser Use Guest scope 冻结与绑定自愈规格
 
-> 状态：已实现
+> 状态：已实现（§5 human Browser tab：2026-10-23）
 > 适用范围：Desktop `desktop-continuous` 的 Browser / Browser Use `<webview>` guest。
 > 不适用：手机 `web-remote-replayable` 的独立恢复语义、relay/main 中的 session/stream 业务状态。
 
@@ -98,8 +98,64 @@ dispatch 前返回 `stale_guest`，不得把动作发送到 B。
 | BGR-006 | 一次 rebind 仍失败              | 有界 retry 后返回 `backend_unavailable`，tab shell 不泄漏   |
 | BGR-007 | local/remote 相同 path          | workspaceIdentity/remoteSessionId 不串，命令与 tab 互不可见 |
 
-## 5. 验证
+## 5. Human Browser tab（`browser:*`）
+
+Human Browser tab 指用户或 webview popup 打开、当前没有被 Agent 认领的 `browser:*` tab。main 侧判据：
+`tab.owner` 就是 `tab.userOwner`。
+
+### 5.1 scope
+
+- 侧栏渲染 human tab 时，`workspaceKey` 使用 tab 创建时冻结的 `tab.workspaceKey`，与 Browser Use tab
+  相同。当前 workspace 的 path 只用于执行和展示。
+- 原因：切换 workspace 的那一次 commit 里，workspace props 已是新值，侧栏 tabs 仍是旧 workspace 的
+  （tabs 在父级 effect 中才替换）。若 human tab 读当前 workspace，会以错误 scope attach，触发
+  `workspace-mismatch`。
+
+### 5.2 rebind 归属
+
+- human tab 的 guest 只由其所属 workspace 中已有的 Browser shell 创建。
+- main 对 human tab 的 rebind 只记录 `attachFailure`，不发送 `BrowserViewReady`。`BrowserViewReady` 只用于
+  Browser Use tab（Agent 创建或已认领）。
+- 所属 workspace 不可见时不 rebind。用户回到该 workspace、shell 重新挂载并 attach 后，main 再按恢复 URL
+  恢复页面。
+- 原因：renderer 把 `BrowserViewReady` 解释为 Browser Use 事件，会在当前 workspace 中为同一 tabId 新建
+  隐藏的 `browser-use` shell。该 shell 能 attach 成功，于是在用户看不到的 workspace 中重新加载页面。
+
+### 5.3 恢复 URL
+
+恢复 URL（renderer `lastRestorableUrl` / side pane `browserUrls`、main `cachedUrl`）只记录主框架**已提交**
+的 URL，即 guest `getURL()` 的值。
+
+- 导航开始前不写恢复 URL。`initialUrl` 和外部导航请求只是导航意图。
+- 一次导航结束后若没有提交（下载响应、`ERR_ABORTED`、`ERR_FAILED`），恢复 URL 回落为当前已提交的 URL。
+  `about:blank` 表示没有可恢复页面。
+- 主框架 `did-fail-load` 不写 `browserState.currentUrl`：失败导航没有提交，地址栏和错误态仍用
+  `validatedURL` 展示。
+- renderer 上报的 `restoreUrl` 只有一个来源 `lastRestorableUrl`，不得回退到 `currentUrl`。曾因回退
+  把失败导航的附件地址写进 main 的 `cachedUrl`，并随下一次恢复再次触发下载。
+- main 恢复（pageState 或 URL）结束后，`cachedUrl` 同样回落为 guest 已提交的 URL。
+- 网络错误页会提交 document，`getURL()` 返回失败的 URL，所以仍可恢复和重试。
+- 原因：`Content-Disposition: attachment` 的 URL 会开始下载，但页面不提交。若把它当作恢复 URL，每次
+  rebind 或 shell 重新挂载都会再下载一次。
+
+## 6. 验收用例（Human Browser tab）
+
+| Case    | 场景                                                 | 断言                                                          |
+| ------- | ---------------------------------------------------- | ------------------------------------------------------------- |
+| BGR-008 | human tab 属于 W1，界面切到 W2                       | attach 携带 W1，不发生 `workspace-mismatch`                   |
+| BGR-009 | human tab guest 被销毁或 scope 被拒绝                | main 不发送 `BrowserViewReady`；所属 shell 重新 attach 后恢复 |
+| BGR-010 | human tab 导航到附件 URL（下载、导航未提交）         | 恢复 URL 不变为附件 URL；重新挂载不再请求该 URL               |
+| BGR-011 | main 恢复的 URL 没有提交                             | `cachedUrl` 回落为已提交 URL，下次 rebind 不再请求该 URL      |
+| BGR-012 | human tab 主框架 `did-fail-load`（非 `ERR_ABORTED`） | 该 URL 不进入恢复状态；地址栏与错误态仍展示失败地址           |
+
+## 7. 验证
 
 实现必须通过受影响的 UI/main/IPC 单测、`pnpm typecheck`、`pnpm lint`。Windows Electron 真实回归需要
 覆盖 guest idle 后激活、新建 tab、workspace/task 切换和 `render-process-gone`，并确认桌面 continuous
 链路没有引入手机 replayable snapshot/queue 语义。
+
+### 附件导航错误展示
+
+Electron `will-download` 是下载开始的唯一事实源。主进程按 guest 身份向所属窗口发送 URL chain；界面仅对匹配 guest 和 URL 的 ERR_FAILED(-2) 清除导航错误，不屏蔽其他网络失败。下载事件与导航拒绝可任意先后到达；新导航清除上一轮匹配信息。下载保存及取消仍由 Electron 处理。
+
+验收：本地 attachment 响应只请求一次，不显示页面错误；普通网络失败仍显示错误；切换 workspace 不重复下载。桌面各系统共用此事件链，Web 不提供此桌面事件能力。

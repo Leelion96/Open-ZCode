@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-mcp-oauth-status-isolation",
+  "spec": "./test/e2e/conversation-session/conversation-session-mcp-oauth-status-isolation.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-mcp-oauth-status-isolation.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-mcp-oauth-status-isolation-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "upstream-mcp-oauth-status-isolation-direct-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "稳定触发用户级 stdio MCP 的真实 tools/call，避免依赖模型自行选择工具。"
+    },
+    {
+      "id": "upstream-mcp-oauth-status-isolation-http-call",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "证明 OAuth status refresh 后 stdio MCP tool_result 能进入 provider continuation，并继续选择普通 HTTP MCP。"
+    },
+    {
+      "id": "upstream-mcp-oauth-status-isolation-final",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "证明两类用户 MCP 的 tool_result 都能进入 provider continuation。"
+    }
+  ]
+}

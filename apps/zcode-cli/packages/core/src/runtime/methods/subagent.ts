@@ -36,6 +36,7 @@ import type { AgentRuntimeDeps } from "../types.js";
 import { toMcpToolName } from "../../mcp/index.js";
 import { createBorrowedSubagentMcpAccess } from "../../subagent/borrowed-mcp-port.js";
 import { createSubagentMessageSink } from "../../subagent/message-steering.js";
+import { latestAnnouncedEnvironment } from "./context-refresh.js";
 import {
   extractRequiredMcpServerNames,
   matchesRequiredMcpServer,
@@ -72,7 +73,21 @@ export function createDefaultSubagentPort(
     return undefined;
   }
 
+  const ownedRuntimes = new Set<AgentRuntime>();
   return createExploreSubagentPort({
+    closeOwnedRuntimes: async () => {
+      const results = await Promise.allSettled(
+        [...ownedRuntimes].map(async (runtime) => {
+          await runtime.close();
+          ownedRuntimes.delete(runtime);
+        }),
+      );
+      const errors = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (errors.length) throw new AggregateError(errors, "Subagent runtimes cleanup failed");
+      ownedRuntimes.clear();
+    },
     logger: this.logger,
     inactivityTimeoutMs: this.config.subagents?.inactivityTimeoutMs,
     autoBackgroundMs: this.config.subagents?.autoBackgroundMs,
@@ -166,9 +181,21 @@ export function createDefaultSubagentPort(
         const agentPrompt = [baseAgentPrompt, persistentMemory?.prompt]
           .filter((part): part is string => typeof part === "string" && part.length > 0)
           .join("\n\n");
+        const announcedEnvironment = latestAnnouncedEnvironment(
+          this.messageHistory.borrowReadOnlyRuntimeEntries(),
+        );
         const childRuntimeEnvInfo = {
           ...childEnvInfo,
-
+          // 父会话切目录后，起始快照的仓库属性已过期；只继承同一 cwd 的最近已接受环境。
+          // 附加目录属于父运行配置，child 不继承，不能随快照混入 envInfo。
+          ...(announcedEnvironment?.cwd === request.workingDirectory
+            ? {
+                platform: announcedEnvironment.platform,
+                shell: announcedEnvironment.shell,
+                osVersion: announcedEnvironment.osVersion,
+                isGitRepository: announcedEnvironment.isGitRepository,
+              }
+            : {}),
           cwd: request.workingDirectory,
         };
         const officialCuaServerNames = computeOfficialCuaServerNames(
@@ -335,10 +362,17 @@ export function createDefaultSubagentPort(
             // 可能晚于父 Tool/Turn 结束，只能作为独立 Trace 用 Link 保留因果关系。
             agentTelemetryCausationMode: request.background ? "linked_root" : "child",
             eventStore: this.eventStore,
+            // 日期公告取运行时时钟；child 继承父时钟，父子只有一个日期来源。
+            now: this.now,
             sessionStore: deps.sessionStore,
-            // 子 runtime 继承父的模型请求准入端口：subagent 的请求 provider 同样看得见，
-            // 它们该与父一样喂治理器信号（父是 observer 则子也是 observer）。
-            modelRequestAdmission: this.modelRequestAdmission,
+            // 共享宿主环境读取端口，只用于 child 内 cd 之后的环境探测；初始快照和指令都取父级传下的配置。
+            contextSourcePort: this.contextSourcePort,
+            // 子 runtime 的模型请求准入：装配方给了 subagent 工厂就用它（受闸门约束，同一父会话的
+            // subagent 共用一条队列）；没给则沿用父的端口。
+            // 修复原因：subagent 曾直接继承父的 observer（不排队、不看 Retry-After），一轮并行多个
+            // Agent 调用会放大成 1302 风暴（docs/dynamic-workflow/concurrency.md「Where the port is bound」）。
+            modelRequestAdmission:
+              deps.subagentModelRequestAdmission?.(this.sessionId) ?? this.modelRequestAdmission,
             modelFactory: childModelFactory,
             resolveEffectiveModelSelection: deps.resolveEffectiveModelSelection,
             // 子 runtime 自己仍使用 request.sessionId 做事件持久化和 trace 归档；对外阻塞交互
@@ -411,71 +445,73 @@ export function createDefaultSubagentPort(
           },
         );
 
-        const resumesExistingChild = request.resumeFromStore === true;
-        if (childBinding)
-          markTemporaryRuntimeSelection(
-            childRuntime as unknown as AgentRuntimeInternal,
-            offPeak?.ordinarySelection,
-          );
-        let previousSelection: ModelSelection | undefined;
-        if (resumesExistingChild) {
-          const persistedMessages = await this.sessionStore?.messages({
-            sessionID: request.sessionId,
-          });
-          // terminal resume 只恢复已有历史；模型初始化前失败不能变成一次空 session 创建。
-          if (!persistedMessages?.length) {
-            throw createCoreError(
-              CoreErrorType.SessionNotFound,
-              `No transcript found for agent ${request.agentId}`,
-              { recoverable: true },
-            );
-          }
-          const entries = await this.sessionStore?.sessionEntries?.({
-            sessionID: request.sessionId,
-            type: SESSION_ENTRY_MODEL_SELECTION,
-          });
-          previousSelection = parseModelSelectionValue(entries?.at(-1)?.data);
-          await childRuntime.resumeFromStore({
-            persistedMessages,
-            traceContext: request.traceContext,
-          });
-          // 恢复只导入历史；本轮 profile 选出的模型仍是执行权威，并更新冷恢复所用的选择记录。
-          await persistRuntimeModelSelection(
-            childRuntime as unknown as AgentRuntimeInternal,
-            childSelection,
-          );
-        } else {
-          // 父会话过去先发布 SubagentSpawned，child 的首轮 executeTurn 才落库。
-          // 并发派生时目录查询会在两者之间读到少一个 child。这里把持久化提升为发布前闸门。
-          await childRuntime.ensureSessionPersistedForExternalActivity(request.prompt, {
-            traceContext: request.traceContext,
-          });
-        }
-        await notifySessionReady();
-        if (
-          !resumesExistingChild ||
-          (previousSelection && !sameModelSelection(previousSelection, childSelection))
-        ) {
-          // 同模型恢复不重复插入分隔线；配置变化复用现有事件和 transcript 记录。
-          childRuntime.recordPendingModelChange({
-            ...(previousSelection
-              ? {
-                  fromModel: previousSelection,
-                  fromModelLabel: `${previousSelection.providerId}/${previousSelection.modelId}`,
-                }
-              : {}),
-            toModel: childSelection,
-            toModelLabel: `${childSelection.providerId}/${childSelection.modelId}`,
-          });
-          await childRuntime.emitModelSelected({
-            modelSelection: childSelection,
-            effectiveReasoningLevel: childModel.options.reasoningLevel,
-            previousModelSelection: previousSelection ?? null,
-            traceContext: request.traceContext,
-          });
-        }
-        request.registerMessageSink?.(createSubagentMessageSink(childRuntime, request));
+        // 已完成的 child 仍可能拥有后台 Bash、title/MCP 等工作；父 session 关闭时仍需找到它。
+        ownedRuntimes.add(childRuntime);
         try {
+          const resumesExistingChild = request.resumeFromStore === true;
+          if (childBinding)
+            markTemporaryRuntimeSelection(
+              childRuntime as unknown as AgentRuntimeInternal,
+              offPeak?.ordinarySelection,
+            );
+          let previousSelection: ModelSelection | undefined;
+          if (resumesExistingChild) {
+            const persistedMessages = await this.sessionStore?.messages({
+              sessionID: request.sessionId,
+            });
+            // terminal resume 只恢复已有历史；模型初始化前失败不能变成一次空 session 创建。
+            if (!persistedMessages?.length) {
+              throw createCoreError(
+                CoreErrorType.SessionNotFound,
+                `No transcript found for agent ${request.agentId}`,
+                { recoverable: true },
+              );
+            }
+            const entries = await this.sessionStore?.sessionEntries?.({
+              sessionID: request.sessionId,
+              type: SESSION_ENTRY_MODEL_SELECTION,
+            });
+            previousSelection = parseModelSelectionValue(entries?.at(-1)?.data);
+            await childRuntime.resumeFromStore({
+              persistedMessages,
+              traceContext: request.traceContext,
+            });
+            // 恢复只导入历史；本轮 profile 选出的模型仍是执行权威，并更新冷恢复所用的选择记录。
+            await persistRuntimeModelSelection(
+              childRuntime as unknown as AgentRuntimeInternal,
+              childSelection,
+            );
+          } else {
+            // 父会话过去先发布 SubagentSpawned，child 的首轮 executeTurn 才落库。
+            // 并发派生时目录查询会在两者之间读到少一个 child。这里把持久化提升为发布前闸门。
+            await childRuntime.ensureSessionPersistedForExternalActivity(request.prompt, {
+              traceContext: request.traceContext,
+            });
+          }
+          await notifySessionReady();
+          if (
+            !resumesExistingChild ||
+            (previousSelection && !sameModelSelection(previousSelection, childSelection))
+          ) {
+            // 同模型恢复不重复插入分隔线；配置变化复用现有事件和 transcript 记录。
+            childRuntime.recordPendingModelChange({
+              ...(previousSelection
+                ? {
+                    fromModel: previousSelection,
+                    fromModelLabel: `${previousSelection.providerId}/${previousSelection.modelId}`,
+                  }
+                : {}),
+              toModel: childSelection,
+              toModelLabel: `${childSelection.providerId}/${childSelection.modelId}`,
+            });
+            await childRuntime.emitModelSelected({
+              modelSelection: childSelection,
+              effectiveReasoningLevel: childModel.options.reasoningLevel,
+              previousModelSelection: previousSelection ?? null,
+              traceContext: request.traceContext,
+            });
+          }
+          request.registerMessageSink?.(createSubagentMessageSink(childRuntime, request));
           return await childRuntime.executeTurn(request.prompt, undefined, {
             ...(childBinding
               ? {
@@ -499,20 +535,20 @@ export function createDefaultSubagentPort(
             reason: cancelled ? "subagent_cancelled" : "subagent_terminal",
             traceContext: request.traceContext,
           });
-          if (cancelled) {
-            await childRuntime.cancelRunningRuntimeBackgroundTasks({
-              reason: "subagent_cancelled",
-              traceContext: request.traceContext,
-            });
-          }
-          await childBrowserControlPort
-            ?.closeSession?.({ sessionId: request.sessionId, traceContext: request.traceContext })
-            .catch((error: unknown) => {
-              this.logger?.warn("Subagent browser session cleanup failed", {
+          // 执行结果与资源释放分开；失败保留句柄，最终 owner close 依据当时释放结果判断。
+          const released = cancelled ? childRuntime.close() : childRuntime.retire();
+          const release = released.then(
+            () => {
+              ownedRuntimes.delete(childRuntime);
+            },
+            (error: unknown) =>
+              this.logger?.warn("Subagent resource cleanup pending", {
+                event: "subagent.cleanup.pending",
+                childSessionId: request.sessionId,
                 error: error instanceof Error ? error.message : String(error),
-                event: "browser.session_cleanup.failed",
-              });
-            });
+              }),
+          );
+          if (cancelled || !childRuntime.hasResidencyBlockingWork()) await release;
         }
       } finally {
         childBinding?.release();

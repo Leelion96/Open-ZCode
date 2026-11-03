@@ -1,0 +1,27 @@
+{
+  "builtinFile": "../zcode-builtin.json",
+  "providerRules": [
+    {
+      "providerId": "test-minimax-api",
+      "templateId": "minimax",
+      "config": {
+        "group": "standard-personal",
+        "access": {
+          "type": "api-key",
+          "apiKey": ""
+        }
+      }
+    },
+    {
+      "providerId": "test-minimax-coding-plan",
+      "templateId": "minimax-m-plan-cn",
+      "config": {
+        "group": "standard-personal",
+        "access": {
+          "type": "api-key",
+          "apiKey": ""
+        }
+      }
+    }
+  ]
+}

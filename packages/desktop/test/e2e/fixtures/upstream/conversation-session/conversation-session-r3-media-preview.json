@@ -5,12 +5,12 @@
   "fixtures": [
     {
       "id": "r3-media-title",
-      "description": "\u6807\u9898",
+      "description": "标题",
       "metadata": {
         "kind": "common",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "\u6807\u9898\u4e0d\u5c5e\u4e8e\u65ad\u8a00"
+        "syntheticReason": "标题不属于断言"
       },
       "maxMatches": 8,
       "match": {
@@ -20,22 +20,20 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "r3-media-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"R3 media preview\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"r3-media-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"R3 media preview\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {
       "id": "r3-media-main",
-      "description": "\u5176\u5b83",
+      "description": "其它",
       "metadata": {
         "kind": "main",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "\u9996\u53d1/fork/edit"
+        "syntheticReason": "首发/fork/edit"
       },
       "maxMatches": 10,
       "match": {

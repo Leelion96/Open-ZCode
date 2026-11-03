@@ -13,7 +13,7 @@ import {
   ModelConfigRules,
   type ZhipuAccountAccessConfig,
   type ModelId,
-  type ProviderConfig,
+  ProviderConfig,
   type ProviderConfigRule,
   ProviderConfigMap,
   type ProviderTemplateMap,
@@ -205,7 +205,28 @@ export class ProviderConfigResolver {
         : undefined;
       return template ? template.overlay(personal) : personal;
     });
-    const effectiveProviders = effectiveBuiltinProviders.overlay(templatePersonalProviders);
+    // 旧版模型配置迁移可能只保留 API 地址，缺失 templateId。只补展示素材，
+    // 不补整份模板，避免更改用户的模型成员、认证或请求行为。
+    const templateLogos = new Map<string, ProviderConfig["logo"]>();
+    for (const [, template] of providerTemplates?.entries() ?? []) {
+      const { api, logo } = template.config;
+      if (!api?.type || !api.baseUrl || !logo) continue;
+      const key = `${api.type}:${api.baseUrl.replace(/\/+$/, "")}`;
+      if (templateLogos.has(key) && templateLogos.get(key)?.key !== logo.key) {
+        templateLogos.set(key, undefined);
+      } else if (!templateLogos.has(key)) {
+        templateLogos.set(key, logo);
+      }
+    }
+    const effectiveProviders = effectiveBuiltinProviders
+      .overlay(templatePersonalProviders)
+      .mapConfigs((config) => {
+        if (config.logo !== undefined || !config.api?.type || !config.api.baseUrl) return config;
+        const logo = templateLogos.get(
+          `${config.api.type}:${config.api.baseUrl.replace(/\/+$/, "")}`,
+        );
+        return logo ? config.overlay(new ProviderConfig({ logo })) : config;
+      });
     const effectiveModelRules = ModelConfigRules.composeEffective(
       input.zcodeBuiltinModelRules,
       input.personalModels,

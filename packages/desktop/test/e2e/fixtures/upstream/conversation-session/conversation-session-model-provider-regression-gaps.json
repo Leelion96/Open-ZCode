@@ -4,6 +4,29 @@
   "spec": "./test/e2e/conversation-session/conversation-session-model-provider-regression-gaps.test.ts",
   "fixtures": [
     {
+      "id": "conversation-session-model-provider-regression-gaps-title-sidecar",
+      "description": "目录缺口测试的非流式标题。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "真实回放中标题包含原提示的 E2E marker，被正文 matcher 接管而返回 SSE；显式标题 matcher 优先并返回非流式 JSON。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
       "id": "model-provider-regression-gaps-main",
       "description": "目录缺口普通消息的确定性完成响应。",
       "metadata": {
@@ -17,12 +40,14 @@
         "method": "POST",
         "pathIncludes": "/messages",
         "bodyIncludes": ["E2E_", "upstream-e2e-ok"],
-        "bodyExcludes": ["E2E_SLOW_STREAM"]
+        "bodyExcludes": ["E2E_SLOW_STREAM", "Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
-        "headers": { "content-type": "application/json; charset=utf-8" },
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
         "text": {
           "id": "model-provider-regression-gaps-main",
           "inputTokens": 128,
@@ -44,7 +69,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": ["E2E_SLOW_STREAM", "upstream-e2e-ok"]
+        "bodyIncludes": ["E2E_SLOW_STREAM", "upstream-e2e-ok"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,

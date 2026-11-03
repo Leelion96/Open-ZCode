@@ -1,6 +1,7 @@
 import { mkdirSync, appendFileSync } from "node:fs";
-import { join } from "node:path";
-import { formatTimestamp } from "@zcode/shared";
+import { mkdir, appendFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { createLocalTtftLogQueue, formatTimestamp } from "@zcode/shared";
 import { cleanupExpiredLogFiles, LOG_RETENTION_DAYS } from "./logRetention.js";
 import { getAppConfigDir, maybeThrowInjectedFsFault } from "@zcode/services/node";
 
@@ -28,6 +29,25 @@ if (logRetentionResult.failedFiles.length > 0) {
 }
 
 type LogLevel = "debug" | "info" | "warn" | "error";
+
+let reportedTtftDrops = 0;
+const localTtftLogs = createLocalTtftLogQueue(async (entries, dropped) => {
+  const files = new Map<string, string>();
+  for (const entry of entries) files.set(entry.path, (files.get(entry.path) ?? "") + entry.line);
+  for (const [path, contents] of files) {
+    await mkdir(dirname(path), { recursive: true });
+    maybeThrowInjectedFsFault({ operation: "appendFile", path });
+    const loss =
+      dropped > reportedTtftDrops
+        ? `[ttft] ${JSON.stringify({ event: "ttft.log.dropped", count: dropped })}\n`
+        : "";
+    await appendFile(path, loss + contents, "utf8");
+    reportedTtftDrops = dropped;
+  }
+});
+export async function flushLocalTtftLogs(): Promise<void> {
+  await localTtftLogs.flush();
+}
 
 function isBrokenPipeError(error: unknown): boolean {
   return (
@@ -77,8 +97,13 @@ function write(level: LogLevel, source: string, ...args: unknown[]) {
   const message = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
   const line = `[${ts}] [${level}] [pid:${pid}] [${source}] ${message}\n`;
   const logDir = getLogDir();
-  mkdirSync(logDir, { recursive: true });
   const filePath = join(logDir, `${formatDate(now)}.log`);
+  // TTFT 会经过 renderer IPC 和 host relay；只分流专用标记，避免观测同步写盘拖慢被测链路。
+  if (message.includes("[ttft] ")) {
+    localTtftLogs.enqueue({ path: filePath, line });
+    return;
+  }
+  mkdirSync(logDir, { recursive: true });
 
   // 同时保留 console 输出，方便开发调试；console 也加时间戳和 PID，与文件格式对齐
   safeConsoleWrite(level, `[${ts}] [pid:${pid}] [${source}]`, ...args);

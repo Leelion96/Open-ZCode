@@ -7,7 +7,6 @@ flowchart TD
   entry --> ask_1_1
   ask_1_1 --> ask_2_1
   ask_2_1 -->|"branch"| ask_3_1
-  ask_2_1 -->|"jump (return)"| sink
   ask_3_1 -->|"join"| sink
   classDef endpoint fill:#eeeeef,stroke:#9a9aa5,color:#555566;
   class entry,sink endpoint;

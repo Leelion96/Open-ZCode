@@ -124,6 +124,8 @@ export interface RemoteConnectionProgress {
   profileId?: string;
   name?: string;
   logs: import("@/hooks/useRemoteConnectionLogs.js").RemoteConnectionLogEntry[];
+  /** 本次连接要打开的项目目录；有值时阶段多一步“打开项目目录”，与连接屏一致。 */
+  workspacePath?: string;
   error: string;
   reason: string;
   waiting: boolean;

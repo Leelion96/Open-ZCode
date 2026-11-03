@@ -4,6 +4,29 @@
   "spec": "./test/e2e/conversation-session/conversation-session-stop-empty.test.ts",
   "fixtures": [
     {
+      "id": "conversation-session-stop-empty-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
       "id": "upstream-stop-empty-running-slow-stream",
       "description": "Stop empty queue 首轮慢流，稳定制造 queue=0 的 running 窗口。",
       "metadata": {
@@ -16,17 +39,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_SLOW_STREAM",
-          "E2E_STOP_EMPTY_RUNNING"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_STOP_EMPTY_RUNNING"
-        ]
+        "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_STOP_EMPTY_RUNNING"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_STOP_EMPTY_RUNNING"]
       },
       "response": {
         "statusCode": 200,
@@ -87,16 +102,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_STOP_EMPTY_NEXT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_STOP_EMPTY_NEXT"
-        ]
+        "bodyIncludes": ["E2E_STOP_EMPTY_NEXT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_STOP_EMPTY_NEXT"]
       },
       "response": {
         "statusCode": 200,
@@ -121,16 +129,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_STOP_EMPTY_TOOLCALL_RUNNING"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_STOP_EMPTY_TOOLCALL_RUNNING"
-        ]
+        "bodyIncludes": ["E2E_STOP_EMPTY_TOOLCALL_RUNNING"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_STOP_EMPTY_TOOLCALL_RUNNING"]
       },
       "response": {
         "statusCode": 200,
@@ -157,16 +158,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_STOP_EMPTY_TOOLCALL_NEXT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ],
-        "lastUserMessageIncludes": [
-          "E2E_STOP_EMPTY_TOOLCALL_NEXT"
-        ]
+        "bodyIncludes": ["E2E_STOP_EMPTY_TOOLCALL_NEXT"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_STOP_EMPTY_TOOLCALL_NEXT"]
       },
       "response": {
         "statusCode": 200,

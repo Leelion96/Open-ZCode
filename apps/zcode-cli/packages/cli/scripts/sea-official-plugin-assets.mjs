@@ -53,7 +53,7 @@ export const officialSeaPlugins = [
       "skills/visualize/assets/standalone-shell.js",
     ],
     rootPath: join("packages", "visualize-plugin"),
-    version: "0.1.0",
+    version: "0.1.1",
   },
   {
     // node_repl 宿主：Browser Use 与 Computer Use 共用的运行时产物，自己不是面向用户的插件
@@ -64,7 +64,7 @@ export const officialSeaPlugins = [
     requiresRuntime: true,
     requiredRuntimePaths: ["dist/mcp/server.js"],
     rootPath: join("packages", "node-repl-host"),
-    version: "0.6.1",
+    version: "0.7.0",
   },
   {
     marketplace: "zcode-plugins-official",
@@ -89,7 +89,7 @@ export const officialSeaPlugins = [
     ],
     rootPath: join("packages", "documents-plugin"),
     // 修复原因：SEA manifest 必须与 package、plugin manifest 和官方 definition 同步，避免发布产物嵌入旧版本。
-    version: "0.2.0",
+    version: "0.2.1",
   },
   {
     marketplace: "zcode-plugins-official",
@@ -115,7 +115,7 @@ export const officialSeaPlugins = [
     ],
     rootPath: join("packages", "pdf-plugin"),
     // 修复原因：SEA manifest 必须与 package、plugin manifest 和官方 definition 同步，避免发布产物嵌入旧版本。
-    version: "0.2.1",
+    version: "0.2.2",
   },
   {
     marketplace: "zcode-plugins-official",
@@ -131,7 +131,7 @@ export const officialSeaPlugins = [
     ],
     rootPath: join("packages", "presentations-plugin"),
     // 修复原因：SEA manifest 必须与 package、plugin manifest 和官方 definition 同步，避免发布产物嵌入旧版本。
-    version: "0.2.0",
+    version: "0.2.1",
   },
   {
     marketplace: "zcode-plugins-official",
@@ -147,7 +147,7 @@ export const officialSeaPlugins = [
     ],
     rootPath: join("packages", "spreadsheets-plugin"),
     // 修复原因：SEA manifest 必须与 package、plugin manifest 和官方 definition 同步，避免发布产物嵌入旧版本。
-    version: "0.2.0",
+    version: "0.2.1",
   },
   {
     // browser-use 使用真实 node_repl MCP runtime，SEA 必须校验并嵌入 server.js。
@@ -209,6 +209,22 @@ export const officialSeaPlugins = [
     requiredSeedPaths: ["skills/zcode-configuration-guide/SKILL.md"],
     rootPath: join("packages", "zcode-guide-plugin"),
     version: "0.3.0",
+  },
+  {
+    // skill + start.sh 模板 + 零依赖的 zcode-site CLI，加上 Sites 面板（dist/ 下的 MCP server 与页面，
+    // 由插件自己的 build 脚本构建）。版本与 package.json / plugin.json / official-plugin-definitions.ts 同步 bump。
+    marketplace: "zcode-plugins-official",
+    name: "zcode-site",
+    packageName: "@zcode/zcode-site-plugin",
+    requiresRuntime: true,
+    requiredRuntimePaths: ["dist/server.mjs", "dist/ui/panel.html"],
+    requiredSeedPaths: [
+      "scripts/zcode-site.mjs",
+      "scripts/stage.mjs",
+      "skills/site-deploy/SKILL.md",
+    ],
+    rootPath: join("packages", "zcode-site-plugin"),
+    version: "0.4.2",
   },
   // superpowers 已从内置插件下线，改走 UI 推荐区按需安装；这里不再打入 SEA 资源清单。
 ];

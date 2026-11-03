@@ -154,14 +154,13 @@ export function useWorkspaceActiveTaskState({
     activeTaskProvider,
     selectedProvider,
   );
-  const activeTaskBaseTitle = resolvedActiveTaskMeta?.title?.trim()
+  // 切换任务后 Host 元数据异步返回；用“新建任务”填补空标题会先闪占位再跳成真标题。
+  // 等待时保持标题为空，不保留上个任务的标题，也不增加另一份标题缓存。
+  const activeTaskTitle = resolvedActiveTaskMeta?.title?.trim()
     ? resolvedActiveTaskMeta.title
-    : intl.formatMessage({
-        id: resolvedActiveTaskMeta?.forkedFromTaskId
-          ? "taskList.forkedUntitled"
-          : "taskList.newThread",
-      });
-  const activeTaskTitle = activeTaskBaseTitle;
+    : resolvedActiveTaskMeta?.forkedFromTaskId
+      ? intl.formatMessage({ id: "taskList.forkedUntitled" })
+      : "";
   const taskNativeSessionLogFile = useTaskNativeSessionLogFile(
     workspaceAbsPath,
     activeTaskId,

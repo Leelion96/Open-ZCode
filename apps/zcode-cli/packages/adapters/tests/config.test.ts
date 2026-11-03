@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { createConfig, updateUiLocaleInFileConfig } from "../src/config/index.js";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createConfig,
+  resolveWorkspaceStorageDir,
+  updateUiLocaleInFileConfig,
+} from "../src/config/index.js";
 import { parseEnvConfig } from "../src/config/env-config.adapter.js";
 import {
   addSuppressedBuiltinInFileConfig,
@@ -14,6 +18,142 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 describe("config adapters", () => {
+  it.each(["zcode.json", ".zcode/config.json", "explicit-project.json"])(
+    "restricts project runtime parameters while retaining extension settings in %s",
+    async (fileName) => {
+      const root = await mkdtemp(join(tmpdir(), "zcode-project-runtime-boundary-"));
+      const userPath = join(root, ".zcode", "cli", "config.json");
+      const projectPath = join(root, fileName);
+      const skillPath = join(root, "skills", "demo", "SKILL.md");
+      const commandPath = join(root, "commands", "demo.md");
+      const userConfig = {
+        network: { httpProxy: "http://user.example:8080", caCertFile: join(root, "user-ca.pem") },
+        storage: { dir: join(root, "user-storage"), sessionDbPath: join(root, "user.sqlite") },
+        permission: { mode: "plan", autoApproveHighRisk: false },
+        plugins: {
+          dirs: [join(root, "installed-plugin")],
+          enabledPlugins: { "demo@fixture": false },
+        },
+      };
+      const projectConfig = {
+        network: {
+          httpProxy: "http://project.example:8080",
+          caCertFile: "./repo-ca.pem",
+          noProxy: "*",
+          timeout: 1,
+        },
+        storage: { dir: "./fake-user-storage", sessionDbPath: "./fake-session.sqlite" },
+        permission: { mode: "yolo", autoApproveHighRisk: true },
+        modelStream: { idleTimeoutMs: 1 },
+        features: { mcp: false, subagent: false, memory: false, skill: false },
+        memory: { use: false },
+        logging: { level: "error", format: "text" },
+        ui: { locale: "zh-CN", theme: "light" },
+        toolConcurrency: { maxConcurrency: 1 },
+        modelAnomalyGuard: { toolCallWarningThreshold: 1 },
+        skills: { enabled: false, roots: ["./extra-skills"], [skillPath]: { enable: false } },
+        command: { [commandPath]: { enable: false } },
+        plugins: {
+          enabled: false,
+          dirs: ["./fake-plugin"],
+          suppressedBuiltins: ["builtin@fixture"],
+          extraKnownMarketplaces: {
+            fake: { source: { source: "directory", path: "./fake-market" } },
+          },
+          enabledPlugins: { "demo@fixture": true },
+          options: { "demo@fixture": { format: "compact" } },
+        },
+        mcp: { servers: { demo: { type: "stdio", command: "node", cwd: "./tools" } } },
+        hooks: {
+          events: {
+            SessionStart: [{ hooks: [{ type: "command", command: "echo project-hook" }] }],
+          },
+        },
+      };
+      try {
+        vi.stubEnv("HOME", root);
+        vi.stubEnv("USERPROFILE", root);
+        await mkdir(join(root, ".git"));
+        await mkdir(join(root, ".zcode", "cli"), { recursive: true });
+        await writeFile(userPath, JSON.stringify(userConfig));
+        await writeFile(projectPath, JSON.stringify(projectConfig));
+        const baseline = createConfig({ env: {}, userConfigPath: userPath });
+        const result = createConfig({
+          env: {},
+          userConfigPath: userPath,
+          workingDirectory: root,
+          ...(fileName === "explicit-project.json" ? { projectConfigPath: projectPath } : {}),
+        });
+        for (const field of [
+          "network",
+          "storage",
+          "permission",
+          "modelStream",
+          "features",
+          "memory",
+          "logging",
+          "ui",
+          "toolConcurrency",
+          "modelAnomalyGuard",
+          "skills",
+        ] as const) {
+          expect(result.config[field], field).toEqual(baseline.config[field]);
+        }
+        expect(result.config.plugins).toEqual({
+          ...baseline.config.plugins,
+          enabledPlugins: { "demo@fixture": true },
+          options: { "demo@fixture": { format: "compact" } },
+        });
+        expect(result.config.mcp.servers.demo).toMatchObject({
+          command: "node",
+          cwd: join(root, "tools"),
+        });
+        expect(result.sources.mcp.serverSources.demo).toBe("project");
+        expect(result.config.hooks).toEqual(baseline.config.hooks);
+        expect(result.sources.project.workspaceHookSnapshot).toBeDefined();
+        expect(result.config.skillOverrides[skillPath]).toEqual({ enable: false });
+        expect(result.config.commandOverrides[commandPath]).toEqual({ enable: false });
+        expect(result.sources.project.hasUiLocale).toBe(false);
+        expect(result.sources.project.hasUiTheme).toBe(false);
+        expect(resolveWorkspaceStorageDir({ env: {}, workingDirectory: root })).toBe(
+          userConfig.storage.dir,
+        );
+      } finally {
+        vi.unstubAllEnvs();
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("ignores invalid project runtime fields before validating extension settings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zcode-project-runtime-invalid-"));
+    const projectPath = join(root, "zcode.json");
+    const skillPath = join(root, "SKILL.md");
+    try {
+      await mkdir(join(root, ".git"));
+      await writeFile(
+        projectPath,
+        JSON.stringify({
+          network: { caCertFile: 123 },
+          storage: null,
+          permission: { mode: "invalid" },
+          skills: { enabled: "invalid", roots: 123, [skillPath]: { enable: false } },
+          plugins: { dirs: 123, enabled: "invalid", enabledPlugins: { "demo@fixture": true } },
+          mcp: { servers: { demo: { type: "http", url: "https://example.com/mcp" } } },
+        }),
+      );
+      const result = createConfig({ env: {}, skipUserConfig: true, workingDirectory: root });
+      expect(result.sources.project.loaded).toBe(true);
+      expect(result.sources.project.diagnostics).toEqual([]);
+      expect(result.config.network.caCertFile).toBeUndefined();
+      expect(result.config.mcp.servers.demo).toMatchObject({ url: "https://example.com/mcp" });
+      expect(result.config.plugins.enabledPlugins["demo@fixture"]).toBe(true);
+      expect(result.config.skillOverrides[skillPath]).toEqual({ enable: false });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("migrates the legacy official CUA plugin id to the canonical id", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-config-cua-identity-"));
     const configPath = join(dir, "config.json");
@@ -189,6 +329,7 @@ describe("config adapters", () => {
         workspacePath,
         JSON.stringify({
           plugins: {
+            dirs: ["./workspace-plugin", join(dir, "absolute-workspace-plugin")],
             enabledPlugins: {
               "workspace-plugin@fixture": false,
             },
@@ -241,6 +382,35 @@ describe("config adapters", () => {
       await rm(dir, { force: true, recursive: true });
     }
   });
+
+  it.each(["zcode.json", ".zcode/config.json", "explicit-project.json"])(
+    "ignores plugin directories from project config %s",
+    async (fileName) => {
+      const dir = await mkdtemp(join(tmpdir(), "zcode-project-plugin-dirs-"));
+      const projectConfigPath = join(dir, fileName);
+      try {
+        await mkdir(join(dir, ".git"));
+        await mkdir(join(dir, ".zcode"));
+        await writeFile(
+          projectConfigPath,
+          JSON.stringify({ plugins: { dirs: ["./plugin", join(dir, "absolute-plugin")] } }),
+        );
+        const result = createConfig({
+          env: {},
+          skipUserConfig: true,
+          ...(fileName === "explicit-project.json"
+            ? { projectConfigPath }
+            : { workingDirectory: dir }),
+        });
+        expect(result.sources.project.loaded).toBe(true);
+        expect(result.config.plugins.dirs).toEqual([]);
+        expect(result.sources.plugins.dirs.workspace).toEqual([]);
+        expect(JSON.parse(await readFile(projectConfigPath, "utf8")).plugins.dirs).toHaveLength(2);
+      } finally {
+        await rm(dir, { force: true, recursive: true });
+      }
+    },
+  );
 
   it("keeps Marketplace declarations in the User config layer", async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-config-workspace-marketplaces-"));
@@ -1195,8 +1365,8 @@ describe("config adapters", () => {
       await writeFile(
         projectConfigPath,
         JSON.stringify({
-          ui: {
-            theme: "sepia",
+          hooks: {
+            enabled: "invalid",
           },
         }),
       );
@@ -1211,7 +1381,7 @@ describe("config adapters", () => {
       expect(result.sources.project.diagnostics).toEqual([
         expect.objectContaining({
           code: "config_file_invalid",
-          message: expect.stringContaining("ui.theme: Invalid option: expected one of"),
+          message: expect.stringContaining("hooks.enabled: Invalid input: expected boolean"),
           severity: "error",
         }),
       ]);

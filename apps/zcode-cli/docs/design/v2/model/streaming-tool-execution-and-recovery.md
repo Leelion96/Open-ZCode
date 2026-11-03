@@ -50,9 +50,11 @@ This does not change scheduling, persistence timing, or UI ordering.
 
 End-of-stream fallback and synthetic recovery retain the existing behavior of
 allocating a new part ID. The call ID and declaration index still identify the
-same model declaration. Reusing the first part ID would preserve its original
-SQLite position: a fallback Read that finishes later could then be overwritten
-by an older Read snapshot during file-state hydration.
+same model declaration. File-state hydration replays snapshots within one
+assistant in live write order (`snapshotIndex` in the snapshot metadata, assigned
+by the executor when the tool records the snapshot), so a fallback Read that
+writes later still wins over an older snapshot. Snapshots without
+`snapshotIndex` keep their physical order.
 
 ```text
 early call -> first part (pending / running)
@@ -62,7 +64,7 @@ early call -> first part (pending / running)
                          +--------------------------------+----------------+
                          v                                                 v
              model hydration: last part per call             file-state hydration:
-             -> declaration order for calls/results          unchanged physical order
+             -> declaration order for calls/results          snapshotIndex order
 ```
 
 Pending persistence remains before execution. Model hydration selects the last

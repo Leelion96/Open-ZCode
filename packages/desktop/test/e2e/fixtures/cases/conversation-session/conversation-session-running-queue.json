@@ -13,41 +13,41 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "running queue 需要 active turn 保持 streaming，真实模型可能过快完成。"
+      "syntheticReason": "真实首轮输出后保持流；队列交互全部结束再由用户 Stop 收口，不靠延时或自然完成跳过断言。"
     },
     {
       "id": "upstream-running-queue-second-queued-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "该 queued text 的产品语义是不打断当前轮且暂不发送；fixture 只覆盖 marker 合同。"
     },
     {
       "id": "upstream-running-queue-third-queued-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "该 queued text 的产品语义是不打断当前轮且暂不发送；fixture 只覆盖 marker 合同。"
     },
     {
       "id": "upstream-running-queue-fourth-queued-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "该 queued text 的产品语义是不打断当前轮且暂不发送；fixture 只覆盖 marker 合同。"
     },
     {
       "id": "upstream-running-queue-fifth-queued-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "该 queued text 的产品语义是不打断当前轮且暂不发送；fixture 只覆盖 marker 合同。"
     },
     {
       "id": "upstream-running-queue-goal-queued-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "running 中 /goal 只进入本地 queue，不能立即触发 provider 请求。"
     }
   ]

@@ -19,12 +19,10 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "upstream-background-file-diff-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"Background File Diff E2E\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-background-file-diff-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Background File Diff E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {
@@ -40,10 +38,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_BACKGROUND_FILE_DIFF",
-          "background-file-diff-e2e/result.md"
-        ],
+        "bodyIncludes": ["E2E_BACKGROUND_FILE_DIFF", "background-file-diff-e2e/result.md"],
         "bodyExcludes": [
           "Async agent launched successfully",
           "Generate a concise title",
@@ -159,10 +154,7 @@
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "<task-notification>",
-          "E2E_BACKGROUND_FILE_DIFF_CHILD_DONE"
-        ]
+        "lastUserMessageIncludes": ["<task-notification>", "E2E_BACKGROUND_FILE_DIFF_CHILD_DONE"]
       },
       "response": {
         "statusCode": 200,

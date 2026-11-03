@@ -25,8 +25,7 @@ import {
  * 覆盖边界（有意划清，避免声称过头）：
  * - 覆盖 renderer 侧的通知路由、真实 workspace 切换时机、side pane memory 持久化，以及 IPC 投递；
  * - 不覆盖 main 侧从 tab.owner 拼装 payload 的那一步 —— 通知在这里由测试直接注入。
- *   字段拼装由 packages/desktop/test/browserCloseTabNotification.test.ts 逐字段守，
- *   「关闭时确实带上了 owner」由 browserGuestManager.test.ts 的 BTL23/BTL24 守。
+ *   原字段拼装与 tab.owner 单测已退役；这两项独立断言仍是覆盖缺口，不能归入本 E2E。
  */
 describe("Browser tab 跨 workspace 关闭通知 E2E", () => {
   after(async () => {

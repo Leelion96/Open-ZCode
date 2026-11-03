@@ -143,10 +143,17 @@ if [ "${SKIP_DRIVER_PREFETCH:-0}" != "1" ]; then
     "${IMAGE_NAME}:latest" \
     bash -lc '
       set -euo pipefail
-      version="${CHROMEDRIVER_VERSION:-$(node -e "const { electronToChromium } = require(\"electron-to-chromium\"); const pkg = require(\"./packages/desktop/package.json\"); console.log(electronToChromium(pkg.devDependencies.electron));")}"
-      echo "Chromedriver version: ${version}"
-      timeout "${DRIVER_PREFETCH_TIMEOUT}s" pnpm exec browsers install "chromedriver@${version}" --path "${WDIO_BROWSER_DRIVER_CACHE_DIR}" --format "{{browser}}@{{buildId}} {{path}}"
+      timeout "${DRIVER_PREFETCH_TIMEOUT}s" node packages/desktop/scripts/chromedriver-preflight.mjs prepare "${WDIO_BROWSER_DRIVER_CACHE_DIR}"
     '
+fi
+
+# 预取选择的补丁可能不同于 Chromium 精确补丁；离线运行必须读取实际路径，不能再次联网猜版本。
+CHROMEDRIVER_BINARY="$(docker run --rm --platform "$DOCKER_PLATFORM" \
+  -v "${DRIVER_CACHE_VOLUME}:${DRIVER_CACHE_DIR}" "${IMAGE_NAME}:latest" \
+  node packages/desktop/scripts/chromedriver-preflight.mjs path "$DRIVER_CACHE_DIR")"
+if [ -z "$CHROMEDRIVER_BINARY" ]; then
+  printf '[desktop-e2e-container] Chromedriver cache path is empty; run prefetch again.\n' >&2
+  exit 1
 fi
 
 docker_run_args=(
@@ -154,6 +161,7 @@ docker_run_args=(
   --platform "$DOCKER_PLATFORM"
   --shm-size "$SHM_SIZE"
   -e CI=1
+  -e "CHROMEDRIVER_PATH=${CHROMEDRIVER_BINARY}"
   -e ZCODE_E2E_CONTAINER=1
   -e "ZCODE_E2E_RUN_ID=${E2E_RUN_ID}"
   -e "ZCODE_E2E_ARTIFACT_DIR=${CONTAINER_ARTIFACT_DIR}"

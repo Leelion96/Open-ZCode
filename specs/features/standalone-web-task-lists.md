@@ -7,7 +7,7 @@
 - 手机连接桌面（`?remote=...`）和桌面 Renderer 继续走窗口 Controller；不改变 Host attachment、Agent 启动、会话恢复、owner/lease 或两种流式交付语义。
 - 任务、置顶、归档及分组使用的共用列表读取都遵循这一选择。项目行仍走原有读取路径，分组结构与写入命令不变。
 - `active` 的口径与 Controller 一致：包含普通与置顶任务，排除归档任务。独立 Web 合并现有 timeline/pinned 分区查询；不修改服务端原有查询语义。
-- 只读取当前打开的 workspace scopes。身份键仍为 `workspaceIdentity?.trim() || workspacePath`，不扫描其它目录，不迁移数据。
+- 普通列表读取当前打开的 workspace scopes；v3.17.1 命令中心的 `host` 查询由 Host 索引读取该 Host 全部历史，不受已打开 tabs 限制。身份键仍为 `workspaceIdentity?.trim() || workspacePath`，不扫描其它目录，不迁移数据。
 
 ## 唯一所有者与接口
 
@@ -46,8 +46,10 @@ sequenceDiagram
 
 自动验证覆盖列表分区与搜索条件、任务身份、读取错误传递、实时排序和分页；浏览器交互验证覆盖历史显示、打开、刷新及归属操作。实施后执行 typecheck、lint、架构检查和 Web 构建。
 
-## 回归入口
+## v3.17.1 查询适配与回归入口
 
-- 单元测试：`pnpm exec tsx --tsconfig packages/ui/tsconfig.json --test packages/ui/test/standaloneTaskList.test.ts`。
-- 验证用浏览器夹具在完成事件刷新、旧请求隔离和 Controller 路径验收后移除，长期保留一个单元测试文件。
-- 真实验收使用现有 Web 实例及用户资料，置顶、归档和改名测试后恢复原值。
+- query 支持 workspace 数组及 `host`，查询直接交 TaskService；实时订阅由返回行的真实目录派生，不遍历磁盘或启动历史 Agent。
+- `enabled=false` 和存在 Controller 时将独立路径置为 null，释放订阅、不调用查询；请求代次拒绝旧响应。
+- App 业务单测已退役，候选浏览器验收：`node packages/ui/test/browser/manual-review/pending/standalone-task-list.test.mjs`。
+- 该场景运行真实 React hook 和列表派生，仅在 RPC/sessions-index 边界提供夹具，覆盖 host 数组隔离、active 合并/搜索/排序/分页、迟到响应、失败保留以及停用释放。结果保存在 `packages/desktop/.e2e-artifacts/standalone-task-list`。
+- 真实验收使用现有 Web 实例及用户资料，补充历史打开、刷新和命令中心；修改的用户元数据恢复原值。候选浏览器通过不代表已完成手机远控验收或人工转正。

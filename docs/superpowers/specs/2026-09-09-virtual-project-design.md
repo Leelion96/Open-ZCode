@@ -158,6 +158,7 @@ CLI 侧已有一份多工作区草案 `apps/zcode-cli/docs/design/v2/multi-works
 - 项目分区新建按钮左侧提供「收起全部项目 / 展开全部项目」。有任一可展开项目展开时收起全部，否则展开全部；包含置顶项目。离线项目仍不可展开，不触发连接。无可展开项目时按钮禁用。
 - 批量操作一次更新现有按 Host + projectId 索引的展开偏好，保留分区自身的折叠、排序和当前会话，刷新后保持。
 - 当前会话的项目归属取 Host 的 task 索引，以 workspaceKey + taskId 精确查找，不能按 cwd 猜项目；当前草稿读取 draftProjectId。显式 projectId（包括 null）优先。桌面与手机在同一入口解析意图，手机仍由 bridge 准备目录并交接；异步读取后导航已改变则丢弃结果。
+- 继承的本地项目必须仍存在于所属 Host 的有效项目列表。项目已删除时，历史会话保留原归属与当前页面；再次点击左上角新建或快捷键时创建未归类草稿，不把历史 project_id 当成有效创建目标。草稿继承同样复验项目；显式选择项目失败仍报错，读取失败不视为已删除。远端无项目创建门禁保持不变。
 
 ```text
 快捷键 / 左上角新建 → 当前会话或草稿 → 项目归属 → Host prepareSession → 草稿
@@ -167,15 +168,15 @@ CLI 侧已有一份多工作区草案 `apps/zcode-cli/docs/design/v2/multi-works
 
 ### 3.4 新建 / 编辑 / 删除
 
-| #   | 问题       | 裁决                                                                                                                                                                                                                                           |
-| --- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E1  | 删除项目   | 软删除容器：项目行标记 deleted，session 保留 project_id，CLI 库不受影响（消息、标题原样）；时间线仍可见、可打开、可拖入其他项目；远程项目离线时的删除仅移除本机入口（G5），不执行本条的远端软删除                                              |
-| E1a | 恢复       | 唯一入口：新建项目时若 roots 集合与某个同 host 已删项目完全相等（不看顺序与主要目录）则提示恢复；恢复 = deleted 置 0 并按本次填写更新名称 / 主要目录，session 原样回来；拒绝则新建空项目；重新添加已从本机移除的远程项目入口不属于恢复远端项目 |
-| E1b | 彻底删除   | 不提供；软删除项目永久保留                                                                                                                                                                                                                     |
-| E2  | 移除 root  | 绑定该目录的 session 留在项目里                                                                                                                                                                                                                |
-| E3  | 运行中确认 | 删除项目 / 移除 root 不弹确认                                                                                                                                                                                                                  |
-| E4  | 项目名     | 未手改则跟随首个 root 名（`name_overridden`）；同 host 内唯一，重名自动加序号；无 root 无名时叫「新项目」                                                                                                                                      |
-| E5  | roots 校验 | 允许父子嵌套；完全重复去重；不存在的目录拒绝添加                                                                                                                                                                                               |
+| #   | 问题       | 裁决                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E1  | 删除项目   | 软删除容器：项目行标记 deleted，session 保留 project_id，CLI 库不受影响（消息、标题原样）；时间线仍可见、可打开、可拖入其他项目；远程项目离线时的删除仅移除本机入口（G5），不执行本条的远端软删除；远程项目在线删除后保留本机入口，在线刷新把远端删除态写入入口缓存，离线或读取远端失败时不展示该入口，远端恢复后由下一次在线刷新清除                                                                                                                                            |
+| E1a | 恢复       | 两个入口：① 新建项目时若 roots 集合与某个同 host 已删项目完全相等（不看顺序与主要目录）则提示恢复；恢复 = deleted 置 0 并按本次填写更新名称 / 主要目录，session 原样回来；拒绝则新建空项目。② 设置 → 项目的撤销与「已移除的项目」恢复（2026-10-24）：`IProjectService.restoreProject` 复用①的仓库恢复写路径并原样传回 roots，主要目录 / 置顶 / 顺序不变，重名加序号，不校验目录存在，见 `2026-10-24-project-management.md`。重新添加已从本机移除的远程项目入口不属于恢复远端项目 |
+| E1b | 彻底删除   | 不提供；软删除项目永久保留                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| E2  | 移除 root  | 绑定该目录的 session 留在项目里                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| E3  | 运行中确认 | 删除项目 / 移除 root 不弹确认                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| E4  | 项目名     | 未手改则跟随首个 root 名（`name_overridden`）；同 host 内唯一，重名自动加序号；无 root 无名时叫「新项目」                                                                                                                                                                                                                                                                                                                                                                        |
+| E5  | roots 校验 | 允许父子嵌套；完全重复去重；不存在的目录拒绝添加                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ### 3.4.1 新建项目默认排在最前（2026-09-15）
 
@@ -250,7 +251,7 @@ PRO01 验证：`desktop-e2e-20260915130441227-p90013-a508c06fba08fa3a` 1/1 通�
 | G1  | 远端旧库              | 远端 server bundle 升级时跑同一套迁移；本机新版连旧远端时按旧协议降级展示为单 root 项目                                                                                                                                                     |
 | G2  | 远程单 root           | 创建时必须选择一个有效目录，创建后固定；本地仍允许 0..n roots                                                                                                                                                                               |
 | G3  | 自动连接              | 启动自动连接所有已保存 host；连接成功后只刷新本机已添加的远程项目入口，不自动导入远端全部项目，也不重新添加已从本机删除的项目                                                                                                               |
-| G4  | 上限                  | 远程 host 上限 20                                                                                                                                                                                                                           |
+| G4  | 上限                  | 远程 host 保存数量不设硬上限（2026-10-26）；连接执行继续受既有并发门禁控制                                                                                                                                                                  |
 | G5  | 离线 / error 态操作   | 远程虚拟项目不可展开，不能改名、编辑 roots 或主要目录，项目操作仅允许删除本机保存的入口和缓存；保留远端项目、roots 与会话，不创建待同步删除操作。连接级仍允许重连、删除本机 host 连接记录；删除 host 一并移除其本机项目入口，不删除远端数据 |
 | G6  | 重新添加远程项目      | 用户主动连接并选择远端已有项目后，重新建立本机入口并读取最新信息；仍访问原项目及会话。在线创建远程项目成功后也显式添加入口；常规重连或刷新不执行添加                                                                                        |
 | H1  | 定时 / 闲时 / Bots    | 绑定虚拟项目；创建时取主要目录为 cwd、其余 roots 为附加目录，之后固定                                                                                                                                                                       |
@@ -260,6 +261,22 @@ PRO01 验证：`desktop-e2e-20260915130441227-p90013-a508c06fba08fa3a` 1/1 通�
 | H5  | 手机远控 bridge key   | 维持 workspaceKey                                                                                                                                                                                                                           |
 | I1  | 上线                  | 分 MR、同一版本发布                                                                                                                                                                                                                         |
 | I2  | E2E                   | 项目 CRUD、拖拽与拒绝、升降级与备份、4.3.2 多目录恢复、自动归档在项目树下生效；任务区归属与首次归位覆盖 6.1 验收场景；远程离线入口管理覆盖 6.2 验收场景                                                                                     |
+
+### 3.8 取消保存连接数量上限（2026-10-26）
+
+已确认取消 G4 原有的 20 个远程 host 硬上限。历史或未完成连接记录也会计入该数量，
+导致实际设备较少时，新连接在 SSH probe 前被拒绝。现在保存新连接、确认新 Source 身份
+均不得因已保存记录数量失败；不使用更大的固定值替代。此变更不清理存量记录、不改删除语义。
+连接实例、启动重连并发、凭据、身份校验与旧地址合并继续由现有 owner 负责。
+
+```text
+保存连接 → 原有输入与身份校验 → 事务写入 → 现有连接管理器 → SSH/WSL/Docker/Server
+确认新 Source → 原有 membership 与确认校验 → 事务写入
+```
+
+验收 SSH-P0-CONN-10：已有 20 条保存记录时，真实 SSH 新连接及第二个同设备项目成功，
+旧记录保留且同设备只占一条稳定 Source 记录；超过 20 条时仍可经确认新增不同 Source，
+旧 Source 与入口不迁移。普通 SSH 双项目任务链与已有连接管理用例继续回归。
 
 ## 4. 目标架构
 
@@ -381,9 +398,14 @@ saved URL member → credential lookup → Registry physical connection → memb
                                                        └─ workspace attachment → existing task owner
 ```
 
-远端连接列表只枚举有可用连接目标的本机 hosts 记录；历史 task 影子所需的 target_json=NULL 身份占位不表示用户保存了连接，不展示、不占 20 个连接名额。缓存刷新始终推进比较交换版本，内容未变时不发项目变更广播，避免 read → refresh → broadcast → read 的反馈循环。
+远端连接列表只枚举有可用连接目标的本机 hosts 记录；历史 task 影子所需的 target_json=NULL 身份占位不表示用户保存了连接，不展示；保存连接不设数量上限。缓存刷新始终推进比较交换版本，内容未变时不发项目变更广播，避免 read → refresh → broadcast → read 的反馈循环。
 
 迁移的旧 workspace 入口只在同 Host 唯一项目包含旧 cwd 时解析项目 ID；零个或多个匹配保留待选择入口。多个旧 cwd 解析到同一项目时保留已解析入口的 ID，删除重复旧入口；该去重与 CAS 刷新同一事务执行。侧栏只聚合本机保留入口的远端项目和任务；保存 Host 下的未归类任务进入任务区，已软删项目的历史仍进时间线。离线不展示或缓存远端 task 索引。
+
+侧栏读取先取本机入口目录（`remote-projects.readDirectory`），再并行读取本地树和各远端 Host 树；单个 Host 读取失败只影响该 Host。入口目录读取或入口缓存刷新失败时（2026-10-21）：
+
+- 本窗口还没有成功读取过目录（冷启动）：本地项目树照常展示，远程项目本轮不展示，侧栏显示已有的错误行；下次刷新（项目变化、tab 变化、窗口获得焦点）重试。禁止让入口目录故障把本地项目一起清空。
+- 已有成功读取的快照：保留上一次完整快照（含远程项目）并显示错误行，不清空远程部分。远程项目在一轮中消失会取消进行中的远程任务导航、卸载项目编辑表单、挂起首发提交。
 
 直接接入远端 owner 的 Web/客户端，projectService 返回该 owner 的权威树，remote-projects 入口查询返回空目录；不能伪造 Controller 成员表，入口写命令拒绝。桌面窗口的 Controller 查询仍使用本机 base attachment，与 workspace-scoped 的远端服务分开。
 
@@ -400,13 +422,15 @@ CLI 消费点
                                                    来自附加目录的 skill.qualifiedName = `${basename(dir)}/${name}`；prompt 与 mention 列表使用 qualifiedName
   2. subagents roots                             → 追加 <dir>/.zcode/agents；同名并存，qualifiedName 同上
   3. tool path policy                            → additionalDirectories 并入可读写根
-  4. 环境 prompt                                 → 主目录之后列出 Additional directories，仅含路径；空列表不输出
+  4. 环境 prompt                                 → 仓库状态之后列出 Additional working directories，仅含路径；空列表不输出
 不变：AGENTS.md、config(settings/mcp/hooks/plugins)、memory、permissions 仍只按 workingDirectory 解析。
 ```
 
-环境 prompt 使用本次运行实例初始化时收到的 `additionalDirectories`，逐项保留路径，不扫描附加目录内容、不增加权限说明。该列表仅经 Runtime 配置透传到 ContextBuilder，不写入环境快照或新增持久化字段；目录变更仍按 4.3.1 在运行实例重建时生效。
+环境 prompt 使用本次运行实例初始化时收到的 `additionalDirectories`，逐项保留路径，不扫描附加目录内容、不增加权限说明。该列表经 Runtime 配置透传，随环境公告的快照 metadata 写入会话历史，不新增 session 字段或数据库列；目录变更仍按 4.3.1 在运行实例重建时生效，冷恢复后按最近一次公告追加 `Additional working directories added/removed` 增量，原环境块不改写。格式见 `apps/zcode-cli/docs/design/v2/loop/meta-user-context.md`。
 
 #### 4.3.1 目录来源与生效时机
+
+普通新建会话恢复 `sess_${crypto.randomUUID()}`，后缀为带连字符的 UUID v4，不再使用命令哈希。V4 命令工厂只分配一次，pending payload 与重试保留原 ID，Host 以该 ID 预留归属。3.16 已落库的 `session_<32hex>` / `session_<UUID>` 作为不透明身份原样恢复，不迁移主键、不生成别名。读取、引用与邮箱兼容规则见 [Session identity compatibility](../../session-context-tool.md#session-identity-compatibility)。
 
 创建时序：UI 只传选中的 `projectId`（全局创建显式为 NULL）；Host 按 create command 的幂等 ID 分配稳定 session ID，在 app 同一事务预留归属并读取目录，然后才向 CLI 发送 create/firstInput。预留行的 `cli_created_at` 为空，所有列表隐藏，直到 CLI 发布持久会话事实。重复 create 不覆盖已经移动过的归属；失败不伪造会话事实。CLI 不接收项目 ID，只接收 session ID 和 `additionalDirectories`，并拒绝覆盖已存在的运行实例或持久会话；命令重试仍由 CommandInbox 去重。
 
@@ -450,6 +474,30 @@ Host app 库：任务归属 + 项目当前 roots（唯一配置来源）
 实现落点：在 Host 的 `subscribeConversationV4` 发出请求前调用同一目录解析逻辑；可沿用已有 `resumeThoughtLevel` 的参数传递路径，但目录查询错误不能被静默吞掉。同步更新 `packages/shared/src/zcode-protocol/index.ts` 的 create/resume schema 和 `packages/shared/src/zcode-protocol-v4/transport.ts` 的 subscribe schema；将 `additionalDirectories` 贯穿 Gateway → `ColdSessionResumeCoordinator` → `resumePersistedSession` → `activateSessionForResume`，在运行实例构建前交给能力与环境 prompt 消费点。Host 通过服务接口注入解析能力，Renderer 不负责拼装目录列表。
 
 实施补充（2026-09-10）：当前 rowsRange / search 等查询也可能先于 subscribe 触发冷恢复。该路径复用既有 `session/requestRuntimePreferences` 的 runtime-materialization 请求，从 Host 同一目录解析接口取得 `additionalDirectories`；不建立另一个目录缓存或同步协议。显式 create/resume/subscribe 的数组仍只在新实例初始化时使用；Host 查询失败必须拒绝初始化。该反向请求已由 READY single-flight 覆盖，因此查询与订阅竞争时只读取一次目录快照。
+
+子会话冷恢复补充（2026-10-22）：CLI 统一从持久化 `sessionKind / parentSessionId` 解析
+`directorySessionId`，沿四类 auxiliary 父链到最近的独立任务；interactive、fork、workflow_parent
+均停止继承。逐层校验 workspace identity 与 cwd，拒绝缺失、已删、成环或跨 workspace 的父链。
+历史 child 缺少 identity 时，仅允许同 cwd 的持久化父链证明归属。查询不激活父 runtime、不回写两库。
+
+Host 在现有 runtime/capabilities 请求中声明 `hostCapabilities.sessionDirectorySource`；CLI
+确认同名能力后，才在显式 session/list 元数据和 runtime-materialization 回调中携带
+`directorySessionId`。旧 Host 不收到新字段；旧 CLI 仍走现有元数据父链查询，完整冷恢复修复
+要求双方支持该能力。协商随 CLI 连接重建，不保存项目或目录副本。
+
+```text
+CLI 持久化父链 → directorySessionId ─┬─ session/list → Host 订阅 / 显式恢复
+                                    └─ 冷恢复反向请求 → Host 本地 / 外部设置应答
+                                                         ↓
+                                             同一项目仓库校验并读取目录
+                                                         ↓
+                                             初始化原 child，目标 ID 不变
+```
+
+冷恢复反向请求必须自带归属事实：CLI 正等待 Host 回包，此时 Host 再发 session/list 会排在
+当前请求之后，造成循环等待。Host 回调只读自身项目仓库；不增加并发协议旁路、重试计时器、
+child 主任务行或目录缓存。新建独立任务仍使用已经预留的自身 ID，自动化固定目录合同不变。
+复现与验收要求见 SAT30：真实进程退出后重开 child，检查正文、原 ID、主列表隔离及两种 delivery 模式。
 
 #### 4.3.2 本地多目录恢复验收
 
@@ -548,7 +596,7 @@ workspace attachment 同样转发远端项目服务，入口目录始终从 Cont
 
 项目树包含未打开 tab 的远端任务。其列表命令复用 Window Controller 的 mutateTask 路由：以稳定 Source + workspaceIdentity 定位现有在线物理连接，先读取该 owner 的任务行验证地址，再执行同一 task service；重命名也转交原 CLI 命令。查询和 pin/archive/read 不为列表创建 logical workspace、切换 tab 或启动 Agent。打开会话时才建立/复用 workspace attachment，手机仍走 shared-host replayable switcher；不能为未打开 tab 的列表命令伪造 remoteSessionId。离线或身份不匹配直接拒绝，绝不落本机。
 
-本机入口管理收口到 `remote-projects` 服务契约：`readDirectory / saveHost / removeHost / addEntry / refreshEntry / removeEntry`。项目服务只处理持库 Host 的权威项目，入口服务不接收任务索引或远端写操作。新增入口产生新的 entry ID；缓存刷新必须携带请求发出时的 entry ID 与 lastSyncedAt，SQL 只 UPDATE 并做比较交换。入口删除后，迟到响应不再有写入目标；移除后主动添加同一 project ID 会产生新 entry ID，旧响应仍不能覆盖它。Host 删除与所属入口删除在同一 SQLite 事务，20 个远端 host 上限在写事务内检查。连接运行态继续归现有连接管理器，凭据继续归凭据服务，不能保存在 target JSON。
+本机入口管理收口到 `remote-projects` 服务契约：`readDirectory / saveHost / removeHost / addEntry / refreshEntry / removeEntry`。项目服务只处理持库 Host 的权威项目，入口服务不接收任务索引或远端写操作。新增入口产生新的 entry ID；缓存刷新必须携带请求发出时的 entry ID 与 lastSyncedAt，SQL 只 UPDATE 并做比较交换。入口删除后，迟到响应不再有写入目标；移除后主动添加同一 project ID 会产生新 entry ID，旧响应仍不能覆盖它。Host 删除与所属入口删除在同一 SQLite 事务。保存新连接和确认不同 Source 身份均不按已有 host 数量拒绝；同一 host 的更新、地址身份合并和 membership 校验保持原合同。连接运行态继续归现有连接管理器，凭据继续归凭据服务，不能保存在 target JSON。
 
 ```text
 显式添加 → 本机入口行（新 entry ID）→ 发起远端读取
@@ -584,7 +632,7 @@ ProjectEditor 保存 → ProjectCreation 登记并刷新 → 校验原 tab / wor
 - 新建项目向导：类型（本地 / 远程）→ 远程先选连接 → 多选文件夹（可不选）→ 名称（默认首 root 名 / 「新项目」）→ 主要目录（默认第一个）。
 - 编辑弹窗：名称、roots 增删、设主要（主要被删自动后补首位）。项目操作菜单使用非模态导航，只有编辑弹窗拥有模态指针/焦点限制；菜单退出动画尚未结束时打开并快速保存弹窗，也必须恢复页面交互，不能手动改 body 样式或用超时解锁。
 - 拖拽：session → 其他项目（同 host 才可投放；仅本地目标缺该 root 时弹窗「将文件夹加入项目」，远程目标目录不匹配直接拒绝）；任务区 session → 项目（同上，使用该 session 的真实绑定目录，允许默认目录之外的 cwd）；项目节点排序。
-- 删除项目：本地项目及在线远端权威项目沿用 E1 软删除；时间线仍显示其 session；新建 roots 集合完全相等（同 host）的项目时弹窗「发现已删除的项目 P（N 个会话），是否恢复」，恢复即 undelete；无其他恢复入口，不提供彻底删除。
+- 删除项目：本地项目及在线远端权威项目沿用 E1 软删除；时间线仍显示其 session；新建 roots 集合完全相等（同 host）的项目时弹窗「发现已删除的项目 P（N 个会话），是否恢复」，恢复即 undelete；侧栏不提供彻底删除。2026-10-24 起设置 → 项目页的批量移除可勾选「同时删除 ZCode 数据」，只对本机项目彻底删除其会话、会话文件、文件检查点与记忆（见 `2026-10-24-project-management.md`「彻底删除数据」）。
 - 远程项目节点：离线或连接失败时显示缓存及离线 / error 状态，不可展开，不可改名、编辑 roots 或主要目录；项目操作仅允许“删除”，语义为从本机移除入口及缓存，远端项目和会话保留。连接级仍可重连或删除本机 host；重连不自动恢复已移除的项目入口。
 - composer：@文件跨 roots 加 root 后缀；skill / subagent 用 qualifiedName；# 提及按项目分组。
 - 设置页 agent 配置管理：目录下拉 = 所有 roots 去重平铺；hooks trust 按真实目录。
@@ -933,7 +981,7 @@ subscribe in flight -> runtime available/restart -> old ACK rejected
 
 - 沿用本项目的项目行和分区交互，恢复项目/任务折叠、分区拖动顺序与 hover 操作，沿用原偏好。项目区新增为 Plus，任务新增为 MessageCirclePlus。时间线能力保留但暂不展示入口；项目排序移入标题右键菜单。项目行不显示独立箭头，以 Folder/FolderOpen 表达折叠状态；hover/focus/touch 保留“更多、查看文件、新建任务”三个按钮。右键包含查看文件、新建任务与更多菜单的全部操作，兼容键盘菜单键/Shift+F10 与触屏长按。
 - 创建向导先选本地/远端，再填名称和源文件夹。名称使用文件夹图标组合输入，源文件夹使用整块可点击添加区；路径输入仅属于目录浏览器。0 root 项目仍合法。远端可选择已保存连接或在向导内添加连接，选择已有项目或创建远端项目；侧栏不提供独立“添加连接”。
-- 名称聚焦时只保留组合输入外层已有的 ring，内层 Input 不叠加 outline；自动聚焦、鼠标点击和 Tab 返回均遵守此规则，深浅主题、窄屏及强制颜色模式一致。`ui-shell/manual-review/pending/command-center-focus.test.ts` 的 DIALOG-FOCUS-01 验证共享创建弹窗，并用取消退出，不写入项目。
+- 名称聚焦沿用当前表单的共享 Input：边框和背景使用 DESIGN.md 的 focused token，不另叠 outline 或父容器焦点环。自动聚焦、鼠标点击和 Tab 返回均遵守此规则，深浅主题、窄屏及强制颜色模式一致。`ui-shell/manual-review/pending/command-center-focus.test.ts` 的 DIALOG-FOCUS-01 验证共享创建弹窗，并用取消退出，不写入项目。
 - 复用现有连接对话框、目录浏览器和 Host 服务，不创建 workspace tab 或 Agent 来浏览目录。连接归连接管理器，表单只持有草稿，保存归所属 Host；取消/切换目标后拒绝迟到 UI 结果。只有显式选中已有项目或新项目保存成功才添加本机入口。桌面 continuous 与手机 replayable 不变。
 
 ```text

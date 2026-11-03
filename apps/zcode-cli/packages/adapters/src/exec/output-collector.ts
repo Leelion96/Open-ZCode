@@ -9,6 +9,38 @@ export interface AggregatePersistedOutputBudget {
   maxBytes: number;
 }
 
+/**
+ * 一路输出最后 maxBytes 字节的有界尾部（请求级 `outputLimit.tailBytes`）。
+ *
+ * 刻意不复用 `appendTail` 的进度尾部：那块 buffer 按适配器配置的 progressTailBytes 定尺寸
+ * （默认很小），每个进度事件都整块解码一次，每个 chunk 都 `Buffer.concat` 一次——放大到
+ * 请求级的 MiB 量级，就是每个 chunk 复制整个尾部（总输出 × 尾部大小）、每个进度 tick 解码
+ * 整个尾部。这里按块存、整块出队，摊还 O(总输出)，只在结算时拼一次。
+ */
+class ByteTail {
+  private readonly chunks: Buffer[] = [];
+  private bytes = 0;
+
+  constructor(private readonly maxBytes: number) {}
+
+  append(chunk: Buffer): void {
+    if (chunk.byteLength === 0) return;
+    const kept =
+      chunk.byteLength > this.maxBytes ? chunk.subarray(chunk.byteLength - this.maxBytes) : chunk;
+    this.chunks.push(kept);
+    this.bytes += kept.byteLength;
+    // 去掉队首整块之后仍够 maxBytes，队首就不可能再出现在尾部里。
+    while (this.chunks.length > 1 && this.bytes - this.chunks[0]!.byteLength >= this.maxBytes) {
+      this.bytes -= this.chunks.shift()!.byteLength;
+    }
+  }
+
+  buffer(): Buffer {
+    const all = Buffer.concat(this.chunks, this.bytes);
+    return all.byteLength > this.maxBytes ? all.subarray(all.byteLength - this.maxBytes) : all;
+  }
+}
+
 export class OutputCollector {
   private readonly chunks: Buffer[] = [];
   private readonly maxPersistedBytes: number;
@@ -19,6 +51,7 @@ export class OutputCollector {
   private readonly outputPath?: string;
   private readonly persistOutput: OutputPersistenceMode;
   private readonly aggregatePersistedBudget?: AggregatePersistedOutputBudget;
+  private readonly requestedTail?: ByteTail;
   private stream?: WriteStream;
   private artifactBytes = 0;
   private artifactTruncated = false;
@@ -37,6 +70,8 @@ export class OutputCollector {
     outputPath?: string;
     persistOutput: OutputPersistenceMode;
     aggregatePersistedBudget?: AggregatePersistedOutputBudget;
+    /** 请求级尾部字节数（`outputLimit.tailBytes`）；缺席或 <= 0 即不保留、result 不带 tail。 */
+    requestedTailBytes?: number;
   }) {
     this.maxInlineBytes = Math.max(0, options.maxInlineBytes);
     this.maxPersistedBytes = Math.max(0, options.maxPersistedBytes);
@@ -46,6 +81,9 @@ export class OutputCollector {
     this.outputPath = options.outputPath;
     this.persistOutput = options.persistOutput;
     this.aggregatePersistedBudget = options.aggregatePersistedBudget;
+    if (options.requestedTailBytes !== undefined && options.requestedTailBytes > 0) {
+      this.requestedTail = new ByteTail(options.requestedTailBytes);
+    }
   }
 
   append(chunk: Buffer, source?: NodeJS.ReadableStream): void {
@@ -58,6 +96,7 @@ export class OutputCollector {
 
     this.totalBytes += chunk.byteLength;
     this.appendTail(chunk);
+    this.requestedTail?.append(chunk);
 
     if (this.inlineBytes >= this.maxInlineBytes) {
       this.truncated = this.truncated || chunk.byteLength > 0;
@@ -96,6 +135,14 @@ export class OutputCollector {
       artifactPath: hasArtifact ? this.outputPath : undefined,
       artifactBytes: hasArtifact ? this.artifactBytes : undefined,
       artifactTruncated: hasArtifact ? this.artifactTruncated : undefined,
+      ...(this.requestedTail
+        ? {
+            tail: decodeExecutionOutputBuffer(
+              this.requestedTail.buffer(),
+              this.legacyOutputEncoding,
+            ),
+          }
+        : {}),
     };
   }
 

@@ -3,7 +3,7 @@ import {
   type PluginUiToolResultNotification,
 } from "@zcode/shared/mcp-apps";
 import { randomUUID } from "node:crypto";
-import { LocalTtftRecorder } from "./local-ttft.js";
+import { LocalTtftRecorder } from "./local-ttft/contract.js";
 import { localTtftNow, localTtftFactsSchema } from "@zcode/shared/zcode-protocol-v4";
 import {
   backgroundBashOutputResultSchema,
@@ -135,6 +135,7 @@ import {
 import { AttachmentUploadRegistry } from "./attachment-upload-registry.js";
 import {
   ColdSessionResumeCoordinator,
+  V4SessionNotResidentError,
   V4SubscribeSessionUnavailableError,
   type ColdSessionResumeOutcome,
 } from "./cold-session-resume.js";
@@ -218,6 +219,8 @@ interface BinaryReadCacheEntry {
 }
 
 export interface V4GatewayHost {
+  /** 正在拆旧实例时，不允许订阅抢先重建 publisher。 */
+  isSessionStopping?(sessionId: string): boolean;
   cliVersion?: string;
   /** 会话是否在宿主注册表中活跃（inbox 的 sessionNotFound 裁决依据）。 */
   sessionExists(sessionId: string): boolean;
@@ -614,6 +617,8 @@ export class ConversationV4Gateway {
     string,
     {
       history: Promise<ConversationTopicPublisher>;
+      messages: Promise<MessageWithParts[]>;
+      finished: Promise<void>;
       start: () => void;
       cancel: () => void;
     }
@@ -698,6 +703,9 @@ export class ConversationV4Gateway {
     this.coldResume = new ColdSessionResumeCoordinator(host);
     this.inbox = new CommandInbox({
       prepareDecision: async (envelope) => {
+        // 重启正在等待旧 inbox 收口，不能让迟到命令反向等待同一个 restart，形成互等。
+        if (envelope.sessionId && this.host.isSessionStopping?.(envelope.sessionId))
+          throw new Error("fault.sessionLifecycle.stopping");
         if (
           envelope.sessionId &&
           (envelope.type === "renameSession" || envelope.type === "deleteSession") &&
@@ -1505,6 +1513,8 @@ export class ConversationV4Gateway {
     if (sessionId === null) {
       throw new Error(`Unsupported topic: ${params.topic}`);
     }
+    if (this.host.isSessionStopping?.(sessionId))
+      throw new Error("fault.sessionLifecycle.stopping");
     const isLiveConversation = this.hasLiveConversation(sessionId);
     this.host.onDebug?.(
       `subscribe conversation session=${sessionId} coldResume=${String(!isLiveConversation)}`,
@@ -1720,6 +1730,16 @@ export class ConversationV4Gateway {
   async rowsRange(rawParams: unknown): Promise<V4ConversationRowsRangeResult> {
     const params = v4ConversationRowsRangeParamsSchema.parse(rawParams);
     const existingReady = this.readyFlights.get(params.sessionId);
+    if (
+      params.residency === "resident-only" &&
+      !existingReady &&
+      !this.historyOpenings.has(params.sessionId) &&
+      !this.publishers.has(params.sessionId) &&
+      !this.hasLiveConversation(params.sessionId)
+    ) {
+      // 预加载只读热会话：冷会话不恢复（恢复要读库重放、可能续期运行时），由调用方跳过。
+      throw new V4SessionNotResidentError(params.sessionId);
+    }
     const publisher = this.historyOpenings.has(params.sessionId)
       ? await this.historyOpenings.get(params.sessionId)!.history
       : this.publishers.get(params.sessionId)?.getSnapshot().runtimeInitialization?.status ===
@@ -2031,7 +2051,7 @@ export class ConversationV4Gateway {
    *
    * 只拉 record，**不**建 READY publisher：journal 与 conversation log 无关，读一页 run
    * 不需要投影（同一判断见这两个 query 刻意不带 atSeq/atLogEpoch）。习语与 attachmentBegin
-   * 逐字相同；`ensureResumed` 自带按会话单飞，与并发订阅共享同一次 activation。
+   * 逐字相同；宿主生命周期 owner 按会话单飞，与并发订阅共享同一次 activation。
    *
    * 活性判定必须与 subscribe 同一条
    * `hasLiveConversation`，不能只看 `sessionExists`。dwf actor transcript 是 detached live
@@ -2859,6 +2879,33 @@ export class ConversationV4Gateway {
     });
   }
 
+  /** 释放之前等待旧 hydration 真正退出；取消 ready Promise 不等于异步重建已经停止。 */
+  async releaseSessionProjection(sessionId: string): Promise<void> {
+    const opening = this.historyOpenings.get(sessionId);
+    const hydration = this.hydrationInFlight.get(sessionId);
+    this.disposeSession(sessionId);
+    await Promise.allSettled([opening?.history, opening?.finished, hydration]);
+    this.disposeSession(sessionId);
+  }
+
+  /** 旧 runner 的 finally 可能发布过终态；释放屏障后再次清理，不能留给新实例继承。 */
+  async finishSessionRelease(sessionId: string): Promise<void> {
+    await this.inbox.resetReleasedSession(sessionId);
+    this.disposeSession(sessionId);
+  }
+
+  /**
+   * 彻底删除（项目数据删除）后从全部 sessions-index 投影中移除该会话。会话未加载时没有
+   * 注册表记录可查 workspace，所以遍历所有投影；会话 ID 全局唯一，不会误删别的会话。
+   * 不移除会让已存在的投影在下次快照里带回该会话，Host 会把它当作新发现的会话重新登记。
+   */
+  forgetIndexedSession(sessionId: string): void {
+    for (const workspaceId of this.indexPublishers.keys()) {
+      if (this.indexPublishers.get(workspaceId)?.removeSession(sessionId))
+        this.flushIndex(workspaceId);
+    }
+  }
+
   /**
    * Resident 容量去激活：与 disposeSession 相同的内存运行态清理，但**不**从 sessions-index
    * 移除会话（不发 session.removed）——去激活是纯内存优化，侧边栏列表项必须原样
@@ -3009,7 +3056,6 @@ export class ConversationV4Gateway {
     this.detachedChildrenByParent.clear();
     this.detachedTerminalAt.clear();
     this.projectionFaultedSessions.clear();
-    this.coldResume.clear();
     this.indexPublishers.dispose();
     this.configPublishers.clear();
     this.pausedConnections.clear();
@@ -3064,6 +3110,27 @@ export class ConversationV4Gateway {
     }
   }
 
+  /**
+   * 生命周期 owner 只复用历史结果，直接执行实例激活；不能等待投影的激活回调。
+   * 旧实现复用 opening 时丢弃新回调，ensureReady 因而永远等不到 activated。
+   */
+  async prepareSessionHistory(sessionId: string): Promise<MessageWithParts[]> {
+    const history = this.ensureHistoryReadyPublisher(
+      sessionId,
+      undefined,
+      undefined,
+      undefined,
+      this.publishers.get(sessionId)?.getSnapshot().runtimeInitialization?.attemptId,
+    );
+    const opening = this.historyOpenings.get(sessionId)!;
+    await history;
+    // start 只观察同一生命周期结果，不由调用方等待；无订阅者也会完成投影。
+    opening.start();
+    // 让已登记订阅的历史首帧先进入 outbox，随后 owner 才执行可能同步扫描插件的激活。
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    return opening.messages;
+  }
+
   /** 首帧先落 transport queue，再启动会同步扫描插件的 runtime；重连不重跑失败 hook。 */
   private ensureHistoryReadyPublisher(
     sessionId: string,
@@ -3098,14 +3165,21 @@ export class ConversationV4Gateway {
       if (this.readyFlights.get(sessionId) === ready) this.readyFlights.delete(sessionId);
       if (this.historyOpenings.get(sessionId) === opening) this.historyOpenings.delete(sessionId);
     };
+    const finished = Promise.withResolvers<void>();
+    const persistedMessages = Promise.resolve().then(() =>
+      this.host.loadPersistedMessages!(sessionId),
+    );
     const opening = {
+      messages: persistedMessages,
+      finished: finished.promise,
       cancel: () => {
+        if (!started) finished.resolve();
         rejectReady(new Error("cold opening disposed"));
         clear();
       },
-      history: Promise.resolve()
-        .then(async () => {
-          messages = await this.host.loadPersistedMessages!(sessionId);
+      history: persistedMessages
+        .then(async (loadedMessages) => {
+          messages = loadedMessages;
           if (this.disposed || this.historyOpenings.get(sessionId) !== opening)
             throw new Error("cold opening disposed");
           const result = await this.hydratePublisher(sessionId, messages, true);
@@ -3122,7 +3196,6 @@ export class ConversationV4Gateway {
         started = true;
         // post-response commit 已确认首帧入队；下一轮让 stdio I/O 有机会交付，不用定时猜测 UI。
         setImmediate(() => {
-          let disposeOnFailure: (() => Promise<void>) | undefined;
           let releaseRuntime: (() => void) | undefined;
           void (async () => {
             if (this.disposed || this.historyOpenings.get(sessionId) !== opening)
@@ -3136,9 +3209,6 @@ export class ConversationV4Gateway {
               workspace,
               additionalDirectories,
               messages,
-              (outcome) => {
-                disposeOnFailure = outcome.disposeOnFailure;
-              },
             );
             if (this.disposed || this.historyOpenings.get(sessionId) !== opening)
               throw new Error("cold opening disposed");
@@ -3150,8 +3220,7 @@ export class ConversationV4Gateway {
             resolveReady(result);
           })()
             .catch(async (error: unknown) => {
-              // activation 成功而最终物化失败时，也必须拆掉本次 app，下一次重试才会完整 resume。
-              await disposeOnFailure?.();
+              // 实例失败由生命周期 owner 清理；纯投影失败不能拆掉已 ready 的执行环境。
               if (!this.disposed && this.historyOpenings.get(sessionId) === opening) {
                 const result = this.publishers.get(sessionId);
                 if (result)
@@ -3168,6 +3237,7 @@ export class ConversationV4Gateway {
             .finally(() => {
               releaseRuntime?.();
               clear();
+              finished.resolve();
             });
         });
       },

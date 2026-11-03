@@ -31,6 +31,8 @@
 
 ## 验收
 
+轨迹工具的输入限于自身 fixture、录制 JSONL 与 model-io；输出由这些输入推导，不复制外部产品的对照请求。协议格式转换保留真实 provider 字段。
+
 - 单元测试校验 exact word、单次出现和相对顺序。
 - 单元测试覆盖 active output style 且 `keepCodingInstructions: false`，确认稳定的 `# Harness`、communication 与 action caution 均仍然存在。
 - 单元测试校验 output-style 标题与正文之间只有一个换行。

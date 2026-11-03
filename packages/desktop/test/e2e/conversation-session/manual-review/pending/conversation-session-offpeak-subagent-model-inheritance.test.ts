@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   TID_AUTOMATIONS_OPEN,
@@ -28,15 +29,16 @@ import {
   UPSTREAM_MODEL,
 } from "../../../helpers/upstream-provider.js";
 import {
-  prepareConversationE2E,
-  sendPrompt,
-  waitForAssistantMessageContaining,
-  waitForChatState,
-  waitForComposerText,
-  waitForUserMessageContaining,
-} from "../../../helpers/conversation-session.js";
+  prepareV4ConversationE2E,
+  sendV4Prompt,
+  waitForV4AssistantMessageContaining,
+  waitForV4ConversationState,
+  waitForV4ComposerText,
+  waitForV4UserMessageContaining,
+  switchV4Mode,
+} from "#e2e/helpers/v4-conversation";
 import { sel } from "../../../helpers/selectors.js";
-import { switchV4Mode } from "../../../helpers/v4-conversation.js";
+
 import {
   openFaultInjectedHostWindow,
   readHostBoundary,
@@ -84,7 +86,7 @@ describe("闲时后台 subagent 模型继承与唤起 E2E", () => {
           if (window.id !== retainedId) window.close();
       }, windowId);
     }
-    await prepareConversationE2E();
+    await prepareV4ConversationE2E();
 
     const takeover = process.env.ZCODE_E2E_OFFPEAK_TAKEOVER === "1";
     const title = `E2E_OFFPEAK_SUBAGENTS_${Date.now()}`;
@@ -103,7 +105,7 @@ describe("闲时后台 subagent 模型继承与唤起 E2E", () => {
       { timeout: 15000, timeoutMsg: "后台工作未结束时闲时卡应保持进行中" },
     );
     await openOffPeakTaskSession(title);
-    await waitForChatState(
+    await waitForV4ConversationState(
       (snapshot) => snapshot.state === "idle" && snapshot.queueCount === 0,
       "后台屏障关闭时主轮应已自然结束",
       60000,
@@ -111,10 +113,11 @@ describe("闲时后台 subagent 模型继承与唤起 E2E", () => {
     // 工具栏草稿选择用户模型但尚未发送，不得改变随后后台唤起使用的闲时 Selection。
     await selectUpstreamModel();
     await selectUpstreamThoughtLevel();
+    await recordComposerSelection("before-background-wakeup");
     if (takeover) {
-      await sendPrompt(ORDINARY_PROMPT_MARKER);
-      await waitForComposerText("", "用户接管消息没有提交");
-      await waitForAssistantMessageContaining(ORDINARY_REPLY_TOKEN);
+      await sendV4Prompt(ORDINARY_PROMPT_MARKER);
+      await waitForV4ComposerText("", "用户接管消息没有提交");
+      await waitForV4AssistantMessageContaining(ORDINARY_REPLY_TOKEN);
     }
     // 主轮已结束但后台仍在等待。显式放行真实子请求，证明通知能另起续跑轮。
     const port = Number(process.env.ZCODE_OFFPEAK_MOCK_PORT ?? "45197");
@@ -222,23 +225,24 @@ describe("闲时后台 subagent 模型继承与唤起 E2E", () => {
     );
 
     await openOffPeakTaskSession(title);
-    await waitForChatState(
+    await waitForV4ConversationState(
       (snapshot) => snapshot.state === "idle" && snapshot.queueCount === 0,
       "闲时任务完成后打开 session 没有回到 idle",
       60000,
     );
 
     if (!takeover) {
-      await sendPrompt(ORDINARY_PROMPT_MARKER);
-      await waitForComposerText("", "闲时任务后的普通 prompt 没有提交");
-      await waitForUserMessageContaining(ORDINARY_PROMPT_MARKER);
+      await recordComposerSelection("after-reopening-completed-task");
+      await sendV4Prompt(ORDINARY_PROMPT_MARKER);
+      await waitForV4ComposerText("", "闲时任务后的普通 prompt 没有提交");
+      await waitForV4UserMessageContaining(ORDINARY_PROMPT_MARKER);
     }
     const ordinaryRecord = await waitForUpstreamNetworkCapture(ORDINARY_PROMPT_MARKER);
     assertUpstreamRequestCapture(ordinaryRecord, {
       expectedText: ORDINARY_PROMPT_MARKER,
       model: UPSTREAM_MODEL,
     });
-    await waitForAssistantMessageContaining(ORDINARY_REPLY_TOKEN);
+    await waitForV4AssistantMessageContaining(ORDINARY_REPLY_TOKEN);
 
     const afterOrdinaryPrompt = await readOffPeakMockRequests();
     expect(
@@ -275,6 +279,22 @@ describe("闲时后台 subagent 模型继承与唤起 E2E", () => {
     await browser.keys("Escape");
   });
 });
+
+/** 只读采集草稿与当前选择，区分空草稿不持久化和闲时执行覆盖普通模型。 */
+async function recordComposerSelection(stage: string): Promise<void> {
+  const diagnostic = await browser.execute(() => ({
+    text: document.body.innerText,
+    config: document.querySelector('[data-testid="v4-model-config"]')?.outerHTML,
+    pane: document.querySelector('[data-testid="v4-session-pane"]')?.outerHTML.slice(0, 700),
+    drafts: Object.fromEntries(
+      Object.entries(localStorage).filter(([key]) => key.startsWith("zcode-v4-composer")),
+    ),
+  }));
+  await writeFile(
+    join(process.env.ZCODE_E2E_ARTIFACT_DIR!, `offpeak-selection-${stage}.json`),
+    JSON.stringify(diagnostic, null, 2),
+  );
+}
 
 async function createOffPeakTask(input: { instructions: string; title: string }): Promise<void> {
   await clickTestIdByDom(TID_AUTOMATIONS_OPEN, {

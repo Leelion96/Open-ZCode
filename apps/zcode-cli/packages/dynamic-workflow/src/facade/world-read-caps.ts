@@ -10,6 +10,14 @@
  * 截断把一份悄悄残缺的世界视图交给脚本，而脚本接下来会拿它去扇出——扇出才是贵的那一步。
  */
 
+/**
+ * `world.run` 每路输出的 journal 预算（16 MiB）。它不是模型上下文预算：`dwf_node.result_json`
+ * 原样存结果、resume 原样重放，所以脚本拿到的值与 journal 里的值必须逐字节相同——超出就只能
+ * 拒绝，不能截断。脚本若要有界的输出，在调用点用 `opts.output`（`"discard"` / `{ tail }`）声明，
+ * 两份拷贝就是同一份有界的东西。`{ tail: n }` 的上限也取这个数。
+ */
+const RUN_STREAM_MAX_BYTES = 16 * 1024 * 1024;
+
 /** grep / git.diff / git.log 的上限。数字即契约（见本模块顶部）。 */
 export const WORLD_READ_CAPS = {
   /**
@@ -28,10 +36,10 @@ export const WORLD_READ_CAPS = {
   gitLogMaxCount: 100,
   /** `git.log` 未指定 count 时的条数。 */
   gitLogDefaultCount: 20,
-  /** `world.run` stdout 的最大字节数（拒绝不截断，cap+1 探测）。 */
-  runStdoutMaxBytes: 256 * 1024,
-  /** `world.run` stderr 的最大字节数（同上）。 */
-  runStderrMaxBytes: 256 * 1024,
+  /** `world.run` `output: "full"` 时 stdout 的最大字节数（拒绝不截断，cap+1 探测）。 */
+  runStdoutMaxBytes: RUN_STREAM_MAX_BYTES,
+  /** `world.run` `output: "full"` 时 stderr 的最大字节数（同上）。 */
+  runStderrMaxBytes: RUN_STREAM_MAX_BYTES,
   /** `world.run` 未指定 timeoutMs 时的墙钟（ms）。**无上限钳制**：为真正长跑的测试设计。 */
   runDefaultTimeoutMs: 300_000,
 } as const;

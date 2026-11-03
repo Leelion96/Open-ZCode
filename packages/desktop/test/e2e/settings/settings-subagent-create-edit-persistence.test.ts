@@ -32,6 +32,7 @@ import {
 } from "../helpers/upstream-provider.js";
 import { resolveE2EStorageRoot } from "../helpers/e2e-runtime-paths.js";
 import { sel } from "../helpers/selectors.js";
+import { clickOpenScopeMenuOption } from "../helpers/settings-scope-menu.js";
 import { prepareV4ConversationE2E } from "../helpers/v4-conversation.js";
 
 const CASE_TIMEOUT_MS = 240_000;
@@ -465,18 +466,9 @@ async function selectSubagentScope(scopeKey: string) {
   const trigger = $('[data-plugin-scope-trigger="true"]');
   await trigger.waitForClickable({ timeout: 15_000 });
   await trigger.click();
-  await browser.waitUntil(
-    () =>
-      browser.execute((key) => {
-        const item = Array.from(
-          document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
-        ).find((candidate) => candidate.dataset.pluginScopeKey === key);
-        if (!item) return false;
-        item.click();
-        return true;
-      }, scopeKey),
-    { timeout: 15_000, timeoutMsg: `Subagent scope 菜单没有出现 ${scopeKey}` },
-  );
+  await clickOpenScopeMenuOption(scopeKey, {
+    timeoutMsg: `Subagent scope 菜单没有出现 ${scopeKey}`,
+  });
   await browser.waitUntil(
     async () =>
       (await $('[data-plugin-scope-trigger="true"]').getAttribute("data-plugin-scope-key")) ===

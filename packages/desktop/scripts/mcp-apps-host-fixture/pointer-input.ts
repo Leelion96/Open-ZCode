@@ -22,6 +22,11 @@ export async function clickHostPoint(win: BrowserWindow, point: { x: number; y: 
 }
 
 export async function checkPagePointerInput(win: BrowserWindow, guest: WebContents) {
+  // 握手完成不等于首帧已合成；能力裁决后 guest 才从后台迁入展示位置。
+  // 先等布局进入绘制，再发宿主坐标事件，避免首个点击仍命中旧的合成区域。
+  await win.webContents.executeJavaScript(
+    "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+  );
   const page = (code: string) => evaluateGuest(guest, code);
   const before = Number(await page("document.querySelector('#counter').textContent"));
   for (const selector of ["#counter", "#input"]) {

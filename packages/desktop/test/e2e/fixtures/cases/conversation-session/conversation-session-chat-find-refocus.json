@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-chat-find-refocus",
+  "spec": "./test/e2e/conversation-session/conversation-session-chat-find-refocus.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-chat-find-refocus.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "chat-find-refocus-long-body",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "真实发送长正文，用于单命中反复导航和滚动定位；不验证模型文本质量。"
+    }
+  ]
+}

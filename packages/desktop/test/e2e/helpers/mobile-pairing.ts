@@ -1,6 +1,18 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { ConsoleMessage, Page, Request } from "playwright-core";
+import type { BrowserContext, ConsoleMessage, Page, Request } from "playwright-core";
+import { WEB_REMOTE_CONTROL_FIXTURE_CREDENTIALS } from "#e2e/helpers/web-remote-control-session-events-fixture";
+
+/** Desktop 的合成账号不会自动进入新浏览器上下文；仅为已启用的 loopback fixture 补齐登录前置。 */
+export async function seedMobileFixtureLogin(context: BrowserContext): Promise<void> {
+  const endpoint = process.env.ZCODE_E2E_REMOTE_AUTH_GATE_URL;
+  if (!endpoint || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(endpoint).hostname))
+    return;
+  await context.addInitScript((credentials) => {
+    if (!location.protocol.startsWith("http")) return;
+    for (const [key, value] of Object.entries(credentials)) localStorage.setItem(key, value);
+  }, WEB_REMOTE_CONTROL_FIXTURE_CREDENTIALS);
+}
 
 function publicUrl(value: string): string {
   try {

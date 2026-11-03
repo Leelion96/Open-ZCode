@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ttft-local-logs",
+  "spec": "./test/e2e/conversation-session/conversation-session-ttft-local-logs.test.ts",
+  "fixtures": [
+    {
+      "id": "ttft-local-title",
+      "description": "本例标题旁路响应，防止 strict replay 依赖 legacy fixture。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "固定辅助标题响应，隔离标题生成耗时；主用例只验证正文链路和本地日志。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"msg_ttft-stages-title-sidecar\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"E2E regression task\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"output_tokens\":8}}"
+      }
+    },
+    {
+      "id": "ttft-local-warmup",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "先完成真实初始化轮，正向埋点样本使用已连接的 continuous 会话。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TTFT_LOCAL_WARMUP"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "ttft-warmup",
+          "inputTokens": 80,
+          "outputTokens": 10,
+          "text": "ttft-local-warmup-ready"
+        }
+      }
+    },
+    {
+      "id": "ttft-local-text",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "固定正文响应，核对真实 Enter 到本地日志及 DOM 的关联，不依赖云端。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_TTFT_LOCAL_LOGS"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "ttft-text",
+          "inputTokens": 80,
+          "outputTokens": 10,
+          "text": "ttft-local-reply-private"
+        }
+      }
+    }
+  ]
+}

@@ -4,6 +4,29 @@
   "spec": "./test/e2e/conversation-session/conversation-session-goal-interruptions.test.ts",
   "fixtures": [
     {
+      "id": "conversation-session-goal-interruptions-title-sidecar",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
       "id": "upstream-goal-verifier-stop-continuation",
       "description": "H09: goal continuation returns the target answer before entering verifier.",
       "metadata": {
@@ -43,16 +66,13 @@
         "kind": "goal-verifier",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "goal verifier stop 需要稳定 running 窗口；真实 verifier 可能过快完成。"
+        "syntheticReason": "verifier 响应保持未完成，直到应用真实 Stop 取消；不依赖固定延时维持观察窗口。"
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GOAL_VERIFIER_STOP",
-          "Verify whether the active session goal"
-        ],
+        "bodyIncludes": ["E2E_GOAL_VERIFIER_STOP", "Verify whether the active session goal"],
         "bodyExcludes": [
           "E2E_GOAL_VERIFIER_STOP_NEXT",
           "Generate a concise title",
@@ -61,11 +81,20 @@
       },
       "response": {
         "statusCode": 200,
-        "delayMs": 60000,
         "headers": {
           "content-type": "application/json; charset=utf-8"
         },
-        "body": "{\"id\":\"upstream-e2e-goal-verifier-stop-delayed\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"passed\\\":true,\\\"reason\\\":\\\"Delayed verifier should be stopped by the test.\\\",\\\"nextAction\\\":\\\"\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":220,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+        "chunks": [
+          {
+            "text": "{",
+            "delayMs": 0
+          },
+          {
+            "text": "\"id\":\"upstream-e2e-goal-verifier-stop-delayed\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"passed\\\":true,\\\"reason\\\":\\\"Delayed verifier should be stopped by the test.\\\",\\\"nextAction\\\":\\\"\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":220,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 1
       }
     },
     {
@@ -81,17 +110,13 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GOAL_VERIFIER_STOP_NEXT"
-        ],
+        "bodyIncludes": ["E2E_GOAL_VERIFIER_STOP_NEXT"],
         "bodyExcludes": [
           "Generate a concise title",
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_GOAL_VERIFIER_STOP_NEXT"
-        ]
+        "lastUserMessageIncludes": ["E2E_GOAL_VERIFIER_STOP_NEXT"]
       },
       "response": {
         "statusCode": 200,
@@ -121,10 +146,7 @@
           "E2E_GOAL_VERIFIER_STOP_NEXT",
           "Verify whether the active session goal"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -174,16 +196,13 @@
         "kind": "goal-verifier",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "goal verifier compact 需要稳定 running 窗口；真实 verifier 可能过快完成。"
+        "syntheticReason": "verifier 响应保持未完成，直到应用真实 Stop 取消；不依赖固定延时维持观察窗口。"
       },
       "maxMatches": 1,
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "E2E_GOAL_VERIFIER_COMPACT",
-          "Verify whether the active session goal"
-        ],
+        "bodyIncludes": ["E2E_GOAL_VERIFIER_COMPACT", "Verify whether the active session goal"],
         "bodyExcludes": [
           "E2E_GOAL_VERIFIER_COMPACT_NEXT",
           "Generate a concise title",
@@ -192,11 +211,20 @@
       },
       "response": {
         "statusCode": 200,
-        "delayMs": 60000,
         "headers": {
           "content-type": "application/json; charset=utf-8"
         },
-        "body": "{\"id\":\"upstream-e2e-goal-verifier-compact-delayed\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"passed\\\":true,\\\"reason\\\":\\\"Delayed verifier should be stopped before compact.\\\",\\\"nextAction\\\":\\\"\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":220,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+        "chunks": [
+          {
+            "text": "{",
+            "delayMs": 0
+          },
+          {
+            "text": "\"id\":\"upstream-e2e-goal-verifier-compact-delayed\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"passed\\\":true,\\\"reason\\\":\\\"Delayed verifier should be stopped before compact.\\\",\\\"nextAction\\\":\\\"\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":220,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 1
       }
     },
     {
@@ -204,9 +232,9 @@
       "description": "H10: manual compact after stopping verifier succeeds and preserves a summary marker.",
       "metadata": {
         "kind": "main",
-        "timingPolicy": "fast-json",
+        "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "验证 stopped verifier 后允许 manual compact，并给后续请求一个可断言的 compact 摘要 marker。"
+        "syntheticReason": "真实回放 compact 仅耗时 38ms，测试错过 started；保持摘要流打开，确认开始态后放行并验证同一 inputId 完成及摘要续发。"
       },
       "maxMatches": 1,
       "match": {
@@ -220,12 +248,37 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "upstream-e2e-goal-verifier-compact-summary",
-          "inputTokens": 260,
-          "outputTokens": 64,
-          "text": "<analysis>Goal verifier was stopped, then the conversation was compacted.</analysis>\n\n<summary>E2E_GOAL_VERIFIER_COMPACT_SUMMARY_MARKER: compact preserved the stopped verifier setup and active goal context.</summary>"
-        }
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache"
+        },
+        "chunks": [
+          {
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-goal-verifier-compact-summary\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"test-model\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":260,\"output_tokens\":0}}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"<analysis>Goal verifier was stopped, then the conversation was compacted.</analysis>\\n\\n<summary>E2E_GOAL_VERIFIER_COMPACT_SUMMARY_MARKER: compact preserved the stopped verifier setup and active goal context.</summary>\"}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":64}}\n\n",
+            "delayMs": 0
+          },
+          {
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+            "delayMs": 0
+          }
+        ],
+        "releaseAfterChunks": 3
       }
     },
     {
@@ -250,9 +303,7 @@
           "CRITICAL: Respond with TEXT ONLY",
           "Verify whether the active session goal"
         ],
-        "lastUserMessageIncludes": [
-          "E2E_GOAL_VERIFIER_COMPACT_NEXT"
-        ]
+        "lastUserMessageIncludes": ["E2E_GOAL_VERIFIER_COMPACT_NEXT"]
       },
       "response": {
         "statusCode": 200,
@@ -282,10 +333,7 @@
           "E2E_GOAL_VERIFIER_COMPACT_NEXT",
           "Verify whether the active session goal"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

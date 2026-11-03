@@ -6,7 +6,7 @@ import {
   TID_OAUTH_LOGIN_BUTTON,
   TID_TASK_SETTINGS_BUTTON,
 } from "@zcode/shared/test-ids";
-import { seedCredentials, seedSettings, waitForTestIdByDom } from "../../helpers/desktop-app.js";
+import { seedCredentials, seedSettings, waitForTestIdByDom } from "#e2e/helpers/desktop-app";
 
 async function enterWorkspace() {
   await browser.waitUntil(

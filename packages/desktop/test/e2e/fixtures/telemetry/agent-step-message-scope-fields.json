@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "events": {
+    "send_btn": {
+      "required": [
+        "agent",
+        "ask_mode",
+        "input_first_char_time",
+        "input_send_time",
+        "input_start_time",
+        "memory_enabled",
+        "message_source",
+        "model_name",
+        "model_provider",
+        "plan_product_id",
+        "plan_status",
+        "task_trigger"
+      ],
+      "optional": ["provider_name"],
+      "additions": {
+        "ui_mode": {
+          "commit": "902e957af7e8d8cd46419e7d6a1b393dcc6143bf",
+          "source": "packages/services/src/telemetry/telemetryCore.ts",
+          "document": "docs/monitoring/business-monitoring.md"
+        }
+      }
+    },
+    "agent_step": {
+      "required": [
+        "cache_write_input_tokens",
+        "cached_tokens",
+        "duration_ms",
+        "error_msg",
+        "error_type",
+        "generation_tail_finalize_ms",
+        "input_tokens",
+        "is_tftt_cached",
+        "is_tool_call",
+        "loop_index",
+        "memory_enabled",
+        "message_source",
+        "model_name",
+        "model_provider",
+        "model_request_count",
+        "model_request_id",
+        "output_tokens",
+        "provider_name",
+        "reasoning_tokens",
+        "status",
+        "step_id",
+        "step_type",
+        "task_trigger",
+        "token_usage_scope",
+        "tool_call_id",
+        "tool_name",
+        "total_tokens",
+        "waiting_ms",
+        "workspace_kind",
+        "remote_kind"
+      ],
+      "optional": [],
+      "additions": {
+        "ui_mode": {
+          "commit": "902e957af7e8d8cd46419e7d6a1b393dcc6143bf",
+          "source": "packages/services/src/telemetry/telemetryCore.ts",
+          "document": "docs/monitoring/business-monitoring.md"
+        }
+      }
+    },
+    "message_completion": {
+      "required": [
+        "agent",
+        "agent_composition",
+        "agent_step_cnt",
+        "ask_mode",
+        "cache_write_input_tokens",
+        "cached_input_tokens",
+        "duration_ms",
+        "error_msg",
+        "error_type",
+        "file_change_cnt",
+        "generated_code_lines",
+        "input_tokens",
+        "memory_enabled",
+        "message_source",
+        "model_name",
+        "model_provider",
+        "output_tokens",
+        "plan_product_id",
+        "plan_status",
+        "provider_name",
+        "reasoning_tokens",
+        "request_time",
+        "retry_cnt",
+        "status",
+        "task_trigger",
+        "time_to_first_token",
+        "tool_call_failed",
+        "tool_call_total",
+        "tool_use_prompt_tokens",
+        "total_tokens",
+        "waiting_ms",
+        "workspace_kind",
+        "remote_kind"
+      ],
+      "optional": [],
+      "additions": {
+        "ui_mode": {
+          "commit": "902e957af7e8d8cd46419e7d6a1b393dcc6143bf",
+          "source": "packages/services/src/telemetry/telemetryCore.ts",
+          "document": "docs/monitoring/business-monitoring.md"
+        }
+      }
+    }
+  }
+}

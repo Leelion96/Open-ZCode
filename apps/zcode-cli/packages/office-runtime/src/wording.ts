@@ -37,6 +37,13 @@ export const EXAMPLE_ANCHORS = pick([
   ["pdf", "paper.pdf#page:5"],
 ]).join(", ");
 
+/** "`pdf`", "`docx`, `xlsx`, `pptx` or `pdf`": each plugin's production skill is named after its format. */
+export const SKILL_NAMES = joinList(
+  DOC_KINDS.map((kind) => `\`${kind}\``),
+  "en",
+  "or",
+);
+
 /** "p:12, slide:3, page:5, Revenue!B2:F9". */
 export const EXAMPLE_LOCATIONS = pick([
   ["docx", "p:12"],

@@ -151,6 +151,29 @@ export function toModelStreamEvent(chunk: TextStreamPart<ToolSet>): ModelStreamE
       };
     }
 
+    // 只接 provider 在服务端执行的工具结果；本地工具结果由 core 自己执行产生。
+    case "tool-result":
+      return chunk.providerExecuted
+        ? {
+            type: "provider_tool_result",
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            output: chunk.output,
+            isError: false,
+          }
+        : undefined;
+
+    case "tool-error":
+      return chunk.providerExecuted
+        ? {
+            type: "provider_tool_result",
+            toolCallId: chunk.toolCallId,
+            toolName: chunk.toolName,
+            output: chunk.error,
+            isError: true,
+          }
+        : undefined;
+
     case "finish":
       return {
         type: "finish",

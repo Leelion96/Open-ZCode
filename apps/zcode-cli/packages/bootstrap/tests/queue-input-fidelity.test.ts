@@ -24,6 +24,7 @@ const intent: TurnInputIntentMetadata = {
   queuePosition: 0,
   attachmentRefs: [{ ref: "artifact://note", fileName: "note.txt", mime: "text/plain", bytes: 3 }],
   sharedContextRefs: [{ kind: "shared_context_import", context_id: "shared-context" }],
+  genUiContext: [{ path: "/project/example.html", state: { stage: "entry" } }],
   provenance: {
     sourceCommandId: "original-command",
     queueItemId: "original-queue",
@@ -51,6 +52,17 @@ function queuedEvent(sequence: number, metadata?: TurnInputIntentMetadata): Sess
 }
 
 describe("Todo151 Queue 提交事实往返", () => {
+  it("旧尾块在 CLI 队列入口解码，模型快照和干净正文一起提升", () => {
+    const projection = new ProductProjection("session", "epoch");
+    const event = queuedEvent(1);
+    const text = `继续执行\n\n<untrusted_gen_ui_state>\n${JSON.stringify(intent.genUiContext)}\n</untrusted_gen_ui_state>`;
+    projection.applyEvent({ ...event, payload: { ...event.payload, input: text } } as SessionEvent);
+    const item = queueItemSchema.parse(projection.getSnapshot().queue.items[0]);
+    expect(item.text).toBe("继续执行");
+    expect(inputIntentMetadataFromQueueItem(item, item.text).genUiContext).toEqual(
+      intent.genUiContext,
+    );
+  });
   it.each(["queue", "guide"] as const)(
     "%s 投递经真实事件投影再提升不丢字段",
     (requestedDelivery) => {

@@ -249,7 +249,10 @@ Web Remote / Mobile -> Memory 开关 + 本地桌面端查看提示
 
 Main Agent 的 Memory system section 在 Memory 启用且 `use=true` 时始终存在，即使目录为空。
 其中的目录、保存规则、读取规则、类型说明和 hygiene 文案必须与冻结的 provider-visible
-fixture 一致；只有 root 允许动态变化。
+fixture 一致；只有 root 允许动态变化。description 示例用逗号连接用途说明；
+四种类型用冒号定义。保存前检查已有事实、更新事实，以及使用召回内容前核实引用，
+各用独立句子表达。Main system prompt 不混入后台 Extraction 或 Custom Agent 的独立
+Memory 指令；index/recall 的分支规则见下文。
 
 每个事实写入 project Memory root 顶层的独立小写 `.md` 文件。文件名用 3–4 个描述性词，
 不带 type 前缀。一个文件只保存一个事实；已有文件覆盖同一事实时直接更新该文件，错误或失效
@@ -295,13 +298,12 @@ session ID，它不由模型生成：Foreground、Extraction、Dream 和 Custom 
 
 `default-index` 分支在 Main session 初始化时读取一次 `<project-memory-root>/MEMORY.md`，并与
 AGENTS instructions 共用现有 request user context 注入链路。非空索引在最终 Messages
-request 的首条 user message 中使用以下 provider-visible 结构；`<MEMORY_ROOT>` 是唯一
-允许归一化的动态值。渲染判定：只要该 request
-user context 中存在任意非空 instruction source，最前方就渲染一次 ZCode 命名的
-`# agentsMd`。因此非空 `MEMORY.md` 本身也会产生该标题，不要求同时存在 AGENTS.md：
+request 开头的公告组（`context_prefix`）中使用以下 provider-visible 结构；`<MEMORY_ROOT>` 是唯一
+允许归一化的动态值。只要存在任意非空 instruction source，`context_prefix` 就渲染一次
+指令 preamble；不增加字段标题。因此非空 `MEMORY.md` 本身也会产生该 preamble，
+不要求同时存在 AGENTS.md：
 
 ```text
-# agentsMd
 Codebase and user instructions are shown below. Be sure to adhere to these instructions. IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.
 
 Contents of <MEMORY_ROOT>/MEMORY.md (user's auto-memory, persists across conversations):
@@ -331,6 +333,17 @@ Contents of <MEMORY_ROOT>/MEMORY.md (user's auto-memory, persists across convers
 除缺失 `metadata.originSessionId` 时同次补齐 `metadata.node_type` 的写入边界外，保存规则只通过
 prompt 约束；Runtime 不增加
 写后 schema validator、自动修复、secret/PII 扫描或 prompt-injection 分类器。
+
+### 索引截断提示
+
+索引清洗和 200 行 / 25,000 字符上限保持不变。超过上限时，警告说明被省略的
+行数、起始行号和该行最多 80 字符的预览；首行内截断则说明首行保留的字符数。
+预览超过 80 字符时取前 79 个 UTF-16 码元（不切断代理对），在最后一个空白处断开并去掉
+断点前的尾随空白；断点前的内容不超过 40 字符或没有空白时，改用前 79 个码元去掉尾随空白；
+最后加 `…`。
+Memory 规则仍在 system，索引正文和指令文件保留在 `context_prefix`，其中不再
+混入日期、通用 context intro 或自动附加说明尾句。`context_prefix` 是动态公告：
+运行中不随文件变化刷新；冷恢复与 rewind 时按当前文件原位刷新（见 `loop/meta-user-context.md`）。
 
 ### 4.1 Foreground 工具权限
 
@@ -555,7 +568,7 @@ running 非空 ------------------------> 覆盖 latest pending
 
 只有一个 running slot 和一个 latest-pending slot；不建立 FIFO、job table 或持久任务恢复。
 successful Main turn 的调度边界立即冻结同一逻辑快照：provider entries 用于后台模型请求，
-durable messages 用于 eligibility、message count 和 cursor。由于 ZCode provider entries 不携带
+durable messages 用于 eligibility、message count 和 cursor。message count 只数对话消息：隐藏提醒记录（`isHiddenReminderMessage`，见 meta-user-context.md）不计入，中断标记计入。由于 ZCode provider entries 不携带
 durable UUID，调度时立即发起 messages 与当时 branch metadata 的读取，并用现有 active-branch
 selector 形成 durable 表示；再按 successful-turn boundary 截断。scheduler 只接收该已启动的
 snapshot promise，不保存未来才读取 SessionStore 的 factory。
@@ -595,6 +608,24 @@ tools 不因受限执行策略被裁剪。工具在执行前按以下窄策略�
 此策略不补注册 Read 或其他缺失工具。Extraction 最多执行 5 个 model turns；第 5 次响应中的
 tool calls 仍执行，但不再发起第 6 次模型请求。每次 provider attempt 前刷新 runtime headers。
 失败不重试。
+
+Memory Agent（Extraction 与 Dream）不另写一份"工具结果 → 下一次请求"的语义，与 Main 共用单步内核：
+
+```text
+entries ── 渲染（Main 同一个渲染器）──> 请求 ──> 模型 ──> 调度执行（Main 同一套调度）──> 结算（Main 同一个函数）──┐
+   ^                                                                                                          │
+   └──────────────────────────────── 追加 assistant、tool result、批次附件 ─────────────────────────────────────┘
+```
+
+- 循环维护 entries：初始是 Main 的 provider entries 加 prompt，之后追加 assistant entry 和这批工具的
+  entries。每轮都用 Main 的渲染器从 entries 生成请求（MCS、并入 tool_result、ToolSearch 暴露、
+  cache control），所以 Memory 请求的形态与 Main 相同；第一轮请求与原来逐字节相同。
+- 允许的 tool call 按 Main 的调度执行：`concurrentSafe` 的并行，Write/Edit 等按顺序执行。
+  被策略拒绝的 call 不进入调度，直接写拒绝结果。
+- 一批工具结果由 Main 的同一个函数生成 entries：每个结果一条 tool result，之后是工具 Hook 上下文和
+  工具声明的批次提示（例如 Read 部分视图的 `read_truncation_notice`）。Memory 的 executor 不配置
+  hooks，所以实际只有批次提示。
+- Memory 不持久化、不发事件，也不运行 Main 的编排（公告、compaction、steer、Stop hook）。
 
 prompt 的 no-op 响应逐字为 `Nothing to save.`。scheduler 不解析该文本来推导额外状态。
 
@@ -797,10 +828,10 @@ ZCode 当前没有的工具也属于明确的 tool-inventory 差异；不得为�
 必须覆盖：
 
 | 范围                   | 场景                                                                                                                                                                                                                                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Config/root            | Settings 默认/持久化；新建/cold resume 重读；active/child 继承；enabled/use；local/remote identity；resume 重算；旧 root 不读取；mkdir failure                                                                                                                                                                         |
 | Retrieval branch       | `false -> default-index`、`true -> semantic-recall`；pointer/index 与 Selector/Recall 两组互斥；原始 boolean 只定义一次                                                                                                                                                                                                |
-| Main prompt/index      | 两种 Main prompt exact fixture；default 分支非空 `MEMORY.md` 的 exact request user-context source；任意非空 instruction source（包括 `MEMORY.md`）使聚合块渲染一次 `# agentsMd`；leading frontmatter/顶层 HTML comment 清理；缺失/空/不可读不注入；semantic 分支在读取前跳过；200 行/25,000 字符截断；磁盘原文 read-state 与 partial 标记；同 session 冻结、新 session 重读；四种 Main task；三种 child 排除 |
+| Main prompt/index      | 两种 Main prompt exact fixture；default 分支非空 `MEMORY.md` 的 exact request user-context source；任意非空 instruction source（包括 `MEMORY.md`）使 `context_prefix` 渲染一次指令 preamble；leading frontmatter/顶层 HTML comment 清理；缺失/空/不可读不注入；semantic 分支在读取前跳过；200 行/25,000 字符截断；磁盘原文 read-state 与 partial 标记；运行中不刷新、冷恢复 / rewind 原位刷新、新 session 重读；四种 Main task；三种 child 排除 |
 | Permission/file write  | root containment；小写 `.md`；敏感 segment；Write/Edit allow/deny；缺失 originSessionId 时同时补入 `node_type: memory`，已有非空 origin 的文件原样保留；Bash 不变                                                                                                                                                      |
 | Recall default branch  | 保留 pointer/index；Main turn 不扫描、不发 Selector、不注入 `relevant_memory`                                                                                                                                                                                                                                          |
 | Recall semantic branch | 无 pointer/index；branch-aware lifecycle 覆盖 prefetch、完整 tool batch 后 consume、recursive scan、selector schema、order/duplicate、正文限制、stale 与 61,440 gate；不增加 Runtime override                                                                                                                          |
@@ -824,9 +855,9 @@ focused tests；它证明这些规则已经在真实 Runtime 链路中正确组�
 正式 E2E 必须覆盖：
 
 1. Main Memory prompt 出现在每个 Memory-enabled Main provider request，并保留默认分支的
-   `MEMORY.md` pointer 文案；session 初始化时非空 `MEMORY.md` 还会以冻结的 exact request
-   user-context source 进入首条 user message，并在该 session 后续 Main request 中保持。该非空
-   source 自身即使没有 AGENTS.md，也会使聚合块渲染一次 `# agentsMd`。
+   `MEMORY.md` pointer 文案；session 初始化时非空 `MEMORY.md` 还会以 exact request
+   user-context source 进入开头的 `context_prefix` 公告，运行中保持不变（冷恢复与 rewind 时原位刷新）。该非空
+   source 自身即使没有 AGENTS.md，也会使 `context_prefix` 渲染一次指令 preamble。
 2. Memory-enabled Main turn 不发 Selector provider request，也不注入 `relevant_memory`；索引消费
    不依赖 Selector。
 3. 后续无 direct Memory write 的成功 Main turn 会 fire-and-forget Extraction；正常完成证据在测试中

@@ -1,6 +1,6 @@
 /**
  * runner-status.ts 顶到 oxlint max-lines 上限（400 行），把「请求归因 header」一族
- * （header 常量、内部前缀剥离、session-type 推断）拆到本文件；公开面仍从 runner-status.ts 导出。
+ * （header 常量、内部前缀剥离、session-type 推断、会话能力标签）拆到本文件；公开面仍从 runner-status.ts 导出。
  *
  * 与 runner-status.ts 的依赖方向：本文件只 `import type` 它的 `ModelStatusContext`，运行时不成环。
  */
@@ -11,7 +11,10 @@ import type {
 } from "@zcode/contracts";
 import { ModelApiActorKind, ModelApiOperation, ModelRequestSessionType } from "@zcode/contracts";
 import { isOpenCodeGoBaseUrl } from "./opencode-session.js";
-import { MODEL_QUERY_SOURCE_HEADER } from "./model-request-headers.js";
+import {
+  MODEL_QUERY_SOURCE_HEADER,
+  MODEL_SESSION_FEATURES_HEADER,
+} from "./model-request-headers.js";
 import type { ModelStatusContext } from "./runner-status.js";
 
 const MODEL_TRACE_HEADER = "x-zcode-trace-id";
@@ -25,6 +28,10 @@ const SESSION_ID_INTERNAL_PREFIX = "sess_";
 const SESSION_ID_SUBAGENT_PREFIX = "subagent_agent_";
 const QUERY_ID_INTERNAL_PREFIX = "query_";
 const QUERY_SOURCE_HEADER_VALUE_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/u;
+// 会话能力标签的格式与上限（docs/design/v2/model/session-features-header.md「Header 格式」）。
+const SESSION_FEATURE_VALUE_PATTERN = /^[a-z0-9_]{1,64}$/u;
+const SESSION_FEATURES_HEADER_MAX_LENGTH = 256;
+const SESSION_FEATURES_SEPARATOR = ",";
 
 export function createModelRequestAttributionHeaders(
   statusContext: ModelStatusContext,
@@ -35,6 +42,9 @@ export function createModelRequestAttributionHeaders(
   // querySource 是观测标识；非法字符或过长值只省略，避免 HTTP 头校验阻断模型请求。
   const querySourceHeaderValue =
     querySource && QUERY_SOURCE_HEADER_VALUE_PATTERN.test(querySource) ? querySource : undefined;
+  const sessionFeaturesHeaderValue = sessionFeaturesHeaderValueOf(
+    statusContext.modelRequestSessionFeatures,
+  );
   const openCodeSessionHeaderValue = isOpenCodeGoBaseUrl(statusContext.baseURL)
     ? sessionHeaderValue
     : undefined;
@@ -47,9 +57,23 @@ export function createModelRequestAttributionHeaders(
     [MODEL_TRACE_HEADER]: statusContext.traceId,
     ...(queryHeaderValue ? { [MODEL_QUERY_HEADER]: queryHeaderValue } : {}),
     ...(querySourceHeaderValue ? { [MODEL_QUERY_SOURCE_HEADER]: querySourceHeaderValue } : {}),
+    ...(sessionFeaturesHeaderValue
+      ? { [MODEL_SESSION_FEATURES_HEADER]: sessionFeaturesHeaderValue }
+      : {}),
     ...(sessionHeaderValue ? { [MODEL_SESSION_HEADER]: sessionHeaderValue } : {}),
     ...(openCodeSessionHeaderValue ? { "x-opencode-session": openCodeSessionHeaderValue } : {}),
   };
+}
+
+/**
+ * 去重、按字典序拼接；任一标签不合法或总长超限时整头省略。
+ * 与 query-source 相同，非法值只省略，避免 HTTP 头校验阻断模型请求，也不回退到静态 header。
+ */
+function sessionFeaturesHeaderValueOf(features: readonly string[] | undefined): string | undefined {
+  if (features === undefined || features.length === 0) return undefined;
+  if (!features.every((feature) => SESSION_FEATURE_VALUE_PATTERN.test(feature))) return undefined;
+  const value = [...new Set(features)].sort().join(SESSION_FEATURES_SEPARATOR);
+  return value.length <= SESSION_FEATURES_HEADER_MAX_LENGTH ? value : undefined;
 }
 
 export function resolveModelRequestSessionType(

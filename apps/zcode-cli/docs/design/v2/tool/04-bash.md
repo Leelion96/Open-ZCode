@@ -74,14 +74,16 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 - 图片输出转 image content block；如果无法识别为受支持图片块，回退为文本。resize/compress 是模型预算优化，不是唯一的图片判定依据；当 data URI 的 magic bytes 已确认是受支持图片，且 resize 只是通用处理失败时，可以继续按 image block 暴露给 provider，避免把合法图片降级成原始 data URI 文本。若 resize 明确失败在 `too_large`、`invalid_request`、`unsupported`、`empty` 等预算/请求语义上，必须回退文本，不能绕过 provider 图片预算。
 - 中断、timeout 或用户取消时，在 stderr 段后追加 `<error>Command was aborted before completion</error>`，让模型能稳定识别未完成状态。
 - provider-neutral mapper 本身只根据 `interrupted` 写入 `is_error`；ZCode 生产链路不为非零退出抛异常，所以需要在 provider-visible projection 层把普通失败结果标成 error，并输出 `Exit code N` + stdout/stderr 文本。`grep` 无匹配、`diff` 有差异、`test` 条件为 false 这类语义型非零退出仍不是 provider error。
+- 失败结果不走 `<persisted-output>`：正文是 `Exit code N`、内联 stdout（前 30000 字节）、stderr 按行拼接后 trim，不带后台、stale read、gh rate limit 提示。总长超过 `10000 + 1024` 字符时保留前 5000 和后 5000 字符，中间换成 `\n\n... [K characters truncated] ...\n\n`（K 是删去的字符数）。这段正文已按字符限长，Bash 用 `isModelContentBounded` 声明它；通用 serializer 不再按 `resultBudget` 的 30000 字节落盘或截断。stdout 只采集前 30000 字节，所以模型看到的是这 30000 字节内的头尾；超出部分（包括真正的结尾）看不到，也不给文件路径。多字节文本（例如中文）的头尾正文可以超过 30000 字节，也原样内联。成功结果照旧按 30000 字节预算落盘。
 - `staleReadFileStateHint` 是面向模型的稳定提示，需要作为文本段追加，不能因为不再 JSON 化结果而丢失。
-- 大输出写入 tool-results / execution artifact，只给 `<persisted-output>` 风格的预览、完整路径和原始大小，不把完整 JSON 或大 stdout 回灌模型上下文。无论持久化来自 execution adapter 的 output artifact，还是来自通用 serializer 的 `resultBudget` artifact，Bash 都必须走同一套 Bash 专用 provider-visible projection。
+- 成功结果的大输出写入 tool-results / execution artifact（失败结果不落盘，见上一条），只给 `<persisted-output>` 风格的预览、完整路径和原始大小，不把完整 JSON 或大 stdout 回灌模型上下文。无论持久化来自 execution adapter 的 output artifact，还是来自通用 serializer 的 `resultBudget` artifact，Bash 都必须走同一套 Bash 专用 provider-visible projection。
 - 后台任务返回任务 ID 和输出路径，模型可见文案应说明任务仍在后台运行以及输出写入位置。
 - 后台任务启动返回必须包含可立即 `Read` 的 canonical output path；即使命令尚未写出任何
   字节，adapter 也要在 spawn 前创建该文件。新 Bash 执行不再生成第二个 stderr 日志文件；
   历史 split-path 字段只用于兼容读取，不能同时暴露给 provider。
 - 后台任务完成、失败、timeout、cancel 或 output-limit 停止后，runtime 需要把一条短 `<task-notification>` 注入下一次模型请求的消息历史。通知只包含 `task-id`、可选 `tool-use-id`、状态、摘要和输出文件路径，不包含完整 stdout/stderr；模型需要读取日志时继续调用 `Read`。
 - 结构化 `status`、`exitCode`、`stdoutBytes`、artifact path 等字段保留在结构化 output、事件、UI、ZCode app-server 和 debug 中；不应成为模型可见结果的主要形态。
+- App 工具卡（V4 投影与 legacy 快照路径相同）：后台命令的 failed 通知覆盖启动 ACK，并写成标准 tool error。Execute 卡片显示通知摘要 `Background command "<description 或 command>" failed with exit code <N>`（没有退出码时省略 `with exit code <N>`），不再显示命令输出或启动 ACK；输出仍在输出文件中。
 
 ### 模型 result 映射规则
 
@@ -93,7 +95,8 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 - `persistedOutputPath` 只在非后台文本结果中生成 `<persisted-output>` 文案。预览取规范化 stdout 的前 2000 字符，尽量在前半段之后的最后一个换行处截断；大小文案使用 1024 进制、无空格的 `bytes` / `KB` / `MB` / `GB`，例如 `2KB`。serializer 因 `resultBudget` 额外写入 artifact 时，也要调用 Bash 专用 persisted projection，而不是通用 tool output 文案；但如果超预算内容来自 `structuredContent`，不能在 projection 中重新透传完整 structured blocks，应保留 artifact preview。
 - `interrupted=true` 时 stderr 段后追加 `<error>Command was aborted before completion</error>`，并由 mapper 标记为 error。普通失败命令同样是 provider-visible error result；ZCode 在 projection 层生成该结果，而不是依赖 mapper 的 `exitCode` 判断。
 - `backgroundTaskId` 生成三种文案：普通后台、用户手动后台化、assistant-mode 自动后台化。普通后台文案必须包含“仍在运行 / 完成会通知 / 用 Read 查看输出文件”；assistant-mode 自动后台化文案必须包含 15s blocking budget 和建议长任务使用 subagent 或 `run_in_background`。
-- `staleReadFileStateHint` 和 `ghRateLimitHint` 都作为独立文本段追加到最后，不能因为 Bash result 不再 JSON 化而丢失。`ghRateLimitHint` 只在未失败的前台结果中根据原始 stdout 计算；failed `gh` 的 provider-visible error 文本不追加该 system-reminder。
+- 前台命令到达超时预算后转后台时（结构化字段 `timedOutAfterMs`，即实际生效的超时毫秒数，可为小数），普通后台文案的第一句改为 `Command did not complete within its <N>s timeout and was moved to the background (ID: <id>).`，N 是四舍五入的秒数（至少 1）；其后的输出路径、完成通知和 Read 提示不变。旧版本读到 `timedOutAfterMs` 时 strict 的 `BashOutputSchema` 解析失败，工具卡退回 JSON 文本显示，不报错（session-persistence.md「旧版本读取新数据」）。
+- 未失败结果中，`staleReadFileStateHint` 和 `ghRateLimitHint` 都作为独立文本段追加到最后，不能因为 Bash result 不再 JSON 化而丢失；`ghRateLimitHint` 只在前台结果中根据原始 stdout 计算。失败结果的 provider-visible error 文本不追加这两段。
 - 后台 result 即使带有 `persistedOutputPath`，模型可见内容也只使用后台说明文案，不生成 `<persisted-output>`。
 - `bash_progress` / tool JSX update、用户手动后台化入口和 `_simulatedSedEdit` 属于 runtime / UI / internal surface；provider-visible conformance suite 只覆盖最终 tool result 内容，端到端事件能力应放在独立 runtime suite。
 
@@ -106,6 +109,7 @@ provider-visible output 以本文“模型 result 映射规则”为基线。
 3. 解析命令用于权限匹配。复杂、不可解析或可疑命令默认进入 ask。
 4. 根据 sandbox 配置、排除规则和 `dangerouslyDisableSandbox` 决定是否 sandbox。
 5. 将 session cwd 规范化为绝对路径并作为命令工作目录；Bash tool 输入不接受自定义 `cwd`。
+   命令结束后，捕获到的 cwd 在 workspace 内时，按 workspace root 的写法加相对路径写回 session cwd；离开 workspace 时写回 workspace root 原样。同一目录的不同写法（symlink、`/private` 别名、盘符大小写）写回后与 root 写法相同，环境公告不会把它当成目录变化。
 6. 调用统一 shell adapter，以 shell mode 执行 `command`。
 7. 默认前台等待预算按配置，允许输入覆盖但不能超过最大值；后台提交后必须清除该预算。
 8. 超过进度阈值后开始进度流。
@@ -135,6 +139,11 @@ Bash prompt 对模型有几类强约束：
 
 ZCode prompt 可以更短，但这些约束应变成 tool policy 和 tests，而不只依赖提示。
 
+provider-visible 描述包括 "Command output is displayed to you, not reliably to the user."、
+`timeout` 一行与参数描述里的 "max 600000 for a foreground command"（后台提交会清除前台 deadline，上限只约束前台），
+以及 `description` 参数里的 "Say what the command does in plain words…" 一段。Git 段不要求在
+commit/PR 末尾附加署名行：ZCode 不下发署名行。
+
 ## 权限模型
 
 `Bash` 是动态权限工具：
@@ -154,25 +163,24 @@ ZCode 应把 shell permission 拆成三个层次：
 - `ShellPermissionPolicy`：规则匹配、危险语义、readonly 判断。
 - `ExecutionPort`：真正执行命令、处理 timeout、cancel、stream、sandbox。
 
-### 最小 read-only Bash allowlist
+### read-only Bash allowlist
 
-当前阶段只做静态判断，不引入完整的命令级只读校验器。`Bash`
-只有在命令解析安全、恰好一条 simple command、没有赋值前缀、没有重定向、没有 command
-substitution / parameter expansion / brace expansion / process substitution 等动态 word，且命中
-`ShellPermissionPolicy` 中的安全 allowlist 时，才会把运行时 capability 降级为
+`Bash` 只有在 AST 可安全解析、每条 simple command 的参数、赋值和重定向均通过
+readonly policy，且没有 command substitution 等不支持的动态结构时，才会把运行时 capability 降级为
 `readOnly=true`、`sideEffectScope="none"`、`riskLevel="low"`、`needsApproval=false`。
 plan mode 因此只会自动放行这类 Bash；其他 Bash 仍按 plan mode 的非只读工具硬拒绝。
+命令级参数、wrapper、管道和命令链的具体规则见
+[AST 权限语义](../../../bash-tool-ast-permission-semantics.md)。文件查看优先使用 `Read`。
 
-第一版 allowlist 只覆盖低歧义的查看和搜索命令：
-
-- 已有：`pwd`、`ls`、带安全 flag 的 `tree`。
-- 新增文件查看类：`cat`、`head`、`tail`、`wc`、`stat`、`file`、`strings`。这些命令只表示读取
-  stdout，不允许 shell 重定向；模型提示仍要求优先使用 `Read` 读取文件内容。
-- 新增搜索类：`rg`、`grep`。只允许常见只读 flag，例如行号、大小写、固定字符串、递归、context
-  行数、glob/include/exclude、pattern 文件等；`rg --pre` 这类会执行外部命令的参数不进入 allowlist。
-
-本轮明确不开放 `find`、`sed`、`awk`、`jq`、`yq`、`git` 的自动 read-only 权限。它们需要子命令、
-表达式或谓词级别的专门规则，后续独立补 spec 和测试后再放开。
+`sed` 只开放两个完整脚本子集：`-n` 配合 `p`、`Np`、`N,Mp` 的打印（可带文件），以及
+不带文件参数的 `s/pattern/replacement/flags` 标准输入替换。数字地址为正整数，打印指令
+可用分号连接；替换只允许 `/` 分隔符、有限转义和 `g/p/i/I/m/M/单个1–9` 标志。
+选项必须在脚本前，只支持 quiet、扩展正则、POSIX 和零分隔选项；替换不接受 quiet/零分隔选项。
+`-e`/`-f`/`-i`、未知选项、脚本后的 option 形参数、控制字符、额外指令和执行/写入标志均不授予只读资格。
+复用 AST argv 检查全部参数和完整脚本；管道、命令链和已支持 wrapper 使用同一策略。
+旧 `mode=plan` 与独立 `planEnabled=true` 均沿用非只读拒绝；项目 allow 不能绕过 Plan。
+超出子集的 sed 在普通 Build 默认转为审批；Plan 关闭后的其他模式及显式授权沿用原规则。
+`cat`、`grep` 等命令的现有安全参数继续有效。权限服务、执行端和展示层不增加 sed 特判。
 
 ## 跨平台要求
 
@@ -187,6 +195,7 @@ Windows 执行 adapter 的最低兼容规则：
 
 - ZCode 在 Windows 上不得要求用户安装 Git Bash、MSYS2、Cygwin 或 WSL 才能运行内置 Bash tool。
 - `ExecutionPort` 的内部 `argv` mode 在 Windows 上必须解析 `PATHEXT`，支持 `pnpm` / `npm` / `npx` 这类只在 PATH 上暴露为 `.cmd` 的 shim。
+- Windows `PATH` 按 `;` 拆分，去掉条目首尾的双引号（例如 `"C:\Program Files\Git\cmd"`），跳过空条目；Git Bash 检测与自动 git 用同一个拆分函数。引号里含 `;` 的条目仍在 `;` 处拆开（Node 按裸名启动时把它当作一个目录），这种写法不支持。
 - 解析到 `.exe` / `.com` 等原生可执行文件时继续使用 `spawn(file, args, { shell: false })`。
 - 解析到 `.cmd` / `.bat` 时不得直接 spawn；必须显式通过 `ComSpec` 或 `cmd.exe` 执行，并保留 timeout、cancel、stdout/stderr、trace 和 output budget 行为。参数必须按 `cmd.exe` 规则转义，覆盖空格、双引号、管道、重定向、括号、`&`、`^` 和 `%` 等特殊字符。
 - `shell` mode 在 Windows 上默认使用环境里的 `ComSpec` / `COMSPEC`，缺失时退回 `cmd.exe`；在非 Windows 上保持 Node 默认 shell。

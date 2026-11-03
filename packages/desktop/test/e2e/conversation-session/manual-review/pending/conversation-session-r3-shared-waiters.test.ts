@@ -158,7 +158,9 @@ describe(`${CASE_MARKER}: 同一 target 的多个等待者与连接中项目入�
 
     // 新项目的连接动作属于 Source；独立设置向导提供可取消的第二个真实等待者。
     const requestsBeforeWizard = await readHostConnectRequests();
-    await openSSHRemoteDialog(CASE_MARKER);
+    // helper 默认从项目表单进入；本例需要独立设置等待者，否则取消后没有设置返回按钮。
+    await openSSHRemoteDialog(CASE_MARKER, { entry: "settings" });
+    await $('[data-testid="settings-page"]').waitForDisplayed();
     await fillSSHPasswordSettings(proxied);
     await clickLastEnabledSSHDialogButton(CASE_MARKER);
     // 该 Host 日志紧接着同步登记 logical waiter；取消 IPC 只能在本次 handler 让出后处理。

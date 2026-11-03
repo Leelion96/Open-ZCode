@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-tool-actions",
+  "spec": "./test/e2e/conversation-session/conversation-session-tool-actions.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-tool-actions.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/conversation-session-tool-actions/tool-action-guard.txt",
+      "source": "created-by-helper",
+      "description": "用例创建并由真实 Read 工具读取的文件。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "title-e2e_tool_action_guard",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复和流式时序以复现用例动作窗口；真实 Agent、工具执行、队列与 UI 不被替换。"
+    },
+    {
+      "id": "upstream-tool-action-read-call",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复和流式时序以复现用例动作窗口；真实 Agent、工具执行、队列与 UI 不被替换。"
+    },
+    {
+      "id": "upstream-tool-action-final-text",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游回复和流式时序以复现用例动作窗口；真实 Agent、工具执行、队列与 UI 不被替换。"
+    }
+  ]
+}

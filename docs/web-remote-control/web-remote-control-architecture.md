@@ -123,7 +123,7 @@ message 上限 16 MiB / 64 片，接收侧只 staging 一个 message 并在完�
 业务事实。
 
 production adapter 的 transport 状态是对称且 bridge-scoped 的：TX 在首片发送前保留整批 immutable
-fragment，并按最终 outer JSON bytes 维护 `1 MiB / 256 KiB` flow edge、`8 MiB / 45s` replay
+fragment，并按最终 outer JSON bytes 维护 `1 MiB / 256 KiB` flow edge、`32 MiB / 45s` replay
 边界；RX 在完整 assembly 和同步 Channel delivery 成功后才排队 cumulative ACK。ACK 优先 flush。
 同一 bridge 每次重新 send-ready 时都重放未 ACK batch，包括本地 WebSocket 未换代、但心跳重新确认
 `matched` 的 `same-socket` 场景；对端 peer 可能已经换代，不能把本地 socket identity 当成交付证明。
@@ -135,6 +135,28 @@ bytes。raw frame/ACK 不进入 desktop main 的普通 50 项 app payload buffer
 未压缩 UTF-8 `<=1 MiB` 硬闸，compression 开关不影响 admission；永久 oversize 与临时 unavailable
 分流，raw fault 只触发一次 hard bridge recovery。跨端只传通用
 `bridge-degraded: rpc-transport-fault`，具体 typed reasonCode 留在 owning 端安全日志。
+
+### 合法大消息的重放容量（2026-10-27）
+
+重放缓存默认值与可配置硬上限统一由 `2 * maxMessageBytes` 推导，当前为 32 MiB。
+原来的 8 MiB 按编码后的整批外壳计量，6 MiB 原始消息经 Base64 和 JSON 编码就会超限；
+这与单条 raw RPC 允许 16 MiB 的合同冲突。16 MiB 消息的编码批次约 21.35 MiB，
+32 MiB 能容纳该批次及原有 8 MiB 在途余量。调用方仍可显式设置更低的缓存预算。
+该值是每个 bridge、每方向的未确认外壳字节上限，不等于进程实际堆内存上限。
+
+```text
+原来：合法大 RPC → 整批编码超过 8 MiB → bridge 失效 → Web 重挂并重复读取
+现在：合法大 RPC → 在 32 MiB 预算内整批保留 → 分片发送 → 原子交付 → ACK 释放
+```
+
+容量 owner 仍是 shared acknowledged adapter；Desktop main 只转发，Web 继续使用 replayable。
+单消息 16 MiB、物理帧 1 MiB、流控高低水位、45s deadline、重放去重和现有恢复策略不变。
+超过单消息上限或持续积压超过缓存预算仍按既有 terminal fault 处理；本次不宣称解决这些
+输入的业务加载与跨 bridge 恢复循环，也不引入新的分页、分片 ACK 或手动重试语义。
+
+验收见 MRL01/MRL02：真实 Web 页面读取合成 8 MiB RPC 响应后只挂载一次；真实 adapter
+覆盖 6/8/16 MiB、在途余量、ACK 丢失后重放、暂时不可发送、身份隔离、硬上限与 deadline。
+候选入口：`pnpm exec tsx packages/web/test/e2e/manual-review/pending/remote-large-rpc.mjs`。
 
 `mobile-view-state-update` 除了 `activeWorkspaceKey`、`activeTaskId`、`updatedAt`，还可以携带
 `deviceInfo`。该字段由手机浏览器端采集，只包含浏览器可稳定获得的受控信息：`platform/version/name`、
@@ -158,6 +180,70 @@ attachment，并在 relay 再次 paired/send-ready 时补发，直到新 `worksp
 预算耗尽后必须先销毁旧 bridge protocol 与 service registration，再进入明确的
 `connection-recovery-timeout` 非 active 终态，并提供由用户触发的整页重试。不能继续把已 degraded 的旧
 bridge 显示为 active，也不能由 relay/main 保存业务状态来掩盖恢复失败。
+
+### Bridge 服务与在途 RPC 终结（2026-10-27）
+
+Web 使用远端 workspace attachment 时，反馈仍由控制端 Window Host 的 `feedback` 服务处理，
+复用其设备身份、账号和诊断日志；不能转交 Source 或因为远端集合没有该频道而等待注册超时。
+本地 workspace 和桌面 continuous 的服务归属保持不变。
+
+Web 已有会话发送前读取的 Gen UI 状态同样归控制端 Window Host。手机 attachment 只暴露
+`gen-ui.listState`，保留 scope 参数；不开放 sandbox、文件读取、状态写入或其他未审阅方法。
+缺少 widget 时正常返回空列表，不通过 Unknown channel 超时探测能力。
+
+Acknowledged relay adapter 是单个 bridge 生命周期的唯一 owner。首次 terminal degraded 或
+dispose 必须同步撤销该 bridge 的 RPC client，包括尚在等待 Initialize 的请求；之后的请求
+立即拒绝，迟到回包不得完成旧请求。短暂断线、挂起和同一 bridge 的 ACK replay 不终结 client。
+Web 服务连接消费 adapter 的生命周期信号；不新增业务计时器、重试队列或命令自动重发。
+
+```text
+发送 → Composer claim → 发送前 RPC → 命令登记 → CLI admission
+                         │
+bridge 终结 → RPC client 关闭 → 请求拒绝 → 既有失败处理恢复原草稿
+已登记命令 ────────────────────────────→ 既有 query/snapshot 对账
+```
+
+根因是旧 bridge 仅释放传输 emitter，未拒绝在途 RPC；发送前已隐藏并持久化为空的草稿因此
+无法进入失败恢复。修复不改变 bridge 降级触发条件、重连频率、Root key 或已接纳队列语义。
+对 `ZCT-2114921598023585792` 只确认上述代码边界，不据此认定历史现场的全部 5 秒耗时或刷新触发源。
+
+验收 MRS01–MRS04：真实 Web 入口与 Host attachment 装配、受控 relay/业务服务，覆盖本地/远端
+反馈归属、发送上下文读取、发送前 bridge 终结与迟到回包、桌面 continuous 对照。候选保持 pending；
+实体手机、生产 relay 与真实 SSH 网络不是该浏览器边界用例的覆盖范围。
+
+### 后台恢复与原任务导航
+
+Relay `matched` 只证明配对通路恢复，不证明旧 workspace bridge 仍存在。后台页面可能丢弃
+`bridge-degraded`；Desktop 必须在每次已有 send-ready（包括 same-socket 心跳）补发当前
+invalidation latch，直到新 identity 的 bridge-open 接管。继续使用现有心跳，不新增恢复轮询。
+Web 对同一 active bridge 只执行一次 degraded 转换，由 raw adapter 的 `onDegraded` 进入唯一
+recovery flight；重复通知不得重置 recoveryId、bridge generation 或有界重试预算，旧 bridge
+通知不得影响新 bridge。未认证、旧 socket 和普通业务帧的接收门禁保持不变；挂起期间同一有效配对
+socket 的 raw 帧准入与 ACK 规则见 [Relay V2 spec](./relay-v2-pairing.md#手机首次进入与恢复05)。
+
+硬恢复保留原 workspaceKey/taskId。项目仅由手机打开时，释放短生命周期 attachment 后，原项目
+可能不在桌面 tabs 派生的 bootstrap.workspaces 中；这不代表任务失效。有明确 taskId 的缺席目标
+必须沿已有 `taskHostId + taskId + workspaceKey` 的 Host 任务导航重新核验目录与当前远程 session，
+不能静默选择 default。窗口主进程不新增项目目录缓存，也不把 mobileViewState 当作可信目录。
+任务不存在、身份不符或 Host 离线时沿既有失败/重试边界处理；成功建立新 bridge 后才更新导航位置。
+已明确断开的远程候选继续保持断线语义。无 taskId 的草稿不进入任务导航，也不冒充持久化任务。
+
+上述保留目标语义仅适用于携带 `preferredWorkspaceKey` 的硬恢复。首次加载、整页刷新和错误页
+重试仍使用初始 workspace 选择规则：旧导航目标缺席或不可 bridge 时，选择第一个可 bridge 的
+workspace；仅在没有可 bridge 候选时进入 home-only。冷启动不能只凭过期的
+`mobileViewState` / `initialViewState` 对缺席目标发起 Host 任务导航。
+
+```text
+Desktop invalidation latch → 每次 send-ready 补发 → Web 首次 degraded → 单一恢复 flight
+                                重复通知 ─────────→ 不重复恢复
+原 workspace/task → bootstrap 中缺席 → Host 按任务身份核验 → 新 bridge → 原任务 snapshot
+                                             核验失败 → 明确失败，不跳 default
+冷启动 / 整页刷新 → 初始选择器 → 旧目标缺席或离线 → 第一个可 bridge 的 workspace
+```
+
+回归要求：首条失效通知丢失后，same-socket 恢复不再额外等待 raw 45 秒期限；重复失效通知不延长
+重试预算；仅手机打开的本地/远端任务保持身份，核验失败不跨 workspace/Host；宽窄屏受控丢帧与真实后台恢复
+后显示已完成内容并保留原任务，桌面 continuous 连接继续正常完成。候选 E2E 为 MRO04，保持 pending。
 
 ## Desktop Main
 
@@ -326,7 +412,8 @@ Mobile web 连接流程：
 3. paired 后发送 `bootstrap-request`；v4 使用响应中的可选 `desktopAppVersion` 校验 URL。
    首次不一致时校正并导航，已进入页面时保留页面并提示确认后重新加载；旧桌面缺字段时保持原行为。
    重连/回前台时即使 bridge 健康也重新校验，具体边界见 [v4 版本同步](./remote-v4-static-deployment.md#v4-url-与桌面实际版本同步)。
-4. 按 `mobileViewState -> initialViewState -> first workspace` 选择初始 workspace
+4. 优先采用 `mobileViewState ?? initialViewState` 中可 bridge 的 workspace；旧目标缺席或离线时，
+   回退到第一个可 bridge 的 workspace。只有没有可 bridge 候选时才选择离线项。
 5. 若目标远程工作区尚不具备 bridge 条件，渲染 home-only `Root`，保留工作区列表与重连入口；
    此时不创建 workspace bridge，也不开放依赖工作区服务的任务操作。没有可选工作区时显示错误页。
    工作区列表由 ProjectSidebar 在没有 projectService 时从 `listWorkspaces` 与推送读取，行为见
@@ -388,9 +475,113 @@ DOM 净化、点击拦截和受控外链打开。移除原生远控确认不改�
 renderer XSS 或上述边界被绕过，攻击代码可以再次直接调用远控启动 IPC，内部票据不会提供用户在场
 证明。安全评估不得把该票据当作 Office XSS 的补偿控制。
 
-`web-remote-replayable` 默认不应获得终端能力。若产品仍需手机终端，必须通过独立的
-workspace/session/device 绑定 capability、短 TTL、owner/lease 和断线回收来暴露，不能把通用
-`services.exposeOnChannelServer()` 视为授权。
+已通过现有登录、设备配对和 workspace bridge 挂接的 `web-remote-replayable` 客户端可以
+打开终端。Window Host 的手机频道 allowlist 显式包含 `ServiceChannels.Terminal`，复用当前
+local/remote attachment 所属的 `ITerminalService`，支持既有 create、输入、输出、resize 和
+dispose 契约。工作目录与标签保活沿用已有实现；手机 PTY 的归属和结束规则见下节。
+不新增授权票据、独立手机 runtime 或断连计时器。
+
+2026-10-22 恢复说明：此前把 Terminal 排除在手机 allowlist 外，导致已配对客户端打开终端时
+在服务调用前得到 `Channel name 'terminal' timed out after 1000ms`。只恢复该频道；其他频道
+仍按原 allowlist 管理，Source Management、Provider Provisioning 和未审阅频道仍不开放。
+`desktop-continuous` 继续使用原完整服务集合。Office XSS 修复和既有远控鉴权、配对、目标绑定
+保持独立，不以禁用正常手机终端替代这些边界。
+
+```text
+手机 -> 既有配对 / workspace bridge -> 手机 allowlist -> 当前 Host Terminal -> PTY
+桌面 -> 原 continuous attachment -> 原完整服务集合 ------> 当前 Host Terminal -> PTY
+```
+
+回归：MRO04 用真实桌面、手机视口 Web、loopback relay 和 PTY 验证手机打开、输入、输出、
+关闭再打开，以及桌面既有终端继续执行命令；Host RPC 测试保留其他频道拒绝和桌面可用对照。
+
+### 手机终端的连接换代（2026-10-22）
+
+手机从已有会话返回首页、在同一项目新建草稿、再返回原会话时，workspace bridge 会换代。
+原终端标签、xterm 历史和 Host 中的 PTY 保留，输入、输出、退出通知、resize 与显式关闭
+必须使用当前连接。仅恢复 DOM、继续持有已释放的旧 RPC 代理，不满足终端保活合同。
+
+常驻输入、输出和关闭使用的终端连接由现有 side pane session registry 条目持有；React 组件重挂时只更新连接绑定，
+不重新创建 PTY。同一服务代理重复挂载不重复订阅；代理变化时先取消旧订阅，再订阅新代理，
+旧订阅的迟到事件不得更新当前终端。显式关闭只释放一次当前绑定的 PTY 和订阅。
+resize 已由当前挂载组件的服务代理处理，保留原有调度，不把旧组件的 resize 请求迁移到新连接。
+复用同时校验已有的客户端命名空间（手机使用稳定设备身份）和 workspaceKey（远端使用包含
+Source 身份的 workspaceIdentity）。即使两台设备的本地路径相同，也不挂载或重绑对方的保活条目，
+不将旧 PTY id 交给其他工作区或机器；Host 退出后的进程恢复不属于此合同。
+桌面侧栏终端复用同一规则；底部终端保持原生命周期。连接未变化时，桌面输入和订阅不变。
+
+```text
+修复前：新 bridge 就绪 → 旧 bridge 释放 → 原标签重挂 → 输入/订阅仍走旧代理
+修复后：新 bridge 就绪 → 原条目绑定新代理 → 原 PTY 继续输入/输出
+                                     └→ 旧订阅释放，迟到事件忽略
+桌面：  原服务代理未变 → 原 PTY / 原订阅继续使用
+```
+
+MRO04 增加同项目新建草稿后返回原会话的回归：原标签 ID、shell PID 和历史保留，
+新命令有完整输出，随后关闭重开正常，桌面底部与侧栏的原终端均继续执行。命令完成判定等待本次输出
+标记和工作目录同时可见，并返回这份完整快照。完成标记在工作目录之后输出，避免同一终端的
+旧目录输出满足等待条件；不以第一行输出到达代替本次命令输出完成。
+
+### 手机终端 owner 与回收（CR-01，2026-10-22）
+
+已确认的行为：刷新页面关闭旧终端；同页 workspace/bridge 换代保留 PTY；失联超过既有
+3 秒断连宽限后关闭终端，重连再打开时创建新终端。关闭手机浏览器、切设备、远控停止、
+鉴权失败或被踢均结束旧 owner。短暂断线在宽限内恢复则保留。页面卸载通知不作为可靠前提。
+
+Main 的窗口远控 runtime 只负责页面会话与 owner 生命周期：Web 在一次页面连接内保留
+`terminalClientSessionId`，bootstrap 与 bridge-open 携带该标识；Main 分配可信的
+`terminalOwnerId`，先通知已有 Window Host，再挂接 bridge。刷新收到新页面标识时替换
+owner；确认断连沿现有宽限回调结束 owner，不因单个 bridge/attachment 释放而结束。
+桌面端终端不加入手机 owner。
+
+Window Host 唯一持有该 owner 在 local/remote scope 中创建的 terminal ID，包装已有
+Terminal 服务，不另建 PTY runtime。owner 替换/释放先使旧 scope 失效，再逐个 dispose；
+已经在途的 create 即使晚到也立即回收，不得登记到新 owner。旧 attachment 与迟到请求
+不能复活已结束 owner；同一 owner 在同一 scope 的新 attachment 复用原终端归属。
+旧客户端未声明页面会话时，终端仅按 attachment 生命周期回收，不允许无主 PTY。
+
+```text
+页面会话 → Main 分配 owner → Host owner → local/remote Terminal → PTY
+同页换 bridge ────────────→ 同 owner / 原 PTY
+刷新 / 确认断连 / 远控终止 → owner 失效 → 回收全部所属 PTY
+                                        └→ 晚到 create 立即 dispose
+重连 → 新 owner → UI 清理旧保活条目 → 新 PTY
+```
+
+bridge-ready 返回 owner 标识。UI 将它用于终端生命周期，不改变草稿的稳定设备命名空间。
+owner 结束产生 bridge-degraded，恢复沿已有 bootstrap/rebuild 路径；旧 xterm/terminal ID
+不得绑定到新 owner。Host 计数 `terminal.open` 保留用于诊断。
+
+同页故障恢复可能在草稿页重建整个 React Root。侧栏标签更新必须在既有 canonical commit
+中同步写入 workspace memory；不能等旧 Root 的卸载 effect 才保存。新 Root 的首次 render
+早于旧 Root 的 passive cleanup，延迟保存会丢失标签引用，留下仍存活但无法回到的 PTY。
+同 owner、同 workspace 的恢复必须保留原标签 ID、历史和 PID，显式关闭后的标签不能恢复。
+
+已卸载的侧栏实例不能再提交整份标签或折叠态快照。浏览器关闭等待主进程持久删除期间，
+App 可能因登录页或错误恢复重挂；旧关闭完成后仍释放选定资源，但必须从原 workspace
+的最新 memory 中只删除点击时选定的标签，保留新实例新增的标签及折叠偏好。
+本次只收敛旧快照覆盖，不改变重挂后浏览器标签壳接收关闭结果的既有行为。
+
+```text
+关闭等待 -> App 卸载 -> 新实例提交标签 B -> 旧关闭完成
+                                           -> 最新 workspace memory 只删除旧标签 -> 保留 B
+```
+
+确认断线的结束动作也必须释放没有页面 ID 的旧客户端 attachment；没有 owner 不等于没有
+终端资源。普通旧客户端 bootstrap 不结束仍活跃的 attachment。迟到终端事件订阅由 RPC
+请求边界拒绝并返回独立订阅错误，不得作为终端输出派发，也不得让异常退出共享 Host。
+
+```text
+侧栏交互 -> canonical commit -> 同步 workspace memory -> 新 Root 读取原标签
+确认断线 -> 撤销在途 bridge -> 释放 attachment -> owner / legacy scope 回收 PTY
+迟到 listen -> RPC 拒绝该订阅 -> 记录错误；其他订阅和桌面终端继续
+```
+
+验证：Host owner 与 Main 生命周期单测覆盖回收、晚到创建、旧页面迟到请求及旧客户端兼容。
+MRO04 在 macOS Electron + Chrome 手机视口通过页面刷新、长断线恢复和关闭浏览器后的
+真实 shell PID 回收断言，同时保留同页 bridge 换代的原 PID、桌面底部与侧栏终端对照。
+证据见 [MRO04 覆盖矩阵](../testing/conversation-session-e2e-coverage-matrix.md#手机远控终端恢复mro042026-10-22)。
+远端断连导致底层服务不可达时报告清理错误，不能声称远端进程已结束。
 
 ## Workspace Hook Trust Review
 

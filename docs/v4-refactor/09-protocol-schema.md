@@ -277,7 +277,7 @@ in-memory LRU
 
 discarded 命中返回 `CommandAck{status:"failed", reasonCode:"fault.command.inputDiscardedOnRestart", result:{type:"inputDisposition",delivery}}`，不是 `unknown`。同 key 的 `command execute` 与 `commands/query` 共享 single-flight/互斥入口，查询不能在“已开始执行、尚未写 LRU/transcript”的窗口误报 unknown，也不能触发第二次副作用。
 
-UI pending registry TTL 为 24h：普通文本/goal 保存可重发 payload，敏感 interaction 只保存 digest；QueueItem/guided projection 出现立即删除记录。CLI restart 后 discarded `queue/guide` 静默清账，只有未进入 transcript 的 `startNow` 或 `unknown` 提示用户确认重发；绝不自动恢复或自动重放 discarded input。
+UI pending registry TTL 为 24h：普通文本/goal 保存可重发 payload，敏感 interaction 只保存 digest；QueueItem/guided projection 出现立即删除记录。CLI restart 后 discarded `queue/guide` 静默清账，`unknown` 保留待确认线索且不提示重发，只有未进入 transcript 的 discarded `startNow` 提示用户确认重发；绝不自动恢复或自动重放 discarded input。
 
 ## 7. 稳定 assistant fork
 

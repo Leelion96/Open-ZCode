@@ -29,7 +29,6 @@ export type PendingCommandResolution =
   | "accepted"
   | "duplicate"
   | "authoritative"
-  | "unknown"
   | "failed"
   | "discarded";
 
@@ -204,6 +203,14 @@ export class PendingCommandRegistry {
     return [...this.entries.values()].find((entry) => entry.commandId === commandId);
   }
 
+  // 随每个流式帧调用：直接遍历，不为一次存在性判断复制条目数组。
+  private hasEntriesForSession(sessionId: string): boolean {
+    for (const entry of this.entries.values()) {
+      if (entry.sessionId === sessionId) return true;
+    }
+    return false;
+  }
+
   listRecoverable(sessionId: string | null): readonly PendingCommandEntry[] {
     return this.list(sessionId).filter(
       // 兼容 V4 初版已经写入 localStorage 的 unknown：它不是可操作错误，不能再进入 UI。
@@ -266,12 +273,8 @@ export class PendingCommandRegistry {
       let entry = this.entries.get(keyOf(item.key.sessionId, item.key.commandId));
       if (!entry) continue;
       if (item.result === "unknown") {
-        // 首发结果未知不能释放目录或删除唯一的查询线索。
-        if (this.ownsPendingDraft(entry)) continue;
-        // V4 初版把“权威事实未命中”提升成需要用户处理的错误横幅，导致正常的
-        // App/CLI 生命周期切换也频繁打扰用户。unknown 没有可操作结论，renderer 静默清账。
-        this.notifyResolution(item.key.commandId, "unknown");
-        this.settle(entry.sessionId, entry.commandId);
+        // 查询可能越过仍在 Host 准备的发送；未命中不是拒绝。提前清账会恢复已发送正文，
+        // 并丢掉迟到 ACK 的结算订阅。保留线索，交给明确结果、权威投影或既有 TTL 收口。
         continue;
       }
       if (
@@ -312,6 +315,11 @@ export class PendingCommandRegistry {
   }
 
   reconcileSnapshot(snapshot: ConversationSnapshot): void {
+    // Bug 根因：每个流式帧都会逐行扫描全部历史来收集 sourceCommandId。只有本会话还有待对账条目、
+    // 或有人在等某个命令的结算时，扫描才可能产生效果；两者都没有时直接返回，结果不变。
+    if (this.resolutionListeners.size === 0 && !this.hasEntriesForSession(snapshot.sessionId)) {
+      return;
+    }
     const settled = new Set<string>();
     for (const item of snapshot.queue.items) {
       if (item.sourceCommandId) {
@@ -435,6 +443,9 @@ export class PendingCommandRegistry {
         : {}),
       ...(entry.clientContext ? { clientContext: entry.clientContext } : {}),
     };
+    // Bug 原因：首发 admission 已持久化旧会话，确认重发沿用旧 ID 会被 CLI 拒绝。
+    // 只在用户确认生成新命令时去掉 ID；同命令重试仍保留原信封，也兼容旧恢复记录。
+    if (request.type === "createSession") delete request.payload.sessionId;
     // 用户已确认以新 commandId 重发，旧 discarded 线索在本地完成收口。
     this.rejectComposer(entry);
     this.settle(entry.sessionId, entry.commandId);

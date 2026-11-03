@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useShallow } from "zustand/react/shallow";
 import {
   DndContext,
   PointerSensor,
@@ -34,6 +35,9 @@ export function SortableProjects({
     useSensor(PointerSensor, pointerOptions),
     useSensor(KeyboardSensor, keyboardOptions),
   );
+  // 新 items 数组会通过 SortableContext 穿透行 memo；仅成员或顺序变化才发布。
+  const selectItemIds = useShallow((items: VirtualProject[]) => items.map(projectKey));
+  const itemIds = selectItemIds(projects);
   return (
     <DndContext
       sensors={sensors}
@@ -42,7 +46,7 @@ export function SortableProjects({
         if (over && active.id !== over.id) onReorder(String(active.id), String(over.id));
       }}
     >
-      <SortableContext items={projects.map(projectKey)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
         {projects.map(renderProject)}
       </SortableContext>
     </DndContext>

@@ -37,8 +37,15 @@ function ActiveSessionPluginReferenceIconProvider({
     [catalog.authority, catalog.entries],
   );
   const projection = useMemo(
-    () => (catalog.authority === "session" ? { sessionId, iconByPluginId } : null),
-    [catalog.authority, iconByPluginId, sessionId],
+    () =>
+      catalog.authority === "session"
+        ? {
+            sessionId,
+            iconByPluginId,
+            nameByPluginId: new Map(catalog.entries.map((entry) => [entry.pluginId, entry.name])),
+          }
+        : null,
+    [catalog.authority, catalog.entries, iconByPluginId, sessionId],
   );
 
   return <PluginReferenceIconProvider value={projection}>{children}</PluginReferenceIconProvider>;
@@ -49,7 +56,7 @@ function ActiveSessionPluginReferenceIconProvider({
  *
  * 把 catalog hook 直接挂在 SessionPane 后，即使 disabled 也会先解析
  * workspace services，导致所有无 Plugin 引用的会话产生额外依赖与请求。拆成子组件后，
- * 只有确实含 plugin:// 用户消息且 Session snapshot 就绪时才挂载数据 hook。
+ * 只有确实含 plugin:// 用户消息或 MCP UI 工具卡片且 Session snapshot 就绪时才挂载数据 hook。
  */
 export function SessionPluginReferenceIconBoundary({
   children,

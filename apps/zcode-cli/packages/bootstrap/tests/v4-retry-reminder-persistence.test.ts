@@ -24,6 +24,7 @@ import type {
 const PREFIX = "PRESERVED_PREFIX_INPUT";
 const INPUT = "ORIGINAL_RETRY_INPUT";
 const OLD_REPLY = "REPLACED_ASSISTANT_REPLY";
+const genUiContext = [{ path: "/project/page.html", state: "GEN_UI_RETRY_SNAPSHOT" }];
 
 it.each([
   { reminder: "toolsearch", cold: false },
@@ -89,7 +90,7 @@ it.each([
         for (let index = 1; index < 10; index++) await runtime.executeTurn(`warmup ${index}`);
       }
       toolSearchEnabled = reminder === "toolsearch";
-      const original = await runtime.executeTurn(INPUT);
+      const original = await runtime.executeTurn(INPUT, undefined, { intent: { genUiContext } });
       const messages = await store.messages({ sessionID: sessionId });
       const userIndex = messages.findIndex((message) =>
         message.parts.some((part) => part.type === "text" && part.text === INPUT),
@@ -137,7 +138,7 @@ it.each([
             productTurnId: original.turnId,
             transcriptMessageId: messages[userIndex]!.info.id,
             coveredByStableCompact: false,
-            intent: { kind: "sendText", text: INPUT },
+            intent: { kind: "sendText", text: INPUT, genUiContext },
           },
         }),
       };
@@ -152,6 +153,7 @@ it.each([
       } as CommandEnvelope);
       const request = JSON.stringify(requests.at(-1)?.messages);
       expect(request.split(INPUT)).toHaveLength(2);
+      expect(request.split("GEN_UI_RETRY_SNAPSHOT")).toHaveLength(2);
       expect(request).toContain(PREFIX);
       expect(request).not.toContain(OLD_REPLY);
 
@@ -166,6 +168,7 @@ it.each([
         (runtime as unknown as AgentRuntimeInternal).messageHistory.toRuntimeEntries(),
       );
       expect(history.split(INPUT)).toHaveLength(2);
+      expect(history.split("GEN_UI_RETRY_SNAPSHOT")).toHaveLength(2);
       expect(history).toContain(PREFIX);
       expect(history).not.toContain(OLD_REPLY);
     } finally {

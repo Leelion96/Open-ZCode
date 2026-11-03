@@ -73,6 +73,7 @@ declaration that lives anywhere else is an ordinary script declaration.
 |---|---|---|---|
 | actor | `Node<T>`, `AgentPersona`, `Agent`, `agent()` | yes | no |
 | args | `args` | yes | yes (always `{}`) |
+| run | `run` | yes | yes (a throwaway `dwfeval-…` id, no `resumedFrom`) |
 | log | `log()` | yes | yes |
 | report | `report()` | yes | no |
 | artifact | `ArtifactRef`, the option and spec types, `artifact.*` | yes | no |
@@ -140,11 +141,11 @@ no model runs on the run's subagent model when the launch chose one, and otherwi
 session's current model. What a
 subagent may do with its tools is said in the ask ("do not edit any file", "judge the text
 as given"). A subagent works in the permission mode
-of the session that launched the run, and its permission asks and `AskUserQuestion`
-questions reach the user in the main window (`docs/dynamic-workflow/launch.md`,
-"Permissions inside a run"). The driver subtracts only the tools that would overreach:
-`EnterPlanMode`, `ExitPlanMode`, `CreateWorkflow`, `ReadSessionContext` and
-`ResolveWorkflowQuestion`. Two control tools are added: `submit_result`, which returns a
+of the session that launched the run, and its permission asks reach the user in the main
+window (`docs/dynamic-workflow/launch.md`, "Permissions inside a run"). The driver subtracts
+only the tools that would overreach: `AskUserQuestion` (a subagent asks the main agent with
+`escalate`, never the user directly), `EnterPlanMode`, `ExitPlanMode`, `CreateWorkflow`,
+`ReadSessionContext` and `ResolveWorkflowQuestion`. Two control tools are added: `submit_result`, which returns a
 typed result, and `escalate`, which parks the subagent on a question for the main session.
 Both are described in the engine document.
 
@@ -259,7 +260,11 @@ with a `files.glob` fallback. There is no write: writing to the world is a subag
 ```ts
 declare interface WorldRunResult { exitCode: number; stdout: string; stderr: string }
 declare const world: {
-  run(cmd: string, args?: string[], opts?: { timeoutMs?: number }): Promise<WorldRunResult>;
+  run(
+    cmd: string,
+    args?: string[],
+    opts?: { timeoutMs?: number; output?: "full" | "discard" | { tail: number } },
+  ): Promise<WorldRunResult>;
 };
 ```
 
@@ -291,12 +296,34 @@ The contract differs from `git.*` on purpose:
   array, where a value derived from an ask's result draws a data edge in the graph. A
   helper that needs Node builtins is inlined as `world.run("node", ["-e", code])`; the code
   string lives inside the script and inside the journal key.
-- **Output is capped at 256KB per stream.** Over the cap the call rejects with
-  `WorldReadCapExceeded` and a message naming the next move (quiet the output, or write a
-  file and `files.read` a summary). Nothing is truncated.
+- **Output is declared at the call site with `opts.output`.** One mode applies to both
+  streams:
+
+  | `output` | `stdout` / `stderr` | Limit on what the process prints |
+  |---|---|---|
+  | `"full"` (default) | the whole stream | 16 MiB per stream; over it the call rejects |
+  | `"discard"` | always `""` | none; the process runs to exit |
+  | `{ tail: n }` | the last `n` bytes of each stream | none; `n` is an integer, 1 ≤ n ≤ 16 MiB |
+
+  In `"full"` mode a stream over 16 MiB rejects the call with `WorldReadCapExceeded` and a
+  message naming the next move (`output: { tail: n }` or `"discard"`, quiet the output, or
+  write a file and `files.read` a summary). Nothing is truncated silently. The 16 MiB is a
+  journal budget, not a model-context budget: the `dwf_node` row stores the result as it is,
+  and resume replays it, so the value the script saw and the value in the journal must be
+  the same bytes. That is why the bound is declared in the script and not applied by the
+  harness: a `discard` or `tail` result is the whole result of that call, and the journal
+  stores exactly that. A gate that only needs the exit code uses `"discard"`; a gate that
+  shows the failure to a subagent uses `{ tail: n }`. In `"discard"` mode the run panel
+  shows 0 bytes for both streams, and in `{ tail: n }` mode it shows the kept tail's size,
+  not the process's total, because it reads the sizes off the stored result.
+  `{ tail: n }` cuts at a byte offset, so its first character can be a broken UTF-8
+  sequence decoded as U+FFFD.
 
 Argument shape is checked by the driver and a wrong shape is a `DriverError`: `cmd` must be
-a string, `args` an array of strings, `timeoutMs` a positive integer. The journal records
+a string, `args` an array of strings, `timeoutMs` a positive integer, `output` one of
+`"full"`, `"discard"` or `{ tail: n }` with `n` in range. `opts` is part of the
+journaled input and its hash, so changing `output` makes a new node: it is not a replay
+and not an import-cache hit. The journal records
 the node with kind `world-run`, distinct from `world-read`, so an audit can tell effects
 from reads. In the graphs it is a step on the workspace lane like any world read (see
 `docs/analysis.md`, "Sites").
@@ -527,6 +554,26 @@ fills in defaults before the run starts. For an inline script and inside a snipp
 `{}`. Values are typed `unknown` so the compiler surface never changes from one workflow to
 the next; the script narrows them. Declarations and validation are in
 `docs/dynamic-workflow/launch.md`.
+
+### The run's identity: `run`
+
+`run` is a frozen `{ id, resumedFrom? }`. `id` is the run id that the run list,
+`GetWorkflowRun` and the subagents' session ids carry. `resumedFrom` is present on a run
+made by `AmendWorkflow` and names the run it revises. `ResumeWorkflowRun` keeps both: the
+id does not change, and the host reads `resumedFrom` back from the journal, so a resumed
+script reads the same values as the life that started it. This lets a script stamp what
+outlives it (a ledger line, a file written for a later run, a report item) with the run
+that produced it, without the main agent passing the id in through `args`.
+
+`run` is a value, like `args`: lowering rewrites a read of it to `__host.run`, it has no
+site, and a script's own local named `run` shadows it. `world.run` is a property and is not
+affected.
+
+Keep `run.id` and `run.resumedFrom` out of ask instructions, personas and `files` / `world`
+arguments. Those are cache keys ("How the engine consumes the cache" in
+`apps/zcode-cli/packages/dynamic-workflow/docs/execution-engine.md`), and an amendment mints
+a new id: an ask that quotes the id misses the cache on every amendment and runs again. A
+resume is not affected, because its id does not change.
 
 ### What the facade does not have
 
@@ -1270,10 +1317,17 @@ passes pastes into a workflow verbatim.
 | Input | Meaning |
 |---|---|
 | `code` | the snippet, written against the snippet facade |
-| `path` | or: a file holding the snippet, read whole (relative to the working directory or absolute); exactly one of `code` and `path` |
+| `path` | or: a file holding the snippet, read whole (relative to the working directory or absolute); exactly one of `code` and `path`, with separate refusals for both and for neither (`docs/dynamic-workflow/launch.md`, "The `CreateWorkflow` tool", "Input and output") |
 | `timeoutMs` | wall clock for the whole snippet; default 60 000, accepted between 1 000 and 600 000 |
 
-The snippet facade is the args, log, world and world-run segments. `agent()`, `report()`,
+After resolution the input also carries `script`, always equal to the resolved `code`. The
+model's schema does not list it, and a value the model supplies is overwritten. It is there
+so that hooks and permission rules read the snippet under the same field name as the
+script of `CreateWorkflow`, `AmendWorkflow` and `FillWorkflowHole`; a PreToolUse hook that
+reads only `tool_input.script` would otherwise see nothing on a snippet and let it through.
+`code` stays for the tool row and for hooks that already read it.
+
+The snippet facade is the args, run, log, world and world-run segments. `agent()`, `report()`,
 `artifact.*` and `phase()` are absent, so a snippet that uses one fails to compile with an
 ordinary "cannot find name" diagnostic; asks cannot be rehearsed, only the pieces can. The
 tool's description says what it is for and points at the skill; the facade subset and the

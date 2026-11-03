@@ -2,7 +2,10 @@
   "version": 1,
   "caseName": "conversation-session-off-peak-team-plan",
   "spec": "./test/e2e/conversation-session/conversation-session-off-peak-team-plan.test.ts",
-  "providerFixtures": [],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-off-peak-team-plan.json"
+  ],
   "fileFixtures": [],
   "providerRequestPolicy": "none",
   "requests": []

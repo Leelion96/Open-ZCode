@@ -15,10 +15,7 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_BROWSER_USE_IAB_FULL_CHAIN"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_BROWSER_USE_IAB_FULL_CHAIN"]
       },
       "response": {
         "statusCode": 200,
@@ -42,15 +39,9 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "lastUserMessageIncludes": [
-          "E2E_BROWSER_USE_IAB_FULL_CHAIN",
-          "E2E_BROWSER_FIXTURE_URL:"
-        ],
+        "lastUserMessageIncludes": ["E2E_BROWSER_USE_IAB_FULL_CHAIN", "E2E_BROWSER_FIXTURE_URL:"],
         "bodyIncludes": ["mcp__node_repl__js"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -97,7 +88,7 @@
           "id": "toolu_e2e_browser_iab_action",
           "name": "mcp__node_repl__js",
           "input": {
-            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst browserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst { setupBrowserRuntime } = await import(browserClientUrl);\nawait setupBrowserRuntime({ globals: globalThis });\nconst browser = await agent.browsers.get('iab');\nconst expectedTabId = '{{latestBrowserTabId}}';\nconst tab = await browser.tabs.get(expectedTabId);\nconst animatedInput = tab.playwright.getByLabel('Animated Name');\nconst sharedCount = await animatedInput.count();\nconst fillStartedAt = Date.now();\nawait animatedInput.fill('ZCode');\nconst fillCompletedBefore25s = Date.now() - fillStartedAt < 25000;\nlet strictMessage = '';\ntry {\n  await tab.playwright.getByRole('button', { name: 'Duplicate' }).click();\n} catch (error) {\n  strictMessage = error instanceof Error ? error.message : String(error);\n}\nlet overlayMessage = '';\ntry {\n  await tab.playwright.locator('#covered-button').click();\n} catch (error) {\n  overlayMessage = error instanceof Error ? error.message : String(error);\n}\nconst leakedInternalError = /AbortError|Cannot read properties of undefined|undefined.*count/i.test(strictMessage + '\\n' + overlayMessage);\nconst cuaInput = tab.playwright.getByLabel('CUA Name');\nawait cuaInput.click();\nawait new Promise((resolve) => setTimeout(resolve, 4000));\nawait tab.cua.type({ text: 'ZCode' });\nawait tab.playwright.getByRole('button', { name: 'Submit' }).click();\nfor (const width of [373, 374]) {\n  await tab.setViewportSize({ width, height: 667 });\n  await nodeRepl.emitImage(await tab.screenshot());\n}\nawait tab.setViewportSize({ width: 375, height: 667 });\nconst status = await tab.playwright.getByRole('status').innerText();\nconst recoveredSameTab = tab.id === expectedTabId;\nconst allActionabilityChecksPassed = recoveredSameTab && sharedCount === 2 && fillCompletedBefore25s && strictMessage.length > 0 && overlayMessage.length > 0 && !leakedInternalError && status === 'Submitted ZCode / ZCode';\n({\n  marker: allActionabilityChecksPassed ? 'E2E_BROWSER_USE_IAB_ACTIONABILITY_OK' : 'E2E_BROWSER_USE_IAB_ACTIONABILITY_FAILED',\n  recoveredSameTab,\n  sharedCount,\n  fillCompletedBefore25s,\n  strictRejected: strictMessage.length > 0,\n  overlayRejected: overlayMessage.length > 0,\n  leakedInternalError,\n  animatedInputValue: await animatedInput.getAttribute('value'),\n  inputValue: await cuaInput.getAttribute('value'),\n  status,\n  viewport: tab.viewportSize(),\n  tabs: await browser.tabs.list()\n});",
+            "code": "const browserPluginRoot = process.env.ZCODE_PLUGIN_ROOT ?? process.env.CLAUDE_PLUGIN_ROOT;\nif (!browserPluginRoot) throw new Error('Browser plugin root is unavailable in the node_repl host');\nconst { join } = await import('node:path');\nconst { pathToFileURL } = await import('node:url');\nconst browserClientUrl = pathToFileURL(join(browserPluginRoot, 'scripts', 'browser-client.mjs')).href;\nconst { setupBrowserRuntime } = await import(browserClientUrl);\nawait setupBrowserRuntime({ globals: globalThis });\nconst browser = await agent.browsers.get('iab');\nconst expectedTabId = '{{latestBrowserTabId}}';\nconst tab = await browser.tabs.get(expectedTabId);\nconst animatedInput = tab.playwright.getByLabel('Animated Name');\nconst sharedCount = await animatedInput.count();\nconst fillStartedAt = Date.now();\nawait animatedInput.fill('ZCode');\nconst fillCompletedBefore25s = Date.now() - fillStartedAt < 25000;\nlet strictMessage = '';\ntry {\n  await tab.playwright.getByRole('button', { name: 'Duplicate' }).click();\n} catch (error) {\n  strictMessage = error instanceof Error ? error.message : String(error);\n}\nlet overlayMessage = '';\ntry {\n  await tab.playwright.locator('#covered-button').click();\n} catch (error) {\n  overlayMessage = error instanceof Error ? error.message : String(error);\n}\nconst leakedInternalError = /AbortError|Cannot read properties of undefined|undefined.*count/i.test(strictMessage + '\\n' + overlayMessage);\nconst cuaInput = tab.playwright.getByLabel('CUA Name');\nawait cuaInput.click();\nawait new Promise((resolve) => setTimeout(resolve, 4000));\nawait tab.cua.type({ text: 'ZCode' });\nawait tab.playwright.getByRole('button', { name: 'Submit' }).click();\nfor (const width of [373, 374]) {\n  await tab.setViewportSize({ width, height: 667 });\n  await nodeRepl.emitImage(await tab.screenshot());\n}\nawait tab.setViewportSize({ width: 375, height: 667 });\nconst status = await tab.playwright.getByRole('status').innerText();\nconst guestMetrics = await tab.playwright.evaluate(() => ({ width: innerWidth, height: innerHeight, dpr: devicePixelRatio }));\nconst recoveredSameTab = tab.id === expectedTabId;\nconst allActionabilityChecksPassed = guestMetrics.width === 375 && guestMetrics.height === 667 && guestMetrics.dpr === 1 && recoveredSameTab && sharedCount === 2 && fillCompletedBefore25s && strictMessage.length > 0 && overlayMessage.length > 0 && !leakedInternalError && status === 'Submitted ZCode / ZCode';\n({\n  marker: allActionabilityChecksPassed ? 'E2E_BROWSER_USE_IAB_ACTIONABILITY_OK' : 'E2E_BROWSER_USE_IAB_ACTIONABILITY_FAILED',\n  recoveredSameTab,\n  guestMetrics,\n  sharedCount,\n  fillCompletedBefore25s,\n  strictRejected: strictMessage.length > 0,\n  overlayRejected: overlayMessage.length > 0,\n  leakedInternalError,\n  animatedInputValue: await animatedInput.getAttribute('value'),\n  inputValue: await cuaInput.getAttribute('value'),\n  status,\n  viewport: tab.viewportSize(),\n  tabs: await browser.tabs.list()\n});",
             "title": "填写并截图 Browser Use 测试页面"
           }
         }
@@ -122,10 +113,7 @@
           "E2E_BROWSER_USE_IAB_ACTIONABILITY_OK",
           "Submitted ZCode / ZCode"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,

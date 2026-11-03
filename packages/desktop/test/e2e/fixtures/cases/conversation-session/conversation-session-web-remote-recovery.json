@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-web-remote-recovery",
+  "spec": "./test/e2e/conversation-session/conversation-session-web-remote-recovery.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-web-remote-recovery.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "mro04-title",
+      "description": "恢复用例标题",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定测试会话标题；标题不参与后台恢复与导航判定。"
+    },
+    {
+      "id": "mro04-desktop-1440",
+      "description": "宽屏真实下行丢帧与失效通知补发，桌面对照流",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定完成内容；真实Electron/Host/CLI执行，在Web可见时丢弃旧bridge下行rpc-frame但保留ACK与心跳，再丢弃首条真实失效通知，验证真实45秒期限后的补发与原任务恢复。"
+    },
+    {
+      "id": "mro04-mobile-1440",
+      "description": "宽屏真实下行丢帧与失效通知补发，Web任务流",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定完成内容；真实Electron/Host/CLI执行，在Web可见时丢弃旧bridge下行rpc-frame但保留ACK与心跳，再丢弃首条真实失效通知，验证真实45秒期限后的补发与原任务恢复。"
+    },
+    {
+      "id": "mro04-desktop-390",
+      "description": "窄屏真实后台46秒完成后恢复，桌面对照流",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定完成内容；在原生Chrome真实hidden后释放桌面与Web响应，后台46秒后验证原任务恢复；允许任一端先自愈，不模拟可见性或产品时钟。"
+    },
+    {
+      "id": "mro04-mobile-390",
+      "description": "窄屏真实后台46秒完成后恢复，Web任务流",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定完成内容；在原生Chrome真实hidden后释放桌面与Web响应，后台46秒后验证原任务恢复；允许任一端先自愈，不模拟可见性或产品时钟。"
+    },
+    {
+      "id": "mro04-mobile-short-390",
+      "description": "窄屏运行中短后台持续收帧，回前台复用原socket与bridge，Web任务流",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定完成内容；原生Chrome真实hidden后释放第一段，后台8秒内持续下发流式帧；回前台后释放第二段，暴露后台丢帧导致的序号断档。只观察线级消息，不丢帧、不改时钟或可见性。"
+    },
+    {
+      "id": "mro04-mobile-internal-390",
+      "description": "窄屏后台多个在途ACK各收到INTERNAL，回前台先探测原socket且不进失败页，Web任务流",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定完成内容；原生Chrome真实hidden后释放一批间隔300毫秒的流式增量，使多个ACK同时在途；手机线级按hub契约模拟桌面离开（ACK延迟回INTERNAL、配对回包改waiting、下行data丢弃），回前台保持50秒后结束模拟并释放剩余内容。不改时钟或可见性。"
+    }
+  ]
+}

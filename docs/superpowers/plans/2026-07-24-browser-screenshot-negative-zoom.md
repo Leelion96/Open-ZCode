@@ -674,7 +674,7 @@ git commit -m "test(browser-use): cover fitted screenshot raster"
 **Files:**
 
 - Modify: `docs/browser-use/2026-07-15-responsive-browser-viewport-spec.md`
-- Modify: `docs/testing/browser-use-codex-parity-coverage-matrix.md`
+- Modify: `docs/testing/browser-use-coverage-matrix.md`
 
 **Interfaces:**
 
@@ -753,6 +753,6 @@ Expected: only intended docs/source/test files plus the known untracked dev log 
 - [ ] **Step 8: Commit final evidence**
 
 ```powershell
-git add -- docs/browser-use/2026-07-15-responsive-browser-viewport-spec.md docs/testing/browser-use-codex-parity-coverage-matrix.md
+git add -- docs/browser-use/2026-07-15-responsive-browser-viewport-spec.md docs/testing/browser-use-coverage-matrix.md
 git commit -m "docs(browser-use): verify fitted screenshot raster"
 ```

@@ -166,7 +166,18 @@ describe(`${CASE_MARKER}: 项目导航中英文/深浅主题与窄窗口`, () =>
       )?.displayName;
       expect(deviceName).toBeTruthy();
       const device = row.$('[data-testid="project-device"]');
-      expect(await device.getAttribute("title")).toBe(deviceName);
+      // 设备原生 title 已迁入统一身份详情；检查可见名称和真实 hover，避免旧属性让后续矩阵提前失败。
+      expect(await device.getText()).toBe(deviceName);
+      await row.$('[data-testid="virtual-project-toggle"]').moveTo();
+      const details = $('[data-testid="remote-identity-details"]');
+      await details.waitForDisplayed();
+      current.identityDetails = await details.getText();
+      expect(current.identityDetails).toContain(deviceName);
+      expect(current.identityDetails).toContain(config.workspacePaths[0]);
+      expect(await details.$$("button")).toHaveLength(0);
+      const outside = await browser.execute(() => ({ x: innerWidth - 24, y: 24 }));
+      await browser.action("pointer").move(outside).perform();
+      await details.waitForDisplayed({ reverse: true });
       await row.moveTo();
       const trigger = row.$('[data-testid="virtual-project-menu"]');
       await trigger.click();

@@ -19,3 +19,13 @@ Status: ready-for-human
 保留用例的定位与焦点断言；后续移除确认步骤在此失败之后，尚未覆盖。
 
 证据目录：`packages/desktop/.e2e-artifacts/r3-server-20261011125749338-152f05-settings-safeguards/`。
+
+## Comments
+
+2026-10-17 转正回放 `r3-server-promotion-20261016-shape-current-remote-settings-safeguards` 再次复现。先修正前项窄屏截图留下的侧栏折叠态，真实 SSH、设备更名、连接配置和各设置分区作用域均通过；点击定位后返回主界面，10 秒内目标项目仍未获得焦点。失败录像确认侧栏已展开。当前源码仍是上述旧 DOM 查询失配，业务实现未改；保留失败断言，不以返回主界面代替定位验收。
+
+2026-10-20，staging `52cd1bc1d3` 的 `r3-server-pending-52cd-a-pending-settings-safeguards`
+再次在定位焦点断言超时。第一条设置分区用例通过，第二条已完成真实 SSH、更名和作用域检查，
+失败位于 `conversation-session-remote-settings-safeguards.test.ts` 的 `onShowInSidebar` 验收。
+当前 `SettingsPage.tsx` 仍查询旧的 `data-remote-project-identity`。归类为既有业务缺陷，
+本轮没有修改该实现；移除设备确认等后续步骤仍未覆盖。

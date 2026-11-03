@@ -25,19 +25,20 @@ it("compiles real UAC calls when the plugin directory follows the custom include
       throw error;
     }
   }
-  const { NSIS_PATH, NSIS_RESOURCES_PATH, NsisTargetOptions } = require(
-    resolve(builderDir, "out/targets/nsis/nsisUtil.js"),
+  // 26.17.0 将 NSIS 下载与路径解析收口到 toolset resolver；旧 nsisUtil 私有导出已移除。
+  // 测试必须复用正式构建入口，避免用另一套 compiler/include/plugin 路径掩盖兼容问题。
+  const { getMakeNsisPath, getNsisPluginsPath } = require(
+    resolve(builderDir, "out/toolsets/windows.js"),
   );
-  NsisTargetOptions.resolve({});
-  const [nsisDir, resourcesDir] = await Promise.all([NSIS_PATH(), NSIS_RESOURCES_PATH()]);
-  const compiler = join(
-    nsisDir,
-    process.platform === "win32"
-      ? "Bin/makensis.exe"
-      : process.platform === "darwin"
-        ? "mac/makensis"
-        : "linux/makensis",
-  );
+  const [makeNsis, pluginsDir] = await Promise.all([
+    getMakeNsisPath(undefined),
+    getNsisPluginsPath(undefined),
+  ]);
+  const nsisDir = makeNsis.env?.NSISDIR;
+  if (!nsisDir) {
+    throw new Error("electron-builder NSIS toolset 缺少 NSISDIR");
+  }
+  const compiler = makeNsis.path;
   const temp = await mkdtemp(join(tmpdir(), "zcode-nsis-compile-"));
   try {
     for (const uninstaller of [false, true]) {
@@ -45,10 +46,12 @@ it("compiles real UAC calls when the plugin directory follows the custom include
       // 只编译不执行：载荷复用当前文件，所有平台都能验证真实 NSIS 插件解析。
       const args = [
         "-V2",
+        "-INPUTCHARSET",
+        "UTF8",
         ...(uninstaller ? ["-WX", "-DBUILD_UNINSTALLER"] : []),
         `-DNSIS_INCLUDE_DIR=${join(nsisDir, "Include")}`,
         `-DELECTRON_BUILDER_NSIS_INCLUDE_DIR=${join(builderDir, "templates/nsis/include")}`,
-        `-DNSIS_PLUGIN_DIR=${join(resourcesDir, "plugins/x86-unicode")}`,
+        `-DNSIS_PLUGIN_DIR=${join(pluginsDir, "x86-unicode")}`,
         `-DZCODE_INSTALLER_NSH=${join(desktopDir, "build/installer.nsh")}`,
         `-DFIXTURE_EXE=${import.meta.filename}`,
         `-DOUTPUT_FILE=${output}`,
@@ -56,7 +59,7 @@ it("compiles real UAC calls when the plugin directory follows the custom include
         `-DELEVATED_LOG_PATH=${join(temp, "elevated.log")}`,
         join(desktopDir, "test/fixtures/installer-nsh-smoke.nsi"),
       ];
-      await execFileAsync(compiler, args, { env: { ...process.env, NSISDIR: nsisDir } });
+      await execFileAsync(compiler, args, { env: { ...process.env, ...makeNsis.env } });
       expect((await stat(output)).size).toBeGreaterThan(0);
     }
   } finally {

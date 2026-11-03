@@ -106,6 +106,12 @@ export const workflowBlockedMetaSchema = z.object({
 });
 export type WorkflowBlockedMeta = z.infer<typeof workflowBlockedMetaSchema>;
 
+// 后台 Agent 的终态与失败原文（contracts 的 SubagentResultMeta）；产品状态读它，不解析通知文本。
+export const subagentResultMetaSchema = z.object({
+  status: z.enum(["completed", "failed", "killed"]),
+  error: z.string().optional(),
+});
+
 export const backgroundResultOriginMetaSchema = z.object({
   // 三个取值与 contracts 的 BackgroundResultOriginMeta 保持同步。
   // "workflow" 是 dynamic-workflow run（workId ≡ runId），复用整条后台通知管线。
@@ -118,6 +124,8 @@ export const backgroundResultOriginMetaSchema = z.object({
   // 提醒载荷，与 workflowNotification 至多在场一个。`.catch(undefined)`：将来它的形状变了，认识这个
   // 键的客户端把它当作缺席（裸标题行），而不是丢掉整帧。
   workflowBlocked: workflowBlockedMetaSchema.optional().catch(undefined),
+  // 只在 subagent 的单条通知轮上在场；形状不认识时当作缺席，界面退回通知文本。
+  subagentResult: subagentResultMetaSchema.optional().catch(undefined),
 });
 export type BackgroundResultOriginMeta = z.infer<typeof backgroundResultOriginMetaSchema>;
 

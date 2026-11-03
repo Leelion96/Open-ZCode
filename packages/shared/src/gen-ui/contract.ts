@@ -25,6 +25,9 @@ export const GEN_UI_STATIC_DOMAINS = [
   "fonts.googleapis.com",
   "fonts.gstatic.com",
   "fonts.bunny.net",
+  // 自有 CDN：visualize/gen-ui 页面引用 zcode.z.ai 上的图片等静态资源（与上面公共 CDN 同走 resourceDomains，
+  // 会同时进 img/script/style/media/font 五类 src，可控性高于公共 CDN）
+  "zcode.z.ai",
 ] as const;
 
 /** This is a wire-format check. The executor owns normalization and filesystem authorization. */
@@ -197,8 +200,8 @@ export function buildGenUiScopeKey(scope: GenUiScope): string {
 export function buildGenUiStateKey(target: GenUiStateTarget): string {
   return JSON.stringify([buildGenUiScopeKey(target), target.path]);
 }
-export function buildGenUiModelContext(entries: readonly GenUiStateEntry[]): string {
-  const selected: Array<{ path: string; state: unknown }> = [];
+export function selectGenUiModelContext(entries: readonly GenUiStateEntry[]): GenUiModelContext {
+  const selected: GenUiModelContext = [];
   for (const entry of [...entries]
     .sort((a, b) => a.path.localeCompare(b.path))
     .slice(0, GEN_UI_STATE_MAX_ENTRIES)) {
@@ -212,21 +215,32 @@ export function buildGenUiModelContext(entries: readonly GenUiStateEntry[]): str
       break;
     selected.push(next);
   }
-  return selected.length
-    ? `<untrusted_gen_ui_state>\n${JSON.stringify(selected).replaceAll("<", "\\u003c")}\n</untrusted_gen_ui_state>`
-    : "";
+  return genUiModelContextSchema.parse(selected);
 }
-export function stripGenUiModelContext(content: string): string {
-  const match = /\n\n<untrusted_gen_ui_state>\n([^]*?)\n<\/untrusted_gen_ui_state>\s*$/u.exec(
-    content,
-  );
-  if (!match) return content;
-  try {
-    z.array(z.object({ path: genUiPathSchema, state: z.unknown() }).strict())
-      .max(GEN_UI_STATE_MAX_ENTRIES)
-      .parse(JSON.parse(match[1]!));
-    return content.slice(0, match.index);
-  } catch {
-    return content;
-  }
-}
+
+export const genUiModelContextSchema = z
+  .array(z.object({ path: genUiPathSchema, state: z.unknown() }).strict())
+  .max(GEN_UI_STATE_MAX_ENTRIES)
+  .transform((entries, context) => {
+    try {
+      const serialized = serializeJson(entries);
+      if (
+        new TextEncoder().encode(serialized).byteLength > GEN_UI_CONTEXT_MAX_BYTES ||
+        entries.some(
+          (entry) =>
+            new TextEncoder().encode(serializeJson(entry.state)).byteLength >
+            GEN_UI_STATE_MAX_BYTES,
+        )
+      ) {
+        throw new Error("Gen UI model context exceeds its size limit");
+      }
+      return JSON.parse(serialized) as Array<{ path: string; state: unknown }>;
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        message: error instanceof Error ? error.message : "Invalid Gen UI model context",
+      });
+      return z.NEVER;
+    }
+  });
+export type GenUiModelContext = z.infer<typeof genUiModelContextSchema>;

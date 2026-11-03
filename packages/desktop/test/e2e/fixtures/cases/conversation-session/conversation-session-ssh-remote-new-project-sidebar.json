@@ -9,6 +9,22 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "ssh-new-project-existing-title",
+      "description": "A 项目前置会话标题。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定 A 已完成会话的准备响应，使新建 B 不触发草稿项目自动切换；不替换远端会话和项目状态。"
+    },
+    {
+      "id": "ssh-new-project-existing",
+      "description": "A 项目已完成会话，创建 B 时保持当前会话。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "固定 A 已完成会话的准备响应，使新建 B 不触发草稿项目自动切换；不替换远端会话和项目状态。"
+    },
+    {
       "id": "ssh-new-project-title",
       "description": "首发标题辅助请求。",
       "kind": "common",

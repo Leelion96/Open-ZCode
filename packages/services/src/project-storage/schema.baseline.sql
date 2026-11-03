@@ -103,9 +103,17 @@ CREATE TABLE projects (
 CREATE TABLE remote_project_entries (
  entry_id TEXT PRIMARY KEY, host_id TEXT NOT NULL REFERENCES hosts(host_id) ON DELETE CASCADE,
  remote_project_id TEXT, cached_name TEXT NOT NULL, cached_roots_json TEXT NOT NULL DEFAULT '[]',
- legacy_workspace_json TEXT, last_synced_at INTEGER, initial_position INTEGER, UNIQUE(host_id,remote_project_id));
+ legacy_workspace_json TEXT, last_synced_at INTEGER, initial_position INTEGER, cached_deleted INTEGER NOT NULL DEFAULT 0, UNIQUE(host_id,remote_project_id));
 
 CREATE TABLE "schema_migration" (id text primary key, checksum text not null, app_version text, "applied_at" integer not null);
+
+CREATE TABLE session_creation_commands (
+  workspace_key TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  command_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  PRIMARY KEY (workspace_key, client_id, command_id)
+);
 
 CREATE TABLE task_group_admissions (
   workspace_key TEXT NOT NULL,

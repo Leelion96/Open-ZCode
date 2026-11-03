@@ -196,6 +196,67 @@ payload。这里的“已验证”不等于 formal E2E 晋升：新差分 spec �
 生产构建不得创建捕获全局变量、持久化 buffer 或暴露读取 IPC。测试捕获不得真正发送到线上
 `/event/report`/ARMS。
 
+### 日常 TDP02 回归与字段扩展
+
+日常 `conversation-session-agent-step-message-scope.test.ts` 验证当前版本的消息隔离，
+不再把扩展字段增加当作新旧版本不兼容。原有必填字段缺失、任意 detail 字段非字符串、
+事件缺失/重复、消息关联错误、第二轮累计第一轮 step 仍失败。顶层报文和 ARMS 外壳仍严格检查。
+双版本 comparator 的 key set 比较保持不变；下面的归一化白名单只适用于双版本差分。
+
+本例字段合同维护在 `packages/desktop/test/e2e/fixtures/telemetry/agent-step-message-scope-fields.json`：
+`required` 是必填集合，`optional` 是既有可选字段，`additions` 是已核实的新增字段及 Git 依据。
+自动归并只写 additions，不把观察到一次的字段提升为必填，也不删除或放宽原有合同。
+
+日常回放在所有业务断言通过后检查扩展字段，按事件与字段去重，在控制台告知并写入本轮
+`telemetry-field-audit.json`；报告只记录字段名、错误类别和提交/文件依据，不复制上报字段值。
+新增字段允许通过；如果存在缺字段或类型错误，本轮不更新合同。
+
+自动核实仅扫描当前 HEAD 可达、涉及该字段的最近 30 个非 merge 提交，要求同一提交同时满足：
+
+1. 在生产 `packages/*/src` 文件的新增行中，出现该字段的赋值。
+2. 在 `docs/monitoring` 的新增说明中出现该字段，且同段落明确提到对应事件。
+3. 当前生产文件与文档仍保留相应定义，不能使用已经撤销或过时的说明。
+
+这是可复核的来源门槛，不宣称自动判断产品意图或完整语义正确性。查不到依据、Git 历史不可用、
+只修改测试或只有无关事件说明时，记录为待核实，继续告知但不归并。归并记录保留完整提交号、
+生产文件与 spec 路径；例如 `ui_mode` 的依据是 `902e957af7e8d8cd46419e7d6a1b393dcc6143bf`
+及[界面模式归属](../monitoring/conversation-telemetry-v4.md#界面模式归属)。
+
+默认自动更新该合同文件，产生可审查的工作区 diff，不自动提交或推送。
+`ZCODE_E2E_TELEMETRY_FIELD_SYNC=0` 可用于只读 CI；仍查询并报告依据。并发更新使用独占锁、
+持锁后重读和原子替换；锁被占用或文件不可写时只报告本轮未归并，不覆盖其他运行的写入。
+日常运行不改双版本 golden，也不把字段值复制到白名单。
+
+```text
+两轮业务断言通过 → 读取字段合同 → 缺字段/类型错误：失败，不写入
+                              → 新增字段 → 查询当前分支 Git + spec
+                                            ├─ 无依据：告知，保留待核实
+                                            └─ 有依据：独占锁 → 重读合同 → 合并 additions → 原子替换 → 释放锁
+```
+
+合同文件是唯一字段清单；归并器是唯一写入入口，测试报告只保存本轮结果，不作为第二份清单。
+
+也可使用已保存的本轮 capture 独立执行维护：
+
+```bash
+pnpm --filter @zcode/desktop e2e:telemetry:fields --capture <capture.json> --artifact-dir <report-directory>
+# 只查看依据和建议，不更新合同
+pnpm --filter @zcode/desktop e2e:telemetry:fields --capture <capture.json> --artifact-dir <report-directory> --no-sync
+```
+
+独立命令的输入使用本例 `ZCODE_TELEMETRY_PARITY_CAPTURE_PATH` 生成的
+`{ "eventReport": [...] }`。调用者只应提供已经通过消息关系断言的本轮 capture；
+命令检查字段合同，不替代真实 E2E。读取未知事件或非法 detail 会报错，不能据此归并。
+
+本例只验证普通 generation step；离线回放可用现有
+`ZCODE_DYNAMIC_WORKFLOW_MODE=disabled` 固定关闭动态工作流灰度。2026-10-27 的默认回放
+现场中，真实 `client/configs` 请求耗时超过首轮发送等待，输入框未清空，尚未进入字段检查。
+固定该无关维度不延长超时、不重发消息，也不表示已覆盖动态工作流模式。
+
+验收：新增合法字符串字段告知但通过；同提交生产实现与对应 spec 可归并且下次不重复告警；
+只有代码/测试/无关事件文档不得归并；字段删除/改名/类型错误仍失败；两轮消息隔离断言保留；
+双版本 comparator 对额外字段仍报差异。
+
 ### 归一化白名单
 
 允许值不同但字段必须存在、类型必须正确：

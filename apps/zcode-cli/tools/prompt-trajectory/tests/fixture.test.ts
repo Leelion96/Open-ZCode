@@ -34,7 +34,7 @@ describe("prompt trajectory model config", () => {
       steps: [],
     };
     equal(resolveUpstreamBaseURL({ fixture }), "https://api.example.test/v1");
-    equal(resolveModelSelection(fixture), "glm/glm-4.6");
+    deepStrictEqual(resolveModelSelection(fixture), { modelId: "glm-4.6", providerId: "glm" });
     deepStrictEqual(modelConfig.main, {
       apiKey: "secret",
       apiKeyRequired: true,

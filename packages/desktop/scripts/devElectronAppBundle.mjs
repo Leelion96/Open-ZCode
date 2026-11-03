@@ -2,13 +2,29 @@ import rawProductConfig from "../../../config/product.json" with { type: "json" 
 import { parseProductConfig, productKey } from "@zcode/shared/product";
 import { access, cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, posix } from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 const productConfig = parseProductConfig(rawProductConfig);
 
 export const DEV_ELECTRON_PROTOCOL_SCHEME = productConfig.customizeIdentity ? productKey(productConfig) : "zcode";
 export const DEV_ELECTRON_APP_NAME = productConfig.customizeIdentity ? `${productConfig.name} Dev` : "ZCode Dev";
 export const DEV_ELECTRON_APP_BUNDLE_ID = productConfig.customizeIdentity ? `${productConfig.appId}.dev` : "dev.zcode.app.development";
 // 副本布局版本，见 prepareDevElectronAppBundle 中的指纹说明。
-export const DEV_ELECTRON_BUNDLE_FORMAT = 2;
+export const DEV_ELECTRON_BUNDLE_FORMAT = 3;
+const execFileAsync = promisify(execFile);
+
+async function signDevElectronApp(appPath) {
+  // Electron 42 起通知要求有效签名；原 npm runtime 签名可能不完整，修改身份后也必须重签。
+  // 仅对 ignored 的开发副本做 ad-hoc 签名，正式发布仍走现有证书、公证流程。
+  await execFileAsync("/usr/bin/codesign", [
+    "--deep",
+    "--force",
+    "--sign",
+    "-",
+    "--preserve-metadata=entitlements,flags,runtime",
+    appPath,
+  ]);
+}
 
 function escapeXml(value) {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
@@ -60,6 +76,7 @@ export async function prepareDevElectronAppBundle({
   runtimeRoot,
   electronVersion,
   arch,
+  signApp = signDevElectronApp,
 }) {
   const appPath = resolveDevElectronAppBundlePath({ runtimeRoot, electronVersion, arch });
   const infoPlistPath = posix.join(appPath, "Contents", "Info.plist");
@@ -111,6 +128,7 @@ export async function prepareDevElectronAppBundle({
     await cp(electronAppPath, appPath, { recursive: true, verbatimSymlinks: true });
     const patchedInfoPlist = patchDevElectronInfoPlist(await readFile(infoPlistPath, "utf8"));
     await writeFile(infoPlistPath, patchedInfoPlist, "utf8");
+    await signApp(appPath);
     // 指纹最后写：中途失败时下次仍会判定为需要重拷，不会留下半成品缓存。
     if (sourceStamp !== undefined) await writeFile(sourceStampPath, sourceStamp, "utf8");
   }

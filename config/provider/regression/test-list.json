@@ -1,0 +1,20 @@
+{
+  "targets": [
+    {
+      "providerId": "test-minimax-api",
+      "modelIds": ["MiniMax-M3.1-Flash"]
+    },
+    {
+      "providerId": "test-minimax-coding-plan",
+      "modelIds": ["MiniMax-M3.1-Flash"]
+    }
+  ],
+  "caseIds": ["TEXT-001", "TOOL-001", "REASON-001"],
+  "repetitions": 1,
+  "timeoutMs": 600000,
+  "concurrency": {
+    "providers": 2,
+    "models": 1,
+    "cases": 1
+  }
+}

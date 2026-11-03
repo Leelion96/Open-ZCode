@@ -45,7 +45,7 @@ export interface ConversationTurnRenderUnit extends HighspeedOutputFooterMark {
   latestAssistantTextRow?: AssistantTextRow;
   /** 同一 product turn 内 user/assistant 的可见交错顺序；相邻工作行保持成组。 */
   flowItems: ConversationTurnFlowItem[];
-  /** 原始输入与每条 accepted guide 分别对应一个独立视觉工作段。 */
+  /** 原始输入一段；同一 drain 边界取出的 guide 共用首条开启的一段，段首来自 header.workSegments。 */
   workSegments?: ConversationTurnWorkSegment[];
   renderRows: ConversationRow[];
   isLastTurn: boolean;

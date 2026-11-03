@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-shared-cli",
+  "spec": "./test/e2e/conversation-session/conversation-session-shared-cli.test.ts",
+  "fixtures": [
+    {
+      "id": "shared-cli-title",
+      "description": "本例标题旁路响应。",
+      "metadata": {
+        "kind": "common",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "共享进程用例的标题旁路固定响应，不参与运行归属断言。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      }
+    },
+    {
+      "id": "shared-cli-tool-done-a",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "工具结果后的固定 continuation；实际权限审批和文件写入由 CLI 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SHARED_CLI_TOOL_A", "toolu_shared_cli_cwd"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "shared-cli-tool-done-A",
+          "inputTokens": 128,
+          "outputTokens": 12,
+          "text": "shared-cli-tool-done"
+        }
+      }
+    },
+    {
+      "id": "shared-cli-tool-done-b",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "工具结果后的固定 continuation；实际权限审批和文件写入由 CLI 执行。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_SHARED_CLI_TOOL_B", "toolu_shared_cli_cwd"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "shared-cli-tool-done-B",
+          "inputTokens": 128,
+          "outputTokens": 12,
+          "text": "shared-cli-tool-done"
+        }
+      }
+    },
+    {
+      "id": "shared-cli-tool-a",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "同名工具调用经真实审批与 Bash 执行，验证共享 CLI 的 session 路由和 cwd 隔离。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SHARED_CLI_TOOL_A"],
+        "bodyExcludes": ["Generate a concise title", "toolu_shared_cli_cwd"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "toolu_shared_cli_cwd",
+            "name": "Bash",
+            "input": {
+              "command": "node -e \"require('node:fs').writeFileSync('shared-cli-proof.txt',process.cwd())\"",
+              "timeout": 120000
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "shared-cli-tool-b",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "同名工具调用经真实审批与 Bash 执行，验证共享 CLI 的 session 路由和 cwd 隔离。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SHARED_CLI_TOOL_B"],
+        "bodyExcludes": ["Generate a concise title", "toolu_shared_cli_cwd"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUses": [
+          {
+            "id": "toolu_shared_cli_cwd",
+            "name": "Bash",
+            "input": {
+              "command": "node -e \"require('node:fs').writeFileSync('shared-cli-proof.txt',process.cwd())\"",
+              "timeout": 120000
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "shared-cli-running",
+      "description": "A 的流式响应保持在途，验证 B 并发发送与 A 停止互不串扰。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "controlled-stream",
+        "source": "synthetic",
+        "syntheticReason": "上游时间线保持 A 运行，测试以请求开始事件同步，不使用 sleep 猜状态。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"],
+        "lastUserMessageIncludes": ["E2E_SHARED_CLI_RUNNING"],
+        "lastUserMessageExcludes": [
+          "E2E_SHARED_CLI_A_RESTARTED",
+          "E2E_SHARED_CLI_A_MOVED",
+          "E2E_SHARED_CLI_A_RECOVERED"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "cache-control": "no-cache",
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "events": [
+          {
+            "sequence": 0,
+            "offsetMs": 0,
+            "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-stop-empty-running-slow-stream\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
+          },
+          {
+            "sequence": 1,
+            "offsetMs": 250,
+            "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+          },
+          {
+            "sequence": 2,
+            "offsetMs": 700,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"deep\"}}\n\n"
+          },
+          {
+            "sequence": 3,
+            "offsetMs": 60000,
+            "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"seek-e2e-ok\"}}\n\n"
+          },
+          {
+            "sequence": 4,
+            "offsetMs": 60100,
+            "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
+          },
+          {
+            "sequence": 5,
+            "offsetMs": 60200,
+            "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":120,\"output_tokens\":12,\"service_tier\":\"standard\"}}\n\n"
+          },
+          {
+            "sequence": 6,
+            "offsetMs": 60300,
+            "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "shared-cli-reply",
+      "metadata": {
+        "kind": "main",
+        "source": "synthetic",
+        "timingPolicy": "fast-text",
+        "syntheticReason": "模型仅完成真实消息链路；用例断言跨任务 PID 复用与消息归属。"
+      },
+      "maxMatches": 32,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_SHARED_CLI_"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "draft-singleflight",
+          "inputTokens": 128,
+          "outputTokens": 12,
+          "text": "shared-cli-ok"
+        }
+      }
+    }
+  ]
+}

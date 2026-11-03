@@ -1,16 +1,24 @@
+import { genUiModelContextSchema, type GenUiModelContext } from "@zcode/shared/gen-ui";
+import { attachGenUiContext, normalizeGenUiInput } from "./message-history.js";
 import { ModelCallWrapperSchema } from "@zcode/contracts";
 import {
   hydrateToolSearchContent,
   hydrateCompactDiscovery,
   hydrateToolSearchAnnouncement,
 } from "./tool-search-hydration.js";
+import { parseToolSearchHiddenNames } from "../tool/search/history.js";
 import { parseAgentListingDelta } from "./agent-listing-metadata.js";
+import { parseEnvironmentAnnouncement } from "../context/sections/env-info.js";
 import { runtimeInputMetadata } from "./runtime-input-presentation.js";
 // ============================================================
 // Session History Hydration - rebuild provider-visible context
 // ============================================================
 
-import { modelMessageContentToText, selectActiveConversationBranch } from "@zcode/contracts";
+import {
+  STREAM_RECOVERY_DISCARDED_ERROR_NAME,
+  modelMessageContentToText,
+  selectActiveConversationBranch,
+} from "@zcode/contracts";
 import type {
   Logger,
   MessagePart,
@@ -28,6 +36,13 @@ import {
 } from "../system-reminder/source.js";
 import { persistedTokenUsageBaseline } from "./message-history-usage.js";
 import {
+  isProviderExecutedToolPartMetadata,
+  withCompactGroupKey,
+} from "../runtime/provider-tool-rounds/contract.js";
+import {
+  createRuntimeAssistantEntry,
+  createRuntimeToolResultEntry,
+  INTERRUPT_MARKER_SOURCE,
   isKnownSystemReminderSource,
   legacySyntheticRuntimeMetadata,
   realUserRuntimeMetadata,
@@ -118,11 +133,24 @@ export async function hydrateMessageHistoryFromSession(input: {
         continue;
       }
 
-      const entries = await userEntriesFromParts(parts, input.artifactStore);
-      if (entries.length === 0) continue;
+      const intent =
+        message.info.metadata?.conversationInputIntent ?? message.info.metadata?.inputIntent;
+      const context = genUiModelContextSchema.safeParse(
+        intent && typeof intent === "object"
+          ? (intent as Record<string, unknown>).genUiContext
+          : undefined,
+      );
       const presentation = runtimeInputMetadata(
         (message.info.metadata as Record<string, unknown> | undefined)?.inputPresentation,
       );
+      const entries = await userEntriesFromParts(
+        parts,
+        input.artifactStore,
+        context.success ? context.data : undefined,
+        // 空闲整批的每条通知是一个文本 part，按块读回，与 live 写入的 content 相同。
+        presentation?.inputPresentation === "task_notification",
+      );
+      if (entries.length === 0) continue;
       const boundaryPart = parts.find(isActiveCompactionBoundaryPart);
       const compactBoundary =
         boundaryPart?.type === "compaction"
@@ -151,35 +179,94 @@ export async function hydrateMessageHistoryFromSession(input: {
       continue;
     }
 
-    const text = assistantTextFromParts(parts);
-    const reasoning = assistantReasoningFromParts(parts);
-    const toolParts = selectToolPartsForHistory(parts.filter(isToolPart));
+    // 断流重试 / 执行模型回退作废的 attempt：正文、思考和服务端内置工具轮次从不进入 live history
+    // （服务端轮次在流中提前落盘），冷恢复必须同样剔除；退回前已结算的本地工具调用与结果
+    // 已提交到 live history，继续保留。不能靠「作废消息恰好没有这些 part」的隐式前提。
+    const assistantParts =
+      message.info.error?.name === STREAM_RECOVERY_DISCARDED_ERROR_NAME
+        ? parts.filter(
+            (part) =>
+              part.type !== "text" &&
+              part.type !== "reasoning" &&
+              !(isToolPart(part) && isProviderExecutedToolPartMetadata(part.metadata)),
+          )
+        : parts;
+
+    const assistantModel =
+      message.info.modelId && message.info.providerId
+        ? { modelId: message.info.modelId, providerId: message.info.providerId }
+        : undefined;
+    // 服务端内置工具在流中按顺序落盘：工具 part 之前的 reasoning/text 属于同一轮。
+    // 与 live history 一致，每轮回放为 assistant(text, [工具]) + tool(结果)，剩下的走原逻辑。
+    const { rounds: providerRounds, remainingParts } = splitProviderToolRoundParts(assistantParts);
+    // 这条消息拆出的所有 assistant entry 共用分组键：compact 按数据库消息定持久化边界，两边组数才一致。
+    const compactGroupKey = providerRounds.length > 0 ? message.info.id : undefined;
+    input.history.addEntries(
+      withCompactGroupKey(
+        providerRounds.flatMap((round) => {
+          const toolPart = round.toolPart;
+          return [
+            createRuntimeAssistantEntry(
+              assistantTextFromParts(round.parts),
+              [{ id: toolPart.callID, input: toolPart.state.input, name: toolPart.tool }],
+              assistantReasoningFromParts(round.parts),
+              assistantModel,
+            ),
+            createRuntimeToolResultEntry(
+              toolPart.callID,
+              toolPart.tool,
+              toolPart.state.status === "completed"
+                ? toolPart.state.output
+                : toolPart.state.status === "error"
+                  ? toolPart.state.error
+                  : INTERRUPTED_TOOL_RESULT,
+              toolPart.state.status === "error",
+            ),
+          ];
+        }),
+        compactGroupKey,
+      ),
+    );
+
+    const text = assistantTextFromParts(remainingParts);
+    const reasoning = assistantReasoningFromParts(remainingParts);
+    const toolParts = selectToolPartsForHistory(remainingParts.filter(isToolPart));
+    // 有服务端内置工具轮次时，持久化 usage 是服务端多轮请求的合计，不能当上下文估算锚点；
+    // 与 live 一致不挂 tokens，也不为它保留空 assistant。
+    const contextUsage = compactGroupKey ? undefined : message.info.tokens;
     // live history 会保留带合法 provider usage 的空 assistant 作为估算锚点，
     // 旧 hydration 却无条件丢弃它，导致重启前后的 context estimate 不一致。
     if (
       text.trim().length === 0 &&
       reasoning.length === 0 &&
       toolParts.length === 0 &&
-      !persistedTokenUsageBaseline(message.info.tokens)
+      !persistedTokenUsageBaseline(contextUsage)
     ) {
+      if (providerRounds.length > 0) appliedMessageCount++;
       continue;
     }
 
-    input.history.addAssistant(
-      text,
-      toolParts.map(
-        (part): ToolCallInput => ({
-          id: part.callID,
-          input: part.state.input,
-          modelCallWrapper: modelCallWrapperFromPart(part),
-          name: historyToolNameFromPart(part),
-        }),
+    const finalToolCalls = toolParts.map(
+      (part): ToolCallInput => ({
+        id: part.callID,
+        input: part.state.input,
+        modelCallWrapper: modelCallWrapperFromPart(part),
+        name: historyToolNameFromPart(part),
+      }),
+    );
+    input.history.addEntries(
+      withCompactGroupKey(
+        [
+          createRuntimeAssistantEntry(
+            text,
+            finalToolCalls,
+            reasoning,
+            assistantModel,
+            contextUsage,
+          ),
+        ],
+        compactGroupKey,
       ),
-      reasoning,
-      message.info.modelId && message.info.providerId
-        ? { modelId: message.info.modelId, providerId: message.info.providerId }
-        : undefined,
-      message.info.tokens,
     );
     appliedMessageCount++;
 
@@ -316,6 +403,8 @@ function dedupeParts(parts: MessagePart[]): MessagePart[] {
 async function userEntriesFromParts(
   parts: MessagePart[],
   artifactStore: ToolArtifactStorePort | undefined,
+  genUiContext?: GenUiModelContext,
+  keepTextBlocks = false,
 ): Promise<RuntimeMessageEntry[]> {
   const attachments: UserMessageAttachment[] = [];
   const promptBlocks: ModelMessageContentBlock[] = [];
@@ -328,7 +417,11 @@ async function userEntriesFromParts(
         syntheticAttachmentEntries.push(syntheticAttachment);
         continue;
       }
-      promptBlocks.push({ type: "text", text: textPartToProviderText(part) });
+      const input = part.synthetic
+        ? { text: textPartToProviderText(part) }
+        : normalizeGenUiInput(part.text, genUiContext);
+      if (input.genUiContext !== undefined) genUiContext = input.genUiContext;
+      promptBlocks.push({ type: "text", text: input.text });
       continue;
     }
 
@@ -346,7 +439,7 @@ async function userEntriesFromParts(
   }
 
   const prompt =
-    attachments.length > 0
+    attachments.length > 0 || (keepTextBlocks && promptBlocks.length > 1)
       ? promptBlocks
       : promptBlocks
           .map((block) => (block.type === "text" ? block.text : ""))
@@ -368,13 +461,14 @@ async function userEntriesFromParts(
   ) {
     return [];
   }
+  // 页面状态挂回所属输入，与热态同形；输入本身没有恢复时，状态也不发出。
   return [
     ...(shouldRestoreRealUserEnvelope
       ? [
-          {
-            message: { role: "user" as const, content },
-            metadata: userMetadata,
-          },
+          attachGenUiContext(
+            { message: { role: "user" as const, content }, metadata: userMetadata },
+            genUiContext,
+          ),
         ]
       : []),
     ...syntheticAttachmentEntries,
@@ -521,6 +615,10 @@ function runtimeMessageMetadataFromPartMetadata(
   const presentation = runtimeInputMetadata(runtimeMessage.inputPresentation);
   if (presentation) return presentation;
   const source = runtimeMessage.source;
+  if (source === "environment") {
+    const environment = parseEnvironmentAnnouncement(runtimeMessage.environment);
+    return { source, ...(environment ? { environment } : {}) };
+  }
   if (source === "agent_listing_delta") {
     const delta = parseAgentListingDelta(runtimeMessage.agentListingDelta);
     return { source, ...(delta ? { agentListingDelta: delta } : {}) };
@@ -528,13 +626,18 @@ function runtimeMessageMetadataFromPartMetadata(
   if (source === "real_user") {
     return realUserRuntimeMetadata();
   }
+  if (source === INTERRUPT_MARKER_SOURCE) return { source };
   if (source === "legacy_synthetic" || source === "tool_search_announcement") {
     const announcement = hydrateToolSearchAnnouncement(runtimeMessage.toolSearchAnnouncement);
+    const hiddenNames =
+      announcement &&
+      parseToolSearchHiddenNames(runtimeMessage.toolSearchHiddenNames, announcement);
     return {
       ...legacySyntheticRuntimeMetadata(),
       ...(announcement
         ? { source: "tool_search_announcement" as const, toolSearchAnnouncement: announcement }
         : {}),
+      ...(hiddenNames ? { toolSearchHiddenNames: hiddenNames } : {}),
     };
   }
   if (source === "todo_reminder") {
@@ -581,6 +684,31 @@ function assistantReasoningFromParts(parts: MessagePart[]): ModelReasoningConten
 
 function isToolPart(part: MessagePart): part is ToolPart {
   return part.type === "tool";
+}
+
+function splitProviderToolRoundParts(parts: MessagePart[]): {
+  rounds: Array<{ parts: MessagePart[]; toolPart: ToolPart }>;
+  remainingParts: MessagePart[];
+} {
+  if (
+    !parts.some((part) => isToolPart(part) && isProviderExecutedToolPartMetadata(part.metadata))
+  ) {
+    return { rounds: [], remainingParts: parts };
+  }
+  const rounds: Array<{ parts: MessagePart[]; toolPart: ToolPart }> = [];
+  const remainingParts: MessagePart[] = [];
+  let pending: MessagePart[] = [];
+  for (const part of parts) {
+    if (isToolPart(part) && isProviderExecutedToolPartMetadata(part.metadata)) {
+      rounds.push({ parts: pending, toolPart: part });
+      pending = [];
+    } else if (part.type === "text" || part.type === "reasoning") {
+      pending.push(part);
+    } else {
+      remainingParts.push(part);
+    }
+  }
+  return { rounds, remainingParts: [...remainingParts, ...pending] };
 }
 
 function modelCallWrapperFromPart(part: ToolPart) {

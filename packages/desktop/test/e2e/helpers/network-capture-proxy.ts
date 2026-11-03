@@ -108,12 +108,13 @@ interface StartNetworkCaptureProxyOptions {
   responsePreviewLimitBytes?: number;
   recordResponseChunkTimeline?: boolean;
   responseMocks?: readonly E2ENetworkCaptureResponseMock[];
+  requestRedirects?: readonly { host: string; path: string; targetUrl: string }[];
 }
 
 export interface E2ENetworkCaptureResponseMock {
   /** case-local 回放可按请求体选择固定响应，仍经真实 HTTPS/鉴权/SDK 路径。 */
   body: string | ((requestBody: string) => string);
-  headers?: Record<string, string>;
+  headers?: Record<string, string> | ((requestBody: string) => Record<string, string>);
   host?: string;
   method?: string;
   path: string;
@@ -247,6 +248,30 @@ export async function startE2ENetworkCaptureProxy(
       endCallback();
     });
 
+    const redirect = options.requestRedirects?.find(
+      (route) => route.host === record.host && route.path === new URL(record.url).pathname,
+    );
+    if (redirect) {
+      // 账号用例仍请求真实 HTTPS 地址；测试代理只改下游目标，让受控流逐块经过原抓包链。
+      // 固定 mock body 会提前结束 turn，使排队操作根本没有可观测的 running 窗口。
+      const target = new URL(redirect.targetUrl);
+      ctx.isSSL = target.protocol === "https:";
+      const requestOptions = ctx.proxyToServerRequestOptions;
+      if (!requestOptions) {
+        callback(new Error("E2E replay redirect missing upstream request options"));
+        return;
+      }
+      Object.assign(requestOptions, {
+        host: target.hostname,
+        port: target.port || (ctx.isSSL ? 443 : 80),
+        path: `${target.pathname}${target.search}`,
+        agent: undefined,
+        headers: { ...requestOptions.headers, host: target.host },
+      });
+      callback();
+      return;
+    }
+
     const mockResponse = findResponseMock(record, options.responseMocks);
     if (mockResponse) {
       serveResponseMock(ctx, record, mockResponse);
@@ -350,17 +375,17 @@ export async function startE2ENetworkCaptureProxy(
     const finish = () => {
       applyMockRequestBody(record, requestChunks, requestBodyBytes, requestBodyLimitBytes);
 
+      const requestBody = Buffer.concat(requestChunks).toString("utf8");
       const body = Buffer.from(
-        typeof mock.body === "function"
-          ? mock.body(Buffer.concat(requestChunks).toString("utf8"))
-          : mock.body,
+        typeof mock.body === "function" ? mock.body(requestBody) : mock.body,
         "utf-8",
       );
       const responseHeaders = {
         "content-length": String(body.length),
         "content-type": "application/json; charset=utf-8",
         connection: "close",
-        ...mock.headers,
+        // 修复原因：同一模型端点同时处理普通 JSON 标题与 SSE；固定响应头会让 SDK 解析失败。
+        ...(typeof mock.headers === "function" ? mock.headers(requestBody) : mock.headers),
       };
       ctx.proxyToClientResponse.writeHead(mock.statusCode ?? 200, responseHeaders);
       ctx.proxyToClientResponse.end(body);

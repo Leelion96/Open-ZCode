@@ -1,3 +1,5 @@
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
 import { releaseControlledReplay } from "#e2e/helpers/controlled-replay";
 import { parseRemoteWorkspaceIdentity } from "@zcode/shared";
 import { clearAppData, waitForWorkspaceApp } from "../helpers/desktop-app.js";
@@ -127,6 +129,7 @@ describe(`${CASE_MARKER}: SSH remote workspace P0`, () => {
     }
 
     const provisioningRecordsBeforeConnect = await readProvisioningRecordCount(config);
+    const runtimeLogCursor = await captureRuntimeLogCursor();
 
     const taskA = await connectWorkspaceAndSendFirstTurn({
       config,
@@ -158,6 +161,12 @@ describe(`${CASE_MARKER}: SSH remote workspace P0`, () => {
     await assertTaskRow(taskA, { active: false, running: false });
     await assertTaskRow(taskB, { active: true, running: false });
     expect(await readHostProcesses()).toEqual(initialHosts);
+    // Bug 回归（3.16.2 远程发送卡顿）：远程 workspace 曾把高速卡与闲时任务请求发到远端，
+    // 远端没有这两个频道，每次发送先等满 Host ChannelServer 的 1000ms 未知频道超时。
+    // 两者只在本地生效后，四次远程发送与期间的闲时轮询都不得再出现这两条超时。
+    expect(
+      await runtimeLogCursor.newLines(/Unknown channel: (?:highspeed-card|off-peak-task)\b/u),
+    ).toEqual([]);
 
     const reports = await waitForConversationReportInventory(telemetryCapture, {
       agent_step: 4,
@@ -201,6 +210,28 @@ describe(`${CASE_MARKER}: SSH remote workspace P0`, () => {
     expect(runningRowMismatches).toEqual([]);
   });
 });
+
+/** 只看游标之后新增的 Host/Main 运行日志，避免把启动期的日志算进本次断言。 */
+async function captureRuntimeLogCursor() {
+  const root = await browser.electron.execute(() => process.env.ZCODE_E2E_RUNTIME_LOG_DIR!);
+  const read = async () => {
+    const names = (await readdir(root)).filter((name) => name.endsWith(".log"));
+    return new Map(
+      await Promise.all(
+        names.map(async (name) => [name, await readFile(join(root, name), "utf8")] as const),
+      ),
+    );
+  };
+  const before = await read();
+  return {
+    async newLines(pattern: RegExp): Promise<string[]> {
+      const after = await read();
+      return [...after]
+        .flatMap(([name, text]) => text.slice(before.get(name)?.length ?? 0).split("\n"))
+        .filter((line) => pattern.test(line));
+    },
+  };
+}
 
 async function readProvisioningRecordCount(config: SSHRuntimeConfig): Promise<number> {
   const result = await runSSHCommand(

@@ -1,10 +1,13 @@
-import { ZCODE_AGENT_PROVIDER, type PlanIdentitySnapshot, type ZCodeProvider } from "@zcode/shared";
+import {
+  normalizeTelemetryUiMode,
+  ZCODE_AGENT_PROVIDER,
+  type TelemetryUiMode,
+  type PlanIdentitySnapshot,
+  type ZCodeProvider,
+} from "@zcode/shared";
 import { buildPromptTelemetryExtraDetail } from "@/lib/messageTelemetry.js";
 import { encodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
-import {
-  legacyTelemetryModelValue,
-  legacyTelemetryProviderId,
-} from "@/lib/providerTelemetryIdentity.js";
+import { legacyTelemetryProviderId } from "@/lib/providerTelemetryIdentity.js";
 
 export function resolveLegacyConversationModelValue(params: {
   configProvider?: string | null;
@@ -20,21 +23,11 @@ export function resolveLegacyConversationModelValue(params: {
   return encodeCustomModelValue(legacyTelemetryProviderId(configProvider), modelName);
 }
 
-export function resolveLegacyRuntimeModelValue(params: {
-  configProvider?: string | null;
-  modelName?: string | null;
-}): string | null | undefined {
-  const configProvider = params.configProvider?.trim();
-  const modelName = params.modelName?.trim();
-  if (!configProvider || !modelName || configProvider === ZCODE_AGENT_PROVIDER) {
-    return params.modelName;
-  }
-  if (modelName.startsWith(`${configProvider}/`)) return legacyTelemetryModelValue(modelName);
-  return `${legacyTelemetryProviderId(configProvider)}/${modelName}`;
-}
+export { resolveLegacyRuntimeModelValue } from "@zcode/shared/conversation-telemetry";
 
 /** V4 config.provider 是实际模型 provider id；agentProvider 表示 ZCode 运行时。 */
 export function buildV4ConversationPromptTelemetryExtraDetail(params: {
+  uiMode?: TelemetryUiMode;
   agentProvider?: ZCodeProvider;
   configProvider?: string | null;
   modelName?: string | null;
@@ -52,6 +45,7 @@ export function buildV4ConversationPromptTelemetryExtraDetail(params: {
   });
   return {
     ...base,
+    ui_mode: normalizeTelemetryUiMode(params.uiMode),
     message_source: "chat",
     task_trigger: "",
     model_provider: legacyTelemetryProviderId(

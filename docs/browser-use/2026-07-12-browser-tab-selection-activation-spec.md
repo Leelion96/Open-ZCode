@@ -112,7 +112,7 @@ BTA-007 的多 tab 消歧规则不因该回退放宽。回退是「系统必须�
 
 ## Coverage and E2E handoff
 
-- 更新 `docs/testing/browser-use-codex-parity-coverage-matrix.md`，新增 BCP-053/054/055 激活、后台 scope 与预检断言。
+- 更新 `docs/testing/browser-use-coverage-matrix.md`，新增 BCP-053/054/055 激活、后台 scope 与预检断言。
 - 本次先用 shared schema、core facade、desktop manager 与 UI state unit tests 机械证明，不新增 conversation E2E。
 - 后续真实 UI E2E 可打开 A/B 两页，先展示 A，再执行 `tabs.get(B)`，断言 B trigger 和 B webview 同时激活。
 - 不新增 mobile replay snapshot 字段，不改变 workspace identity、remoteSessionId 或 owner/lease 路由。

@@ -1,6 +1,10 @@
-import { TOOL_SEARCH_NAME, type ModelToolContract } from "@zcode/contracts";
-import { buildToolSearchAnnouncement, buildToolExposure } from "../../tool/search/exposure.js";
-import { prepareRuntimeProviderRequest } from "../helpers/runtime-provider-request-messages.js";
+import type { ModelToolContract } from "@zcode/contracts";
+import { buildToolSearchAnnouncement } from "../../tool/search/exposure.js";
+import {
+  prepareRuntimeProviderRequest,
+  shouldFoldRemindersIntoToolResults,
+  shouldUseMidConversationSystem,
+} from "../helpers/runtime-provider-request-messages.js";
 import { collectDiscoveredTools, compactDiscoveryMetadata } from "../../tool/search/history.js";
 import { collectRuntimeAgentListing } from "../helpers/agent-listing.js";
 import {
@@ -25,7 +29,6 @@ import type { SessionEvent, TraceContext } from "../deps.js";
 import {
   defaultCompactPhaseForTrigger,
   defaultCompactReasonForTrigger,
-  buildPostCompactReadStateReminderEntries,
   countCompactPreservedRuntimeMessages,
   buildPostCompactRuntimeEntries,
   compactFailureReasonFromError,
@@ -46,13 +49,24 @@ import {
   projectMessagesForModelMediaPolicy,
   logCompactMediaRetryProjection,
   readApprovedPlanFileReferenceEntry,
+  replaceReadFileStateAfterCompact,
+  restorePostCompactFiles,
+  buildRuntimeModeReminderBody,
+  hasFullRuntimeModeReminder,
 } from "../helpers/index.js";
+import {
+  buildCompactLeadingAnnouncements,
+  collectSkillsListing,
+  resolveSessionContextAnnouncement,
+  restateContextAfterCompact,
+} from "./context-refresh.js";
 import type { CompactTimelineContext, RuntimeModelTextResult } from "../types.js";
 import type { Model } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { CompactAttemptOutcome } from "./turn-loop-state.js";
 import {
   legacySyntheticRuntimeMetadata,
+  systemReminderAttachmentEntry,
   type RuntimeMessageEntry,
 } from "../../agent/message-history.js";
 import { selectPersistedCompactTail } from "../helpers/compact-preservation.js";
@@ -75,7 +89,6 @@ import {
 } from "./turn-output-token-continuation.js";
 
 const AUTO_COMPACT_MAX_ATTEMPTS = 3;
-const COMPACT_TOOL_KEEP_MAX_COUNT = 100;
 
 export async function compactActiveConversation(
   this: AgentRuntimeInternal,
@@ -192,9 +205,7 @@ async function compactActiveConversationImpl(
   const activeEntries = [
     ...(options.activeEntries ?? this.messageHistory.borrowReadOnlyRuntimeEntries()),
   ];
-  const useMidConversationSystem =
-    this.config.midConversationSystem?.mode === "force" ||
-    compactModel.properties.supportsMidConversationSystem;
+  const useMidConversationSystem = shouldUseMidConversationSystem(this.config, compactModel);
   const initialSelection = selectInitialCompactEntriesForActiveConversation({
     activeEntries,
     initialPromptTooLongCause: options.initialPromptTooLongCause,
@@ -259,31 +270,11 @@ async function compactActiveConversationImpl(
   );
   await this.initializeMcp(turnTraceContext);
   throwIfTurnAborted(options.abortSignal);
-  const runtimeCompactTools = this.getTools(compactModel);
+  // 与主循环同一份工具目录（含本轮禁用规则），由同一个请求准备入口投影。
+  // 修复原因：摘要请求另选工具（只带 ToolSearch 相关工具，或超过 100 个时发空列表）时，
+  // tools 段与主循环不同，整个摘要请求不命中主循环的前缀缓存。
+  const compactCandidates = options.getContinuationTools?.() ?? this.getTools(compactModel);
   const registry = this.getToolRegistry();
-  let compactCandidates = runtimeCompactTools.filter(
-    (tool) =>
-      tool.name === "Read" ||
-      tool.name === TOOL_SEARCH_NAME ||
-      tool.name === "DeferredToolCall" ||
-      registry.get(tool.name)?.metadata.mcpPresentation,
-  );
-  // Bug 根因：只看 provider 能力会在 ToolSearch 被禁用或全部常驻时绕过数量保护，
-  // 让大量 MCP schema 再次撑大压缩请求；实际不可启用时恢复原普通工具策略。
-  if (
-    !buildToolExposure({
-      model: compactModel,
-      mode: this.config.toolSearch?.mode,
-      tools: compactCandidates,
-      registry,
-      entries: [],
-    }).enabled
-  ) {
-    compactCandidates = runtimeCompactTools.filter(
-      (tool) => tool.name !== TOOL_SEARCH_NAME && tool.name !== "DeferredToolCall",
-    );
-    if (compactCandidates.length > COMPACT_TOOL_KEEP_MAX_COUNT) compactCandidates = [];
-  }
 
   while (true) {
     try {
@@ -339,6 +330,7 @@ async function compactActiveConversationImpl(
           model: compactModel,
           tools: compactCandidates,
           registry,
+          // 已发现工具按本次请求的消息计算：只在保留段里发现的工具不发送。
           entries: entriesForSummary,
           prompt: compactPrompt,
           applyCacheControl: true,
@@ -351,6 +343,7 @@ async function compactActiveConversationImpl(
             ? requestMessages
             : buildCompactSummaryRequestMessages(recordableEntries, compactPrompt, {
                 useMidConversationSystem,
+                foldRemindersIntoToolResults: shouldFoldRemindersIntoToolResults(compactModel),
                 loadedToolCallIds: prepared.loadedToolCallIds,
               });
         // Compact 曾只执行 capability projection，漏掉普通 turn 共用的聚合
@@ -518,15 +511,24 @@ async function compactActiveConversationImpl(
 
       const summary = formatCompactSummaryOrThrow(this, result);
       const persistedSummary = summary;
-      const planFileReferenceEntry = this.fileSystemPort
-        ? await readApprovedPlanFileReferenceEntry({
-            abortSignal: options.abortSignal,
-            fileSystemPort: this.fileSystemPort,
-            sessionId: this.sessionId,
-            traceContext: modelTraceContext,
-            workspaceRoot: this.workspaceRoot,
-          })
-        : undefined;
+      // 修复原因：文件恢复曾用读取状态里缓存的视图，补回的可能是旧内容或片段；现在重读当前文件。
+      // plan 文件和补回文件互不依赖，并行读取。
+      const [planFileReferenceEntry, fileRestore] = await Promise.all([
+        this.fileSystemPort
+          ? readApprovedPlanFileReferenceEntry({
+              abortSignal: options.abortSignal,
+              fileSystemPort: this.fileSystemPort,
+              sessionId: this.sessionId,
+              traceContext: modelTraceContext,
+              workspaceRoot: this.workspaceRoot,
+            })
+          : undefined,
+        restorePostCompactFiles(this, {
+          abortSignal: options.abortSignal,
+          preservedEntries,
+          traceContext: modelTraceContext,
+        }),
+      ]);
       // Bug 根因：compact 丢弃旧公告后曾依赖下一次请求补齐，纯 Continue 无正常收集机会。
       // 在取消检查后按保留历史重建，使用继续执行的作用域，不使用摘要候选工具。
       throwIfTurnAborted(options.abortSignal);
@@ -551,14 +553,43 @@ async function compactActiveConversationImpl(
         preservedEntries,
         options.agentListingTools ?? this.getTools(options.model ?? compactModel),
       );
+      const skillsListingEntry = collectSkillsListing(this, preservedEntries);
+      // 保留段非空时，请求前公告放在 summary 之前（去掉保留段已有的来源），Git 按当前目录重读；
+      // 保留段为空时由下一次请求的请求前公告追加在末尾，Git 也在那时读取。
+      const leadingReminderEntries =
+        preservedEntries.length > 0
+          ? buildCompactLeadingAnnouncements(
+              this,
+              preservedEntries,
+              await resolveSessionContextAnnouncement(
+                this,
+                preservedEntries,
+                "compaction",
+                modelTraceContext,
+                options.abortSignal,
+              ),
+            )
+          : [];
+      // 计划模式下 compaction 重发完整的 plan 提醒。
+      // 修复原因：输入附件与 auto/reactive compaction 在同一次循环中，且先于 compaction 收集；
+      // 保留段可能已带本次收集的完整提醒，无条件重发会出现两条完整提醒，周期也多算一次。
+      // 保留段只有简短提醒时，完整说明已被摘要，仍要重发。
+      const planModeReminderBody = hasFullRuntimeModeReminder(preservedEntries)
+        ? null
+        : buildRuntimeModeReminderBody([], this.getMode(), this.getPlanEnabled());
+      // compaction 附件顺序：文件恢复 → plan 文件 → plan 提醒 → ToolSearch 公告
+      // → agent listing → skill 列表 → 环境 → 模型 → 输出风格。
+      // 修复原因：agent listing 排在文件恢复之前，顺序错误。
       const postCompactReminderEntries = [
-        ...(agentListingEntry ? [agentListingEntry] : []),
+        ...fileRestore.entries,
         ...(planFileReferenceEntry ? [planFileReferenceEntry] : []),
-        ...buildPostCompactReadStateReminderEntries({
-          preservedEntries,
-          readFileState: this.readFileState,
-        }),
+        ...(planModeReminderBody
+          ? [systemReminderAttachmentEntry("runtime_mode", planModeReminderBody)]
+          : []),
         ...(toolAnnouncement ? [toolAnnouncement] : []),
+        ...(agentListingEntry ? [agentListingEntry] : []),
+        ...(skillsListingEntry ? [skillsListingEntry] : []),
+        ...restateContextAfterCompact(this, activeEntries, preservedEntries),
       ];
 
       const modelCompleteEvent = this.createEvent(
@@ -577,6 +608,8 @@ async function compactActiveConversationImpl(
 
       const summaryMessageId = createMessageId();
       const summaryMessageContent = buildCompactSummaryMessage(persistedSummary, {
+        // 与 summary 之前的请求前公告用同一判定：保留段非空。
+        preservedMessagesKept: preservedEntries.length > 0,
         suppressFollowup: true,
       });
       // Continue 没有对应 Session message；无 store 的统计也不能把它计入保留记录。
@@ -594,6 +627,7 @@ async function compactActiveConversationImpl(
         metadata: { ...legacySyntheticRuntimeMetadata(), compactBoundary: discovery },
       };
       const postCompactEntries = buildPostCompactRuntimeEntries(activeEntries, summaryEntry, {
+        leadingReminderEntries,
         postCompactReminderEntries,
         preservedEntries,
       });
@@ -637,6 +671,7 @@ async function compactActiveConversationImpl(
         {
           model: compactModel,
           operationId: compactTimeline.operationId,
+          leadingReminderEntries,
           postCompactReminderEntries,
         },
       );
@@ -678,7 +713,7 @@ async function compactActiveConversationImpl(
             )
           : recordablePostCompactEntries,
       );
-      this.readFileState.clear();
+      replaceReadFileStateAfterCompact(this.readFileState, fileRestore.readFileStateEntries);
       resetProjectMemoryRecall(this);
 
       return {

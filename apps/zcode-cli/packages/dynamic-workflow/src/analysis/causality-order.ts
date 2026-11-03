@@ -5,6 +5,7 @@ import { UNPHASED_ID } from "./constants.js";
 import type { OrderOracle, OrderTrace } from "./causality-order-types.js";
 import { enclosingFunctions, functionName } from "./causality-order-functions.js";
 import { createTraceState, issue, locOf, openRegion } from "./causality-order-state.js";
+import { activationKey } from "./causality-order-bindings.js";
 import { walkNode, walkStatements } from "./causality-order-walk.js";
 
 // 追踪词汇（区域种类、跳转种类、兜底阶段 id）定义在 constants.ts——那个文件不 import
@@ -84,14 +85,18 @@ export type {
  * 解析）。这里只剩编排：建状态、走根语句表、收尾扫尾。公开面一个不改。
  */
 
-/** Walk the authored body in evaluation order and record the ordering trace. */
+/**
+ * Walk the authored body in evaluation order and record the ordering trace — plus, for the
+ * minting step, the iteration candidates the walk found enclosing each site's call
+ * (`iterationsBySite`, see `noteSiteVisit`): what `within` is read from.
+ */
 export function traceOrder(
   workflow: WorkflowProgram,
   table: SiteTable,
   oracle: OrderOracle,
-): OrderTrace {
+): { trace: OrderTrace; iterationsBySite: ReadonlyMap<ts.Node, number[][]> } {
   const state = createTraceState(workflow, table, oracle, walkNode);
-  const { controls, events, fnStack, issued, phases, regions, returnTargets, root, walkedFns } = state;
+  const { activations, controls, events, issued, phases, regions, returnTargets, root, walkedFns } = state;
 
   walkStatements(state, state.body.statements, [root]);
 
@@ -117,7 +122,9 @@ export function traceOrder(
       const owner = enclosingFunctions(site.call).find((fn) => !walkedFns.has(fn));
       if (owner === undefined) continue;
       walkedFns.add(owner);
-      fnStack.push(owner);
+      // No call binds anything here: the body's calls through its own parameters fall back
+      // to the merged record.
+      activations.push({ bindings: [], decl: owner, key: activationKey(state, owner, []) });
       const detached = openRegion(state, "branch", root, {
         detached: true,
         entered: false,
@@ -127,7 +134,7 @@ export function traceOrder(
       returnTargets.push(detached); // a `return` here ends the detached body, not the script
       state.walk(owner.body as ts.Node, [root, detached]);
       returnTargets.pop();
-      fnStack.pop();
+      activations.pop();
       progress = true;
     }
   }
@@ -135,5 +142,5 @@ export function traceOrder(
   // terminal issue in the root region, so every step has a position.
   for (const site of stepSites) if (!issued.has(site.id)) issue(state, site.id, [root]);
 
-  return { controls, events, phases, regions, root };
+  return { iterationsBySite: state.iterationsBySite, trace: { controls, events, phases, regions, root } };
 }

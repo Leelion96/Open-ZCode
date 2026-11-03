@@ -815,6 +815,21 @@ describe("createProtocolAutomationPort", () => {
     );
   });
 
+  it("CronPauseSelf 通过 automation/pause 透传执行器注入的本轮 automationId 并返回真实暂停结果", async () => {
+    const requestClient = vi.fn(async () => ({ paused: true }));
+    const port = createProtocolAutomationPort({
+      requestClient,
+      sessions: new Map(),
+    } as unknown as ZCodeProtocolAgentServerContext);
+
+    await expect(port.pause({ id: "automation-1" })).resolves.toBe(true);
+    expect(requestClient).toHaveBeenCalledWith(
+      zcodeProtocolMethods.automationPause,
+      { automationId: "automation-1" },
+      expect.anything(),
+    );
+  });
+
   it("会话未登记在 context.sessions 时，仍从归属会话解析器读取权限/思考等级", async () => {
     // Bugfix 回归：V4/desktop 会话可能不在 legacy context.sessions map 里，activeSession 命中失败
     // 会导致 mode/thoughtLevel 丢失（model 靠 createContext 兜底才幸存）。改为绑定归属会话解析器。
@@ -888,4 +903,23 @@ describe("createProtocolAutomationPort", () => {
       expect.anything(),
     );
   });
+});
+
+it.each([false, true])("定时任务列表按协商能力携带自身工作区：%s", async (enabled) => {
+  const workspace = { workspaceKey: "/tasks/b", workspacePath: "/tasks/b" };
+  const requestClient = vi.fn(async () => ({ automations: [] }));
+  const port = createProtocolAutomationPort(
+    {
+      requestClient,
+      sessionWorkspaceRoutingEnabled: enabled,
+    } as unknown as ZCodeProtocolAgentServerContext,
+    () =>
+      ({ workspace }) as import("../src/zcode-protocol/server-types.js").ZCodeProtocolSessionRecord,
+  );
+  await port.list({ sessionId: "session-b" });
+  expect(requestClient).toHaveBeenCalledWith(
+    zcodeProtocolMethods.automationList,
+    enabled ? { workspace } : {},
+    expect.anything(),
+  );
 });

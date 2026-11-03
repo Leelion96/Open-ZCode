@@ -107,3 +107,6 @@ export function formatProductOwnedText(text: string): string {
   const name = PRODUCT_DISPLAY_NAME.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return text.replace(new RegExp(`${name}|(?<![\\w./-])Z ?[Cc]ode(?![\\w/-])`, "g"), PRODUCT_DISPLAY_NAME);
 }
+
+/** Sites 项目绑定文件与项目产物使用相同隔离开关。 */
+export const PRODUCT_SITE_BINDING_FILE = `${PRODUCT_PROJECT_DIRECTORY}-site.json`;

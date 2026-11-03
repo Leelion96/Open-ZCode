@@ -404,7 +404,7 @@
         "pathIncludes": "/messages",
         "bodyIncludes": [
           "E2E_SUBAGENT_CHILD_BASH_RELEASED",
-          "The coordinator sent a message while you were working:\nE2E_SUBAGENT_COORDINATOR_QUESTION",
+          "The coordinator sent a message while you were working:\nE2E_SUBAGENT_COORDINATOR_QUESTION_PAYLOAD",
           "E2E_SUBAGENT_COORDINATOR_QUESTION_PAYLOAD"
         ],
         "bodyExcludes": [
@@ -550,7 +550,7 @@
         "kind": "main",
         "timingPolicy": "task-notification",
         "source": "synthetic",
-        "syntheticReason": "证明 child 最终仍通过标准 background completion notification 收口。 验证来源提示及非用户授权边界。 新轮通知完整正文只包一对 system-reminder，MCS 开关下均保持 user。"
+        "syntheticReason": "证明 child 最终仍通过标准 background completion notification 收口。 验证来源提示及非用户授权边界。 每条新轮通知各包一对 system-reminder，MCS 开关下均保持 user。"
       },
       "maxMatches": 2,
       "match": {

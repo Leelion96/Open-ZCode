@@ -33,7 +33,7 @@ const ELICITATION_BODY = '[data-elicitation-dialog-body="true"]';
 const RUNNING = `[data-testid="${TID_SIDE_PANE_FULL_VIEW_RUNNING}"]`;
 const ANSWER_BUBBLE = `${HOST} [data-testid="${TID_SIDE_PANE_FULL_VIEW_ANSWER_BUBBLE}"]`;
 const ANSWER_BUBBLE_OPEN = `${ANSWER_BUBBLE} > button:first-child`;
-const STREAM_WORKING_LABEL = `${HOST} [data-testid^="chat-assistant-history-trigger"] > span`;
+const STREAM_WORKING_LABEL = `${HOST} [data-testid^="chat-assistant-history-trigger"]`;
 
 describe("Side Pane 完整视图浮窗（SPFV provider）", () => {
   after(async () => {
@@ -135,20 +135,24 @@ describe("Side Pane 完整视图浮窗（SPFV provider）", () => {
     await waitForV4UserMessageContaining(`E2E_SPFV_ASK_${runId}`);
     // 运行中（问答请求还没到）：焦点仍在浮窗，操作栏「⌃ / ⌄」右侧显示 loading。
     await $(RUNNING).waitForDisplayed({ timeout: 10_000 });
-    // 占位文字显示「工作中 N 秒」，与流式消息里的运行时长同值同格式。
+    // 浮窗占位保留整数时长；运行时顶部不再渲染折叠入口。
     await browser.waitUntil(
       () =>
         browser.execute(
           (inputSelector, labelSelector) => {
             const placeholder =
               document.querySelector(inputSelector)?.getAttribute("aria-placeholder") ?? "";
-            const label = [...document.querySelectorAll(labelSelector)].at(-1)?.textContent ?? "";
-            return /^(Working for|工作中) /.test(placeholder) && placeholder === label.trim();
+            return (
+              /^(?:Working for [0-9]+[smhd]|工作中 [0-9]+ [秒分时天])/.test(placeholder) &&
+              !Array.from(document.querySelectorAll(labelSelector)).some((element) =>
+                /^(?:Working for|工作中)/.test(element.textContent?.trim() ?? ""),
+              )
+            );
           },
           FLOATING_INPUT,
           STREAM_WORKING_LABEL,
         ),
-      { timeout: 3_000, timeoutMsg: "运行中占位文字没有与流式消息的工作时长一致" },
+      { timeout: 3_000, timeoutMsg: "运行中浮窗未显示整数时长，或顶部仍存在折叠入口" },
     );
     // 回放把问答响应延迟 4s：用户消息出现后立刻最小化，请求在最小化期间到达。
     await $(`[data-testid="${TID_SIDE_PANE_FULL_VIEW_MINIMIZE}"]`).click();

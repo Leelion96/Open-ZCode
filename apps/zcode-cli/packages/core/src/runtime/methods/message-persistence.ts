@@ -5,6 +5,7 @@ import { withConversationQuotes } from "../helpers/conversation-quotes.js";
 import type {
   EnvInfo,
   MessageId,
+  MessageInfo,
   MessagePart,
   MessageVisibility,
   Model,
@@ -16,7 +17,11 @@ import type {
   TurnInputIntentMetadata,
   TurnExecutionKind,
 } from "../deps.js";
-import { emptyTokenUsageInfo, toTokenUsageInfo } from "../helpers/index.js";
+import {
+  emptyTokenUsageInfo,
+  isHiddenReminderMessage,
+  toTokenUsageInfo,
+} from "../helpers/index.js";
 import type { ResolvedTurnAttachment } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import {
@@ -207,70 +212,76 @@ export async function persistSyntheticUserNoticeForSession(
     messageID: MessageId;
     sessionId: SessionId;
     source: SyntheticUserMessageSource;
-    text: string;
+    /** 多段时每段一个文本 part，按顺序写入同一条消息。 */
+    text: string | readonly string[];
     traceContext: TraceContext;
     /** 额外结构化 metadata，会与 `{ source }` 合并写到 part.metadata 上，供 UI 识别消息类型。 */
     metadata?: Record<string, unknown>;
     visibility?: MessageVisibility;
   },
 ): Promise<void> {
-  if (options.sessionId === this.sessionId) {
+  const created = Date.now();
+  const visibility = options.visibility ?? "model-only";
+  const info: MessageInfo = {
+    id: options.messageID,
+    sessionID: options.sessionId,
+    role: "user",
+    time: {
+      created,
+    },
+    agent: this.config.agentName ?? "zcode-agent",
+    metadata: buildSyntheticUserNoticeMessageMetadata(options.source, visibility, options.metadata),
+    modelSelection: this.getSessionModelSelection(),
+    semantics: buildSyntheticUserNoticeSemantics(options.source, visibility),
+    anchor: buildProjectionAnchor(
+      options.traceContext,
+      mapSyntheticSourceToAnchorOrigin(options.source),
+    ),
+    source: options.source,
+    system: this.config.systemPrompt,
+    synthetic: true,
+    visibility,
+  };
+  const texts = typeof options.text === "string" ? [options.text] : options.text;
+  const parts: MessagePart[] = texts.map((text) => ({
+    id: createPartId(),
+    sessionID: options.sessionId,
+    messageID: options.messageID,
+    type: "text",
+    text,
+    synthetic: true,
+    time: {
+      start: created,
+      end: created,
+    },
+    metadata: buildSyntheticUserNoticePartMetadata(options.source, visibility, options.metadata),
+  }));
+  // 修复原因：冷恢复的 getLatestActiveSessionMessageId 跳过隐藏提醒（agent listing 等公告），
+  // 这里却总移动指针，live 与冷恢复的 compaction 覆盖边界、timeline 锚点不一致。
+  // 用同一个判定，并传入将要写入的同一条记录（含 part），与冷恢复读到的完全相同。
+  if (options.sessionId === this.sessionId && !isHiddenReminderMessage({ info, parts })) {
     this.latestConversationMessageId = options.messageID;
   }
   if (!this.sessionStore) return;
 
-  const created = Date.now();
-  const visibility = options.visibility ?? "model-only";
-  const messageMetadata = buildSyntheticUserNoticeMessageMetadata(
-    options.source,
-    visibility,
-    options.metadata,
-  );
-  const partMetadata = buildSyntheticUserNoticePartMetadata(
-    options.source,
-    visibility,
-    options.metadata,
-  );
-  await this.persistMessage(
-    {
-      id: options.messageID,
+  // 多个 part 同一事务写入：中途失败时不会留下只有前几段的消息，冷恢复读到的段数与 live 相同。
+  if (parts.length > 1 && this.sessionStore.commitMessageBundle) {
+    await this.sessionStore.commitMessageBundle({
       sessionID: options.sessionId,
-      role: "user",
-      time: {
-        created,
-      },
-      agent: this.config.agentName ?? "zcode-agent",
-      metadata: messageMetadata,
-      modelSelection: this.getSessionModelSelection(),
-      semantics: buildSyntheticUserNoticeSemantics(options.source, visibility),
-      anchor: buildProjectionAnchor(
-        options.traceContext,
-        mapSyntheticSourceToAnchorOrigin(options.source),
-      ),
-      source: options.source,
-      system: this.config.systemPrompt,
-      synthetic: true,
-      tools: Object.fromEntries(this.getTools().map((tool) => [tool.name, true])),
-      visibility,
-    },
-    options.traceContext,
-  );
-  await this.persistPart(
-    {
-      id: createPartId(),
-      sessionID: options.sessionId,
-      messageID: options.messageID,
-      type: "text",
-      text: options.text,
-      synthetic: true,
-      time: {
-        start: created,
-        end: created,
-      },
-      metadata: partMetadata,
-    },
-    options.traceContext,
-  );
+      messages: [{ info, parts }],
+    });
+    this.logger?.debug("Session message bundle persisted", {
+      ...traceContextToLogContext(options.traceContext),
+      event: "session.message_bundle.persisted",
+      messageId: options.messageID,
+      module: "core.runtime",
+      partCount: parts.length,
+      status: "completed",
+    });
+    return;
+  }
+  await this.persistMessage(info, options.traceContext);
+  for (const part of parts) await this.persistPart(part, options.traceContext);
 }
 
 export async function persistAssistantMessage(

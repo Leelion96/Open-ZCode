@@ -64,16 +64,17 @@ export function stabilizeProjectTree(previous: ProjectTree, next: ProjectTree): 
 export type ProjectRowSelection =
   | { kind: "project"; projectId: string | null; hostId?: string }
   | { kind: "timeline" }
+  | { kind: "unread" }
   | { kind: "pinned" };
 
 /** 选择器和行列表共用同一比较器，避免时间线在渲染时又被运行优先覆盖。 */
 export function compareProjectTaskRows(
   left: ProjectTask,
   right: ProjectTask,
-  kind: "project" | "pinned" | "timeline",
+  kind: ProjectRowSelection["kind"],
 ): number {
   return (
-    (kind === "timeline"
+    (kind === "timeline" || kind === "unread"
       ? compareTaskListItemsByTime(left, right, "updated")
       : compareZCodeTaskListItems(left, right, "updated")) ||
     JSON.stringify([right.hostId, buildTaskEntityKey(right)]).localeCompare(
@@ -86,6 +87,10 @@ export function selectProjectRows(
   tree: ProjectTree,
   selection: ProjectRowSelection,
 ): ProjectTask[] {
+  if (selection.kind === "unread")
+    return selectUnreadProjectRows(tree).sort((left, right) =>
+      compareProjectTaskRows(left, right, selection.kind),
+    );
   return tree.tasks
     .filter((task) => {
       if (selection.kind === "pinned") return task.pinned && !task.archived;
@@ -121,6 +126,11 @@ export function projectHasUnread(
  * 背景工作区有蓝点时这两份缓存是空的，角标会丢数。
  */
 export function countProjectTreeUnreadTasks(tree: ProjectTree): number {
+  return selectUnreadProjectRows(tree).length;
+}
+
+/** 筛选与角标共用同一集合，避免未读列表显示无法对应角标的历史孤儿任务。 */
+function selectUnreadProjectRows(tree: ProjectTree): ProjectTask[] {
   // 只统计侧边栏实际渲染的项目（非软删）：孤儿任务（项目不存在）与已删项目的
   // 未读在界面上没有蓝点落点，计入只会产生「有角标没蓝点」的幽灵提醒。
   const renderedProjectKeys = new Set(
@@ -129,6 +139,7 @@ export function countProjectTreeUnreadTasks(tree: ProjectTree): number {
       .map((project) => `${project.hostId}::${project.id}`),
   );
   const seen = new Set<string>();
+  const rows: ProjectTask[] = [];
   for (const task of tree.tasks) {
     if (task.archived || !task.unreadAt) {
       continue;
@@ -144,16 +155,17 @@ export function countProjectTreeUnreadTasks(tree: ProjectTree): number {
       continue;
     }
 
-    seen.add(
-      JSON.stringify([
-        task.hostId,
-        task.workspaceIdentity?.trim() || task.workspacePath,
-        task.taskId,
-      ]),
-    );
+    const key = JSON.stringify([
+      task.hostId,
+      task.workspaceIdentity?.trim() || task.workspacePath,
+      task.taskId,
+    ]);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push(task);
   }
 
-  return seen.size;
+  return rows;
 }
 
 export function projectKey(project: Pick<VirtualProject, "id" | "hostId">): string {
@@ -210,7 +222,8 @@ export function mergeProjectTrees(
       name: entry.name,
       roots: entry.roots,
       pinned: false,
-      deleted: false,
+      // Bug 原因：缓存行曾写死未删除，在线删除的项目在离线或远端读取失败时复现；改读刷新写入的删除态缓存。
+      deleted: entry.deleted === true,
       nameOverridden: false,
       position: projects.length,
       createdAt: 0,
@@ -269,5 +282,13 @@ export function formatProjectError(
   if (code === "remote-project.host-removed") return formatMessage({ id: "project.hostRemoved" });
   if (code === "project.connection-unavailable")
     return formatMessage({ id: "project.connectionUnavailable" });
+  if (code === "project.undo-unavailable") return formatMessage({ id: "project.undoUnavailable" });
+  if (code === "project.data-session-running")
+    return formatMessage({ id: "project.dataSessionRunning" });
+  if (code === "project.data-session-referenced")
+    return formatMessage({ id: "project.dataSessionReferenced" });
+  if (code === "project.data-delete-failed")
+    return formatMessage({ id: "project.dataDeleteFailed" });
+  if (code === "project.data-unavailable") return formatMessage({ id: "project.dataUnavailable" });
   return String(cause);
 }

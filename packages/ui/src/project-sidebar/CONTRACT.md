@@ -48,6 +48,8 @@ UI 纠偏：分区复用 WorkspacePurposeSection 和原折叠/顺序偏好；项
 
 归档管理经 index 公开，属于 project-sidebar/ui。RootWorkspaceContent 提供单一项目目录 owner，嵌套 Provider 复用；设置、侧栏、composer 共用树。归档按 Host+projectId 分组，删除容器和未归类不按目录重绑；操作复用模块内 mutation adapter 与现有 Controller/TaskService。页面只保存筛选/分页/确认候选和在途状态，批量部分失败不伪造全部成功。见 `docs/superpowers/specs/2026-09-11-archive-management.md`。
 
+项目管理（设置 › 项目）同样经 index 公开、复用同一目录 owner。行、疑似原因、筛选与排序是 `project-management-view.ts` 的纯派生；`useProjectManagement` 只持有在途批次锁与最近一次失败，本地走 `deleteProject` / `restoreProject`，远程只增删本机入口（`removeEntry` / `addEntry`），每批结束只刷新一次树。选择是页面草稿，生效集合取草稿与当前可见可移除行的交集。侧栏更多菜单末尾的「管理项目…」仅桌面端。见 `docs/superpowers/specs/2026-10-24-project-management.md`。
+
 侧栏分区标题与置顶行保留旧字号/缩进，空态由 ProjectTaskRows 统一展示。SortableProjects 持有 dnd-kit 暂态位移，排序只在同 Host/置顶分区内经原 reorderProjects 提交，任务原生拖入仍发 moveTask。
 
 ProjectNode 从同一 dnd-kit active/over 派生项目插入蓝线的位置；只标记同置顶分区的其它可排序节点，允许跨 Host，释放/取消随拖拽暂态清除，不新增排序状态。见 `docs/project-drag-insertion-indicator.md`。
@@ -104,7 +106,7 @@ Root 的原项目完成 guard 从成员目录异步复验 entryId、membershipId
 
 ## 分组视图
 
-按项目、按分组、最近更新共享同一 ProjectDirectory 任务树与任务命令。分组呈现复用删除前的组件，保持原整行拖拽、右键菜单和空组新建语义。
+按项目、按分组、最近更新、按未读共享同一 ProjectDirectory 任务树与任务命令。按未读与系统角标共用可见未读集合及完整身份去重，复用时间线排序、行与分页；偏好沿用现有 owner，空态显示暂无未读任务。已读提交后移除行，不改变当前导航或原 CAS 合同，详见 `docs/ui/task-unread-state.md`。分组呈现复用删除前的组件，保持原整行拖拽、右键菜单和空组新建语义。
 `useTaskGroups` 只订阅控制端 Host 的结构，成员身份为 canonical workspace key + taskId；
 视图不创建连接或 Agent，不以缺席清理成员，不修改项目或会话事实。
 旧 grouped 偏好在没有有效新版选择时映射到按分组。
@@ -112,3 +114,5 @@ Root 的原项目完成 guard 从成员目录异步复验 entryId、membershipId
 分组手工移动提交节点/来源/锚点，Host 事务处理并广播刷新。`grouped/` 的嵌套 view 只做展示和当前手势预览，不恢复旧任务事实缓存或整表 applyOrder。吸顶浮层位于统一渐隐容器之外，Hash/收起全部操作挂在既有列表工具栏。关闭草稿行只从 Composer 草稿 owner 清除分组意图。
 
 Composer 头部通过 `ProjectComposerMenu.showEditProject` 启用当前项目 Plus 编辑入口；`children` 放置分支等既有控件，顺序为项目、children、编辑按钮。当前项目解析仍由菜单持有。复用 ProjectEditor 与目录服务，在线且非 legacySingleRoot 才能编辑；Host/project 身份、会话或草稿切换使已打开编辑器失效。保存/删除仅刷新目录，不调用导航；其他选择器默认不启用入口。
+
+目录读取保留同一 Provider owner。只发送目录命令的 pane 使用 `useOptionalProjectDirectoryActions`，不订阅任务树；工作区选择器使用项目/设备切片。任务活动仍只广播给任务消费者，项目、设备和权限变化继续发布给相关选择器。

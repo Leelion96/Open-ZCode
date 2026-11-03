@@ -48,6 +48,7 @@ interface RunServiceLifecycle {
   close(): Promise<void>;
   /** 关闭之后的 launch 是接线错误：抛，而不是给 contracts 的拒绝枚举加成员。 */
   assertOpen(): void;
+  trackOperation<T>(operation: () => Promise<T>): Promise<T>;
   /** 活条目下出现终态行 ⇒ 外来写入，每个条目记一条 warn。 */
   noteForeignTerminalRow(runId: string): void;
 }
@@ -66,6 +67,9 @@ interface RunServiceLifecycle {
 export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunServiceLifecycle {
   const { runs } = deps;
   const terminalOrder: string[] = [];
+  const cleanup = new Set<Promise<void>>();
+  const unreleased = new Set<RunRegistryEntry>();
+  const operations = new Set<Promise<unknown>>();
   const settledListeners = new Set<(notice: DynamicWorkflowRunSettledNotice) => void>();
   const countLiveRuns = (): number => {
     let live = 0;
@@ -146,7 +150,20 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
     // service 文件头不变式 6：三条入口（submit / amend / resume）共用这一个登记点，且必须在 launch 的
     // 同一同步片登记——晚一个微任务，一次常驻再平衡就能落在启动与登记之间。登记的是**结算后**
     // 的 promise（`settlement` 永不 reject，簿记已做完），计数随它的 finally 释放。
-    deps.registerResidencyBlockingWork?.(settlement);
+    // run terminal 与 actor drain 不同；独立保留未完成清理，不能随 terminal registry 淘汰。
+    const released = settlement.then(() => entry.quiescence?.drain());
+    unreleased.add(entry);
+    cleanup.add(released);
+    void released.then(
+      () => {
+        cleanup.delete(released);
+        unreleased.delete(entry);
+      },
+      () => {
+        cleanup.delete(released);
+      },
+    );
+    deps.registerResidencyBlockingWork?.(released.catch(() => undefined));
     return settlement;
   };
 
@@ -165,14 +182,30 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
         parentSessionId: deps.parentSessionId,
       });
       for (const entry of live) entry.controller.abort("interrupted");
+      while (operations.size) await Promise.allSettled(operations);
       await Promise.all(live.map((entry) => entry.settlement));
+      while (cleanup.size > 0) await Promise.allSettled(cleanup);
+      const results = await Promise.allSettled(
+        [...unreleased].map(async (entry) => {
+          await entry.quiescence?.drain();
+          unreleased.delete(entry);
+        }),
+      );
+      const errors = results.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      if (errors.length) throw new AggregateError(errors, "Workflow actor cleanup failed");
       deps.logger?.info?.("Dynamic workflow run service closed", {
         event: "dynamic_workflow.service.closed",
         module: "bootstrap.app",
         parentSessionId: deps.parentSessionId,
         stoppedRunCount: live.length,
       });
-    })();
+    })().catch((error) => {
+      // unreleased 保留失败的 actor；不能把 rejected flight 当作永久关闭结果。
+      closePromise = undefined;
+      throw error;
+    });
     return closePromise;
   };
 
@@ -221,6 +254,16 @@ export function createRunServiceLifecycle(deps: RunServiceLifecycleDeps): RunSer
     trackSettlement,
     close,
     assertOpen,
+    trackOperation<T>(operation: () => Promise<T>): Promise<T> {
+      assertOpen();
+      const work = operation();
+      operations.add(work);
+      void work.then(
+        () => operations.delete(work),
+        () => operations.delete(work),
+      );
+      return work;
+    },
     noteForeignTerminalRow,
   };
 }

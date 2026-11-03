@@ -160,6 +160,7 @@ export function createWorkspaceFiles(workspace: string): WorkspaceFiles {
 
 // 系统选择器只提供用户选中的文件字节；导入副本后复用工作区读取与对话引用，绝不放开任意路径读取。
 const IMPORT_IDLE_MS = 10 * 60 * 1000;
+/** Pending imports each session may hold. */
 const MAX_IMPORTS = 4;
 
 export function createDocumentImporter(
@@ -176,6 +177,7 @@ export function createDocumentImporter(
       offset: number;
       handle: FileHandle;
       touched: number;
+      owner: string;
     }
   >();
   let queue: Promise<unknown> = Promise.resolve();
@@ -227,7 +229,7 @@ export function createDocumentImporter(
   return {
     // 只读工作区仍可预览；启动清扫失败只记录，不能阻断插件连接。
     initialize: () => run(() => sweep().catch((error) => options.onCleanupError?.(error))),
-    begin: (name: string, size: number) =>
+    begin: (name: string, size: number, owner = "default") =>
       run(async () => {
         if (closed) throw new OfficeError("invalid_token", "Importer is closed.");
         if (basename(name) !== name || name.includes("\\") || !kindOf(name))
@@ -235,14 +237,16 @@ export function createDocumentImporter(
         if (!Number.isInteger(size) || size < 1 || size > MAX_FILE_BYTES)
           throw new OfficeError("file_too_large", "File size is outside the supported range.");
         await sweep();
-        if (uploads.size >= MAX_IMPORTS)
+        // 修复原因：server 由工作区内各 session 共享后，全局槽位会让一个 session 放弃的导入
+        // 挡住其他 session 最多 10 分钟；槽位按 session 计，和文件句柄的规则一致。
+        if ([...uploads.values()].filter((upload) => upload.owner === owner).length >= MAX_IMPORTS)
           throw new OfficeError("invalid_token", "Too many pending imports.");
         const id = randomUUID();
         const directory = join((await parent())!, id);
         await mkdir(directory);
         try {
           const handle = await open(join(directory, ".partial"), "wx");
-          uploads.set(id, { directory, name, size, offset: 0, handle, touched: now() });
+          uploads.set(id, { directory, name, size, offset: 0, handle, touched: now(), owner });
           return id;
         } catch (error) {
           await rm(directory, { recursive: true, force: true }).catch((cleanupError) =>

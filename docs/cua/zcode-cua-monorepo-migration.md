@@ -54,7 +54,7 @@ pnpm install
   └─ 通过 workspace 软链解析 @zcode/zcode-cua → dist/**
 ```
 
-`typecheck`、`test:unit`、`dev:desktop`、`build:cua-helper` 以及 CI 安装步骤之后都依赖 `dist` 已存在。
+`typecheck`、CUA 独立测试、`dev:desktop`、`build:cua-helper` 以及 CI 安装步骤之后都依赖 `dist` 已存在。
 
 eval 的依赖回归测试同时核对 CI 安装先于 evaluator 执行，以及根 `prepare` 调用 `build:cua` 并指向 workspace producer。CI 不再单独重复执行 `pnpm build:cua`，测试不能继续要求这条已移除的命令。
 

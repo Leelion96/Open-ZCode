@@ -13,11 +13,13 @@ export function insertVerifiedDockerSpecRow(text, specRelFromDesktop) {
     };
   }
 
+  // 格式化会在表格与结束标记之间留空行；直接替换标记会把新行写成表外文本。
+  // 去掉标记前的尾部空白，让新增行紧接表格，并保留文档原有的换行格式。
+  const markerIndex = text.indexOf(VERIFIED_DOCKER_TABLE_END_MARKER);
+  const tablePrefix = text.slice(0, markerIndex).trimEnd();
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
   return {
     inserted: true,
-    text: text.replace(
-      VERIFIED_DOCKER_TABLE_END_MARKER,
-      `${row}\n${VERIFIED_DOCKER_TABLE_END_MARKER}`,
-    ),
+    text: `${tablePrefix}${newline}${row}${newline}${text.slice(markerIndex)}`,
   };
 }

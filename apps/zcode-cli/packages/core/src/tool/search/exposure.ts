@@ -1,6 +1,7 @@
-import { LOCAL_TOOL_SEARCH_DESCRIPTION } from "./description.js";
+import { LOCAL_TOOL_SEARCH_DESCRIPTION, renderToolSearchAnnouncement } from "./description.js";
 import {
   TOOL_SEARCH_NAME,
+  LOCAL_TOOL_SEARCH_NAME,
   DEFERRED_TOOL_CALL_NAME,
   type ToolSearchMode,
   type ResolvedToolSearchMode,
@@ -11,14 +12,8 @@ import {
 } from "@zcode/contracts";
 import type { ToolRegistry } from "../registry.js";
 import type { ToolMetadata } from "../types.js";
-import type { RuntimeMessageEntry } from "../../agent/message-history.js";
+import type { RuntimeAttachmentEntry, RuntimeMessageEntry } from "../../agent/message-history.js";
 import { collectToolSearchHistory, projectToolReferences } from "./history.js";
-
-const ADDED_TOOLS_NOTICE = `The following deferred tools are now available via ${TOOL_SEARCH_NAME}. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ${TOOL_SEARCH_NAME} with query "select:<name>[,<name>...]" to load tool schemas before calling them:`;
-const LOCAL_ADDED_TOOLS_NOTICE = `The following deferred tools are available via ${TOOL_SEARCH_NAME}. Use query "select:<name>[,<name>...]" to load their complete schemas, then call them through ${DEFERRED_TOOL_CALL_NAME} with {name, input}. Call resident tools directly:`;
-const MAX_REMOVED_NAME_LINES = 30;
-const AMBIENT_CONTEXT_NOTICE =
-  "This is ambient context — do not narrate it to the user unless they ask or it is directly relevant to their request.";
 
 export function resolveToolSearchMode(
   model: Model,
@@ -124,6 +119,7 @@ export function buildToolExposure(input: ToolExposureInput) {
       if (mode === "local" && tool.name === TOOL_SEARCH_NAME)
         return {
           ...contract,
+          name: LOCAL_TOOL_SEARCH_NAME,
           description: LOCAL_TOOL_SEARCH_DESCRIPTION,
         };
       return mode === "native" && deferred.has(tool.name)
@@ -146,7 +142,7 @@ export function buildToolExposure(input: ToolExposureInput) {
 export function buildToolSearchAnnouncement(
   input: ToolExposureInput,
   compactDiscoveredTools?: ReadonlySet<string>,
-): RuntimeMessageEntry | undefined {
+): RuntimeAttachmentEntry | undefined {
   // Off 不需要公告或提升信息，保持关闭路径不扫描公告历史。
   if (resolveToolSearchMode(input.model, input.mode) === "off") return undefined;
   // Bug 根因：全量 metadata 与增量正文不一致，compact 保留尾部时会误以为旧名称仍在上下文。
@@ -175,46 +171,16 @@ export function buildToolSearchAnnouncement(
   const available = new Set(input.tools.map((tool) => tool.name));
   const removedNames = [...announced].filter((name) => !available.has(name)).sort();
   if (addedNames.length === 0 && removedNames.length === 0) return undefined;
-  const readded = new Set(readdedNames);
-  const listedNames = addedNames.filter((name) => !readded.has(name));
-  const paragraphs: string[] = [];
-  if (listedNames.length)
-    paragraphs.push(
-      `${mode === "local" ? LOCAL_ADDED_TOOLS_NOTICE : ADDED_TOOLS_NOTICE}\n${listedNames.join("\n")}`,
-    );
-  // 目录变化只证明当前可用性，不能据此推断 MCP 连接状态或其他变化原因。
-  if (readdedNames.length) {
-    paragraphs.push(
-      `${readdedNames.length} deferred tool${readdedNames.length === 1 ? " is" : "s are"} available again (names announced earlier in this conversation): ${summarizeToolNames(readdedNames)}. Load via ${TOOL_SEARCH_NAME} as before.`,
-    );
-  }
-  if (removedNames.length) {
-    // 名称事实仍完整保留在 metadata；只有模型可见文案按 server 分组，避免大批删除刷屏。
-    paragraphs.push(
-      removedNames.length > MAX_REMOVED_NAME_LINES
-        ? `${removedNames.length} deferred tools are no longer available: ${summarizeToolNames(removedNames)}. Do not search for them — ${TOOL_SEARCH_NAME} will return no match.`
-        : `The following deferred tools are no longer available. Do not search for them — ${TOOL_SEARCH_NAME} will return no match:\n${removedNames.join("\n")}`,
-      AMBIENT_CONTEXT_NOTICE,
-    );
-  }
+  // 只能在生成时判断哪些删除只是本轮隐藏：之后 registry 会变，请求投影按记下的名称渲染。
+  const hiddenNames = removedNames.filter((name) => input.registry?.get(name) !== undefined);
+  const delta = { addedNames, removedNames, readdedNames };
   return {
     kind: "attachment",
-    content: paragraphs.join("\n\n"),
+    content: renderToolSearchAnnouncement(delta, mode, hiddenNames),
     metadata: {
       source: "tool_search_announcement",
-      toolSearchAnnouncement: { addedNames, removedNames, readdedNames },
+      toolSearchAnnouncement: delta,
+      ...(hiddenNames.length ? { toolSearchHiddenNames: hiddenNames } : {}),
     },
   };
-}
-
-function summarizeToolNames(names: readonly string[]): string {
-  const counts = new Map<string, number>();
-  for (const name of names) {
-    const group = name.startsWith("mcp__") ? `${name.split("__", 2).join("__")}__*` : name;
-    counts.set(group, (counts.get(group) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([name, count]) => (count > 1 ? `${name} (${count})` : name))
-    .join(", ");
 }

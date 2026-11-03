@@ -5,6 +5,35 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { createBuildTimeConfigDefines, resolveBuildTimeConfig } from "../build-time-config.mjs";
+import { resolveProductUpdateOrigin } from "../product-config.mjs";
+
+test("更新源只取显式构建配置，不默认授权官方或调试更新地址", () => {
+  assert.equal(resolveProductUpdateOrigin({}), "");
+  assert.equal(
+    resolveProductUpdateOrigin({ ZCODE_UPDATE_FEED_URL: "https://other.example/manifest" }),
+    "",
+  );
+  assert.equal(
+    resolveProductUpdateOrigin({ ZCODE_BASE_URL: "https://self.example/path" }),
+    "https://self.example",
+  );
+  assert.equal(
+    resolveProductUpdateOrigin({ ZCODE_ENV: "test", ZCODE_TEST_BASE_URL: "https://test.example" }),
+    "https://test.example",
+  );
+  assert.equal(
+    resolveProductUpdateOrigin({
+      ZCODE_ENV: "production",
+      ZCODE_TEST_BASE_URL: "https://test.example",
+    }),
+    "",
+  );
+  assert.equal(resolveProductUpdateOrigin({ ZCODE_BASE_URL: "http://localhost:3000" }), "");
+  assert.throws(
+    () => resolveProductUpdateOrigin({ ZCODE_BASE_URL: "https://user:secret@example.com" }),
+    /credentials/,
+  );
+});
 
 const dir = await mkdtemp(join(tmpdir(), "zcode-build-time-config-"));
 after(() => rm(dir, { recursive: true, force: true }));

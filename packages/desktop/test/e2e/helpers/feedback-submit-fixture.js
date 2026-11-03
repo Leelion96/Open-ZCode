@@ -1,6 +1,9 @@
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { FeedbackSubmitForm } from "@/feedback/FeedbackSubmitForm.js";
+import { useFeedbackStore } from "@/feedback/feedbackStore.js";
+import { PlatformProvider } from "@/hooks/usePlatform.js";
+import { RemoteConnectionConnectingStep } from "@/remote-connection/RemoteConnectionConnectingStep.js";
 import {
   getFeedbackSubmissionJob,
   getFeedbackSubmissionJobsSnapshot,
@@ -41,6 +44,35 @@ const container = document.createElement("main");
 document.body.append(container);
 const root = createRoot(container);
 let generation = 0;
+function FixtureContent({ submissionJobId }) {
+  const draft = useFeedbackStore((state) => state.submitDraft);
+  const kind = new URLSearchParams(window.location.hash.slice(1)).get("remoteKind");
+  // 从真实连接反馈按钮进入表单，防止仅验证表单默认值而漏掉入口草稿的覆盖。
+  if (kind && !draft && !submissionJobId) {
+    return createElement(RemoteConnectionConnectingStep, {
+      kind,
+      loading: false,
+      errorMessage: "E2E_REMOTE_FEEDBACK_FAILED",
+      logs: [
+        { id: "1", level: "error", message: "E2E_REMOTE_CONNECTION_LOG", timestamp: "12:00:00" },
+      ],
+      onBack() {},
+      onRetry() {},
+    });
+  }
+  return createElement(FeedbackSubmitForm, {
+    feedbackService,
+    platform: {},
+    submissionJobId,
+    initialDraft: draft ?? undefined,
+    onSubmitted() {
+      if (kind) useFeedbackStore.getState().close();
+    },
+    onViewTickets() {},
+    onCancel() {},
+  });
+}
+
 function mount(submissionJobId) {
   root.render(
     createElement(
@@ -49,15 +81,11 @@ function mount(submissionJobId) {
       createElement(
         TabStoreProvider,
         null,
-        createElement(FeedbackSubmitForm, {
-          key: ++generation,
-          feedbackService,
-          platform: {},
-          submissionJobId,
-          onSubmitted() {},
-          onViewTickets() {},
-          onCancel() {},
-        }),
+        createElement(
+          PlatformProvider,
+          { platform: {} },
+          createElement(FixtureContent, { key: ++generation, submissionJobId }),
+        ),
       ),
     ),
   );

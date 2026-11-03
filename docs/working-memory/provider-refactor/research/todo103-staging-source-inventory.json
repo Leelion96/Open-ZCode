@@ -6030,7 +6030,7 @@
       "verificationStatus": "partial"
     },
     {
-      "path": "docs/testing/browser-use-codex-parity-coverage-matrix.md",
+      "path": "docs/testing/browser-use-coverage-matrix.md",
       "netChange": "M",
       "oursChanged": false,
       "explicitConflict": false,

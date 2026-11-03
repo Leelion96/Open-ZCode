@@ -39,13 +39,16 @@
 - UI 手动创建且未绑定会话的任务，执行时新建的空 session 必须使用 deferred persistence；首条 `sendText` admission 先持久化 session 主记录，再写带外键的 `session_input`，禁止用延时规避创建/首发提交顺序。
 - automation 派发创建或恢复带 `automationId` 的执行 task 时，必须通过 session
   `toolDenylist: ["CronCreate", "CronUpdate", "CronDelete"]` 在 runtime 工具注册边界隐藏
-  automation 写工具，只保留只读 CronList。不要把 runId 写入 task meta：
+  automation 写工具，只保留只读 CronList 与只作用于本轮 automation 的 CronPauseSelf。不要把
+  runId 写入 task meta：
   runId 属于 `automation_runs` 台账，写进 task meta 会污染 UI 立即执行和绑定会话恢复路径。
 - 对已经 active 的绑定会话，`session/resume` 不会重建 runtime；host 派发 prompt 时还必须把
-  `automationId` 随本轮 `sendText/sessionSend` 透传。CLI 在该 turn 的 provider 请求中临时移除
+  `automationId` 随本轮 `sendText/sessionSend` 透传。该字段必须来自 Host 调度派发，`inputId`/runId
+  只用于追踪和幂等，不能恢复或替代授权身份。CLI 在该 turn 的 provider 请求中临时移除
   `CronCreate/CronUpdate/CronDelete`，让模型无法递归创建、自改或自删；`activeAutomationId` 与
   `automation-port` 的 CronCreate 拒绝逻辑继续作为伪造创建调用的兜底，命中时不得调用
-  `automation/create`。turn 结束后恢复原工具面，普通用户输入不受影响。
+  `automation/create`。同一个 `automationId` 也是 `CronPauseSelf` 的唯一目标来源，普通用户轮
+  不暴露该工具，规则见 `docs/automation-edit-status.md`。turn 结束后恢复原工具面，普通用户输入不受影响。
 - Highspeed 期间仍允许用户调用 `CronCreate`；创建记录保存会话稳定 `modelSelection`，不保存当前 Turn
   指向加速卡内建 Provider 的临时选型。后续定时执行以 `automationId` 为最终门禁，使用记录中保存的
   provider/model，并忽略误传的加速 `modelSelection` / `modelExecution`，因此不会抽取、复用或安装
@@ -77,7 +80,8 @@ busy session
   -> enqueueDeferredInput(toolDisallowlist=[CronCreate,CronUpdate,CronDelete])
   -> queue replay / drain
   -> startPromptTurn(toolDisallowlist=[CronCreate,CronUpdate,CronDelete])
-  -> provider automation tools 只保留 CronList
+  -> 保留 Host 显式注入的本轮 automationId（不从 inputId/runId 推导）
+  -> provider automation tools 只保留 CronList + CronPauseSelf
 
 第二次 Run Now（首个 run 未终态）
   -> repo.runNow 看到 running=1
@@ -183,6 +187,8 @@ body portal 更新 fixed left
 - 会话轮尾的定时任务创建卡片是本轮工具结果的最终状态投影，不是所有成功 `CronCreate` 的历史列表。
   UI 必须按 `automationId` 顺序归并成功的 `CronCreate` / `CronDelete`：后续成功删除会移除对应创建卡片，
   删除失败或取消不影响卡片；普通工具历史仍完整展示。多个未被删除的创建结果继续按创建顺序展示。
+  `CronPauseSelf` 只出现在 automation 执行轮，以通用工具行展示，不生成也不移除卡片；暂停后的状态
+  在列表挂载或手动刷新时读取。
 - 会话内 `CronCreate` 成功卡片点击「去到定时任务」时，必须携带结果中的 `automationId` 进入定时任务主视图；列表数据就绪后直接打开对应任务详情，而不是停留在列表。导航目标是 renderer-local 一次性状态：成功定位后立即消费；列表加载完成仍找不到目标时提示任务不存在、消费意图并停留列表，避免失效意图长期保留。该状态不得进入 relay、main 或 session realtime 状态。
 - 已创建任务区最多同时展示 8 张卡片；桌面双列展示 4 行，手机单列展示 8 行，超出部分在卡片区内纵向滚动查看，不改变任务的数据加载和排序。
 - 已创建任务卡片不展示所属项目名称或文件夹图标，保持标题、指令、运行状态与次数为主要信息；任务的 workspacePath / workspaceIdentity 仍保留用于编辑、执行和隔离。

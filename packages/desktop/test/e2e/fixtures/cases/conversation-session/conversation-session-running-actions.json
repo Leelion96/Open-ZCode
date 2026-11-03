@@ -15,25 +15,32 @@
   ],
   "requests": [
     {
-      "id": "upstream-conversation-readonly-tool-call",
+      "id": "conversation-session-running-actions-title-sidecar",
       "kind": "common",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "通用只读 Read tool_use 让高/中优先级 conversation case 覆盖真实 tool_result 历史。"
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
     },
     {
       "id": "upstream-conversation-readonly-running-actions-final",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "该响应只需要稳定产出 completed assistant 历史，供 running guard 断言定位历史 assistant message。"
+      "syntheticReason": "该响应只需要稳定产出 completed assistant 历史，供后续 running 中 fork/edit guard 断言引用。"
     },
     {
       "id": "upstream-conversation-running-actions-active-slow-stream",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "running guard 必须在 assistant 正在流式回答时检查 fork/edit 入口；真实 provider 可能过快完成。"
+      "syntheticReason": "该 case 断言 running 中 fork/edit 入口状态，需要可控 streaming 窗口；真实模型可能过快完成。"
+    },
+    {
+      "id": "upstream-conversation-readonly-tool-call",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "只读工具首段用于构造稳定 tool_use/tool_result 历史；工具业务由本地文件 fixture 决定，不依赖真实模型选择。"
     }
   ]
 }

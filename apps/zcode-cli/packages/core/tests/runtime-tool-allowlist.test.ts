@@ -100,6 +100,8 @@ describe("resolveRuntimeDisallowedTools", () => {
       RESUME_WORKFLOW_RUN_TOOL_NAME,
       RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
       FILL_WORKFLOW_HOLE_TOOL_NAME,
+      LIST_WORKFLOW_RUNS_TOOL_NAME,
+      GET_WORKFLOW_RUN_TOOL_NAME,
     ]);
   });
 
@@ -116,6 +118,8 @@ describe("resolveRuntimeDisallowedTools", () => {
       RESUME_WORKFLOW_RUN_TOOL_NAME,
       RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
       FILL_WORKFLOW_HOLE_TOOL_NAME,
+      LIST_WORKFLOW_RUNS_TOOL_NAME,
+      GET_WORKFLOW_RUN_TOOL_NAME,
     ]);
   });
 
@@ -131,11 +135,40 @@ describe("resolveRuntimeDisallowedTools", () => {
       RESUME_WORKFLOW_RUN_TOOL_NAME,
       RESOLVE_WORKFLOW_QUESTION_TOOL_NAME,
       FILL_WORKFLOW_HOLE_TOOL_NAME,
+      LIST_WORKFLOW_RUNS_TOOL_NAME,
+      GET_WORKFLOW_RUN_TOOL_NAME,
     ]);
   });
 
+  // 修复原因：run 内省两件套经 dwf run 端口读取，子 runtime 按不变式不持有端口，在那里只会报
+  // workflow_introspection_unavailable（线上 10-20：workflow child 调用 155 次全部失败）。
+  it.each(["subagent_child", "nested_workflow_child"] as const)(
+    "removes the run introspection tools from a %s runtime, which holds no run port",
+    (taskType) => {
+      expect(
+        resolveRuntimeDisallowedTools(config({ taskType, toolDisallowlist: ["CronCreate"] })),
+      ).toEqual(["CronCreate", LIST_WORKFLOW_RUNS_TOOL_NAME, GET_WORKFLOW_RUN_TOOL_NAME]);
+    },
+  );
+
+  it("keeps the run introspection tools registered in a main runtime", () => {
+    const main = createToolRegistry();
+    registerBuiltInTools(main, { disallowedTools: resolveRuntimeDisallowedTools(config({})) });
+    expect(main.has(LIST_WORKFLOW_RUNS_TOOL_NAME)).toBe(true);
+    expect(main.has(GET_WORKFLOW_RUN_TOOL_NAME)).toBe(true);
+
+    const child = createToolRegistry();
+    registerBuiltInTools(child, {
+      disallowedTools: resolveRuntimeDisallowedTools(config({ taskType: "subagent_child" })),
+    });
+    expect(child.has(LIST_WORKFLOW_RUNS_TOOL_NAME)).toBe(false);
+    expect(child.has(GET_WORKFLOW_RUN_TOOL_NAME)).toBe(false);
+    // ListSavedWorkflows 读的是定义清单，不经 run 端口，子 runtime 照常保留。
+    expect(child.has(LIST_SAVED_WORKFLOWS_TOOL_NAME)).toBe(true);
+  });
+
   it("leaves other task types on their configured disallowlist", () => {
-    expect(resolveRuntimeDisallowedTools(config({ taskType: "subagent_child" }))).toBeUndefined();
+    expect(resolveRuntimeDisallowedTools(config({}))).toBeUndefined();
     expect(resolveRuntimeDisallowedTools(config({ toolDisallowlist: ["CronCreate"] }))).toEqual([
       "CronCreate",
     ]);
@@ -339,4 +372,21 @@ describe("Agent / Task 描述随灰度门增删工作流那一行", () => {
     expect(agent).toContain("CreateWorkflow");
     expect(task).toContain("CreateWorkflow");
   });
+});
+
+it("normalizes LocalToolSearch scope rules to the existing search capability", () => {
+  const allowedTools = resolveBuiltInToolAllowlist(
+    config({
+      toolset: "explore",
+      toolAllowlist: ["LocalToolSearch", "Read"],
+    }),
+  );
+  expect(allowedTools).toEqual(["ToolSearch", "Read"]);
+  const registry = createToolRegistry();
+  registerBuiltInTools(registry, { allowedTools });
+  expect(registry.get("LocalToolSearch")).toBe(registry.get("ToolSearch"));
+  const denied = createToolRegistry();
+  registerBuiltInTools(denied, { disallowedTools: ["LocalToolSearch"] });
+  expect(denied.has("ToolSearch")).toBe(false);
+  expect(denied.has("LocalToolSearch")).toBe(false);
 });

@@ -5,6 +5,8 @@ import {
   cronCreateToolEntry,
   cronDeleteHandler,
   cronListHandler,
+  cronPauseSelfHandler,
+  cronPauseSelfToolEntry,
   cronUpdateHandler,
   cronUpdateToolEntry,
 } from "../src/tool/handlers/cron.js";
@@ -67,6 +69,8 @@ describe("cron tools", () => {
         expect.stringContaining("not session-only or auto-deleted"),
         expect.stringContaining("without adding jitter"),
         expect.stringContaining("Never ask the scheduled run to create"),
+        // 停止条件必须写进 prompt，执行轮才能在条件满足时调用 CronPauseSelf 自暂停。
+        expect.stringContaining("CronPauseSelf"),
       ]),
     );
   });
@@ -78,6 +82,7 @@ describe("cron tools", () => {
     expect(withoutPort.has("CronList")).toBe(false);
     expect(withoutPort.has("CronUpdate")).toBe(false);
     expect(withoutPort.has("CronDelete")).toBe(false);
+    expect(withoutPort.has("CronPauseSelf")).toBe(false);
 
     const withPort = createToolRegistry();
     registerBuiltInTools(withPort, { includeAutomation: true });
@@ -85,6 +90,7 @@ describe("cron tools", () => {
     expect(withPort.has("CronList")).toBe(true);
     expect(withPort.has("CronUpdate")).toBe(true);
     expect(withPort.has("CronDelete")).toBe(true);
+    expect(withPort.has("CronPauseSelf")).toBe(true);
   });
 
   it("CronCreate：通过 automationPort 创建当前 workspace 的定时任务", async () => {
@@ -93,6 +99,7 @@ describe("cron tools", () => {
       list: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
+      pause: vi.fn(),
     };
 
     const result = await cronCreateHandler(
@@ -143,6 +150,7 @@ describe("cron tools", () => {
       list: vi.fn(async () => [intervalAutomation]),
       update: vi.fn(async () => intervalAutomation),
       delete: vi.fn(),
+      pause: vi.fn(),
     };
 
     const created = await cronCreateHandler(
@@ -192,6 +200,7 @@ describe("cron tools", () => {
       list: vi.fn(),
       update: vi.fn(async () => updatedAutomation),
       delete: vi.fn(),
+      pause: vi.fn(),
     };
 
     const result = await cronUpdateHandler(
@@ -235,6 +244,7 @@ describe("cron tools", () => {
       list: vi.fn(async () => [automation]),
       update: vi.fn(),
       delete: vi.fn(async () => true),
+      pause: vi.fn(),
     };
 
     await expect(cronListHandler({}, createContext(port))).resolves.toEqual({
@@ -252,6 +262,7 @@ describe("cron tools", () => {
       list: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(async () => false),
+      pause: vi.fn(),
     };
 
     await expect(cronDeleteHandler({ id: "stale-id" }, createContext(port))).resolves.toEqual({
@@ -267,6 +278,7 @@ describe("cron tools", () => {
       list: vi.fn(async () => [automation]),
       update: vi.fn(async () => automation),
       delete: vi.fn(async () => true),
+      pause: vi.fn(),
     };
     const context = { ...createContext(port), automationTurn: true };
     const mutations = [
@@ -291,5 +303,84 @@ describe("cron tools", () => {
     expect(port.update).not.toHaveBeenCalled();
     expect(port.delete).not.toHaveBeenCalled();
     await expect(cronListHandler({}, context)).resolves.toEqual({ automations: [automation] });
+  });
+
+  it("CronPauseSelf：只暂停执行器注入的本轮 automationId，不接受模型输入", async () => {
+    const port: AutomationPort = {
+      create: vi.fn(),
+      list: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      pause: vi.fn(async () => true),
+    };
+    const context = { ...createContext(port), automationTurn: true, automationId: "automation-1" };
+
+    await expect(cronPauseSelfHandler({}, context)).resolves.toEqual({
+      paused: true,
+      id: "automation-1",
+      message:
+        "Paused automation automation-1. It will not run on schedule until the user resumes it.",
+    });
+    expect(port.pause).toHaveBeenCalledWith({ id: "automation-1" });
+    // 输入 schema 严格为空对象：模型不能通过 id 指定别的任务。
+    await expect(cronPauseSelfHandler({ id: "automation-2" }, context)).rejects.toThrow();
+    expect(port.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it("CronPauseSelf：任务已不是 active 时返回 paused=false 的明确结果", async () => {
+    const port: AutomationPort = {
+      create: vi.fn(),
+      list: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      pause: vi.fn(async () => false),
+    };
+    const context = { ...createContext(port), automationTurn: true, automationId: "automation-1" };
+
+    await expect(cronPauseSelfHandler({}, context)).resolves.toEqual({
+      paused: false,
+      id: "automation-1",
+      message:
+        "Automation automation-1 is not active (already paused, completed, failed, or deleted), so nothing changed.",
+    });
+  });
+
+  it("CronPauseSelf：缺少本轮 automationId 时 PermissionDenied 且不调用端口", async () => {
+    const port: AutomationPort = {
+      create: vi.fn(),
+      list: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      pause: vi.fn(async () => true),
+    };
+    // 普通用户轮、只有 denylist/queryId 兜底信号的轮都没有可暂停目标。
+    for (const context of [
+      createContext(port),
+      { ...createContext(port), automationTurn: true },
+      { ...createContext(port), automationTurn: true, automationId: "   " },
+    ]) {
+      await expect(cronPauseSelfHandler({}, context)).rejects.toMatchObject({
+        type: CoreErrorType.PermissionDenied,
+      });
+    }
+    expect(port.pause).not.toHaveBeenCalled();
+  });
+
+  it("CronPauseSelf：工具契约为低风险、无需审批的 deferred 工作区副作用", () => {
+    expect(cronPauseSelfToolEntry.metadata).toMatchObject({
+      name: "CronPauseSelf",
+      shouldDefer: true,
+      readOnly: false,
+      destructive: false,
+      concurrentSafe: false,
+      sideEffectScope: "workspace",
+      riskLevel: "low",
+      needsApproval: false,
+    });
+    expect(cronPauseSelfToolEntry.metadata.searchHint).toBeTruthy();
+    expect(cronPauseSelfToolEntry.permission).toMatchObject({
+      permission: "automation.pause",
+      needsApproval: false,
+    });
   });
 });

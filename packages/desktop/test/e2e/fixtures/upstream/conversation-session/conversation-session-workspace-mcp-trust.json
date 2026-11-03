@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-workspace-mcp-trust",
+  "spec": "./test/e2e/conversation-session/conversation-session-workspace-mcp-trust.test.ts",
+  "fixtures": [
+    {
+      "id": "mcp-guidance-first",
+      "description": "Workspace MCP guidance first turn.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "The model reply proves pending workspace MCP trust does not block chat; UI and process markers verify admission."
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_MCP_TRUST_GUIDANCE first: reply with ok"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-mcp-guidance-first",
+          "inputTokens": 60,
+          "outputTokens": 12,
+          "text": "MCP guidance first ready"
+        }
+      }
+    },
+    {
+      "id": "mcp-guidance-changed",
+      "description": "Workspace MCP guidance changed turn.",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "The model reply proves pending workspace MCP trust does not block chat; UI and process markers verify admission."
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_MCP_TRUST_GUIDANCE changed: reply with ok"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-mcp-guidance-changed",
+          "inputTokens": 60,
+          "outputTokens": 12,
+          "text": "MCP guidance changed ready"
+        }
+      }
+    }
+  ]
+}

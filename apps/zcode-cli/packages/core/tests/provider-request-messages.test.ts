@@ -5,6 +5,8 @@ import {
   systemReminderRuntimeMetadata,
 } from "../src/agent/message-history.js";
 import { buildProviderRequestMessages } from "../src/runtime/helpers/provider-request-messages.js";
+import { buildRuntimeProviderRequestMessages } from "../src/runtime/helpers/runtime-provider-request-messages.js";
+import { createTestRuntimeModel } from "./test-runtime-model.js";
 
 function entry(
   message: ModelInputMessage,
@@ -55,6 +57,15 @@ function toolResult(
     toolCallId,
     toolName,
   };
+}
+
+// 折叠只在 Anthropic Messages 协议打开，由模型请求能力决定。
+const FOLD = { foldRemindersIntoToolResults: true } as const;
+
+function providerText(message: ModelInputMessage): string {
+  return typeof message.content === "string"
+    ? message.content
+    : message.content.map((block) => (block.type === "text" ? block.text : "")).join("");
 }
 
 function deepFreeze<T>(value: T): T {
@@ -336,7 +347,7 @@ describe("buildProviderRequestMessages", () => {
       { role: "system", content: "prefix" },
       {
         role: "user",
-        content: "<system-reminder>\n# currentDate\nToday\n</system-reminder>\n",
+        content: "<system-reminder>\n# currentDate\nToday\n</system-reminder>",
       },
       {
         role: "user",
@@ -348,6 +359,108 @@ describe("buildProviderRequestMessages", () => {
     expect(result.diagnostics.cacheControlIndex).toBe(2);
     expect(result.diagnostics.latestRealUserMessageIndex).toBe(2);
   });
+
+  it("ends the user text right before a real user input with a newline", () => {
+    const entries = [
+      attachment("context_prefix", "instructions"),
+      attachment("session_context", "git"),
+      entry(user("real prompt"), "real_user"),
+      entry(assistant("answer")),
+      entry(toolResultUser("tool output")),
+      entry(user("next prompt"), "real_user"),
+    ] satisfies RuntimeMessageEntry[];
+
+    const result = buildProviderRequestMessages({
+      entries,
+      useMidConversationSystem: false,
+      ...FOLD,
+    });
+
+    expect(result.messages.map((message) => message.content)).toEqual([
+      "<system-reminder>\ninstructions\n</system-reminder>",
+      "<system-reminder>\ngit\n</system-reminder>\n",
+      "real prompt",
+      "answer",
+      [{ type: "text", text: "tool output" }],
+      "next prompt",
+    ]);
+  });
+
+  it("ends the user text right before a compact summary with a newline", () => {
+    const summary: RuntimeMessageEntry = {
+      message: user("This session is being continued from a previous conversation."),
+      metadata: { source: "legacy_synthetic", compactBoundary: { boundaryId: "b1" } },
+    };
+    const entries = [
+      attachment("context_prefix", "instructions"),
+      attachment("session_context", "git"),
+      summary,
+      entry(assistant("kept answer")),
+    ] satisfies RuntimeMessageEntry[];
+
+    const result = buildProviderRequestMessages({
+      entries,
+      useMidConversationSystem: false,
+      ...FOLD,
+    });
+
+    // summary 与真实输入一样，前一条 user 文本以换行结尾。
+    expect(result.messages[1]?.content).toBe("<system-reminder>\ngit\n</system-reminder>\n");
+    expect(result.messages[2]?.content).toBe(
+      "This session is being continued from a previous conversation.",
+    );
+  });
+
+  it("adds no newline when the protocol does not merge adjacent user content", () => {
+    const summary: RuntimeMessageEntry = {
+      message: user("This session is being continued from a previous conversation."),
+      metadata: { source: "legacy_synthetic", compactBoundary: { boundaryId: "b1" } },
+    };
+    const entries = [
+      attachment("session_context", "git"),
+      summary,
+      entry(user("turn two"), "real_user"),
+      entry(user("[Request interrupted by user]"), "interrupt_marker"),
+      entry(user("next prompt"), "real_user"),
+    ] satisfies RuntimeMessageEntry[];
+
+    const result = buildProviderRequestMessages({ entries, useMidConversationSystem: false });
+
+    // OpenAI 兼容协议不合并 user：上一次请求的最后一块（例如 "turn two"）保持原字节。
+    expect(result.messages.map((message) => message.content)).toEqual([
+      "<system-reminder>\ngit\n</system-reminder>",
+      "This session is being continued from a previous conversation.",
+      "turn two",
+      "[Request interrupted by user]",
+      "next prompt",
+    ]);
+  });
+
+  it.each([true, false])(
+    "keeps the interrupt marker as plain user text that attachments pass (MCS=%s)",
+    (useMidConversationSystem) => {
+      const entries = [
+        entry(user("first prompt"), "real_user"),
+        entry(assistant("partial")),
+        entry(user("[Request interrupted by user]"), "interrupt_marker"),
+        attachment("runtime_mode", "mode"),
+        entry(user("next prompt"), "real_user"),
+      ] satisfies RuntimeMessageEntry[];
+
+      const result = buildProviderRequestMessages({ entries, useMidConversationSystem, ...FOLD });
+      const texts = result.messages.map((message) => [message.role, providerText(message)]);
+
+      // 标记不冒泡、不进 system；后面的输入前以换行结尾。
+      expect(texts).toContainEqual(["user", "[Request interrupted by user]\n"]);
+      const markerIndex = texts.findIndex(([, text]) => text.startsWith("[Request interrupted"));
+      expect(texts[markerIndex - 1]?.[0]).toBe(useMidConversationSystem ? "assistant" : "user");
+      expect(texts.at(-1)).toEqual(
+        useMidConversationSystem
+          ? ["system", expect.stringContaining("mode")]
+          : ["user", "next prompt"],
+      );
+    },
+  );
 
   it("projects non-context meta reminders to system without moving context prefix", () => {
     const entries = [
@@ -616,6 +729,397 @@ describe("buildProviderRequestMessages", () => {
     ]);
   });
 
+  it("trims a string tool result and its reminders when folding them", () => {
+    const entries = [
+      entry(assistant("used Bash")),
+      entry(toolResult("bash output\n", "tool-1", "Bash")),
+      attachment("todo_reminder", "todo body"),
+      entry(user("  <system-reminder>\nmemory\n</system-reminder>\n"), "relevant_memory"),
+    ] satisfies RuntimeMessageEntry[];
+
+    const result = buildProviderRequestMessages({
+      entries,
+      useMidConversationSystem: false,
+      ...FOLD,
+    });
+
+    expect(result.messages).toEqual([
+      { role: "assistant", content: "used Bash" },
+      {
+        role: "tool",
+        content:
+          "bash output\n\n<system-reminder>\ntodo body\n</system-reminder>\n\n<system-reminder>\nmemory\n</system-reminder>",
+        toolCallId: "tool-1",
+        toolName: "Bash",
+      },
+    ]);
+  });
+
+  it("appends reminder text blocks to an array tool result without trimming", () => {
+    const image = {
+      type: "image" as const,
+      mediaType: "image/png",
+      dataUrl: "data:image/png;base64,abc",
+    };
+    const entries = [
+      entry(assistant("read two files")),
+      entry({
+        role: "tool",
+        content: [{ type: "text", text: "page" }],
+        toolCallId: "tool-1",
+        toolName: "Read",
+      }),
+      entry({ role: "tool", content: [image], toolCallId: "tool-2", toolName: "Read" }),
+      attachment("todo_reminder", "todo body"),
+      attachment("output_style", "style body"),
+    ] satisfies RuntimeMessageEntry[];
+
+    const result = buildProviderRequestMessages({
+      entries,
+      useMidConversationSystem: false,
+      ...FOLD,
+    });
+
+    expect(result.messages.slice(1)).toEqual([
+      {
+        role: "tool",
+        content: [{ type: "text", text: "page" }],
+        toolCallId: "tool-1",
+        toolName: "Read",
+      },
+      {
+        role: "tool",
+        content: [
+          image,
+          { type: "text", text: "<system-reminder>\ntodo body\n</system-reminder>\n" },
+          { type: "text", text: "<system-reminder>\nstyle body\n</system-reminder>" },
+        ],
+        toolCallId: "tool-2",
+        toolName: "Read",
+      },
+    ]);
+  });
+
+  it("does not fold reminders into a tool result that holds tool references", () => {
+    const entries = [
+      entry(assistant("searched tools")),
+      entry({
+        role: "tool",
+        content: [{ type: "tool_reference", toolName: "Write" }],
+        toolCallId: "tool-1",
+        toolName: "ToolSearch",
+      }),
+      attachment("todo_reminder", "todo body"),
+    ] satisfies RuntimeMessageEntry[];
+
+    const result = buildProviderRequestMessages({
+      entries,
+      useMidConversationSystem: false,
+      ...FOLD,
+    });
+
+    expect(result.messages.slice(1)).toEqual([
+      {
+        role: "tool",
+        content: [{ type: "tool_reference", toolName: "Write" }],
+        toolCallId: "tool-1",
+        toolName: "ToolSearch",
+      },
+      { role: "user", content: "<system-reminder>\ntodo body\n</system-reminder>" },
+    ]);
+  });
+
+  it("folds mid-turn inputs with the other reminders but never folds user inputs", () => {
+    const steer: RuntimeMessageEntry = {
+      message: user("check the tests too"),
+      metadata: { source: "real_user", inputPresentation: "user_steer" },
+    };
+    const entries = [
+      entry(user("inspect"), "real_user"),
+      entry(assistant("used Read")),
+      entry(toolResult("read result")),
+      attachment("todo_reminder", "todo body"),
+      steer,
+      attachment("output_style", "style body"),
+      entry(assistant("used Grep")),
+      entry(toolResult("grep result", "tool-2", "Grep")),
+      entry(user("next prompt"), "real_user"),
+    ] satisfies RuntimeMessageEntry[];
+
+    const result = buildProviderRequestMessages({
+      entries,
+      useMidConversationSystem: false,
+      ...FOLD,
+    });
+
+    const folded = providerText(result.messages[2]!);
+    expect(
+      folded.startsWith("read result\n\n<system-reminder>\ntodo body\n</system-reminder>\n\n"),
+    ).toBe(true);
+    expect(folded).toContain("check the tests too");
+    expect(folded.endsWith("\n\n<system-reminder>\nstyle body\n</system-reminder>")).toBe(true);
+    expect(result.messages.slice(3)).toEqual([
+      { role: "assistant", content: "used Grep" },
+      { role: "tool", content: "grep result", toolCallId: "tool-2", toolName: "Grep" },
+      { role: "user", content: "next prompt" },
+    ]);
+    expect(result.diagnostics.latestRealUserMessageIndex).toBe(5);
+    expect(result.sourceEntries[2]).toBe(entries[2]);
+    expect(result.sourceEntries[5]).toBe(entries[8]);
+  });
+
+  describe("native ToolSearch Tool loaded notice", () => {
+    const searchBatch = [
+      entry(assistant("searched tools")),
+      entry({
+        role: "tool",
+        content: [{ type: "tool_reference", toolName: "Write" }],
+        toolCallId: "search-1",
+        toolName: "ToolSearch",
+      }),
+      entry(toolResult("out", "bash-1", "Bash")),
+    ] satisfies RuntimeMessageEntry[];
+    const loaded = { loadedToolCallIds: new Set(["search-1"]) };
+
+    it("keeps reminders after Tool loaded instead of folding them into the batch", () => {
+      const result = buildProviderRequestMessages({
+        entries: [...searchBatch, attachment("session_context", "ctx")],
+        ...loaded,
+        ...FOLD,
+      });
+
+      // Tool loaded. 在并入之前插入：提醒跟在它后面，Bash 结果保持原样。
+      expect(result.messages.slice(1)).toEqual([
+        {
+          role: "tool",
+          content: [{ type: "tool_reference", toolName: "Write" }],
+          toolCallId: "search-1",
+          toolName: "ToolSearch",
+        },
+        toolResult("out", "bash-1", "Bash"),
+        { role: "user", content: "Tool loaded." },
+        { role: "user", content: "<system-reminder>\nctx\n</system-reminder>" },
+      ]);
+    });
+
+    it("ends Tool loaded with a newline before a following user input", () => {
+      const prompt = entry(user("check the tests too"), "real_user");
+      const result = buildProviderRequestMessages({
+        entries: [...searchBatch, prompt],
+        ...loaded,
+        ...FOLD,
+      });
+
+      expect(result.messages[3]).toEqual({ role: "user", content: "Tool loaded.\n" });
+      expect(providerText(result.messages[4]!)).toContain("check the tests too");
+    });
+  });
+
+  describe("MCS human steer in the run's system message", () => {
+    const steer = (content: ModelInputMessage["content"]): RuntimeMessageEntry => ({
+      message: user(content),
+      metadata: { source: "real_user", inputPresentation: "user_steer" },
+    });
+    const steerText = (body: string) =>
+      `The user sent a new message while you were working:\n${body}\n\nThis is how ZCode surfaces messages the user sends mid-turn — within the running turn, often alongside the next tool result, rather than as a separate conversation turn. Address the message above as you continue this turn.`;
+
+    // guide 是轮内中途消息：MCS 下与其他中途消息一样并入 run 的 system，不带外层标签。
+    it("puts a text steer into the run system message, user-side reminders still fold", () => {
+      const entries = [
+        entry(assistant("used Read")),
+        entry(toolResult("read result")),
+        steer("check the tests too"),
+        attachment("session_context", "git"),
+        attachment("todo_reminder", "todo body"),
+      ] satisfies RuntimeMessageEntry[];
+
+      const result = buildProviderRequestMessages({ entries, ...FOLD });
+
+      expect(result.messages).toEqual([
+        assistant("used Read"),
+        toolResult("read result\n\n<system-reminder>\ngit\n</system-reminder>"),
+        { role: "system", content: `${steerText("check the tests too")}\n\ntodo body` },
+      ]);
+    });
+
+    it("keeps several steers in order in one system message before the next assistant", () => {
+      const entries = [
+        entry(assistant("used Read")),
+        entry(toolResult("read result")),
+        steer("first"),
+        attachment("session_context", "git"),
+        steer("second"),
+        entry(assistant("next")),
+      ] satisfies RuntimeMessageEntry[];
+
+      const result = buildProviderRequestMessages({ entries, ...FOLD });
+
+      expect(result.messages).toEqual([
+        assistant("used Read"),
+        toolResult("read result\n\n<system-reminder>\ngit\n</system-reminder>"),
+        { role: "system", content: `${steerText("first")}\n\n${steerText("second")}` },
+        assistant("next"),
+      ]);
+    });
+
+    // text-only 回复之后没有 user/tool 锚点，system 放不下，整组降级为一条 user reminder。
+    it("degrades a steer after a text-only reply to one wrapped user reminder", () => {
+      const entries = [
+        entry(user("first"), "real_user"),
+        entry(assistant("answer")),
+        steer("follow up"),
+      ] satisfies RuntimeMessageEntry[];
+
+      const result = buildProviderRequestMessages({ entries, ...FOLD });
+
+      expect(result.messages).toEqual([
+        user("first"),
+        assistant("answer"),
+        user(`<system-reminder>\n${steerText("follow up")}\n</system-reminder>`),
+      ]);
+    });
+
+    // 带图 guide 放不进 system：MCS 开关下都留在 user 侧，文本包装一次放首块，不并入 tool result。
+    it.each([true, false])("keeps a steer with media on the user side (MCS=%s)", (mcs) => {
+      const image = {
+        type: "image" as const,
+        mediaType: "image/png",
+        dataUrl: "data:image/png;base64,abc",
+      };
+      const entries = [
+        entry(assistant("used Read")),
+        entry(toolResult("read result")),
+        steer([{ type: "text", text: "look at this" }, image]),
+      ] satisfies RuntimeMessageEntry[];
+
+      const result = buildProviderRequestMessages({
+        entries,
+        useMidConversationSystem: mcs,
+        ...FOLD,
+      });
+
+      expect(result.messages).toEqual([
+        assistant("used Read"),
+        toolResult("read result"),
+        user([
+          {
+            type: "text",
+            text: `<system-reminder>\n${steerText("look at this")}\n</system-reminder>`,
+          },
+          image,
+        ]),
+      ]);
+    });
+  });
+
+  describe("send-now before the preempted prompt has any output", () => {
+    // 历史：B 还没有任何输出就被 send-now 抢占（不写中断标记），C 开新一轮。
+    // 现在 C 是普通用户消息；旧版本把 C 存成 user_steer，已存会话照旧投影。
+    const entriesWith = (c: RuntimeMessageEntry) =>
+      [
+        entry(user("first"), "real_user"),
+        entry(assistant("answer A")),
+        entry(user("prompt B"), "real_user"),
+        attachment("output_style", "style for B"),
+        c,
+        attachment("todo_reminder", "todo after C"),
+      ] satisfies RuntimeMessageEntry[];
+    const plainC = entry(user("message C"), "real_user");
+    const storedSteerC: RuntimeMessageEntry = {
+      message: user("message C"),
+      metadata: { source: "real_user", inputPresentation: "user_steer" },
+    };
+
+    const order = (messages: ModelInputMessage[], ...needles: string[]): number[] =>
+      needles.map((needle) =>
+        messages.findIndex((message) => providerText(message).includes(needle)),
+      );
+
+    // 人类输入按时间顺序：被抢占的 B 在前，新消息 C 在后。
+    // MCS 关：公告照常越过普通 user；普通 C 之后的提醒越过 C 和 B，旧 user_steer C 之后的提醒留在 C 之后。
+    // MCS 开：run 内的 MCS 文本合成一条 system，放在 run 末尾（C 之后）。
+    it.each([
+      ["plain C, MCS off", plainC, false, ["style for B", "todo after C", "prompt B", "message C"]],
+      ["plain C, MCS on", plainC, true, ["prompt B", "message C", "style for B"]],
+      [
+        "stored user_steer C, MCS off",
+        storedSteerC,
+        false,
+        ["style for B", "prompt B", "message C", "todo after C"],
+      ],
+    ])("keeps the new message after the preempted prompt (%s)", (_label, c, mcs, expected) => {
+      const result = buildProviderRequestMessages({
+        entries: entriesWith(c),
+        useMidConversationSystem: mcs,
+      });
+      const indices = order(result.messages, ...expected);
+
+      expect(indices[0]).toBeGreaterThan(1);
+      expect(indices).toEqual([...new Set(indices)].sort((a, b) => a - b));
+    });
+
+    // MCS 开时旧 user_steer C 是中途消息，和 run 内的提醒按生成顺序合成 B 之后的一条 system。
+    it("keeps a stored user_steer C after the preempted prompt in the run system (MCS on)", () => {
+      const result = buildProviderRequestMessages({
+        entries: entriesWith(storedSteerC),
+        useMidConversationSystem: true,
+      });
+
+      expect(result.messages.slice(2).map((message) => message.role)).toEqual(["user", "system"]);
+      expect(providerText(result.messages[2]!)).toBe("prompt B");
+      const system = providerText(result.messages[3]!);
+      expect(order([user(system)], "style for B", "message C", "todo after C")).toEqual([0, 0, 0]);
+      expect(system.indexOf("style for B")).toBeLessThan(system.indexOf("message C"));
+      expect(system.indexOf("message C")).toBeLessThan(system.indexOf("todo after C"));
+    });
+  });
+
+  it("does not keep a folded steer as the latest real user for the media budget", () => {
+    const entries = [
+      entry(user("inspect"), "real_user"),
+      entry(assistant("used Read")),
+      entry(toolResult("read result")),
+      {
+        message: user("check the tests too"),
+        metadata: { source: "real_user", inputPresentation: "user_steer" },
+      },
+    ] satisfies RuntimeMessageEntry[];
+
+    const result = buildProviderRequestMessages({
+      entries,
+      useMidConversationSystem: false,
+      ...FOLD,
+    });
+
+    expect(result.messages).toHaveLength(3);
+    expect(result.diagnostics.latestRealUserMessageIndex).toBe(-1);
+  });
+
+  it.each([true, false])("reads the fold switch from the model capability (%s)", (fold) => {
+    const model = {
+      ...createTestRuntimeModel({
+        generateText: async () => ({ text: "" }) as never,
+        propertyOverrides: { supportsMidConversationSystem: false },
+      }),
+      requestCapabilities: { foldRemindersIntoToolResults: fold },
+    };
+    const result = buildRuntimeProviderRequestMessages(
+      { config: {} },
+      {
+        model,
+        entries: [
+          entry(assistant("used Read")),
+          entry(toolResult("read result")),
+          attachment("todo_reminder", "todo body"),
+        ],
+      },
+    );
+
+    expect(result.messages.map((message) => message.role)).toEqual(
+      fold ? ["assistant", "tool"] : ["assistant", "tool", "user"],
+    );
+  });
+
   it("keeps a todo reminder anchored after its tool result when later tool exchanges are appended", () => {
     const entries = [
       entry(user("inspect the repo"), "real_user"),
@@ -866,11 +1370,12 @@ describe("buildProviderRequestMessages", () => {
       },
     ] satisfies RuntimeMessageEntry[]);
 
-    const first = buildProviderRequestMessages({ entries, applyCacheControl: true });
-    const second = buildProviderRequestMessages({ entries, applyCacheControl: true });
+    const first = buildProviderRequestMessages({ entries, applyCacheControl: true, ...FOLD });
+    const second = buildProviderRequestMessages({ entries, applyCacheControl: true, ...FOLD });
     const projectedAgain = buildProviderRequestMessages({
       entries: first.messages.map((message) => ({ message })),
       applyCacheControl: true,
+      ...FOLD,
     });
 
     expect(first).toEqual(second);
@@ -880,7 +1385,7 @@ describe("buildProviderRequestMessages", () => {
         role: "user",
         content: [
           { type: "image", mediaType: "image/png", dataUrl: "data:image/png;base64,abc" },
-          { type: "text", text: "image context" },
+          { type: "text", text: "image context\n" },
         ],
       },
       {

@@ -55,7 +55,7 @@ PNG 转换必须在用户操作内立即创建并提交 promise，避免异步�
 | PIC-04 | 加载中、解码失败或剪贴板拒绝 | 入口禁用或明确失败，不显示成功         |
 | PIC-05 | 深浅主题、中英文、键盘菜单   | 文字可见、菜单可操作，预览布局保持不变 |
 
-E2E 候选：`packages/desktop/test/e2e/manual-review/pending/preview-pane-image-copy.test.ts`。此用例只经过文件树和图片预览，不改变会话状态；人工审阅前保留 pending 状态。
+E2E 候选：`packages/desktop/test/e2e/preview-pane-image-copy.test.ts`。此用例只经过文件树和图片预览，不改变会话状态；人工审阅前保留 pending 状态。
 
 ## 验证记录（2026-10-14）
 
@@ -94,5 +94,5 @@ E2E 候选：`packages/desktop/test/e2e/manual-review/pending/preview-pane-image
 ZCODE_E2E_MANUAL_REVIEW=1 \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json \
 pnpm --filter @zcode/desktop test:e2e -- \
-  --spec './test/e2e/manual-review/pending/preview-pane-image-copy.test.ts'
+  --spec './test/e2e/preview-pane-image-copy.test.ts'
 ```

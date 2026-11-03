@@ -9,7 +9,7 @@
   "fileFixtures": [
     {
       "path": ".zcode-e2e/conversation-session-changes-group-unresolved-path",
-      "source": "created-by-tool",
+      "source": "created-by-provider-tool",
       "description": "TGE07 Write 创建的单文件 case-owned fixture。"
     }
   ],
@@ -26,7 +26,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "稳定保留 file_path 尚未到达的观察窗口，验证 Changes 不显示 0 files 且展开保留 Writing。"
+      "syntheticReason": "在无路径预览与完整工具输入结束两个语义边界显式放行；输入结束刷新合法节流缓冲，最终 message_stop 仍被阻塞，父组仍处于进行中。"
     },
     {
       "id": "tge07-final",

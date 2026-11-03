@@ -32,3 +32,25 @@ A/B/C 在线 → 断开 Source → A 主目录失效 → 重连
 业务代码未修改。与 [Renderer 重载导航问题](14-renderer-reload-task-navigation.md) 的关系尚未确认。
 
 证据位于上述批次的三个 `directory-*` 用例目录，包含 `directory-resilience.json`、失败录像与日志。
+
+## 2026-10-20 当前 staging 复验
+
+业务基线 `52cd1bc1d3478d51137a534e0214a685ca3eb93c`。
+`r3-server-pending-52cd-a-pending-directory-{missing,file,denied}` 三份回放均失败，
+仍停在“失效目录原任务未打开”。本轮没有改动这条测试，也没有修改业务代码。
+
+- 三种故障的 B/C 重连、B 续聊、A 项目及任务行保留、新建/文件按钮禁用和目录原因提示均已通过。
+- `directory-resilience.json` 记录真实任务行点击后的期望 taskId 为 A，可见 pane 仍为 B；
+  A 的 workspace identity/path 保留，remoteSessionId 为空。录像末帧与快照一致。
+- denied 探针确认 Core 与访问用户均为非特权账号，实际得到 `INACCESSIBLE`、`READ_DENIED`；
+  不能归因于 root 绕过权限或夹具没有生效。
+- missing 的 Desktop 日志在 `17:05:25.848` 记录
+  `failed to prepare bound remote workspace`，随后 attachment 被移除、logical session 被释放。
+  错误栈进入 `prepareRemoteWorkspaceIdentity`，返回
+  `Remote workspace directory is missing, is not a directory, or cannot be accessed`。
+  这是实际历史点击后的绑定失败，不只是 Source 重连时的预期目录错误。
+
+当前 `packages/desktop/src/host/remoteWorkspacePreparation.ts` 会在绑定身份前调用
+`readdir(path + "/.")`，遇到 `ENOENT/ENOTDIR/EACCES/EPERM/ELOOP` 即拒绝绑定。
+运行证据说明历史打开仍经过该目录门禁；不能靠测试重建目录、跳过历史断言或增加等待解决。
+尚未验证目录恢复后的续聊步骤，也未断言历史数据丢失。

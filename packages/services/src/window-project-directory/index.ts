@@ -1,6 +1,11 @@
 import type { IBroadcastService } from "#src/broadcast/broadcast.js";
 import type { IWindowProjectChangesService } from "#src/window-project-directory/contract.js";
 
+export {
+  createWebRemoteProjectTreeActivityBridge,
+  type WebRemoteProjectTask,
+} from "#src/window-project-directory/webRemoteProjectTreeActivity.js";
+
 export function createWindowProjectChangesService(
   broadcast: Pick<IBroadcastService, "onMessage">,
 ): IWindowProjectChangesService {

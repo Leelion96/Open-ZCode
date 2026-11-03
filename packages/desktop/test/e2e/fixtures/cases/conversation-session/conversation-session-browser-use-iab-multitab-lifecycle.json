@@ -38,7 +38,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "稳定验证模型可见 list，并把真实 tool result 中的 A/B stable id 动态注入下一次模型响应。"
+      "syntheticReason": "稳定验证模型可见 list；A/B stable id 必须从真实 tool result 动态注入下一次模型响应。"
     },
     {
       "id": "upstream-browser-use-multitab-action",

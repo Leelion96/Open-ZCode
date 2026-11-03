@@ -27,6 +27,22 @@ describe("AI SDK model tool result error transform", () => {
     });
   });
 
+  it("keeps reminders folded into a failed tool result in the error text", () => {
+    // core 把提醒以空行接在失败结果的字符串后面；error-text 必须原样带上，不能只留错误本身。
+    const folded = "command failed\n\n<system-reminder>\nTODO_AFTER_ERROR\n</system-reminder>";
+    const messages = toAiSdkMessages([
+      {
+        role: "tool",
+        content: folded,
+        isError: true,
+        toolCallId: "call_folded_error",
+        toolName: "Bash",
+      },
+    ]);
+
+    expect((messages[0] as any).content[0].output).toEqual({ type: "error-text", value: folded });
+  });
+
   it("serializes failed tool results as Anthropic is_error tool_result blocks", async () => {
     let requestBody: any;
     const provider = createAnthropic({

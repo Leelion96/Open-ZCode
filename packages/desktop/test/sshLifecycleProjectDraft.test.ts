@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { connectSSHWorkspaceAndSendFirstTurn } from "#e2e/helpers/ssh-remote-lifecycle";
+import {
+  connectSSHWorkspaceAndSendFirstTurn,
+  listRemoteAgentProcesses,
+} from "#e2e/helpers/ssh-remote-lifecycle";
 
 const state = vi.hoisted(() => {
   const sent: Array<{ identity: string; model: string }> = [];
@@ -9,6 +12,7 @@ const state = vi.hoisted(() => {
     localDraftCreations: 0,
     remoteIdentity: "remote:server:fixture:/work",
     sent,
+    runSSHCommand: vi.fn(),
   };
 });
 
@@ -48,6 +52,7 @@ vi.mock("#e2e/helpers/v4-conversation", () => ({
 }));
 vi.mock("#e2e/helpers/ssh-remote-p0", () => ({
   SSH_WORKSPACE_READY_TIMEOUT_MS: 1_000,
+  runSSHCommand: (...args: unknown[]) => state.runSSHCommand(...args),
   clickLastEnabledSSHDialogButton: vi.fn(),
   fillSSHPasswordSettings: vi.fn(),
   openSSHRemoteDialog: vi.fn(),
@@ -96,4 +101,41 @@ it("远程项目首发保留新建项目草稿和已选模型，不跳到全局�
   expect(task.taskId).toBe("remote-task");
   expect(task.identity).toBe(state.remoteIdentity);
   expect(state.localDraftCreations).toBe(0);
+});
+
+it("冷恢复只终止 Core 所属 Agent，不把查询 shell 或插件进程当成 Agent", async () => {
+  const ps = [
+    "146 135 /runtime/node /runtime/server-core.js 1",
+    "174 146 zcode-cli",
+    "180 146 /runtime/node /runtime/zcode.cjs app-server --stdio",
+    "236 174 zcode-cli",
+    "316 314 sh -c ps -eo pid,args | awk '/app-server --stdio/'",
+  ].join("\n");
+  const detailCommands: string[] = [];
+  state.runSSHCommand.mockImplementation(async (_config, command: string) => {
+    if (command === "ps -eo pid=,ppid=,args=") return { code: 0, stdout: ps, stderr: "" };
+    detailCommands.push(command);
+    // 真实进程快照：旧正则仅匹配到查询 shell；新路径须按已验证的 PID 读取 /proc。
+    const pids = command
+      .match(/^for pid in ([\d ]+);/)?.[1]
+      ?.trim()
+      .split(" ") ?? ["316"];
+    return {
+      code: 0,
+      stdout: pids.map((pid) => `${pid}\t146\t1000\t/home/dev`).join("\n"),
+      stderr: "",
+    };
+  });
+  expect(
+    await listRemoteAgentProcesses({
+      host: "127.0.0.1",
+      port: 22,
+      username: "dev",
+      password: "fixture",
+    }),
+  ).toEqual([
+    { pid: 174, ppid: 146, startTicks: 1000, cwd: "/home/dev" },
+    { pid: 180, ppid: 146, startTicks: 1000, cwd: "/home/dev" },
+  ]);
+  expect(detailCommands).toHaveLength(1);
 });

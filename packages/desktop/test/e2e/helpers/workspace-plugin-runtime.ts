@@ -2,13 +2,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   E2E_REPLY_TOKEN,
-  getToolCallBlockByToolName,
-  prepareConversationE2E,
-  sendPrompt,
-  startNewTask,
-  waitForAssistantMessageContaining,
-  waitForUpstreamRequestContaining,
-} from "./conversation-session.js";
+  prepareV4ConversationE2E,
+  sendV4Prompt,
+  waitForV4AssistantMessageContaining,
+} from "#e2e/helpers/v4-conversation";
+import { getToolCallBlockByToolName } from "#e2e/helpers/conversation-session-tool";
+import { waitForUpstreamRequestContaining } from "#e2e/helpers/conversation-session-network";
 import {
   ensureToolCrossProductFullAccessMode,
   respondToToolCrossProductBlockers,
@@ -23,27 +22,35 @@ import { getE2EAppDataPaths } from "./desktop-app.js";
 
 export async function readWorkspacePluginConfig(): Promise<Record<string, unknown>> {
   const { workspace } = getE2EAppDataPaths();
-  return JSON.parse(await readFile(join(workspace, ".zcode", "config.json"), "utf8")) as Record<string, unknown>;
+  return JSON.parse(await readFile(join(workspace, ".zcode", "config.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
 }
 
 export async function readUserPluginConfig(): Promise<Record<string, unknown>> {
   const { storageRoot } = getE2EAppDataPaths();
-  return JSON.parse(await readFile(join(storageRoot, "cli", "config.json"), "utf8")) as Record<string, unknown>;
+  return JSON.parse(await readFile(join(storageRoot, "cli", "config.json"), "utf8")) as Record<
+    string,
+    unknown
+  >;
 }
 
 export async function assertWorkspacePluginRuntime(marker: string): Promise<void> {
-  await prepareConversationE2E();
+  // 工作区配置位于 fixture 项目；全局新建会切到未归类 cwd，导致验证到另一份插件配置。
+  await prepareV4ConversationE2E();
   await ensureToolCrossProductFullAccessMode();
-  await startNewTask();
   const prompt = `${marker}: Call ${PLUGIN_MCP_TOOL_NAME} exactly once, then reply with exactly ${E2E_REPLY_TOKEN}.`;
-  await sendPrompt(prompt);
+  await sendV4Prompt(prompt);
   await waitForUpstreamRequestContaining(marker, 60000);
   const requestRecord = await findUpstreamRequestContaining(marker, 60000, {
     advertisedToolName: PLUGIN_MCP_TOOL_NAME,
   });
   expect(requestRecord).not.toBeNull();
   if (!requestRecord) return;
-  expect(captureArtifactAdvertisesToolName(requestRecord.requestJson, PLUGIN_MCP_TOOL_NAME)).toBe(true);
+  expect(captureArtifactAdvertisesToolName(requestRecord.requestJson, PLUGIN_MCP_TOOL_NAME)).toBe(
+    true,
+  );
 
   await browser.waitUntil(
     async () => {
@@ -52,20 +59,21 @@ export async function assertWorkspacePluginRuntime(marker: string): Promise<void
     },
     { timeout: 60000, timeoutMsg: "Workspace Plugin MCP tool-call block did not render" },
   );
-  await waitForAssistantMessageContaining(E2E_REPLY_TOKEN);
+  await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN);
 }
 
 export async function assertWorkspacePluginUnavailable(marker: string): Promise<void> {
-  await prepareConversationE2E();
+  await prepareV4ConversationE2E();
   await ensureToolCrossProductFullAccessMode();
-  await startNewTask();
   const prompt = `${marker}: do not call tools; reply with exactly ${E2E_REPLY_TOKEN}.`;
-  await sendPrompt(prompt);
+  await sendV4Prompt(prompt);
   await waitForUpstreamRequestContaining(marker, 60000);
   const requestRecord = await findUpstreamRequestContaining(marker, 60000);
   expect(requestRecord).not.toBeNull();
   if (!requestRecord) return;
-  expect(captureArtifactAdvertisesToolName(requestRecord.requestJson, PLUGIN_MCP_TOOL_NAME)).toBe(false);
+  expect(captureArtifactAdvertisesToolName(requestRecord.requestJson, PLUGIN_MCP_TOOL_NAME)).toBe(
+    false,
+  );
 }
 
 export function pluginConfigOptions(config: Record<string, unknown>): Record<string, unknown> {

@@ -1,0 +1,11 @@
+/* Electron 的透明根表面不会设置 color-scheme，导致深色预览仍显示白色原生菜单。
+ * 只为带原生控件的媒体复用应用 .dark 类，避免改变页面表面和无控件缩略图。 */
+video[controls],
+audio[controls] {
+  color-scheme: light;
+}
+
+.dark video[controls],
+.dark audio[controls] {
+  color-scheme: dark;
+}

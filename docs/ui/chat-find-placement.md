@@ -40,3 +40,5 @@ chat placement 使用 window 冒泡阶段监听补齐 Escape 关闭语义。监�
 导航请求版本只属于 renderer 本地 UI 状态，不进入 session/task runtime、协议、snapshot、队列或持久化。会话正文与文件变更各自维护独立版本，避免切换范围时互相触发滚动。文本高亮 hook 继续保留 DOM mutation 去重，但新的用户导航版本必须突破同一 `(query, activeIndex, matchCount)` 的滚动去重。
 
 桌面端与手机 Web 端复用同一 `TaskFindDialog` 和高亮 hook，因此交互语义保持一致；该变更不触碰 `desktop-continuous` 与 `web-remote-replayable` 的消息恢复边界。
+
+桌面回放通过 case-local Provider 返回长正文，经过真实 V4 提交和消息投影后验证查找。不得调用已删除的旧消息 store setter 注入历史；滚动观测使用 V4 timeline 自身的滚动容器。

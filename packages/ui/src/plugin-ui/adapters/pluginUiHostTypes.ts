@@ -46,7 +46,7 @@ export interface UsePluginUiHostResult {
   handle: PluginSandboxHandle | null;
   height: number;
   error: string | null;
-  /** 页面 `ui/initialize` 声明的能力；握手前 undefined。`availableDisplayModes` 决定宿主能否把它切到 fullscreen。 */
+  /** 页面 `ui/initialize` 声明的能力；握手前 undefined，握手后至少为 {}。展示位置与模式请求均受此约束。 */
   appCapabilities: McpUiAppCapabilities | undefined;
   /** 销毁当前实例并重新 prepare（Agent 运行凭证换代）；guest 崩溃 / 加载失败后由错误态按钮触发。 */
   reload(): void;

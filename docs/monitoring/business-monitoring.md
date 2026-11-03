@@ -42,6 +42,39 @@ Coding Plan / Start Plan 快照，不作为业务埋点字段上报，也不跟�
 `plan_product_id` 取 `details[0]`（服务端排序第一的 active 套餐）。服务端调整套餐排序或套餐增减时该
 维度会跟随翻转，这是明示口径而非身份跳变；按该维度做漏斗/留存对比时需与数据侧对齐此规则。
 
+### 界面模式 `ui_mode`（2026-10-23）
+
+`app_launch`、`app_daily_active`、`send_btn`、`message_completion`、`agent_step` 的
+`event_extra_detail` 均携带字符串 `ui_mode`：`work`（办公）、`code`（编程）、`unknown`
+（没有可归属的界面快照）。内部 `interfaceMode` 的 `office/coding` 仅在 UI 埋点边界映射。
+这表示发起时的界面模式，不推断任务内容，不替代 `ask_mode`，不改 onboarding 的选择快照语义。
+
+- 启动/日活使用上报时最近同步的 renderer 模式；初始上下文必须等 UI store 就绪后同步。
+  界面切换及跨窗口广播更新现有 Main 上下文；不新增轮询、事件或改变原有日活去重/心跳。
+- 消息通过发送门禁时从 UI store 读取并固定到既有 telemetry seed；队列确认、ACK 延迟、
+  promotion、执行中切换模式不改写该快照。completion 与该消息全部 step 使用相同值。
+- 前台/后台子 Agent 沿用已有父消息归因链；没有父快照（包括先于父 ACK 到达的 child）为
+  `unknown`，不得读当前窗口冒充来源。后台自动任务/后台唤醒没有交互 seed 时同样为 `unknown`。
+- `ui_mode` 缺失的旧调用与不合法值降为 `unknown`。当天同时使用两种模式按两者都用统计，
+  不把启动/日活的一次模式快照当成全天使用归属。
+- 桌面 continuous 与手机 replayable 的 owner、隔离及 reporter 门禁不变；不新增手机上报出口，
+  不从历史/recovery 补造模式或消息事件。
+
+```text
+UI store（当前模式唯一 owner）
+  ├─ 初始化 / 模式变化 → platform.syncTelemetryContext → 既有 Main 上下文 → launch / daily
+  └─ 发送门禁通过 → seed.ui_mode（固定）→ send_btn → message_completion / agent_step
+                                                └─ 已关联 child step 继承
+```
+
+`ask_mode` 是独立的 Agent 执行/权限模式，埋点透传会话配置字符串。当前菜单值为
+`build`（修改前询问）、`guarded`（自主执行，风险时询问）、`plan`（规划）、`yolo`（完全访问）；
+`edit`（自动编辑）保留历史兼容，旧协议还接受 `auto`。缺配置时为空串，历史数据不能按封闭枚举假设。
+
+验收：两种界面发送的三类消息事件同值；切换后新消息使用新值而在途旧消息不变；
+排队确认/重复 ACK 不重报；关联 child 继承、无来源后台为 unknown；启动及跨日活跃使用最新
+上下文且日活去重不变；无 desktop reporter 的手机路径不新增网络请求；缺失与非法值安全降级。
+
 ### `message_completion`
 
 Agent 单轮消息完成事件的历史设计由 UI 侧 `finalizePromptTelemetry()` 聚合后，通过
@@ -61,7 +94,7 @@ Agent 单轮消息完成事件的历史设计由 UI 侧 `finalizePromptTelemetry
 | `agent_step_cnt`       | string(int)   | 否       | Agent 步骤数                      | 当前 message 生命周期内实际收口并上报的 `agent_step` 数             |
 | `file_change_cnt`      | string(int)   | 否       | 变更文件数                        | 按本轮 fileChanges 去重 path                                        |
 | `generated_code_lines` | string(int)   | 否       | 新增代码行数                      | 基于 before/after diff 统计 added                                   |
-| `ask_mode`             | string        | 否       | 当前对话模式                      | `chat` / `plan` / 其它 mode id                                      |
+| `ask_mode`             | string        | 否       | Agent 执行/权限模式                      | `build` / `guarded` / `plan` / `yolo`，兼容 `edit` / `auto` / 空串                                      |
 | `retry_cnt`            | string(int)   | 是       | 本轮模型/API 重试次数             | 当前 completion 链路未稳定透出 retry 事件，先默认 `0`               |
 | `tool_call_total`      | string(int)   | 是       | 本轮工具调用总数                  | 当前 message 内实际收口的 `tool_call` step 数                       |
 | `tool_call_failed`     | string(int)   | 是       | 本轮失败工具调用数                | 当前 message 内状态为 fail/timeout 或存在 error 的 `tool_call` step |

@@ -10,6 +10,7 @@ import {
 import type { ISubagentsService } from "@zcode/services";
 import { shouldExposeE2EStoreBridge } from "@/lib/e2eStoreBridge.js";
 import { logger } from "@/logger.js";
+import { getRemoteWorkspaceServicesForIdentity } from "@/store/remoteWorkspaceSessionStore.js";
 import { getSubagentsContextKey, useSubagentsContextStore } from "@/store/subagentsContextStore.js";
 import { getServiceAuthorityId } from "@/store/serviceAuthorityKey.js";
 import {
@@ -398,4 +399,30 @@ export async function refreshLoadedSubagentsStoreForWorkspace(params: {
     );
   }
   await Promise.all(refreshes);
+}
+
+/**
+ * 刷新某台远端设备上已打开项目的斜杠（/）建议中的子智能体缓存（子智能体推送、设置页改动远端「用户」之后）。
+ *
+ * Bug 根因：建议缓存按项目的服务对象分桶（useSubagents 取 useServices()），而推送和远端「用户」
+ * 传入的是该设备的 source-settings 服务；refreshLoadedSubagentsStoreForWorkspace 只刷新同一服务对象
+ * 的缓存，已打开远程项目的缓存全被跳过，且已有缓存时 useSubagents 不再重载，新子智能体一直不出现。
+ * 修法：按每个项目的 identity 取已注册的项目服务，逐个复用上面的刷新；取不到服务就跳过，不回退到本机。
+ */
+export async function refreshSubagentsStoreForRemoteWorkspaces(
+  workspaces: readonly { workspacePath: string; workspaceIdentity?: string | null }[],
+): Promise<void> {
+  await Promise.all(
+    workspaces.map(async ({ workspacePath, workspaceIdentity }) => {
+      const identity = workspaceIdentity?.trim();
+      const services = identity ? getRemoteWorkspaceServicesForIdentity(identity) : null;
+      if (!services) return;
+      await refreshLoadedSubagentsStoreForWorkspace({
+        scope: "workspace",
+        workspacePath,
+        workspaceIdentity: identity,
+        subagentsService: services.subagentsService,
+      });
+    }),
+  );
 }

@@ -1,6 +1,7 @@
 import { NATIVE_TOOL_SEARCH_DESCRIPTION } from "../search/description.js";
 import {
   TOOL_SEARCH_NAME,
+  LOCAL_TOOL_SEARCH_NAME,
   ToolSearchInputJsonSchema,
   ToolSearchInputSchema,
   ToolSearchOutputJsonSchema,
@@ -11,9 +12,12 @@ import { searchTools } from "../search/search.js";
 
 const MAX_SEARCH_RESULT_BYTES = 100_000;
 const SEARCH_TIMEOUT_MS = 10_000;
+const NO_MATCHING_TOOLS_MESSAGE =
+  "No matching deferred tools found. Loaded tools are not searchable here and need no loading. Check your loaded tool list and query; try corrected spelling, alternative names, or broader keywords before concluding a tool is missing.";
 
 export const toolSearchToolEntry: ToolEntry = {
   capability: "Search available tools and load their definitions",
+  aliases: [LOCAL_TOOL_SEARCH_NAME],
   metadata: {
     name: TOOL_SEARCH_NAME,
     // 模型侧说明使用固定文案；schema 展开由 provider 处理，客户端仍只返回真实引用。
@@ -47,7 +51,7 @@ export const toolSearchToolEntry: ToolEntry = {
     const { matches } = ToolSearchOutputSchema.parse(output);
     return matches.length > 0
       ? matches.map((toolName) => ({ type: "tool_reference" as const, toolName }))
-      : "No matching deferred tools found";
+      : NO_MATCHING_TOOLS_MESSAGE;
   },
   permission: {
     permission: "tool.search",

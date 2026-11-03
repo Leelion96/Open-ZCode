@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ttft-local-logs",
+  "spec": "./test/e2e/conversation-session/conversation-session-ttft-local-logs.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ttft-local-logs.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "ttft-local-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定辅助标题响应，隔离标题生成耗时；主用例只验证正文链路和本地日志。"
+    },
+    {
+      "id": "ttft-local-warmup",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "先完成真实初始化轮，正向埋点样本使用已连接的 continuous 会话。"
+    },
+    {
+      "id": "ttft-local-text",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "固定正文响应，核对真实 Enter 到本地日志及 DOM 的关联，不依赖云端。"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-workspace-readonly-notice",
+  "spec": "./test/e2e/conversation-session/conversation-session-workspace-readonly-notice.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-workspace-readonly-notice.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "requests": []
+}

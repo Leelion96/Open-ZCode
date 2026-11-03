@@ -31,6 +31,14 @@
       "source": "synthetic",
       "timingPolicy": "fast-text",
       "syntheticReason": "后台任务已分离，主轮只需固定收尾文本；核心断言在后台工作面板 + 取消。"
+    },
+    {
+      "id": "v4-bgwork-cancel-notification",
+      "description": "取消后台 Bash 后 CLI 自动投递的 background-task 完成通知请求。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "取消是 case 的最后一个动作；固定承接通知请求，避免 strict 回放把正常通知记为 gap。"
     }
   ]
 }

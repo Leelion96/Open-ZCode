@@ -167,52 +167,18 @@ it.each<{
   defaultEnabled?: boolean;
   force?: boolean;
   expectedEnabled?: boolean;
-  expectedToolCount: number;
 }>([
-  {
-    scenario: "denied search above threshold",
-    mcpCount: 101,
-    searchAllowed: false,
-    expectedToolCount: 0,
-  },
-  {
-    scenario: "denied search below threshold",
-    mcpCount: 1,
-    searchAllowed: false,
-    expectedToolCount: 3,
-  },
-  {
-    scenario: "always-loaded MCP above threshold",
-    mcpCount: 99,
-    alwaysLoad: true,
-    expectedToolCount: 0,
-  },
-  {
-    scenario: "always-loaded MCP at threshold",
-    mcpCount: 98,
-    alwaysLoad: true,
-    expectedToolCount: 100,
-  },
-  { scenario: "no deferred compact candidates", mcpCount: 0, expectedToolCount: 2 },
-  {
-    scenario: "ordinary provider above threshold",
-    mcpCount: 101,
-    defaultEnabled: false,
-    expectedToolCount: 0,
-  },
-  {
-    scenario: "Coding Plan search available",
-    mcpCount: 101,
-    expectedEnabled: true,
-    expectedToolCount: 2,
-  },
+  { scenario: "denied search with many MCP tools", mcpCount: 101, searchAllowed: false },
+  { scenario: "always-loaded MCP tools", mcpCount: 99, alwaysLoad: true },
+  { scenario: "no deferred compact candidates", mcpCount: 0 },
+  { scenario: "ordinary provider with many MCP tools", mcpCount: 101, defaultEnabled: false },
+  { scenario: "Coding Plan search available", mcpCount: 101, expectedEnabled: true },
   {
     scenario: "forced search available",
     mcpCount: 101,
     defaultEnabled: false,
     force: true,
     expectedEnabled: true,
-    expectedToolCount: 2,
   },
 ])(
   "selects compact tools using actual ToolSearch availability: $scenario",
@@ -224,7 +190,6 @@ it.each<{
     defaultEnabled = true,
     force = false,
     expectedEnabled = false,
-    expectedToolCount,
   }) => {
     const registry = createToolRegistry();
     for (let index = 0; index < mcpCount; index++) {
@@ -287,12 +252,13 @@ it.each<{
     expect(compactRequests).toHaveLength(1);
     const request = compactRequests[0]!;
     expect(request.toolSearchEnabled).toBe(expectedEnabled);
-    expect(request.tools).toHaveLength(expectedToolCount);
+    // 修复回归：摘要请求的 tools 与主循环相同，不按数量裁剪；tools 段不同时整个摘要请求不命中缓存。
+    expect(request.tools).toEqual(initialRequest?.tools);
     expect(request.tools?.some((tool) => tool.name === "ToolSearch")).toBe(expectedEnabled);
     if (expectedEnabled) {
-      expect(request.tools?.map((tool) => tool.name).sort()).toEqual(["Read", "ToolSearch"]);
+      expect(request.tools?.map((tool) => tool.name)).toEqual(["Read", "ToolSearch", "Write"]);
     } else {
-      expect(request.tools).toEqual(expectedToolCount ? initialRequest?.tools : []);
+      expect(request.tools).toHaveLength(2 + mcpCount);
       expect(JSON.stringify(request.messages)).not.toContain("schemas are NOT loaded");
       expect(request.tools?.every((tool) => tool.deferLoading === undefined)).toBe(true);
     }

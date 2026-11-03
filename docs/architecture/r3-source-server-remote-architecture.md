@@ -154,6 +154,16 @@ App 不触发身份换代，不归档原 Profile、不新增设备或项目，�
 
 ### 3.2 workspace 身份的三层结构
 
+SSH 线路身份继续使用 `remote:ssh:<host>:<port>:<username>:<posixPath>`。用户名可含
+冒号（例如 `user:tenant`）；统一解析器先消费 host、port，再以 `:/` 定位用户名后的
+绝对路径，不把用户名内部冒号当成路径起点。路径中的冒号原样保留。构造结果、已保存的
+线路键、稳定 Source 身份和凭据键不改写，也不迁移历史数据；认证仍使用完整原用户名。
+空 host/port/username、缺少绝对路径仍拒绝。WSL、Docker、Server 的解析规则不变。
+
+连接准入和目录状态投影都复用这一解析器。带冒号的用户名必须能到达原有 SSH 认证；
+若远端拒绝账号，沿用认证失败提示，不能报 `remote-project.invalid-host-identity`，
+也不能让该连接的失败状态阻断整个远程项目目录读取。回归场景见 SSH-P0-CONN-09。
+
 现状问题：旧 identity `remote:ssh:<host>:<port>:<user>:<path>` 把线路编进身份（`packages/shared/src/remote-workspace-identity.ts`），换 IP/别名即形成新 key 丢历史；同一目录经多条线路连接会在远端两套数据库（`~/.zcode/v2/tasks-index.sqlite`、`~/.zcode/cli/db/db.sqlite`）留下多套并行历史。
 
 R3 的身份分三层。核心取舍：**控制端身份彻底 route 无关；远端存储 key 在迁移窗口期保持旧格式（canonical key），保证旧版本 Desktop 回退/混连时读写同一批数据**；存储 key 的 server-local 清洁化推迟到 R4（旧版本退出支持窗口后）。
@@ -312,6 +322,27 @@ interface SourceServerIngressInfo {
 
 远端平台支持沿用现状：三种 transport 的远端环境均要求 POSIX（linux/darwin），win32 远端继续拒绝（`assertSupportedRemoteEnvironment` 语义保留）；R2 发行包的 win32 资产仅服务「本机手动安装 Server CLI」场景，不属于 R3 远程连接矩阵。
 
+- 不受支持的平台使用公开码 `remote-platform-unsupported`，不归入笼统的预检或下载失败。来源有三种：uname 报告 win32；探测脚本因 Windows 原生 shell 失败（SSH exec 固定进入 `/bin/sh`，Windows OpenSSH 的 cmd/PowerShell 找不到它，stderr 含 `CommandNotFoundException`、`is not recognized as` 等明确特征）；release resolver 收到 x64/arm64 以外的架构（如 riscv64）。乱码不算 Windows 证据：probe 由 SSH、WSL、Docker 共用，POSIX 启动脚本的本地编码报错和 `wsl.exe` 的 UTF-16LE 提示按 UTF-8 解码同样出现非法字符，这类失败保持预检失败并保留 stderr；只有本地编码报错的 Windows 主机也因此显示预检失败。Windows 的提示复用"仅支持 POSIX shell 环境，暂不支持 Windows 原生远程主机"。架构不受支持的原因写明实测平台与支持范围（Linux、macOS 的 x64 与 arm64）。列举不用 `/` 分隔：连接错误的脱敏把空格后的裸 `/` 当作路径，会遮到行尾。
+- Linux 远端的 C 库下限是 glibc 2.28。发行包内置官方 Node.js 22.16.0 Linux 构建，它需要 GLIBC_2.28（以及 GLIBCXX_3.4.21 / CXXABI_1.3.9，glibc 2.28 的发行版都满足）；CentOS 7（2.17）、Ubuntu 18.04（2.27）等无法运行。musl 系统（如 Alpine）也不支持：实测装了 gcompat 后 Node 仍报 `fcntl64: symbol not found`。probe 在同一次往返里读取 `getconf GNU_LIBC_VERSION`；没有 glibc 时再检查 `/lib/ld-musl-*.so.1`。Linux 远端（含 WSL、Docker）glibc 低于 2.28 或识别为 musl 时，probe 只通过现有连接日志输出 `warn`，写明检测结果、随包 runtime 所需版本和可能启动失败的风险，继续安装确认、上传或远端直下及已有服务连接；按 glibc 报告拒连会让已安装的服务也无法尝试连接。Host 保留该日志级别；不新增确认步骤，不把警告转为预检失败。两项都读不到（缺 getconf、输出无法识别）时不警告、不拦截。放行不改变随包 runtime 的兼容要求，后续真实安装或启动失败仍按原错误通道报告。
+
+探测结果校验（ZCT-2114700808714715136）：`probeSourceServer` 是 SSH / WSL / Docker 共用的
+探测结果校验边界。`uname -s`、`uname -m` 任一失败必须立即以该命令的非零退出码结束，
+不能由最后的 `printf` 覆盖为成功。可选 libc、版本、release 与 daemon 状态读取仍允许为空。
+即使命令退出 0，也必须取得非空 `PLATFORM`、`ARCH`、`ROOT`，`INSTALLED` 必须精确为 `0` 或 `1`，
+并收到 `END` 标记。缺失或无效时抛出环境探测失败，保留缺失字段名及经既有脱敏边界处理的 stderr；
+不从 stdout 猜系统，不把未知平台报告为已确认不支持，也不把未知安装状态投影为 `installed=false`。
+既有 Source 的安装状态与身份不得因这种失败被清除。真实已识别的不支持平台/架构仍沿用专用错误码。
+
+```text
+Backend 只读命令 → probeSourceServer 校验退出码及必需结果
+                   ├─ 无效 → preflight failed → 保留既有 Source 安装状态
+                   └─ 有效 → 原有平台支持判定 → 安装 / 升级 / 复用
+```
+
+本修复不改变探测分段的换行兼容策略，不声明已查明用户现场“旧版本可连接”的上游原因。
+桌面与手机仍消费同一 Window Host 的 Source 状态；不增加重试、超时或独立探测状态。
+验收用例与实际运行证据见 [RDUX-11-11/12](../conversation-session-case-catalog.md#rdux-11-连接中与目录屏验收accepted)。
+
 ### 5.2 三种实现
 
 | 能力        | SSH                                                                                                                                                                               | WSL                                                                                                                                                                                                  | Docker                                                                     |
@@ -320,40 +351,77 @@ interface SourceServerIngressInfo {
 | probe/exec  | `client.exec`                                                                                                                                                                     | `spawn wsl.exe`                                                                                                                                                                                      | `spawn docker exec`                                                        |
 | 上传        | SFTP，失败回退 `cat >` 管道                                                                                                                                                       | `\\wsl.localhost\` UNC 直拷，回退流式                                                                                                                                                                | `docker cp`，回退 `cat >`                                                  |
 | channel     | `client.forwardOut` → 远端 `127.0.0.1:<port>`（direct-tcpip，不占 exec channel）；sshd 禁用转发（`AllowTcpForwarding no`）时回退 stdio 桥（同一 proxy-stdio 命令经 exec channel） | stdio 桥（`wsl.exe -d <distro> -u <user> --exec bash -lc '<serverRoot>/bin/zcode server proxy-stdio --server-root <serverRoot>'`；必须 `--exec`，`--` 会让默认 shell 提前展开命令，见 R3-ISSUE-024） | `docker exec -i <c> <serverRoot>/bin/zcode server proxy-stdio`（stdio 桥） |
-| daemon 常驻 | `serve --daemon` 优先注册 launchd/systemd --user；服务管理器不可访问时 detached fallback，下一次连接负责重启                                                                      | detached fallback；若未来具备可访问服务管理器也消费同一能力探测合同                                                                                                                                  | detached fallback；容器 stop 即退出                                        |
+| daemon 常驻 | `serve --daemon` 优先注册 launchd/systemd --user；服务管理器不可访问或 systemd 装载 unit 失败时 detached fallback，下一次连接负责重启                                             | detached fallback；若未来具备可访问服务管理器也消费同一能力探测合同                                                                                                                                  | detached fallback；容器 stop 即退出                                        |
 | 连接复用    | 同 `buildSshRemoteHostKey` 一条 ssh2 Client（exec/sftp/forwardOut 多 channel 复用）                                                                                               | 按 normalized distro+user 复用 wsl.exe 调用上下文                                                                                                                                                    | 按 container 复用                                                          |
 
 - `zcode server proxy-stdio`（新增内部子命令）：读取本 root `status.json` 端口后做 stdin/stdout ↔ `127.0.0.1:<port>` 的纯字节双向转发；daemon 未运行时输出一行结构化错误后退出。它不调用 `createLocalServices`，不持有任何业务状态。
 - Host 侧在任意 Duplex 上执行 HTTP 请求与 WS 升级（`http.request`/`ws` 均支持自定义 `createConnection`），SSH forwardOut 流与 stdio 桥流走完全相同的上层代码。
 - 旧主链的 WSL 60s idle TTL、Docker per-session dedicated 生命周期差异全部废除：连接生命周期统一为「窗口级连接 ↔ 常驻 daemon」，workspace runtime 的启停完全由远端 Core 管理。
+- 三种 Backend 的 exec 退出码使用同一套规则。命令正常退出时，取它的退出码。命令被信号终止时，返回 `128 + 信号值`（例如 SIGKILL 为 137）。SSH 通道关闭但没有收到 exit-status 和 exit-signal 时，返回 255，与 OpenSSH 客户端一致。后两种情况都是失败，不能当作 0。依赖退出码的步骤（下载、解包、update）因此不会把被杀死的命令当成成功。
+- WSL 的 canonical 身份（distro + user）在连接前解析，并会写进设备 Profile，因此解析结果只能来自身份探测本身：
+  - 探测命令不走登录 shell：`wsl.exe [-d <distro>] [-u <user>] --exec bash --noprofile --norc -c '<identity>'`。输出先打印一行哨兵，只读取哨兵之后的三行（`$WSL_DISTRO_NAME`、`id -un`、`$HOME`）。profile、bashrc 或 wsl.exe 打印的文字不能进入身份。
+  - distro 以 `wsl.exe -l -v` 列表为准。上报的 distro 与列表中某一项相同（不区分大小写）时，采用列表里的名字；不同时，采用列表选中的 distro；列表为空时，才采用上报值。user 必须通过 `isValidWslUser`，否则身份解析失败，不写入 Profile。
+  - 身份解析失败（包括 distro 不存在）不缓存，下一次调用重新探测。
+  - wsl.exe 失败时，错误带退出码。stderr 为空时，错误带 stdout（wsl.exe 常把错误写到 UTF-16 stdout）。Main 记录发现失败时展开错误字段，不能只记成 `{}`。
 - Docker Backend 的直接 exec 与 home 相对路径读取在调用 CLI 前校验容器引用：去除首尾空白后必须匹配 `^[A-Za-z0-9][A-Za-z0-9_.-]*$`，接受名称、完整 ID 与 ID 前缀；非法引用明确拒绝，不增加容器枚举或 CLI 往返。
+- Docker daemon 探测失败时，连接错误保留 docker CLI 的原始原因（stderr，或者 docker 命令无法启动的错误）。例如 daemon 未启动、socket 没有权限、docker 未安装。错误分类仍为"未知"：原因文本只进入"详细信息"和日志，不能借它把错误猜成"没有容器写入权限"等类别。Main 记录 Docker 发现失败时展开错误字段，不能只记成 `{}`。
+  - R3 probe 经 `docker exec` 执行，不预跑 daemon 探测。daemon 不可用时 `docker exec` 只是非零退出，退出码与远端脚本失败相同（都是 1），无法区分。所以 probe 非零退出后，Docker Backend 重新探测一次 daemon：不可用时按上一条规则报告（"未知"，带 docker CLI 原因），不归入预检失败；daemon 可用时仍按远端环境检查失败处理。成功的 probe 不增加 docker CLI 调用。
+  - docker CLI 原因里的 daemon 地址（`unix://`、`npipe://`、`tcp://`）按 URL 整体脱敏（macOS 的 socket 路径含用户名），地址后面的正文保留。同一错误后面再次出现的裸 socket 路径也要脱敏，但必须保留 `: connect: no such file or directory`、`: connect: connection refused`、`: connect: permission denied` 这三种确定的系统诊断尾部；无法确定边界的其他尾部仍保守过滤，不能把带空格的私人路径当成正文放行。
 - R1 registry 的 generation/fail-closed/两阶段 attachment 换代等机制原样保留。
 
-daemon 启动能力判定固定为：
+daemon 启动能力判定固定为（2026-10-23 起）：
 
 ```text
 serve --daemon
-  ├─ 显式 opt-out（WSL/Docker）────────────────────────► detached fallback
-  └─ 默认路径
-       ├─ OS 用户服务管理器不可访问────────────────────► detached fallback
-       │    Linux 非交互 SSH 先尝试 /run/user/<uid>/bus
-       │    恢复 XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS
-       └─ 服务管理器可访问
-            ├─ register/start 成功─────────────────────► OS service
-            └─ register/start 失败─────────────────────► fail-closed（不 fallback）
+  ├─ 已有存活 daemon（control 报告 ready / starting）
+  │    ├─ 默认路径、服务管理器可访问，且同 root 有旧 identity service
+  │    │    └─ 无运行任务时停止旧 daemon，再按下面的冷启动注册；有运行任务时返回错误
+  │    └─ 其他情况 ────────────────────────────────────► 复用；starting 时等到 ready
+  └─ 冷启动（没有存活 daemon）
+       ├─ 显式 opt-out（WSL/Docker）───────────────────► detached fallback
+       └─ 默认路径
+            ├─ OS 用户服务管理器不可访问 ──────────────► detached fallback
+            │    Linux 非交互 SSH 先尝试 /run/user/<uid>/bus
+            │    恢复 XDG_RUNTIME_DIR/DBUS_SESSION_BUS_ADDRESS
+            └─ 服务管理器可访问
+                 ├─ 注册成功 ───────────────────────────► OS service
+                 ├─ systemd 装载阶段失败 ────────────────► detached fallback + serviceFallbackReason
+                 │    （daemon-reload、enable <unit 路径>）
+                 └─ systemd 启动阶段失败（start <unit 名>）
+                    或 launchd / Task Scheduler 注册失败 ──► 返回错误（不 fallback）
 ```
 
 - “服务管理器不可访问”是能力事实，不等于安装失败：常见于 SSH 进入容器、最小系统、未启动 user manager，或 macOS SSH 会话没有可访问的 launchd user domain。
+- 能力探测只证明 user manager 的 bus 能连上，不证明 manager 能读到 server root。`enable` 由 user manager 执行，使用 manager 自己的组列表和挂载视图，不是 SSH 会话的。用户在 manager 启动后才加入目录访问组、manager 使用私有 `/tmp` 时，`enable` 失败（`Access denied`、`Unit file … does not exist`），而同一 root 由 SSH 会话派生的 detached fallback 能正常运行（2026-10-23）。
 - 自动 fallback 不改变 Source/Task/Session 权威；Desktop 断开只释放 attachment。fallback 进程在远端环境存活期间继续运行，宿主/容器重启后由既有启动重连或手动连接重新拉起。
+- 连接日志的 daemon 阶段只报告本次连接的实际动作：本次执行了 `serve --daemon`，才报告启动方式（detached fallback 或 OS 用户服务）；probe 已确认 daemon 就绪而复用时，只报告复用。不能让复用看起来像又启动了一个实例。
+- probe 的“就绪”只是磁盘快照：`status.json` 为 ready 且其中的 Core PID 能 `kill -0`。远端环境重启后快照残留，PID 可能已被同用户的其他进程复用，端口已无人监听。所以复用只是省掉一次 `serve --daemon` 的优化，不是就绪的事实源（2026-10-21）：
+  - 复用后握手失败（未取消），Manager 回退执行一次 `serve --daemon --json`，再握手一次。`serve --daemon` 经 control socket 读取 Supervisor 的实时状态，必要时接管残留锁并重新拉起。
+  - 回退只做一次。第二次握手的失败按原样上报；本次实际执行过 `serve --daemon` 的连接，握手失败不再回退。
+  - Supervisor 存活、Core 事件循环卡住时，control 实时状态在 Supervisor 判定前仍是 ready，回退也只能拿到同一端口。恢复卡住的 Core 由 Supervisor 的活性检查负责（[R2 §4.2 Core 活性](./r2-server-cli-and-daemon.md#core-活性)），Desktop 不新增强杀或重启路径；Supervisor 重启 Core 后，下一次连接读到新端口（ZCT-2113570821476302848）。
+  - 第一次握手的连接已关闭，它的关闭事件不能计入第二次握手。迟到的关闭按握手身份忽略；失败时同步触发的关闭（`ws` 在 upgrade 失败时同一 tick 先发 `error` 再发 `close`，早于失败传给调用方）由每次握手开始时清空“发布前已关闭”的记录来隔离（2026-10-22）。
+
+```text
+probe：status.json ready + Core PID 存活 ──► 复用端口 ──► 握手
+                                                        ├─ 成功 ──► 在线
+                                                        └─ 失败 ──► serve --daemon --json（control 实时状态）──► 再握手一次 ──► 在线 / 上报失败
+```
+
 - Linux SSH 若 `/run/user/<uid>/bus` 存在，即使 sshd 未注入 `XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS`，也应使用该用户 bus 完成 service 探测和注册；不得把“环境变量缺失”误判为“systemd 不存在”。
 - Linux 能力探测读取 `systemctl --user show --property=Version`，只有退出码为 0 且返回非空 `Version` 属性才确认 user manager 可访问。chroot / offline 环境可能跳过命令并返回 0；这种没有属性响应的结果必须进入既有 detached fallback，不能依赖本地化 stderr 文案判断，也不能覆盖用户的离线环境设置。
 - 能力探测沿用 2 秒进程超时。命令被信号终止后，执行器必须关闭本端 stdout/stderr 管道并返回失败，不能继续等待持有管道的 D-Bus 辅助进程退出；正常退出仍等到 `close` 后读取完整响应。该收口不改变服务注册错误传播，也不新增启动路径。
-- 探测成功后的真实注册错误仍直接返回；不得把权限、服务文件或启动错误统一吞掉。daemon 启动 owner 仍由 Server CLI 在 OS service 与 detached Supervisor 之间选择，不新增重试、状态缓存或并行启动路径。
+- 探测成功后，按注册执行到哪一步决定是否回退，不按 stderr 文案判断（2026-10-23）：
+  - Linux systemd 注册拆成三次调用：`daemon-reload` → `enable <unit 路径>` → `start <unit 名>`。前两次是装载阶段，第三次是启动阶段。
+  - 装载阶段失败时，本次没有启动任何 unit（实测失败后 unit 为 not-found / inactive，没有 job），CLI 直接改用 detached fallback，回退前不停止或禁用 unit。成功输出 `serviceRegistered=false`，并带可选字段 `serviceFallbackReason`，值为注册失败的原始错误；非 `--json` 模式向 stderr 写一行提示。该原因不写入 `status.json`。
+  - 启动阶段失败时，unit 已经启用，可能正在启动或等待自动重启；自动回退需要先停止并禁用 unit，所以保持原样返回错误。Core 未 ready、launchd / Task Scheduler 注册失败也照原样返回错误，不回退。
+  - 回退后的 detached Supervisor 仍启动失败时，按现有错误链路报告 fallback 的失败原因，不再追加注册原因。
+- 连接日志的 detached fallback 行附上 `serviceFallbackReason`，沿用连接日志现有的脱敏规则；没有原因时文案不变。
+- 每次冷启动重新选择启动方式，不持久保存 fallback 选择。环境修好后，下一次冷启动自动改用 OS service。存活的 daemon（ready / starting）一律复用：服务管理器后来变得可用，也不停止 fallback，运行中有任务时也不报错；fallback 停止后的下一次冷启动才改用 OS service。唯一例外是同 root 的旧 identity service 迁移，规则见 [R2](r2-server-cli-and-daemon.md)。
+- daemon 启动 owner 仍由 Server CLI 在 OS service 与 detached Supervisor 之间选择，不新增重试、状态缓存、启动锁或并行启动路径。同一 canonical server root 只有一个 Supervisor 和 Core，由现有 `server.lock` 保证：后到的 Supervisor 取锁失败就退出，不改 status。以前注册成功的 enabled unit 与 fallback 同时启动、两个 CLI 同时回退时，后到者取锁失败，结果与 WSL/Docker 的 fallback 相同。运行中的 Supervisor 失去锁时不再写 status，停止 Core 后结束，规则见 [R2](r2-server-cli-and-daemon.md)（2026-10-26）：锁文件不存在（server root 被删除或替换）以退出码 1 结束，由服务管理器或下一次 `serve --daemon` 拉起新实例；锁已换了 owner 以退出码 0 结束，新 owner 已在运行，服务管理器不重启。
 - `serve --daemon --json` 非零退出时，Adapter 必须优先解析 stdout 的结构化 `{ error, code?, retryable? }`，再把 stderr 作为补充诊断。Node warning、登录 banner 或 shell 噪音不得覆盖真实 CLI 错误。
 - Server CLI `--json` 的结果（成功或失败）是 stdout 中最后一个单行 JSON 对象；Adapter 读取结果时跳过其前后的纯文本行。部分 SSH 堡垒机会把远端 stderr 合并进 stdout，并在 stdout 结束后才投递，Node warning 因此可能排在结果行之后，不能把最后一个非空行当作结果。
 - Source Server bootstrap 可执行文件放在最终可执行根（`~/.zcode/server`）的临时 staging 内，不从常见 `noexec` 的 `/tmp` 执行；archive 临时文件仍须在成功、失败和取消后清理。
 - 远端直下只把 curl/wget、tar 和 SHA-256 工具作为必需能力；awk/wc/date 等仅用于增强进度，缺失时降级为无速度进度而不是阻断下载。Desktop 下载后上传同样必须在上传前探测 tar，避免传完大 archive 才失败。
-- archive 内置官方 Node 22 Linux 构建，动态链接要求 glibc 2.28 及以上。probe 在同一次只读 round-trip 中读取 `getconf GNU_LIBC_VERSION`；Linux 远端（含 WSL、Docker）低于 2.28 时（如 CentOS 7、RHEL 7、Ubuntu 18.04），probe 以预检失败拒绝，不进入安装确认、上传或远端直下，消息写明实测版本和所需版本。读不到 glibc 版本（musl、缺 getconf、输出无法识别）时不拦截，沿用原安装链。
 - macOS 构建 POSIX archive 时必须显式禁用 bsdtar xattr/PAX metadata；仅设置 `COPYFILE_DISABLE=1` 不足以移除 `LIBARCHIVE.xattr.*`，否则 Linux 解压会按条目刷出数千行 unknown extended header 并掩盖真实错误。
 
 ### 5.3 发现、安装与升级链
@@ -436,10 +504,33 @@ Server 构造自身出参时使用 strict schema 自校验；Desktop/控制端�
 `protocolVersion=1` 下新增 optional 字段不会击穿旧客户端。匿名 server-info 使用独立 schema，只暴露
 `version/protocolVersion/authRequired/compatibility`，不得强行套完整握手 schema。
 
+`identity.osUser` 是系统用户的展示信息，不参与 `sourceServerId`、workspace identity 或鉴权。
+Server Core 与直接 HTTP Server 共用 Node 侧解析：优先读取 `os.userInfo().username`；
+当系统返回 `uv_os_get_passwd` 的 `ENOENT`，且运行时提供 `process.geteuid()` 时，使用
+`uid:<有效 UID>`，与 `os.userInfo()` 查询的有效用户一致。Docker 以未登记在 `/etc/passwd` 的数字 UID 运行时，仍须正常监听并发布
+ready。不得读取可伪造的 `USER` / `USERNAME` 代替系统身份，不修改容器账户数据库；其他
+查询错误或没有数字 UID 的平台继续保留原错误。
+
+```text
+用户名可查询 → 原用户名 → server-info
+用户条目不存在 → 当前进程数字 UID → server-info → Core ready
+安装 UUID → sourceServerId / workspace identity（与上述展示值独立）
+```
+
+回归：HTTP 两个入口验证缺用户条目时仍可读取握手信息；`R3A-TRN-01-UID` 通过 Desktop
+Docker 入口连接数字 UID 容器并打开项目，核对 Server ready、安装 UUID 与 `uid:10001`。
+
+验证（2026-10-20）：23 项聚焦回归通过；受影响测试 239 个文件完成验证（其中一个未修改的
+遥测测试首次触发 Electron 下载而超时，下载完成后定向复跑 2/2 通过）。类型、Lint、格式和
+架构检查通过。macOS arm64 Desktop → Linux arm64 Docker 的 `R3A-TRN-01-UID` 通过，
+run `local-docker-20261020151240-63b1f0`，证据含截图、`docker-transport.json` 和运行日志。
+保持 pending，未转正或加入 CI；未实跑 Windows/WSL、Linux x64 和手机 GUI。
+
 ### 6.3 版本兼容与远端更新（D10）
 
 - Desktop 构建产物与 Server CLI 发行包各内嵌 `CompatibilityManifest`；判断规则：取 `productVersion` 较新的一端，用其 `minCompatibleVersion` 判断较旧端；兼容且版本不同 → 连接成功后主动显示一次非阻塞「可更新」提示，并在 Source 管理页保留更新入口；不兼容 → 阻止业务连接，展示当前版本/最低版本/应升级端。
-- Server 较旧：用户显式点击连接时，在连接向导内自动发起一次 `force:false` 的受保护更新；没有运行中
+- Server 较旧：用户显式点击连接时，在连接向导内自动发起一次 `force:false` 的受保护更新（远端带有效
+  `downgradedFrom` 时除外，见下方「Desktop 较旧时显式切换远端」）；没有运行中
   Task 时直接更新并继续原连接意图，只有收到 running-task guard 后才向用户确认是否强制中断。启动重连、
   断线恢复和离线探测仍停在 `needs-upgrade`，只提供「立即更新」，不得静默更新或弹出确认。升级命令以
   `profileId + target` 为寻址边界，不要求预先握手得到 `sourceServerId`；Desktop 解析当前 release archive 后
@@ -448,7 +539,8 @@ Server 构造自身出参时使用 strict schema 自校验；Desktop/控制端�
   断连重试；更新完成后主动重新握手并回填 `sourceServerId`，失败展示原因与重试，不依赖 §7 的被动探测。
 - Host 状态快照是版本判断唯一权威，固定携带
   `updateAvailability: none | available | required`、`currentVersion`、`availableVersion`、
-  `minimumVersion`、`upgradeTarget`、`errorCode`、`retryable`；Renderer 不自行比较版本。
+  `minimumVersion`、`upgradeTarget`、`errorCode`、`retryable`，远端被显式切换到旧版本时另带
+  `downgradedFrom`；Renderer 不自行比较版本。
 - `source-server-upgrade-required` 的连接失败保留 Host 实际使用的 `profileId`，由严格 Host 响应 schema 校验并经 Main 透传。它只标识本次失败的线路，升级资格仍须读取最新 Host 快照；不传凭据、不新增持久化状态。WSL 参数规范化后，向导以该线路的实际目标继续更新和重连，避免默认用户与 UI 原始参数不一致导致升级入口空操作。
 - 自动升级以失败时的不可变目标身份为约束，`profileId` 只标识可编辑记录。WSL 升级失败与安装等待均返回本次解析的 `resolvedWslTarget`。向导先核验最新 Profile 的目标，再提交 `updateSource({ profileId, expectedTarget, force })`；`expectedTarget` 只包含 SSH 地址/端口/用户/配置别名、WSL 实际发行版/用户或 Docker 容器，不含凭据。
 - Host 对 `expectedTarget` 做严格运行时校验，并比较当前 Profile 与解析目标。更新使用同一 Profile 快照解析出的固定 target，不能在校验后再按 ID 取目标；不匹配返回 `remote-target-changed`，不 probe/install/reconnect，UI 终止旧升级并显示显式重试。force 确认期间仍携带原身份。旧的无 expectedTarget 管理入口保持兼容；不改变桌面 continuous / 手机 replayable 及远端任务 owner。
@@ -462,16 +554,20 @@ Host 已固定 A → 后续 Profile 编辑 B → 在途操作仍只使用 A
 - `source-server-install-required` 同样保留实际 `profileId`。WSL 安装失败响应另带严格校验的 `resolvedWslTarget: { kind: "wsl", distro, user }`，两个身份字段均非空，不含凭据。它来自本次 Host 连接请求的已解析目标，独立于附加安装预览；预览不可用时仍可确认同一目标。该字段经 Main、平台和原项目失败交接保留，不改变发现缓存、持久化、安装授权或桌面/手机传输边界。
 - 公开错误码统一由 `@zcode/shared` 登记并由 CLI/Host 消费：running-task guard 使用
   `source-server-update-running-tasks`（`retryable:false`，允许用户显式 `force`），兼容阻断使用
-  `source-server-upgrade-required`；workspace migration 与 bind cancel 同样不得维护各自白名单。
-- 连接/部署失败统一经 shared 分类：拒绝连接/不可达、超时、主机不存在、明确的 SSH host-key 校验失败、下载、上传、预检、安装、远端空间/权限、取消与未知都有公开码。AggregateError 读取内层码，空消息补非空兜底，Host 失败响应不能因 schema 拒收而悬挂；UI 映射中英文，未知码显示通用文案。
+  `source-server-upgrade-required`，未授权的降级使用 `source-server-downgrade-unconfirmed`
+  （`retryable:false`）；workspace migration 与 bind cancel 同样不得维护各自白名单。
+  远端服务生命周期（§8.4.5）使用 `source-server-stop-failed`（Supervisor 停止 Core 失败进入 `stop-failed`）与
+  `source-server-control-unresponsive`（control 请求超时；由 control 客户端统一打码，所有 control 命令超时都带此码）。
+- 连接/部署失败统一经 shared 分类：认证失败、需要额外验证（二次验证）、拒绝连接/不可达、超时、主机不存在、明确的 SSH host-key 校验失败、下载、上传、预检、安装、远端空间/权限、取消与未知都有公开码。AggregateError 读取内层码，空消息补非空兜底，Host 失败响应不能因 schema 拒收而悬挂；UI 映射中英文，未知码显示通用文案。
 - 用户可见日志只接收流水线显式进度，Host console/其他服务的诊断不转发。绝对路径、token、凭据引用与设备标识统一脱敏；等待安装确认是 info。连接反馈预填这份日志，不默认上传全量诊断文件。
 - 连接日志的凭据字段还包括各类 `apiKey` / `api_key` / `api-key`、`secret`、Authorization 与 Cookie / Set-Cookie；Bearer 与 Basic 凭据均遮蔽。普通 Authorization/Cookie Header 的值覆盖至行尾，带引号键名的结构化字段按完整转义字符串过滤；重复过滤保持幂等，后续日志行仍保留。
 - Server CLI 原生提供 `version --json`/`--version`，不得把版本输出委托给 Agent `zcode.cjs`。探测 pre-R3
   安装时允许从旧文本输出提取唯一合法 semver；无法证明兼容时保守进入 `needs-upgrade`。
-- Desktop 较旧：只提示升级 Desktop，不降级 Server。
+- Desktop 较旧：主动作是升级 Desktop；不得自动降级 Server。用户回退 Desktop 后仍要使用该远端时，
+  按下方「Desktop 较旧时显式切换远端」由用户确认切换。
 - R2 存量 server（无 compatibility 字段）判为过旧，走同一升级链；R3 Desktop 的 `minCompatibleVersion` 设为首个携带 R3 握手合同的 Server 版本。
 - 当前发布默认不在根 `package.json` 中声明 `zcodeCompatibility` 覆盖；Desktop 与 Server CLI 构建都将缺失的 `minCompatibleVersion` 回退为当前 `productVersion`，因此默认只承诺同版本兼容。只有在完成跨版本合同与发布验证后，才可重新显式声明更低的 `zcodeCompatibility.minCompatibleVersion`。
-- Server 较旧且必须升级时，启动重连提示、连接向导失败面板和连接管理页都必须提供就地「立即更新」，并统一提交到 `SourceServerManagementService.updateSource`；不得要求用户记住或寻找 Settings 中的唯一入口。Desktop 较旧时仍只导向 Desktop 升级，不显示 Server 更新动作。
+- Server 较旧且必须升级时，启动重连提示、连接向导失败面板和连接管理页都必须提供就地「立即更新」，并统一提交到 `SourceServerManagementService.updateSource`；不得要求用户记住或寻找 Settings 中的唯一入口。Desktop 较旧时主动作仍导向 Desktop 升级，不显示 Server 更新动作；只在连接向导失败面板与设备卡提供次级的「将远端切换到 <版本>」。
 - 启动/任务列表重连的 Source Server 更新 Toast 使用独立展示变体：顶部居中、完整换行展示设备与版本文案、完整「立即更新」和关闭入口。该变体只服务 Source Server，不改变 Desktop 应用更新等既有 compact update Toast 的位置与截断规则。
 - 连接向导接管某个目标后，该目标的 Server 必须升级提示由向导呈现，全局 Toast 不重复提示；收起向导仍保留接管，退出/改选目标才释放，其他设备和 Desktop 升级提示不受影响。向导在发起连接前同步发布目标，不能等 `needs-upgrade` 后才抑制提示。Host 进入 `updating`、升级需求解除或 Profile 被移除时立即撤销旧升级 Toast；点击动作须重新核对当前快照，同一提示只提交一次更新。失败回到需升级状态后保留重试入口，不因旧提示去重永久丢失通知。
 - 更新动作默认先以 `force:false` 执行；只有收到 `source-server-update-running-tasks` guard 后，才向用户二次确认并以 `force:true` 重试。「版本不兼容」本身不等于授权强制中断运行中 Task。
@@ -498,6 +594,42 @@ Host 已固定 A → 后续 Profile 编辑 B → 在途操作仍只使用 A
                                                                        └─ success ─► re-handshake
                                                                             └─ logical/attachment 换代
                                                                                  └─ 继续原连接意图
+```
+
+**Desktop 较旧时显式切换远端（2026-10-21）**
+
+场景：用户升级 Desktop 后，向导把远端升到新版本；用户再回退 Desktop，旧 Desktop 因 Server 较新而无法连接。
+
+- 入口：只在 `needs-upgrade + upgradeTarget: controller + updateAvailability: required` 时出现次级动作
+  「将远端切换到 <Desktop 版本>」，位置为连接向导失败面板和设备卡的必须更新区；主动作仍是「更新桌面端」。
+  启动 Toast 不提供该动作。版本号取 Host 快照的 `currentVersion`（较旧端，即本机 Desktop）。
+- 确认：点击后必须二次确认。文案说明：仍在使用新版本的设备连接时需要再次升级远端；旧版本可能无法完整显示
+  新版本写入的内容。取消不发请求。
+- 执行：确认后提交 `updateSource({ profileId, expectedTarget?, allowDowngrade: true, force: false })`，复用
+  同一条更新链：`updating`、操作日志、running-task guard 后由用户确认再以 `force: true` 重试，重试保留
+  `allowDowngrade`。成功后重新握手，并继续原连接意图。
+- 授权 owner：降级判定只由远端 Server CLI 执行。`zcode update --from-archive` 持有 update lock 后比较 archive
+  版本与 `current.json` 版本。目标更低且没有 `--allow-downgrade` 时，删除本次写入的 `pending.json`，以
+  `source-server-downgrade-unconfirmed` 失败，不切换 release。Desktop 不用 probe 结果预判方向：probe 之后
+  其他设备可能已把远端升到更高版本，这时普通升级也不能把它静默降级。
+- 降级标记：CLI 接受降级时写 `<serverRoot>/downgrade.json`：`{ releaseId, fromVersion }`。标记只在
+  `releaseId` 等于 `current.json.releaseId` 时有效。之后的升级或失败回滚到其他 release 都会让它自然失效，
+  不需要额外清理。probe 在同一次远端 round-trip 中读取它；Host 只在 `needs-upgrade + upgradeTarget: server`
+  上发布 `downgradedFrom`，该字段随兼容字段在 `updating`、`offline`、重试状态中保留。
+- 新版 Desktop 再连接：远端带 `downgradedFrom` 时，连接向导不自动更新。失败面板说明远端已从 `downgradedFrom`
+  切换到当前版本，由用户点击「立即更新」确认后才升级。启动 Toast、设备卡本来就需要用户点击，行为不变。
+- 数据：切换只换程序 release，不回滚、不迁移用户数据。风险与本机 Desktop 回退相同，见 §9.3。
+
+```text
+Desktop 3.17 连接 → 向导自动升级 → Server 3.17
+Desktop 回退到 3.16.2 → 连接 → needs-upgrade(upgradeTarget=controller)
+   ├─「更新桌面端」（主动作）
+   └─「将远端切换到 3.16.2」（次动作）→ 二次确认 → updateSource(allowDowngrade=true)
+          → CLI：目标 < current，且带 --allow-downgrade → 写 downgrade.json → 切换 release
+          → 重新握手 → online
+Desktop 3.17 再连接 → probe：版本较旧 + downgrade.json 有效
+   → needs-upgrade(upgradeTarget=server, downgradedFrom=3.17)
+   → 向导不自动更新 → 用户点击「立即更新」→ 正常升级 → downgrade.json 失效
 ```
 
 - 更新失败：更新操作状态与兼容状态分栏。若更新前 Source 在线且版本兼容，running-task guard、下载/上传或安装失败后必须恢复原 `online + updateAvailability` 事实，只附加本次更新错误与重试/强制更新入口；不得把可用 Source 改判为 `needs-upgrade + required`。只有握手 compatibility 明确不兼容，或开发态内容寻址判定 archive SHA 不一致（连接前必须先更新）时才进入阻塞式 `needs-upgrade`。一期不在控制端追加额外 release 回滚编排。
@@ -549,6 +681,7 @@ A 在线 → B 更新 → 旧物理连接失效 → 删除 B
 - **探测**：轻量路径（传输拨号 + 匿名 server-info），成功才进入完整 bootstrap；探测不产生用户可见 UI 变化，除状态徽标外。
 - **最近在线**：握手成功初始化 `lastOnlineAt`；Manager 从 online 离开时，用 Host 时钟向 Directory 的串行写队列提交最后在线时刻，落盘后通过原目录事件刷新投影。后续离线重试不推进时间；迟到写入不得覆盖更晚握手，也不得重建已移除的 Source。此元数据更新不改变 desktop continuous / mobile replayable 的恢复链。
 - daemon 不在（如服务器重启且未注册自启动的 WSL/Docker）时，自动重连允许执行 `ensureDaemon`（不含安装/升级）。
+- **生命周期操作**：更新与重启共用 Source 级生命周期操作 flight。flight 存在时，在线连接关闭视为预期断线，只做连接失效、不排 retrying；命令完成后由 flight 自己走连接流程并发出 reconnect。停止先完整执行显式断开（删除恢复意图），再执行远端命令，因此不会触发 retrying 或离线探测。合同见 §8.4.5。
 - **发布前断连**：物理连接只有在 Manager 把它登记为该 Source 的 online owner 之后才进入「通道/WS 断开 → retrying」路径。握手落盘（`recordHandshake`）期间连接关闭时，Manager 不得把已关闭连接发布为 online，而是按普通连接失败收口（`failed` 且 `retryable:true`，自动路径继续下一档重试）；同一 Source 上其他 Profile 的握手期断连不得影响已在线的 owner。close 事件只作用于它所属的那条连接，不按 `sourceServerId` 泛化。
 
 恢复 owner 与换代 seam：
@@ -596,6 +729,11 @@ Source transport 断开
   但不得隐式调用 Manager 的物理 `disconnect`。物理断开只来自连接管理页的显式操作或 Host shutdown。
   被替代 entry 上仍 pending 的 recovery 等待者必须以连接取消错误结束；仅 abort transport 不能代替
   拒绝 recovery Promise。已转交到 canonical Source owner 的请求继续由该 owner 完成，不受旧 entry 释放影响。
+- 设备 transport 会话（SSH 连接、WSL 子进程等，含其中的凭据）同样由 Manager 拥有。Adapter 按 target 对象缓存会话；
+  重试、离线探测和设备操作沿用恢复意图的 target，从而复用同一会话。target 的持有者结束时，Manager 必须释放它的会话：
+  显式断开与删除当前线路释放恢复意图的 target；新连接以另一个 target 发布、替换恢复意图时释放旧 target；连接、更新、
+  重启、停止和运行中任务读取结束时，所用 target 若不是当前恢复意图的 target，也要释放。不能只在 Host 释放时整体回收：
+  否则每次更新或用新 target 连接都会多留一条到设备的空闲会话，停止远端服务后本机仍连着设备（2026-10-21 修复）。
 - logical replacement/attachment replacement 失败有自己的有界重试；物理 connection 已恢复后不得等待
   下一次断线才重新触发。被替换的 `ServerRemoteConnection` 必须显式 dispose。
 - logical replacement 定时重试只属于安排时的 transport epoch；执行时 entry 必须仍 online 且
@@ -708,21 +846,22 @@ SettingsPage
        └─ ServiceProvider(localHostServices)            ← useBaseWorkspaceServices()，与激活的 workspace 无关
             └─ ModelProviderSection
                  ├─ 读写：本地 IProviderSettingsService（provider_config.json / model-selection.json / setting.json 窄字段）
-                 ├─ 连通性测试：connectivityWorkspacePath 强制本地 workspace；激活远端 workspace 且无本地 workspace 时返回不可用
+                 ├─ 连通性测试：connectivityWorkspacePath 强制本地 workspace；激活远端 workspace 且无本地 workspace 时改用本机 Host 对话目录，Host 也无法提供时才返回不可用
                  └─ 保存成功 ──► 本地 Provisioning Source 触发 ──► §8.3 自动下发到全部在线 Source
 
 Active workspace（local / remote）──只决定工作区上下文，不改变模型配置数据源
 ```
 
 - 设置页不再有「本机 / 各远端 Server」设备菜单，也不记忆 `lastAgentSettingsSourceServerId`；`ModelProviderSourceControls.tsx`、`useSourceSettingsAttachment.ts`、`providerSyncSnapshot.ts` 及 `AppSettings.lastAgentSettingsSourceServerId|providerSyncDefaultModel|providerSyncRuntimeCredentialBindings` 已删除。远端缺模型时设置页不显示任何远端引导；引导只出现在对话区（§8.3）。
-- 保留的 `source-settings` attachment scope（`sourceSettingsServiceCollection.ts`）不注册 `provider-settings` / `model-selection`，只服务 Skills / MCP / Plugins / Commands / Hooks / Subagents / Memory / OutputStyle / settings-sync 等非 Provider 配置面；其它能力页继续使用各自的 User/Workspace Scope 控件和当前 workspace 路由，禁止把「模型设置绑定本地」扩散成「所有设置页都绑定本地」。
+- 保留的 `source-settings` attachment scope（`sourceSettingsServiceCollection.ts`）不注册 `provider-settings` / `model-selection`，只服务 Skills / MCP / Plugins / Commands / Hooks / Subagents / Memory / OutputStyle / settings-sync 等非 Provider 配置面；其它能力页（插件、MCP、技能、命令、子智能体、钩子）使用按设备分组的 Scope 菜单：本机「用户」走本机，远端设备「用户」走该设备的 source-settings attachment（不需要打开项目），项目走各自的配置专用服务；默认选中当前 workspace 所在设备的「用户」，选中设备离线时 fail-closed（[数据同步](../remote/data-sync.md)「Scope 菜单按设备分组」）。禁止把「模型设置绑定本地」扩散成「所有设置页都绑定本地」。
 - 对话区、Subagents、Automation 的模型目录来自**目标 Host**：`useModelSelectionView(workspacePath, remoteSessionId, workspaceIdentity)` 经 `useWorkspaceServicesResolution` 解析到该 workspace 的服务集合，再读其 `modelSelectionService`（ssh/wsl/docker/server 全部远端一致）；等待远端 attachment 期间保持 `remote-waiting`，绝不回落本机 Local Host 目录。首次 bind/rekey 期间即使 tab 仍短暂携带 legacy `remote:ssh|wsl|docker:*` identity，也不得读取本机目录。
 - 远端 workspace 缺模型时 `ChatErrorBanner` 的 `modelConfigTarget: "remote"` 只切换措辞（`chat.error.remoteNoAvailableModel`：「此远程设备尚无可用模型，请先在本机配置模型，保存后会自动同步到远程设备」），按钮仍是「配置」（打开本机模型设置）/「升级」；「去同步」入口已删除。
 - Renderer 收到远端 scoped service port 时，是否采用 Source Server 全权威服务集合仍以 Host 注入的 `sourceServerId` 为准；SSH/WSL/Docker 只描述 transport，不能据此回落 legacy mixed services。已识别 Source 即使通过 SSH 连接，`settingService`、credential、usage 与 `modelSelectionService` 也必须来自远端。
+- 例外：高速卡与闲时任务只在本地生效（2026-10-21 产品决定），远端合同不含这两个频道。所有远程 workspace 的服务集合中，`highspeedCardService` 使用「远程不支持」实现（立即 fallback，不 draw），`offPeakTaskService` 固定取本地 Desktop Host；任何一个都不得路由到远端。见 [Highspeed §8](../highspeed/highspeed-card-spec.md#8-多端与恢复边界)、[闲时任务 §多端](../off-peak-task/spec.md)。
 
 ### 8.3 Provider Provisioning 接入 R3 主链
 
-模型配置没有用户触发的同步入口。本机是 Provider 配置的唯一编辑权威，每个在线 Source Server 是本机配置的可丢弃执行镜像；Envelope 内容、目标端事务 / 回滚、`syncId` 幂等、校验边界以 [Remote Provider Provisioning](../remote/provider-provisioning.md) 为事实文档，本节只描述它如何挂到 R3 Source Server 主链上，不得与之矛盾。
+模型配置没有用户触发的同步入口；唯一例外是数据同步页「模型提供商」分类在该设备最近一次自动下发失败时提供的「重试」（§8.3.6）。本机是 Provider 配置的唯一编辑权威，每个在线 Source Server 是本机配置的可丢弃执行镜像；Envelope 内容、目标端事务 / 回滚、`syncId` 幂等、校验边界以 [Remote Provider Provisioning](../remote/provider-provisioning.md) 为事实文档，本节只描述它如何挂到 R3 Source Server 主链上，不得与之矛盾。
 
 #### 8.3.1 链路：Main coordinator → Window Host executor → Source Server target
 
@@ -755,12 +894,13 @@ EnvironmentCoordinator               (registered by                             
         | ProviderProvisioningExecutionResult|  credentialCount, rolledBack}           |
         |<-----------------------------------|                                         |
         |
-        | status in {applied, already-applied} -> resolve
-        | otherwise: trigger == environment-online -> reject (first connect fails); other triggers -> warn (no Secret)
+        | status in {applied, already-applied} -> resolve -> lane.lastResult = success
+        | otherwise: warn (no Secret) -> reject(ProviderProvisioningExecutionError{errorCode}) -> lane.lastResult = failed
+        |   coordinator: trigger == environment-online -> rethrow (first connect fails); other triggers -> swallowed
 ```
 
 - Main 只持有 Environment key、Host 登记、trigger、generation 与 `requestId` 关联，不读也不转发配置与 Secret；Envelope 只在 Window Host 内存中经过一次，落盘只发生在目标 Source 的正式 Store。
-- 触发源（`ProviderProvisioningTrigger`）：`environment-online`（首连 / 重连）、`personal-config`、`configured-default`、`account-settings`、`credential`。后四者由本机 Local Services 在持久化成功后经 `HostResponse ProviderProvisioningSourceChanged` 上报，Main 调 `coordinator.requestAll(trigger)` 对全部在线 Environment 推进 generation；同步期间的新触发只推进 generation，本轮结束后再读一次最新快照形成尾随同步。
+- 触发源（`ProviderProvisioningTrigger`）：`environment-online`（首连 / 重连）、`personal-config`、`configured-default`、`account-settings`、`credential`，以及只由 Main 协调器产生的 `user-retry`（§8.3.6）。后四者由本机 Local Services 在持久化成功后经 `HostResponse ProviderProvisioningSourceChanged` 上报，Main 调 `coordinator.requestAll(trigger)` 对全部在线 Environment 推进 generation；同步期间的新触发只推进 generation，本轮结束后再读一次最新快照形成尾随同步。
 - 与旧「一键同步」相比：没有目标确认界面、没有 journal + write barrier，目标端改为事务暂存 + 反向回滚 + `syncId` 幂等；Team Plan runtime Key 绑定、family 运行选择整包等 ours 专有字段不再存在，账号侧只同步 `providerFamilyDomain` / `providerFamilyConnectionSelections` 窄字段与 allowlist 凭据。
 
 #### 8.3.2 首连屏障与重连重注册
@@ -819,7 +959,7 @@ Window Host（windowHostAttachmentRpcPolicy.ts）
 ```
 
 - Core 始终注册 target（R3 ingress token 常在，不存在 HTTP zcode-server 那种「未配置鉴权则不支持」的分支）；隔离在 clientMode 层完成：手机 replayable 连接即使知道频道名也只能拿到抛错 stub，不能把跨 Environment 凭据写进 Source Server。
-- `RemoteProviderProvisioningExecutor` 存于 Host 私有 WeakMap，不随 ServiceCollection 暴露到 Renderer；Renderer / 手机没有任何触发同步的入口。
+- `RemoteProviderProvisioningExecutor` 存于 Host 私有 WeakMap，不随 ServiceCollection 暴露到 Renderer；手机没有任何触发同步的入口。桌面 Renderer 只有 §8.3.6 的失败重试，经本机 Host 请求 Main 协调器推进已有 lane，不直接调用 executor。
 
 #### 8.3.5 Built-in Provider Config 物化目录
 
@@ -835,8 +975,37 @@ Core 启动（server-core/core.ts runServerCore）
   └─ 两者皆无 ──► 启动失败（fail-closed）
 ```
 
-- 物化目录是 `serverRoot`（`~/.zcode/server`），**不是** release 自带的 `runtime/`：release 目录不可变，同一 releaseId 重装时 `assertExistingReleaseMatches` 会重算整棵树的内容哈希，多出的物化文件会让校验失败；文件名含内容 hash，跨 release 共用安全。`config/` 目前不在 `zcode uninstall` allowlist 内，卸载后会作为 `preservedPaths` 保留（见 [r2-server-cli-and-daemon.md](./r2-server-cli-and-daemon.md)）。
+- 物化目录是 `serverRoot`（`~/.zcode/server`），**不是** release 自带的 `runtime/`：release 目录不可变，同一 releaseId 重装时会重算整棵树的内容哈希，多出的物化文件会让该目录被判为损坏副本并整体替换（[R2 immutable promote](./r2-server-cli-and-daemon.md)）；文件名含内容 hash，跨 release 共用安全。`config/` 目前不在 `zcode uninstall` allowlist 内，卸载后会作为 `preservedPaths` 保留（见 [r2-server-cli-and-daemon.md](./r2-server-cli-and-daemon.md)）。
 - 远端 Built-in Release 不随 Provisioning 复制：本机 Personal Layer 引用远端 Built-in 不存在的 Provider/Model 时，目标返回结构化错误并回滚本次配置写入。
+
+#### 8.3.6 最近结果与失败重试（数据同步页）
+
+数据同步页「模型提供商」分类（[data-sync.md](../remote/data-sync.md)「模型提供商（只读）」）显示该设备最近一次自动下发的结果，失败时提供「重试」。唯一数据源是 Main 协调器的 lane，不新增持久化，也不新增同步链路。
+
+```text
+Renderer DataSyncDialog（providers 分类 / 概览行）
+  └─ providerProvisioningStatusService（通道 provider-provisioning-status，只在本机 Host 注册；
+     │  不进远程 workspace RPC 合同 / source-settings 集合 / 手机白名单）
+       ├─ getStatus({sourceServerId, waitForIdle?})
+       └─ retry({sourceServerId})
+            │ HostResponse ProviderProvisioningLaneRequest {requestId, sourceServerId, action: read|wait|retry}
+            ▼
+Desktop Main（desktopHostProcess → remoteSessionManager → coordinator）
+  getLaneStatus(sourceServerId)：找到仍有该设备注册的 lane（register 时带 descriptor.sourceServerId）
+      ├─ 没有 → { lane: "none" }（本机没有打开该设备上的项目；不下发、不能重试）
+      └─ 有   → { lane: "present", running: 任一 drain 执行中, lastResult: 时间最新的 {at, outcome, errorCode?} }
+  retry(sourceServerId)：同一条 lane generation+1，trigger = user-retry → #startDrain（single-flight）
+      └─ 执行中时合并进当前 drain 的尾随同步；等 drain 结束后返回最新状态
+            │ HostMessage ProviderProvisioningLaneResult {requestId, status}
+            ▼
+本机 Host 按 requestId 交回调用方
+```
+
+- lane 在每次真正完成的执行后记录 `lastResult`（Host 被其它注册接管的那次不记录）；失败只带固定阶段码（`ProviderProvisioningErrorCode`），不带远端自由文本或 Secret。lane 失去全部注册后按「无 lane」返回。
+- 重试不增加自动重试、超时放行或第二条同步链路；source-settings attachment 不注册 lane，设备没有打开的项目时不下发也不能重试。
+- 同一 Source 经不同线路形成多条 lane 时，状态取时间最新的结果，重试推进该设备的全部 lane。
+- Host 侧实现：`packages/services/src/provider-provisioning-status/`（`createHostProviderProvisioningStatus`，按 requestId 关联请求与结果，不设超时）。
+- 单测：`providerProvisioningEnvironmentCoordinator.test.ts`、`desktopRemoteSessions.test.ts`、`desktopHostProcess.test.ts`、`hostProviderProvisioningStatus.test.ts`、`windowHostControlProtocol.test.ts`；E2E `DSYNC-13-01`。
 
 ### 8.4 设备管理合同（2026-09-13 自 `docs/archive/remote-r3/r3-remote-ui-prototype-gap-audit.md` §8 并入，原文已归档）
 
@@ -869,6 +1038,53 @@ Core 启动（server-core/core.ts runServerCore）
 - 只门禁 Host 启动静默重连入口（`listStartupReconnectCandidates → reconnectOnStartup`），不影响手动连接与断线后的 retrying / offline 恢复；修改立即持久化、下次启动生效。仅桌面设置页提供入口，不新增跨端 RPC。
 - 不提供全局下载方式默认偏好（2026-08-28 决策撤销 `remoteDefaultAssetInstallMode`）；SSH 新建线路表单每次从 `local-download-upload` 开始，Profile 自身 `assetInstallMode` 优先。
 
+**8.4.5 停止与重启远端服务（2026-10-20）**
+
+产品合同与验收见[停止和重启远端服务](../issues/remote-daemon-lifecycle/01-stop-restart-remote-service.md)，CLI 语义见
+[R2 §8.1](./r2-server-cli-and-daemon.md#81-stop---wait-与整棵进程树-restart2026-10-20)。
+
+- 管理服务新增 `stopSource(sourceServerId)`、`restartSource(sourceServerId)`、`getSourceRunningTasks(sourceServerId)`，严格 schema，只对桌面 Renderer 开放，手机 attachment allowlist 不增加。
+- 路由由 Host 按 `sourceServerId` 选择（更新仍由 Renderer 传 `profileId`，不改）：在线时用在线连接；否则用默认连接，再按最近连接时间选可静默取得凭据的连接（与启动静默重连候选同一排序）；取不到时返回 `credentials-required`。桌面端只经 transport 执行固定 argv：`stop --wait --json`、`restart --json`、`running-tasks --json`；非 SSH 的 `restart` 与 `serve --daemon` 一样带跳过服务注册的环境变量。
+- 停止：先执行与显式断开相同的收口（清定时器、中止在途连接与更新、删除恢复意图、释放连接、置 `offline`），再执行远端 `stop --wait`。远端命令沿用被断开连接的 transport 会话（不重新认证），命令结束后释放该会话，本机不再连着设备。成功与失败都保持 `offline`，失败原因经操作结果与日志呈现。不写持久标记；启动静默重连仍只受 §8.4.4 开关门禁。
+- 重启：登记生命周期操作 flight 并清恢复定时器，状态投影为连接中；执行 `restart --json`，期间在线连接关闭按 §7.1 视为预期断线。成功后走现有连接流程并发出 reconnect，由 Registry 为已打开 workspace 换代；失败时：有恢复意图且非终态时与更新失败相同，从第一档自动恢复；没有恢复意图时为 `failed`（设备卡显示连接失败）。更新失败且没有恢复意图时仍为 `offline` 带错误，不随本合同改变。
+- 同一 Source 的生命周期操作互斥：重启或停止进行中时拒绝任何新的生命周期操作（更新、重启、停止）；更新进行中时拒绝重启与停止；多个更新并存（经 sibling Profile 发起）保持现状；手动连接不在互斥范围内，停止期间另行建立的连接按普通断线恢复。显式断开或移除设备中止进行中的重启 flight。不新增 Host 连接状态，不用超时等待同步本机状态。
+- 其他客户端（另一台 Desktop）的自动恢复可能重新拉起远端服务，一期只在确认文案中说明。
+- 实现落点（停止，2026-10-20）：Host 互斥被拒时抛非公开码 `source-server-operation-in-progress`，且在写设备操作日志之前拒绝，
+  不覆盖进行中操作的日志；停止 flight 不把在线连接关闭视为预期断线（停止前已释放连接，其间用户新建的连接按普通断线恢复）。
+  远端命令输出经 transport 的统一结果解析保留公开错误码；成功必须是最终 `stopped` 状态，旧远端的 ack 视为失败。
+  停止失败时原因写在所用连接的 `offline` 状态上（不改变未连接展示），供失败详情分类。设备操作日志 `operation` 增加 `stop`。
+  更新、停止、重启失败写入状态的 `errorCode` 与 `retryable` 取自同一归一化结果；远端未声明 `retryable` 时统一为 `true`
+  （2026-10-21 确认，含停止失败）。
+  版本门禁常量为 `@zcode/shared` 的 `SOURCE_SERVER_LIFECYCLE_CONTROL_MIN_VERSION`，与设备记录的 `lastSeenVersion` 比较，
+  取 `3.17.0`（2026-10-27 确认）：这是首个包含本合同的正式版。已发布的 3.16.3 及更早远端不支持本合同。
+  曾取 `3.16.3`，前提是“下一次发版至少是 3.16.3，且包含本合同”；实际 v3.16.3 从 release 分支发布，不含本合同，
+  最近握手为 3.16.3 的未连接或连接失败设备因此开放了菜单（发布验证 REL3170-CAP-01）。
+  不取根版本：本合同开发期间根版本与已发布、不支持本合同的版本同号，门禁取它会对旧远端开放菜单。
+  代价是根版本升到 3.17.0 之前，开发构建、E2E 远端包与 staging 测试包都报 3.16.3，菜单显示禁用；根版本何时升级由团队决定。
+- 实现落点（重启，2026-10-21）：重启开始时把所用连接投影为 `bootstrapping`（不带重试计数）；预期断线的连接失效事件
+  `reason` 为 `restart`，同一 Source 的在线连接都投影为 `bootstrapping`，Host wrapper 与更新一样按可恢复关闭通知
+  Registry。远端命令必须返回 ready 状态（旧远端的 ack 视为失败）；旧连接的关闭可能晚于命令返回，连接前若旧连接仍登记
+  在线，先主动失效，不能复用已退出的连接。失败收口与更新共用同一实现。离线路由读取凭据期间若手动连接已发布恢复意图，
+  改用恢复意图的连接；删除 Profile 中止重启后，恢复意图的连接若停在没有在途连接的 `bootstrapping`，从第一档自动恢复。
+  设备操作日志 `operation` 增加 `restart`，阶段名为 `service-restart`（`restart` 阶段会被错误归一化当作安装失败）。
+- 实现落点（运行中任务读取，2026-10-21）：Host `getSourceRunningTasks` 的路由同重启（恢复意图优先；离线路由读取
+  凭据后重查恢复意图），经 transport 执行 `running-tasks --json`。输出 `null`（Core 尚未上报）、非零退出、执行异常或
+  不符 schema 都返回 `{ available: false }`，不当作没有任务；结果 schema 为 `@zcode/shared` 的
+  `sourceServerRunningTasksResultSchema`。读取只读：不登记生命周期操作、不参与 Host 互斥、不改变连接状态，也不写
+  设备操作日志（日志按设备只保留最近一次操作）。更新 guard 拒绝后的清单读取共用同一解析。
+
+```text
+停止：disconnect 收口（恢复意图删除）──> exec stop --wait ──> offline
+重启：lifecycle flight ──> exec restart ──(在线连接 close = 预期断线)──> connect ──> online + reconnect ──> 移除 flight
+                                 └─ 失败 ──> 有恢复意图：retrying 第一档；否则 failed
+
+同 Source 互斥（行 = 新操作，列 = 进行中的操作）：
+             update      restart   stop
+  update     允许(现状)   拒绝      拒绝
+  restart    拒绝         拒绝      拒绝
+  stop       拒绝         拒绝      拒绝
+```
+
 ## 9. 数据迁移（D7 / D8）
 
 结构升级统一进入物理库的正式 migration 账本：Controller/Source 附加表按用途进入
@@ -891,10 +1107,11 @@ Repo 不再独立建表/补列。旧 schema、未完成计划与回退兼容规�
 ```
 
 - 迁移是纯本地、幂等、schema 解析阶段完成（沿用 `migrateLegacyWorkspaceSession` 的既有模式）；失败不阻塞 App 启动，只影响连接页展示并可重试。Directory 的 rejected initialize flight 必须清空，允许后续显式重试；Window Host 无论迁移结果如何都必须先暴露 local base attachment，禁止让 Source Server 目录故障把本地工作区一起卡死。
-- 同一 target 存在多份凭据（不同 workspace 条目各存一份）时，非敏感 target 元数据取 `lastOpenedAt` 最新条目；密码与私钥口令分别取按 `lastOpenedAt` 降序扫描后第一个“credential value 实际存在”的条目。空源不得遮蔽较旧的有效 sibling。
+- 同一 target 存在多份凭据（不同 workspace 条目各存一份）时，非敏感 target 元数据取 `lastOpenedAt` 最新条目；密码与私钥口令分别取按 `lastOpenedAt` 降序扫描后第一个“credential value 实际存在”的条目。空源不得遮蔽较旧的有效 sibling。本机无法解密的值（`ZCODE_CREDENTIAL_DECRYPT_FAILED`）按“无可用值”处理：记一条 warn（不含 key 与 value），继续扫描，原记录不删除、不改写；不得因此中断迁移。其他读取错误（凭据文件损坏、IO 失败）仍让本次迁移失败并回滚。
 - 新建 Profile 与迁移使用同一凭据 seam：拥有 plaintext target 的 Host 生成 `profileId` 后，把密码/私钥口令写入 `connection-profile:<profileId>:*` 并在同一持久化操作中写入引用。迁移只有在 value 复制成功后才写新引用；空源继续表达需要交互凭据，禁止制造悬空 key。
 - R4 兼容窗口内，Renderer 为旧 Desktop 投影 stable Source workspace 时，必须把 Profile secret 物化到每个 workspace 独立的 `remote-workspace:<legacyWorkspaceKey>:*` mirror，且先写 secret、后提交 `lastWorkspaceSession` 引用。旧 key 仅用于回退兼容，当前主链仍只消费 Profile credential。
-- `sourceServerDirectoryMigrationVersion=1` 不代表 credential 一定完整；Host initialize 对 active SSH Profile 做幂等审计，仅用相同标准化 route 的 legacy siblings 修复缺失 canonical value，不按 alias/hostname 相似度猜测。
+- `sourceServerDirectoryMigrationVersion=1` 不代表 credential 一定完整；Host initialize 对 active SSH Profile 做幂等审计，仅用相同标准化 route 的 legacy siblings 修复缺失或无法解密的 canonical value，不按 alias/hostname 相似度猜测。
+- “无法解密 = 无可用值”是 Host `SourceServerDirectory` 全部凭据读取的统一规则，不只用于迁移与审计（2026-10-21）：静默连接把不可解密的 Profile secret 当作缺失，返回 `credentials-required`；启动重连跳过该 Profile，其他 Profile 照常进入候选；用户补充凭据时直接覆盖该 key；编辑、删除、身份替换的回滚快照把它记为无值，回滚时删除而不恢复本机无法解密的密文。“原记录不删除、不改写”只约束 legacy 来源。Renderer 读取 Profile secret 时遵循同一规则（设备连接流程 `loadConnectionProfileCredentials` 与原项目重连）：解密失败按缺失处理，进入已有的补充凭据交互；其他读取错误照常上抛。
 - `SourceServerRecord` 不在此阶段创建——它只能来自真实握手（`sourceServerId` 未知）；未握手 Profile 在连接页独立展示，首次连接成功后按 `sourceServerId` 归并到 Server 卡片。
 - 控制端本地 `tasks-index.sqlite` 中引用旧 remote identity 的行在对应 Server 首次握手后重写为新 identity，禁止静默丢弃。逐表盘点如下（已实现：`packages/services/src/session/controllerRemoteIdentityMigration.ts`；2026-09-13 自 `docs/archive/remote-r3/r3-controller-remote-row-migration-inventory.md` 并入）。控制端 `tasks-index.sqlite` 只是 Controller 壳层 / 调度记录，不是远端 Session 正文权威；旧 `lastWorkspaceSession` 与旧 credential key 保留只读到 R4。
 
@@ -907,6 +1124,7 @@ Repo 不再独立建表/补列。旧 schema、未完成计划与回退兼容规�
 | `automations.workspace_key/workspace_identity`               | 控制端 cron 定义                                | 保留记录并重写身份，`location_kind` 不改                           | R3 remote automation 不开放执行入口；迁移只防止记录失联，不改变调度能力边界      |
 | `automation_runs.workspace_key`                              | cron run 对账/历史                              | 随 automation identity 重写                                        | `run_id` 是主键，不会因 workspace key 更新合并                                   |
 | `off_peak_tasks.workspace_key/workspace_identity`            | 闲时任务记录                                    | 保留记录并重写身份                                                 | 同 session 活跃绑定冲突按下述裁决取消源行；R3 不扩大远端闲时调度                 |
+| `session_creation_commands.workspace_key`                    | 创建命令的持久分配回执（含删除后的保护记录）    | 与 task 同事务 rekey；相同回执合并，不同 session ID 冲突整笔回滚   | 新 key 重试原命令仍返回原 ID；仅有回执也必须迁移                                 |
 | `workspace_alias` / `workspace_migration_*`                  | 远端 Server 专用 canonical/ledger               | 控制端不创建、不读取                                               | 这些表只属于 Source Server tasks-index，禁止与控制端迁移混用                     |
 
 不需要改写：`task_groups`（不以 workspace key 定位）、`task_group_view_node_orders` 的 `node_type='group'` 行、本地 workspace 行与远端本机 path-key 行、CLI `db.sqlite` 的 `session/message/part`（由 Source Server 侧 canonical migration 处理）、Controller 内存投影（首次握手 / 重连用新 source snapshot 原子替换）。
@@ -1043,12 +1261,13 @@ Core workspace 定位层收到 { workspacePath, legacyRouteHint? }
 
 ### 9.3 新旧版本兼容边界（混连与回退）
 
-| 场景                                | 行为                                                                                                                                                     |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 单线路用户升级 R3 后回退            | 数据零改动，旧主链按原 key 读写同一批行：历史完整、可续聊，R3 期间产生的新任务/新消息同样可见                                                            |
-| 新旧 Desktop 混连同一远端（同线路） | 双方读写同一 canonical key 的行：任务与会话双向可见、续聊互通。差异仅在架构层（旧端起临时 stdio server、新端连 daemon），互不干扰                        |
-| 多线路用户：从被合并线路回退/混连   | 该线路的旧 key 行已并入 canonical，旧端从此线路看不到已合并历史（数据未删除，备份与 ledger 可对账）；从 canonical 线路访问完整。属于窄边缘，灰度文案覆盖 |
-| 新装服务器上 R3 创建的 workspace    | canonical = 当前线路的旧格式 key：旧版本从同线路连接可见、可续聊                                                                                         |
+| 场景                                | 行为                                                                                                                                                                                                                |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 单线路用户升级 R3 后回退            | 数据零改动，旧主链按原 key 读写同一批行：历史完整、可续聊，R3 期间产生的新任务/新消息同样可见                                                                                                                       |
+| 新旧 Desktop 混连同一远端（同线路） | 双方读写同一 canonical key 的行：任务与会话双向可见、续聊互通。差异仅在架构层（旧端起临时 stdio server、新端连 daemon），互不干扰                                                                                   |
+| 多线路用户：从被合并线路回退/混连   | 该线路的旧 key 行已并入 canonical，旧端从此线路看不到已合并历史（数据未删除，备份与 ledger 可对账）；从 canonical 线路访问完整。属于窄边缘，灰度文案覆盖                                                            |
+| 新装服务器上 R3 创建的 workspace    | canonical = 当前线路的旧格式 key：旧版本从同线路连接可见、可续聊                                                                                                                                                    |
+| Desktop 回退后把远端切回旧版本      | 只切换程序 release，用户数据不回滚。SQLite 迁移只加不删，旧版本忽略未知迁移 ID；新版本写入的新内容结构可能显示不全。若旧 Server 不认识更新的 workspace-migration schema 版本，会拒绝启动（fail-closed），不改写数据 |
 
 ### 9.4 回滚安全
 
@@ -1101,7 +1320,7 @@ Mobile /remote   ── existing workspace attachment ──► 禁止 managemen
 - 首次持续运行说明位于目录页，一次性、非阻断，沿用版本化 onboarding 记录；不再弹出要求确认的边界模态。
 - [投影与持久化兼容](remote-domain-simplification-and-conversation-workspace-spec.md)维护 open set、显式关闭、strict schema 与 R4 剩余迁移。
 - [Renderer 重挂](../remote/desktop-remote-session-renderer-reattach.md)维护设备上线后的项目挂回；底层连接生命周期仍以 §7 为准。
-- 模型设置绑定本地（§8.2），Provider 自动下发（§8.3）；其它能力页遵循其 User/Workspace Scope。
+- 模型设置绑定本地（§8.2），Provider 自动下发（§8.3）；其它能力页遵循按设备分组的 Scope 菜单（§8.2）。
 - 删除当前物理连接或 recovery owner 使用的 Profile 等价于当前窗口显式断开整个 Source：取消 timer/flight，释放连接、清除 target/secret 并发布 terminal offline。即使有其它 active Profile 也不自动切换；删除非当前 Profile 不打断其它连接。
 - uninstall 后由用户决定是否移除本机记录；保留数据卸载重装的身份连续性以 §3 为准。
 
@@ -1145,6 +1364,7 @@ R3 保留源码但已从生产入口不可达、R4 再物理删除：
 - 连接状态机每次迁移、bootstrap 各阶段、迁移 saga 各阶段使用生产 `info`；自动重试/探测失败用 `warn`；握手/迁移不可恢复失败用 `error`；WS frame、探测心跳等高频细节一律 `debug`。
 - `RemoteWorkspaceConnectionLog` 继续按 `windowId + requestId` 归属，bootstrap 全阶段结构化上报（检测/上传进度/安装/daemon/握手/迁移门）。
 - Process Monitor 增加 Source Server 维度：连接状态、`sourceServerId`、daemon 版本、attachment 数。
+- SSH 超时文案按连接阶段区分。ssh2 的握手超时和 Keepalive 超时都使用 `client-timeout` level，只有 message 不同。连接 ready 之前的 `client-timeout` 是"握手超时"；连接 ready 之后的 `client-timeout` 只能来自 Keepalive（每 15 秒一次心跳，最后一次收到数据后约 60 秒仍无响应），文案是"连接无响应"。不能把已建立连接的断开记成握手失败。
 - ingress token、capability、Provisioning Envelope（Personal Layer 与 allowlist 凭据）、SSH 凭据在任何日志/遥测中不可出现；Provisioning 结果日志只记录 `environmentKey`、trigger、status、耗时与计数。
 
 ## 15. 已决事项与遗留确认

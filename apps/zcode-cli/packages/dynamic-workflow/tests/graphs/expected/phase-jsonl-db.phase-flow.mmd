@@ -9,15 +9,15 @@ flowchart LR
   sink(["sink"])
   abort(["abort"])
   entry --> phase_1
-  phase_1 -->|"branch, join (return)"| phase_2
-  phase_1 -->|"exit, join (return)"| phase_5
-  phase_1 -->|"exit, join (return)"| phase_6
+  phase_1 -->|"join (return)"| phase_2
+  phase_1 -->|"join (return)"| phase_5
+  phase_1 -->|"join (return)"| phase_6
   phase_1 -->|"throw"| abort
   phase_2 --> phase_3
   phase_3 -->|"loop, loop (continue)"| phase_2
-  phase_3 -->|"branch, join (return)"| phase_4
-  phase_3 -->|"exit, join (return), loop"| phase_5
-  phase_3 -->|"exit, join (return)"| phase_6
+  phase_3 -->|"join (return)"| phase_4
+  phase_3 -->|"join (return), loop"| phase_5
+  phase_3 -->|"join (return)"| phase_6
   phase_4 -->|"loop"| phase_2
   phase_4 -->|"exit, loop"| phase_5
   phase_4 -->|"exit"| phase_6

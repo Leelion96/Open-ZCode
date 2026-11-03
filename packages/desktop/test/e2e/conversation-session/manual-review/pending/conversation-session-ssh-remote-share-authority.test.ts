@@ -64,6 +64,26 @@ describe(`${MARKER}: 远端分享账号权威与未登录拒绝`, () => {
     this.timeout(20 * 60_000);
     const prepared = await prepareSSHLifecycle(MARKER, { tunnelUsername: "tunnel" });
     provider = prepared.provider;
+    // 分享入口依赖已恢复的 User 展示态；只热写 access_token 不会使匿名 Renderer 登录。
+    // 在建立远端项目前播种并恢复合成本地账号，避免中途切换本地身份改变历史归属前提。
+    await reloadElectronSessionPreservingBrowserProfile(browser, {
+      afterElectronProcessExit: async () => {
+        const localPath = getE2EAppDataPaths().credentialsFile;
+        const local = JSON.parse(await readFile(localPath, "utf8"));
+        Object.assign(local, {
+          "oauth:active_provider": "zai",
+          "oauth:zai:access_token": LOCAL_TOKEN,
+          "oauth:zai:user_info": JSON.stringify({
+            id: "ssh-guide-local-user",
+            displayName: "SSH guide local",
+            username: "ssh-guide-local-user",
+          }),
+          zcodejwttoken: LOCAL_TOKEN,
+        });
+        await writeFile(localPath, JSON.stringify(local), { mode: 0o600 });
+      },
+    });
+    await waitForRendererAfterColdRestart(MARKER);
     const task = await connectSSHWorkspaceAndSendFirstTurn({
       caseMarker: MARKER,
       config: prepared.config,
@@ -148,26 +168,6 @@ describe(`${MARKER}: 远端分享账号权威与未登录拒绝`, () => {
     expect(restarted.code).toBe(0);
     await reconnectRemoteProject(task.identity, MARKER);
 
-    // 分享入口依赖已恢复的 User 展示态；只热写 access_token 不会使匿名 Renderer 登录。
-    // 在旧 Desktop 退出屏障后播种合成用户，再等真实重连/Provisioning ready，随后设置远端不同账号。
-    await reloadElectronSessionPreservingBrowserProfile(browser, {
-      afterElectronProcessExit: async () => {
-        const localPath = getE2EAppDataPaths().credentialsFile;
-        const local = JSON.parse(await readFile(localPath, "utf8"));
-        Object.assign(local, {
-          "oauth:active_provider": "zai",
-          "oauth:zai:access_token": LOCAL_TOKEN,
-          "oauth:zai:user_info": JSON.stringify({
-            id: "ssh-guide-local-user",
-            displayName: "SSH guide local",
-            username: "ssh-guide-local-user",
-          }),
-          zcodejwttoken: LOCAL_TOKEN,
-        });
-        await writeFile(localPath, JSON.stringify(local), { mode: 0o600 });
-      },
-    });
-    await waitForRendererAfterColdRestart(MARKER);
     await waitForRemoteTab({
       caseMarker: MARKER,
       expectedIdentity: task.identity,
@@ -187,7 +187,8 @@ describe(`${MARKER}: 远端分享账号权威与未登录拒绝`, () => {
     await selectV4TaskById(task.taskId);
     await waitForV4TimelineContaining(task.firstReply, 60_000);
     await clickTestIdByDom("conversation-share-trigger");
-    await clickTestIdByDom("conversation-share-next", { timeout: 30_000 });
+    // 分享已合并为单个设置浮窗；仍须在真实 UI 勾选披露确认再发布。
+    await $('[data-testid="conversation-share-popover"]').waitForDisplayed({ timeout: 30_000 });
     await clickTestIdByDom("conversation-share-disclosure-checkbox");
     await clickTestIdByDom("conversation-share-confirm");
     await $('[data-testid="conversation-share-error-details"]').waitForDisplayed({

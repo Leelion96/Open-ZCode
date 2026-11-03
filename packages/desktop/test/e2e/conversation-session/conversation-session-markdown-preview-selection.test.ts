@@ -170,8 +170,18 @@ describe("Markdown preview selection", () => {
     );
     await historyChip.waitForDisplayed();
     expect(await historyChip.getText()).toContain("selection.md");
-    // 草稿提升为任务会切换 task-owned 侧栏，重新打开该文件后再选区。
-    await $(`[data-testid="${testId(TID_WORKSPACE_FILE_TREE_ROW, filePath)}"]`).click();
+    // 草稿提升为任务会切换 task-owned 侧栏；重新打开文件标签并按实际展开状态定位。
+    await openProjectFileTree(DEFAULT_WORKSPACE);
+    const fileRow = $(`[data-testid="${testId(TID_WORKSPACE_FILE_TREE_ROW, filePath)}"]`);
+    if (!(await fileRow.isDisplayed())) {
+      const directory = $(
+        `[data-testid="${testId(TID_WORKSPACE_FILE_TREE_ROW, dirname(filePath))}"]`,
+      );
+      await directory.waitForDisplayed();
+      await directory.click();
+    }
+    await fileRow.waitForDisplayed();
+    await fileRow.click();
     await preview.waitForDisplayed({ timeout: 15000 });
     await browser.execute(
       (paneTestId, inputTestId) => {

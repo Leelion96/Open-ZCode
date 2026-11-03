@@ -31,13 +31,13 @@ Workspace Hook 只保留一种用户授权：对当前工作区中某一条精�
 | Surface | 展示/本地状态 | 提交入口 | 权威状态 | 多端边界 |
 | --- | --- | --- | --- | --- |
 | Settings / Hooks / Workspace 行 | Hook 配置与静态 Trust store 快照决定按钮/开关展示；活跃 review request 只提供可操作 generation | 有 session command binding 时复用 Runtime review；无 task/session 时经 workspace 级 Agent RPC 重验 snapshot，并通过 Host 注入的同一 managed policy provider 后提交精确 declaration digest | Runtime review controller / workspace pretrust authority + shared managed policy provider + user Trust store | Desktop 与 Web 共用组件；remote 必须携带 `workspaceIdentity` / `remoteSessionId`；不得为了信任创建隐藏 task |
-| 会话 pending banner | `workspaceHookAdmission.pendingCount` | `requestWorkspaceHookReview` 后打开 Hooks 设置 | Runtime admission projection | Desktop continuous 直推；Web remote replayable 从 snapshot 恢复 |
+| 会话 composer Hook 图标 | `workspaceHookAdmission.pendingCount` | `requestWorkspaceHookReview` 后打开 Hooks 设置 | Runtime admission projection | Desktop continuous 直推；Web remote replayable 从 snapshot 恢复 |
 | Runtime dispatch gate | canonical snapshot evaluation | 无 UI 旁路 | Trust coordinator + security revision | 所有 SessionStart/tool dispatch 共用同一 gate |
 
 ### 2.3 必须检查的关系
 
 - `must-inspect`：共享协议 decision schema、review controller、Trust coordinator、Hooks Settings 行组件、i18n 与相关测试。
-- `should-inspect`：pending banner、continuous/replayable projection、Trust store、policy、revoke 与 digest 变化。
+- `should-inspect`：Hook 图标浮层、continuous/replayable projection、Trust store、policy、revoke 与 digest 变化。
 - `invariant-only`：普通工具权限 `Allow once`、provider execution boundary、desktop queue 与 mobile replayable queue。
 - `evidence-only`：旧审核面板、once-grant/session-family 测试和 UAT 文案；它们用于证明清理完整性，不再定义产品行为。
 
@@ -79,7 +79,7 @@ Settings、显示锁定开关或发起 Trust 都不得为了界面效果静默�
 ```text
 会话发现 enabled + untrusted Hook，或 Settings 静态发现任意 untrusted Hook
   -> Runtime 自然事件仍跳过 Hook，turn 继续
-  -> 用户通过 pending banner 或自行进入 Hooks 设置
+  -> 用户通过 Hook 图标浮层 或自行进入 Hooks 设置
   -> 静态 Trust 状态立即显示“信任”与锁定关闭的有效运行开关
   -> 点击后优先复用当前 session review flow
   -> 当前没有 task/session 时，经 workspace 级只读 Agent RPC 重新发现 canonical snapshot
@@ -102,7 +102,7 @@ workspace 级 Agent Trust authority，不能自行写 Trust Store。该入口不
 - 信任只作用于未来自然发生的 Hook event，不追溯执行已经跳过的事件。
 - 被跳过的 `SessionStart` 不在当前 task 的第二、第三个 prompt 补跑；它最早在下一次真实 SessionStart（新 task/session）运行。
 - review deadline 只使 immutable request 过期并关闭当前操作快照，不写负向决定、不清除 pending admission。
-- 页面关闭、离开 Settings、attachment 断连、banner dismiss 均不改变 Trust。
+- 页面关闭、离开 Settings、attachment 断连、图标忽略均不改变 Trust。
 - partial trust 后，已成功项按钮消失；若仍有 pending 项，Runtime 发布新的 generation，其他按钮继续可用。
 
 时序：
@@ -171,7 +171,7 @@ Renderer              V4/Bootstrap                 Core / Trust Store
 | WHT06 | 已信任声明发生语义变化 | 刷新/下次评估 | 新 digest 未信任，按钮重新出现，旧记录不授权新声明 | Digest + UI + runtime gate |
 | WHT07 | 本地与远程 tab 使用相同 `workspacePath`，远程具有独立 identity | 本地 Settings 查找 review/command binding | 只命中本地 binding；远程 identity 不能通过 path fallback 成为本地提交通道 | UI store |
 | WHT08 | explicit project config 与 auto-discovery 指向同一文件，或候选中含损坏 JSON | Runtime 与 Settings 分别构造 snapshot | 同一 canonical source 只出现一次；失败候选仍占 discovery order，双方 digest 一致 | adapters + shared discovery |
-| WHT09 | pending banner 当前可见 | 点击“忽略”；随后 bundle digest 变化 | 当前 bundle 立即隐藏；新 bundle 重新显示；命令 reject 仅记录 services/UI 规范日志 | UI interaction |
+| WHT09 | Hook 图标浮层当前可见 | 点击“忽略”；随后 bundle digest 变化 | 当前 bundle 立即隐藏；新 bundle 重新显示；命令 reject 仅记录 services/UI 规范日志 | UI interaction |
 | WHT10 | 同一 snapshot 连续请求审核或并发提交两次同一决策 | `requestReview` / `respond` | flow 只创建和监管一次；Trust 只落盘一次，第二次提交 superseded | bootstrap controller |
 | WHT11 | Trust 已原子落盘，但 deadline 抢先终结旧 flow | controller 收口提交结果 | 按 accepted 回报，且只发一次 resolved Settled；不得把已成功授权误报为失败 | bootstrap controller + store |
 | WHT12 | Trust store revoke 收到空 digest 列表；Windows rename 遇短暂占用 | revoke / atomic write | 空列表作为无效输入拒绝；`undefined` 仍表示撤销 workspace 全部；EPERM/EBUSY/EACCES 有界重试 | adapters persistence |
@@ -208,7 +208,7 @@ Renderer              V4/Bootstrap                 Core / Trust Store
 2. Runtime 与 Settings 必须共享 `discoverWorkspaceHookConfigPaths` 的候选编号和 canonical-path
    去重结果。explicit path 不得绕过该函数另行追加；加载失败的候选仍占 discovery order，避免
    后续声明 digest 整体错位。
-3. Pending banner 的 dismiss 是 renderer 本地、非持久状态，但点击必须立即触发组件重渲染；
+3. Hook 图标的忽略是 renderer 本地、非持久状态，但点击必须立即触发组件重渲染；
    key 仍为 `sessionId + bundleDigest`，因此 bundle 变化后提示自然恢复。
 4. Controller 的唯一生产入口是 `requestReview`。同一 pending flow 的重复请求必须复用 flow 和
    supervisor；并发 mutation 由 controller 队列串行。Trust store 已提交后，即使 deadline 使旧

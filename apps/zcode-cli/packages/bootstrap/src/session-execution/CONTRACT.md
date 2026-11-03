@@ -9,3 +9,5 @@ session record 始终是 residencyFinalizationCount 的唯一 owner；租约不�
 ```
 
 不创建队列、缓存、定时器或第二份会话状态。同步异常与异步失败均保留原错误。
+
+主动重启先取消执行，然后通过 `waitForSessionResidencyFinalization` 等待原 record 的租约归零。等待者只观察原计数，不拥有第二份生命周期状态，也不通过超时判断安全释放。

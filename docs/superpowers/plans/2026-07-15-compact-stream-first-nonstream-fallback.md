@@ -279,7 +279,7 @@ git status --short
 本轮实际迁移文件：
 
 - `packages/desktop/test/e2e/helpers/v4-conversation.ts`
-- `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-model-switch-auto-compact.test.ts`
+- `packages/desktop/test/e2e/conversation-session/conversation-session-model-switch-auto-compact.test.ts`
 
 本轮文档更新确认以下 `manual-review/pending` spec 仍固定断言 non-stream；在后续代码轮次完成
 stream-first 断言迁移和复跑前，不把它们计入 transport 覆盖或转正准入：

@@ -16,7 +16,7 @@ import {
   CREATE_WORKFLOW_TOOL_NAME,
   ESCALATE_TOOL_NAME,
   EVAL_WORKFLOW_SNIPPET_TOOL_NAME,
-  LIST_WORKFLOW_RUNS_TOOL_NAME,
+  LIST_SAVED_WORKFLOWS_TOOL_NAME,
   type Model,
   type ModelResult,
   type ModelSelection,
@@ -329,8 +329,10 @@ describe("script workflow child runtime — actor transcript 直播通道", () =
       // 探针刻意用两个**只读**工具：CreateWorkflow / AmendWorkflow / SaveWorkflow /
       // ResumeWorkflowRun / ResolveWorkflowQuestion 在 workflow_child 里另有一道结构性禁令
       // （tool-allowlist.ts 的 WORKFLOW_CHILD_DISALLOWED_TOOLS），三种取值下恒为 false，
-      // 拿它们当探针只会写出一条永远为真的假断言。
-      expect(registry.has(LIST_WORKFLOW_RUNS_TOOL_NAME)).toBe(available);
+      // 拿它们当探针只会写出一条永远为真的假断言。ListWorkflowRuns / GetWorkflowRun 同理
+      // （2026-10-21 起子 runtime 不持有 run 端口而不注册，见 RUN_INTROSPECTION_TOOLS），所以换成
+      // 不经 run 端口的 ListSavedWorkflows。
+      expect(registry.has(LIST_SAVED_WORKFLOWS_TOOL_NAME)).toBe(available);
       expect(registry.has(EVAL_WORKFLOW_SNIPPET_TOOL_NAME)).toBe(available);
       // 反向断言：门只碰工作流那几件，普通工具面在三种取值下都在。
       expect(registry.has("Read")).toBe(true);
@@ -636,8 +638,8 @@ describe("script workflow child runtime — 对外交互端口由父 runtime 铸
 /**
  * workflow 子代理跑在发起会话的权限模式上（docs/dynamic-workflow/launch.md「Permissions inside a
  * run」）：该问时经父 runtime 派生的 broker 请求用户，origin 标注这个子代理，并镜像到父会话；
- * guarded 的危险命令是 user-once，拒绝时命令不执行、拒绝结果回到子代理。YOLO 不问普通工具，
- * AskUserQuestion 在任何模式下都问。
+ * guarded 的危险命令是 user-once，拒绝时命令不执行、拒绝结果回到子代理。YOLO 不问普通工具。
+ * 子代理没有 AskUserQuestion：它要人判断时 escalate 给主代理。
  */
 describe("script workflow child runtime — 子代理经父 broker 请求权限与提问", () => {
   const parentSessionId = createSessionId("dwf-parent-guarded");
@@ -905,7 +907,7 @@ describe("script workflow child runtime — 子代理经父 broker 请求权限�
     );
   });
 
-  it("AskUserQuestion：子代理的提问经父会话送达，父流里有带 origin 的 PermissionRequested", async () => {
+  it("AskUserQuestion：子代理的工具面里没有它，调用不会向用户提问，父流里也没有 PermissionRequested", async () => {
     firstToolCall = {
       id: "actor-question",
       name: "AskUserQuestion",
@@ -929,24 +931,17 @@ describe("script workflow child runtime — 子代理经父 broker 请求权限�
         if (event.sessionId === parentSessionId) parentEvents.push(event);
       },
     });
-    // YOLO 也问：AskUserQuestion 在任何模式下都要用户作答。
-    const actorRuntime = await makeActorRuntime("yolo");
+    // build 模式下普通工具都会问；即便如此 AskUserQuestion 也到不了用户面前。
+    const actorRuntime = await makeActorRuntime("build");
     await actorRuntime.executeTurn("go");
 
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({
-      sessionId: parentSessionId,
-      toolName: "AskUserQuestion",
-      origin: { kind: "subagent", childSessionId: actorSessionId },
-    });
-    const requested = parentEvents.filter(
-      (event) => event.type === SessionEventType.PermissionRequested,
-    );
-    expect(requested).toHaveLength(1);
-    expect(requested[0]!.payload).toMatchObject({
-      toolName: "AskUserQuestion",
-      origin: { kind: "subagent", description: "reviewer (agent#1@0)" },
-    });
+    expect(requests).toHaveLength(0);
+    expect(
+      parentEvents.filter((event) => event.type === SessionEventType.PermissionRequested),
+    ).toHaveLength(0);
+    // 工具调用被当作不可用工具回给子代理，turn 照常结束（第二次模型请求带着这条错误结果）。
+    expect(modelRequests).toHaveLength(2);
+    expect(modelRequests[1]).toContain("actor-question");
   });
 });
 

@@ -15,7 +15,11 @@
         "timingPolicy": "fast-text",
         "source": "synthetic",
         "syntheticReason": "固定模型响应以检查真实任务的 Host、项目与目录。"
-      }
+      },
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型响应以检查真实任务的 Host、项目与目录。"
     },
     {
       "id": "chat-remote-project-choice-a-first",
@@ -24,7 +28,11 @@
         "timingPolicy": "fast-text",
         "source": "synthetic",
         "syntheticReason": "固定模型响应以检查真实任务的 Host、项目与目录。"
-      }
+      },
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定模型响应以检查真实任务的 Host、项目与目录。"
     }
   ]
 }

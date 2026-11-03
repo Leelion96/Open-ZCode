@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-plan-directory-order",
+  "spec": "./test/e2e/conversation-session/conversation-session-plan-directory-order.test.ts",
+  "fixtures": [
+    {
+      "id": "plan-directory-title",
+      "description": "Upstream e2e title generation 的固定辅助响应，避免标题生成请求误命中业务 case fixture。",
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["Generate a concise title", "E2E_PLAN_DIRECTORY_ORDER"]
+      },
+      "response": {
+        "statusCode": 200,
+        "statusMessage": "OK",
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"upstream-e2e-title-fixture\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Upstream E2E Fixture\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":125,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":24,\"service_tier\":\"standard\"}}"
+      },
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定标题响应，计划审批和原始工具顺序仍走真实执行链路。"
+      }
+    },
+    {
+      "id": "upstream-plan-directory-enter-plan-call",
+      "description": "首轮请求稳定返回 EnterPlanMode 工具调用，制造 plan mode 审批前置状态。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "需要稳定制造 plan mode 状态，避免依赖真实模型是否选择 EnterPlanMode。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "lastUserMessageIncludes": ["E2E_PLAN_DIRECTORY_ORDER"],
+        "bodyIncludes": [
+          "E2E_PLAN_DIRECTORY_ORDER",
+          "E2E_PLAN_DIRECTORY_ENTER",
+          "E2E_PLAN_DIRECTORY_EXIT"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_plan_directory_enter_plan_mode",
+          "name": "EnterPlanMode",
+          "input": {}
+        }
+      }
+    },
+    {
+      "id": "upstream-plan-directory-exit-plan-call",
+      "description": "进入 plan mode 后返回 ExitPlanMode 工具调用，触发审批弹窗并携带唯一 plan marker。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "需要稳定触发 ExitPlanMode 审批弹窗，并让已批准 plan 内容可在文件和 compact 后请求中被追踪。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": ["E2E_PLAN_DIRECTORY_EXIT", "toolu_e2e_plan_directory_enter_plan_mode"],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "toolUse": {
+          "id": "toolu_e2e_plan_directory_exit_plan_mode",
+          "name": "ExitPlanMode",
+          "input": {
+            "plan": "# E2E_PLAN_DIRECTORY_TITLE\n\n1. Inspect the workspace.\n2. Report the result."
+          }
+        }
+      }
+    },
+    {
+      "id": "upstream-plan-directory-approval-final",
+      "description": "用户批准 plan 后返回固定文本，让审批轮进入 completed。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "审批通过后的回复内容不是本 case 核心，只需要稳定结束当前轮并保留 provider-visible approved plan。"
+      },
+      "maxMatches": 1,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/messages",
+        "bodyIncludes": [
+          "toolu_e2e_plan_directory_exit_plan_mode",
+          "User has approved your plan",
+          "E2E_PLAN_DIRECTORY_TITLE"
+        ],
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
+      },
+      "response": {
+        "statusCode": 200,
+        "text": {
+          "id": "upstream-e2e-plan-directory-approval-final",
+          "inputTokens": 192,
+          "outputTokens": 12,
+          "text": "E2E_PLAN_DIRECTORY_CONTINUATION"
+        }
+      }
+    }
+  ]
+}

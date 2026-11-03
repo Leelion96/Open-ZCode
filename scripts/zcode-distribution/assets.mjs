@@ -1,4 +1,4 @@
-import { chmod, cp, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, relative, resolve, sep } from "node:path";
 import {
@@ -190,11 +190,20 @@ export async function patchNodePtyPrebuilds(packageRoot) {
     if (!sourceStat?.isDirectory()) {
       continue;
     }
-    await cp(sourcePrebuildRoot, nodePtyPrebuildRoot, {
-      dereference: true,
-      force: true,
-      recursive: true,
-    });
+    for (const platformKey of await readdir(sourcePrebuildRoot)) {
+      const targetPrebuildDir = resolve(nodePtyPrebuildRoot, platformKey);
+      // Bug 原因：平台包是 1.2.0-beta.10（resize 要 5 个参数），旧逻辑整目录 force 覆盖，
+      // 把官方 node-pty 自带的同版本 darwin native 换掉，官方 JS 只传 3 个参数，macOS 终端
+      // resize 必然失败。官方包已自带的平台 prebuild 与其 JS 同版本，不能被覆盖；
+      // 平台包只补官方包缺失的平台。
+      if (await pathExists(targetPrebuildDir)) {
+        continue;
+      }
+      await cp(resolve(sourcePrebuildRoot, platformKey), targetPrebuildDir, {
+        dereference: true,
+        recursive: true,
+      });
+    }
   }
 
   for (const helper of [

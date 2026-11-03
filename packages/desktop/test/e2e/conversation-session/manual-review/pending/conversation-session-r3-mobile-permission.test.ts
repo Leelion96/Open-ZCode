@@ -1,4 +1,4 @@
-import { openMobilePairingPage } from "#e2e/helpers/mobile-pairing";
+import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
 import { readRemoteToolExecutionEvents } from "#e2e/helpers/remote-tool-execution-evidence";
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -225,6 +225,7 @@ describe(`${CASE_MARKER}: 权限阻塞在手机端呈现、重建手机 bridge �
         hasTouch: true,
         locale: "zh-CN",
       });
+      await seedMobileFixtureLogin(context);
       const page = await context.newPage();
       await openMobilePairingPage(page, pairUrl, {
         artifactDir,

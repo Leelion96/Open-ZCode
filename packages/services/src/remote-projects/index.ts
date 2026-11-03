@@ -35,18 +35,6 @@ function write<T>(db: DatabaseSync, body: () => T): T {
     throw error;
   }
 }
-function assertHostCapacity(db: DatabaseSync): void {
-  if (
-    Number(
-      db
-        .prepare(
-          "SELECT count(*) AS n FROM hosts WHERE host_id<>'local' AND target_json IS NOT NULL",
-        )
-        .get()?.n,
-    ) >= 20
-  )
-    throw new Error("remote-project.host-limit");
-}
 function entry(row: Record<string, unknown>): RemoteProjectEntry {
   return {
     id: String(row.entry_id),
@@ -58,6 +46,7 @@ function entry(row: Record<string, unknown>): RemoteProjectEntry {
       row.legacy_workspace_json == null ? null : JSON.parse(String(row.legacy_workspace_json)),
     lastSyncedAt: row.last_synced_at == null ? null : Number(row.last_synced_at),
     ...(row.initial_position == null ? {} : { initialPosition: Number(row.initial_position) }),
+    ...(Number(row.cached_deleted) ? { deleted: true as const } : {}),
   };
 }
 /** 不含连接运行态的本机目录；调用方负责 SQLite 读事务。 */
@@ -164,10 +153,10 @@ export function createRemoteProjectService(options: {
       const target = targetSchema.parse(input.target);
       const db = await options.database();
       const result = write(db, () => {
+        // 历史和未完成连接曾挤满固定配额；保存量不再限额，连接并发仍由连接管理器控制。
         const existing = db
           .prepare("SELECT membership_id FROM hosts WHERE host_id=? AND target_json IS NOT NULL")
           .get(input.id);
-        if (!existing) assertHostCapacity(db);
         db.prepare(`INSERT INTO hosts(host_id,kind,target_json,membership_id,position) VALUES(?,?,?,?,(SELECT coalesce(max(position),-1)+1 FROM hosts))
           ON CONFLICT(host_id) DO UPDATE SET kind=excluded.kind,target_json=excluded.target_json,membership_id=excluded.membership_id`).run(
           input.id,
@@ -214,7 +203,6 @@ export function createRemoteProjectService(options: {
             (host) => host.id === input.resolvedId,
           );
           if (retained) return retained;
-          assertHostCapacity(db);
           // 重装后的 Source 属于新设备身份，确认只新增连接，不搬旧入口。
           db.prepare(`INSERT INTO hosts(host_id,kind,target_json,membership_id,position)
             VALUES(?,?,?,?,(SELECT coalesce(max(position),-1)+1 FROM hosts))
@@ -300,8 +288,9 @@ export function createRemoteProjectService(options: {
           .prepare("SELECT * FROM remote_project_entries WHERE host_id=? AND remote_project_id=?")
           .get(input.hostId, project.projectId);
         const id = old ? String(old.entry_id) : randomUUID();
-        db.prepare(`INSERT INTO remote_project_entries(entry_id,host_id,remote_project_id,cached_name,cached_roots_json,last_synced_at) VALUES(?,?,?,?,?,?)
-          ON CONFLICT(entry_id) DO UPDATE SET cached_name=excluded.cached_name,cached_roots_json=excluded.cached_roots_json,last_synced_at=excluded.last_synced_at`).run(
+        // 显式添加只针对可用项目（新建或恢复），删除态缓存随之清零。
+        db.prepare(`INSERT INTO remote_project_entries(entry_id,host_id,remote_project_id,cached_name,cached_roots_json,last_synced_at,cached_deleted) VALUES(?,?,?,?,?,?,0)
+          ON CONFLICT(entry_id) DO UPDATE SET cached_name=excluded.cached_name,cached_roots_json=excluded.cached_roots_json,last_synced_at=excluded.last_synced_at,cached_deleted=0`).run(
           id,
           input.hostId,
           project.projectId,
@@ -346,12 +335,14 @@ export function createRemoteProjectService(options: {
           return { applied: true, changed: true };
         }
         const roots = JSON.stringify(project.roots);
+        const deleted = project.deleted ? 1 : 0;
         db.prepare(
-          `UPDATE remote_project_entries SET remote_project_id=?,cached_name=?,cached_roots_json=?,last_synced_at=? WHERE entry_id=?`,
+          `UPDATE remote_project_entries SET remote_project_id=?,cached_name=?,cached_roots_json=?,cached_deleted=?,last_synced_at=? WHERE entry_id=?`,
         ).run(
           project.projectId,
           project.name,
           roots,
+          deleted,
           nextVersion(input.expectedLastSyncedAt),
           input.entryId,
         );
@@ -360,7 +351,8 @@ export function createRemoteProjectService(options: {
           changed:
             previous.remote_project_id !== project.projectId ||
             previous.cached_name !== project.name ||
-            previous.cached_roots_json !== roots,
+            previous.cached_roots_json !== roots ||
+            Number(previous.cached_deleted) !== deleted,
         };
       });
       // 不变内容仍消费版本，但不广播，避免刷新回读形成反馈循环。

@@ -130,7 +130,10 @@ describe("new-turn task notification context usage", () => {
       expect(requests).toHaveLength(2);
       const notification = requests[1]!.at(-1)!;
       expect(notification.role).toBe("user");
-      expect(notification.content).toContain(notificationBody);
+      // 每条通知各自包装，正文逐条出现在请求里。
+      for (const part of notificationBody.split("\n\n")) {
+        expect(notification.content).toContain(part);
+      }
       expect(JSON.stringify(requests)).not.toContain("sourceEntries");
       const completions = (await eventStore.getEvents(sessionId)).filter(
         (event) => event.type === SessionEventType.ModelComplete,

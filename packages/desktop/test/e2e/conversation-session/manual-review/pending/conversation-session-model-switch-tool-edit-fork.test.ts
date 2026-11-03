@@ -19,19 +19,24 @@ import {
 } from "../../../helpers/upstream-provider.js";
 import {
   E2E_REPLY_TOKEN,
+  clickV4Stop,
+  getV4ConversationState,
+  prepareV4ConversationE2E,
+  sendV4Prompt,
+  startNewV4Draft,
+  waitForV4AssistantMessageContaining,
+  waitForV4ConversationState,
+  waitForV4ComposerText,
+  waitForV4UserMessageContaining,
+} from "#e2e/helpers/v4-conversation";
+import {
   buildReadonlyToolPrompt,
-  clickChatStop,
-  clickForkButtonForAssistantContaining,
-  editUserMessageContaining,
-  getChatRootSnapshot,
-  prepareConversationE2E,
-  sendPrompt,
-  startNewTask,
-  waitForAssistantMessageContaining,
-  waitForChatState,
-  waitForComposerText,
-  waitForUserMessageContaining,
-} from "../../../helpers/conversation-session.js";
+  ensureReadonlyToolFixtureFile,
+} from "#e2e/helpers/conversation-session-readonly-tool";
+import { forkV4AssistantContaining as clickForkButtonForAssistantContaining } from "#e2e/helpers/v4-message-actions";
+
+import { editV4UserMessageContaining as editUserMessageContaining } from "#e2e/helpers/v4-message-actions";
+
 import type {
   E2ENetworkCaptureArtifact,
   E2ENetworkCaptureRecord,
@@ -44,7 +49,9 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
   before(async function () {
     this.timeout(120000);
 
-    await prepareConversationE2E();
+    await prepareV4ConversationE2E();
+    // 原因：旧聚合 helper 隐式创建只读文件；V4 用例显式保留工具执行前置。
+    await ensureReadonlyToolFixtureFile();
     await ensureUpstreamModelForE2E(UPSTREAM_SECONDARY_MODEL);
   });
 
@@ -63,9 +70,9 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
     await startCaseWithPrimaryModel();
     const marker = `E2E_FIRST_SEND_MSW_TOOL_${Date.now()}`;
 
-    await sendPrompt(buildReadonlyToolPrompt(marker));
-    await waitForComposerText("", "tool model switch: 首发后输入框没有清空");
-    await waitForUserMessageContaining(marker);
+    await sendV4Prompt(buildReadonlyToolPrompt(marker));
+    await waitForV4ComposerText("", "tool model switch: 首发后输入框没有清空");
+    await waitForV4UserMessageContaining(marker);
     await trySwitchToSecondaryModelDuringToolProbe();
 
     const requestRecord = await waitForUpstreamRecordContaining(
@@ -74,8 +81,8 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
       90000,
     );
     expect(readCaptureModel(requestRecord)).toBeTruthy();
-    await waitForAssistantMessageContaining(E2E_REPLY_TOKEN);
-    await waitForChatState(
+    await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN);
+    await waitForV4ConversationState(
       (snapshot) => snapshot.state === "idle" && snapshot.queueCount === 0,
       "tool model switch: 探针请求没有完成",
       90000,
@@ -90,16 +97,16 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
     const sourceMarker = `E2E_MSW_EDIT_SOURCE_${runId}`;
     const rerunMarker = `E2E_MSW_EDIT_RERUN_${runId}`;
 
-    await sendPrompt(simpleReplyPrompt(sourceMarker));
-    await waitForComposerText("", "edit model switch: source 发送后输入框没有清空");
-    await waitForUserMessageContaining(sourceMarker);
+    await sendV4Prompt(simpleReplyPrompt(sourceMarker));
+    await waitForV4ComposerText("", "edit model switch: source 发送后输入框没有清空");
+    await waitForV4UserMessageContaining(sourceMarker);
     expect(readCaptureModel(await waitForUpstreamRecordContaining([sourceMarker]))).toBeTruthy();
     await waitForCompletedAssistant("edit model switch: source 没有完成");
 
     await switchToSecondaryModel();
     await editUserMessageContaining(sourceMarker, simpleReplyPrompt(rerunMarker));
-    await waitForComposerText("", "edit model switch: edit 提交后输入框没有清空");
-    await waitForUserMessageContaining(rerunMarker);
+    await waitForV4ComposerText("", "edit model switch: edit 提交后输入框没有清空");
+    await waitForV4UserMessageContaining(rerunMarker);
     const rerunRecord = await waitForUpstreamRecordContaining([rerunMarker]);
     assertUpstreamConfig(rerunRecord, rerunMarker, {
       model: UPSTREAM_SECONDARY_MODEL,
@@ -116,10 +123,10 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
     const sourceMarker = `E2E_MSW_FORK_SOURCE_${runId}`;
     const followupMarker = `E2E_MSW_FORK_FOLLOWUP_${runId}`;
 
-    await sendPrompt(simpleReplyPrompt(sourceMarker));
-    await waitForComposerText("", "fork model switch: source 发送后输入框没有清空");
-    await waitForUserMessageContaining(sourceMarker);
-    const sourceSnapshot = await waitForChatState(
+    await sendV4Prompt(simpleReplyPrompt(sourceMarker));
+    await waitForV4ComposerText("", "fork model switch: source 发送后输入框没有清空");
+    await waitForV4UserMessageContaining(sourceMarker);
+    const sourceSnapshot = await waitForV4ConversationState(
       (snapshot) => Boolean(snapshot.sessionId || snapshot.taskId),
       "fork model switch: source 没有创建 session",
       30000,
@@ -129,7 +136,7 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
 
     await switchToSecondaryModel();
     await clickForkButtonForAssistantContaining(E2E_REPLY_TOKEN);
-    const forkedSnapshot = await waitForChatState(
+    const forkedSnapshot = await waitForV4ConversationState(
       (snapshot) =>
         Boolean(snapshot.sessionId || snapshot.taskId) &&
         (snapshot.sessionId || snapshot.taskId) !==
@@ -140,7 +147,7 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
     expect(forkedSnapshot.queueCount).toBe(0);
     const forkedSessionId = forkedSnapshot.sessionId || forkedSnapshot.taskId;
     expect(forkedSessionId).toBeTruthy();
-    await waitForChatState(
+    await waitForV4ConversationState(
       (snapshot) =>
         (snapshot.sessionId || snapshot.taskId) === forkedSessionId &&
         snapshot.state === "idle" &&
@@ -150,9 +157,9 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
     );
     await expectToolbarConfig(UPSTREAM_SECONDARY_MODEL, UPSTREAM_SECONDARY_THOUGHT_LEVEL);
 
-    await sendPrompt(simpleReplyPrompt(followupMarker));
-    await waitForComposerText("", "fork model switch: followup 发送后输入框没有清空");
-    await waitForUserMessageContaining(followupMarker);
+    await sendV4Prompt(simpleReplyPrompt(followupMarker));
+    await waitForV4ComposerText("", "fork model switch: followup 发送后输入框没有清空");
+    await waitForV4UserMessageContaining(followupMarker);
     const followupRecord = await waitForUpstreamRecordContaining([followupMarker]);
     assertUpstreamConfig(followupRecord, followupMarker, {
       model: UPSTREAM_SECONDARY_MODEL,
@@ -163,7 +170,7 @@ describe("会话区模型切换 Tool/Edit/Fork 交集 E2E", () => {
 });
 
 async function startCaseWithPrimaryModel() {
-  await startNewTask();
+  await startNewV4Draft();
   await selectUpstreamModelById(UPSTREAM_MODEL);
   if (UPSTREAM_THOUGHT_LEVEL) {
     await selectUpstreamThoughtLevelValue(UPSTREAM_THOUGHT_LEVEL);
@@ -198,23 +205,20 @@ async function trySwitchToSecondaryModelDuringToolProbe() {
 function isExpectedToolProbeModelSwitchError(message: string) {
   return (
     message.includes(UPSTREAM_SECONDARY_MODEL) &&
-    (message.includes("聊天工具栏没有出现") ||
-      message.includes("上游 模型没有切换到"))
+    (message.includes("聊天工具栏没有出现") || message.includes("上游 模型没有切换到"))
   );
 }
 
 async function confirmModelSwitchCompressionDialogIfPresent(modelId: string) {
   // Bugfix: edit/fork 用例不验证压缩弹窗本身，但历史 task 切到较小目标模型时
   // 会被 context guard 暂停；E2E 必须确认压缩，否则后续模型继承断言不会进入真实路径。
-  const hasDialog = await waitForModelSwitchCompressionDialog(250).catch(
-    () => false,
-  );
+  const hasDialog = await waitForModelSwitchCompressionDialog(250).catch(() => false);
   if (!hasDialog) {
     return false;
   }
 
   await confirmModelSwitchCompressionDialog();
-  await waitForChatState(
+  await waitForV4ConversationState(
     (snapshot) => !snapshot.modelSwitchPending,
     `模型 ${modelId} guard 压缩后切换 pending 状态没有结束`,
     120000,
@@ -227,11 +231,8 @@ async function confirmModelSwitchCompressionDialog() {
   await waitForModelSwitchCompressionDialog(15000);
 
   const clicked = await browser.execute(() => {
-    const dialog =
-      document.querySelector<HTMLElement>('[role="dialog"]') ?? document.body;
-    const buttons = Array.from(
-      dialog.querySelectorAll<HTMLButtonElement>("button"),
-    );
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]') ?? document.body;
+    const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button"));
     const confirmButton = buttons.find((button) => {
       const text = button.innerText.replace(/\s+/g, " ").trim();
       return (
@@ -272,8 +273,8 @@ function simpleReplyPrompt(marker: string) {
 }
 
 async function waitForCompletedAssistant(timeoutMsg: string) {
-  await waitForAssistantMessageContaining(E2E_REPLY_TOKEN);
-  await waitForChatState(
+  await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN);
+  await waitForV4ConversationState(
     (snapshot) => snapshot.state === "idle" && snapshot.queueCount === 0,
     timeoutMsg,
     90000,
@@ -297,12 +298,13 @@ async function expectToolbarConfig(model: string, thoughtLevel: string) {
   const labelCandidates = Object.values(thoughtLabel)
     .map((value) => value.replace(/\s+/g, " ").trim().toLowerCase())
     .filter(Boolean);
-  const expectedLabels = [
-    thoughtLevel,
-    ...getUpstreamThoughtLevelLabels(thoughtLevel),
-  ].map((label) => label.replace(/\s+/g, " ").trim().toLowerCase());
+  const expectedLabels = [thoughtLevel, ...getUpstreamThoughtLevelLabels(thoughtLevel)].map(
+    (label) => label.replace(/\s+/g, " ").trim().toLowerCase(),
+  );
   const matchedThoughtLevel = labelCandidates.some((label) =>
-    expectedLabels.some((expectedLabel) => label === expectedLabel || label.includes(expectedLabel)),
+    expectedLabels.some(
+      (expectedLabel) => label === expectedLabel || label.includes(expectedLabel),
+    ),
   );
   if (!matchedThoughtLevel) {
     throw new Error(
@@ -370,10 +372,7 @@ async function readUpstreamCaptureArtifact(): Promise<E2ENetworkCaptureArtifact 
   }
 }
 
-function findLastUpstreamRecord(
-  artifact: E2ENetworkCaptureArtifact | null,
-  includes: string[],
-) {
+function findLastUpstreamRecord(artifact: E2ENetworkCaptureArtifact | null, includes: string[]) {
   const records = artifact?.records ?? [];
   for (let index = records.length - 1; index >= 0; index -= 1) {
     const record = records[index]!;
@@ -384,10 +383,7 @@ function findLastUpstreamRecord(
   return null;
 }
 
-function matchesUpstreamRecord(
-  record: E2ENetworkCaptureRecord,
-  includes: string[],
-) {
+function matchesUpstreamRecord(record: E2ENetworkCaptureRecord, includes: string[]) {
   return (
     record.status === "complete" &&
     record.statusCode !== undefined &&
@@ -398,9 +394,7 @@ function matchesUpstreamRecord(
   );
 }
 
-function summarizeUpstreamCaptureArtifact(
-  artifact: E2ENetworkCaptureArtifact | null,
-) {
+function summarizeUpstreamCaptureArtifact(artifact: E2ENetworkCaptureArtifact | null) {
   return {
     configured: Boolean(process.env.E2E_PROVIDER_CAPTURE_PATH),
     recordCount: artifact?.records.length ?? 0,
@@ -441,12 +435,12 @@ function captureContainsText(value: unknown, expected: string): boolean {
 }
 
 async function stopIfBusy() {
-  const snapshot = await getChatRootSnapshot().catch(() => null);
+  const snapshot = await getV4ConversationState().catch(() => null);
   if (snapshot?.state !== "streaming") {
     return;
   }
-  await clickChatStop().catch(() => undefined);
-  await waitForChatState(
+  await clickV4Stop().catch(() => undefined);
+  await waitForV4ConversationState(
     (candidate) => candidate.state !== "streaming",
     "afterEach stop 后没有退出 streaming",
     30000,

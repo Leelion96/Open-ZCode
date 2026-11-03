@@ -1,17 +1,16 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { encodeCustomModelValue } from "@zcode/shared";
+import { encodeCustomModelValue, resolveWorkspaceKey } from "@zcode/shared";
 import {
   TID_AUTOMATION_CREATE_MANUALLY,
+  TID_AUTOMATION_CREATE_MENU,
   TID_AUTOMATION_FORM_PROMPT,
   TID_AUTOMATION_FORM_SUBMIT,
   TID_AUTOMATION_FORM_TITLE,
   TID_AUTOMATION_FREQUENCY_OPTION,
   TID_AUTOMATION_SCHEDULE_ADD,
   TID_AUTOMATIONS_OPEN,
-  TID_COMPOSER_WORK_OUTSIDE_PROJECT,
-  TID_COMPOSER_WORKSPACE_TRIGGER,
   TID_CONVERSATION_SECTION,
   TID_PROJECT_SECTION,
   TID_TASK_ITEM,
@@ -19,6 +18,7 @@ import {
 } from "@zcode/shared/test-ids";
 import {
   DEFAULT_CONVERSATION_WORKSPACE,
+  DEFAULT_WORKSPACE,
   clearAppData,
   clickTestIdByDom,
   clickTestIdByWebDriver,
@@ -61,8 +61,15 @@ describe("TSL38：定时任务后台执行完成后点击清除未读", () => {
             "select automation_id, model_selection, enabled, lifecycle_status, next_run_at, dispatch_status, last_error, retry_at from automations where title = ?",
           )
           .all(AUTOMATION_TITLE),
+        tasks: database
+          .prepare(
+            "select task_id, cron_automation_id, unread_at, workspace_path, deleted, meta_json from tasks",
+          )
+          .all(),
         runs: database
-          .prepare("select run_id, model_selection, dispatch_status, error from automation_runs")
+          .prepare(
+            "select run_id, session_id, model_selection, dispatch_status, error from automation_runs",
+          )
           .all(),
       });
       console.info("[Todo88 automation UI]", await browser.execute(() => document.body.innerText));
@@ -95,6 +102,8 @@ describe("TSL38：定时任务后台执行完成后点击清除未读", () => {
 
     // 复现目标：停留在 Automations route，等待 scheduler 真正派发后直接点击蓝点会话。
     await openUnreadTaskAndWaitUntilRead(taskId, "scheduler");
+    // 运行记录能定位真实 session，但不能替代任务本身应保留的自动化归属。
+    expect(readTaskIndexState(taskId)?.automationId).toBe(automationId);
   });
 });
 
@@ -143,14 +152,9 @@ async function createScheduledAutomationAndMakeDue(): Promise<string> {
   await clickTestIdByDom(TID_AUTOMATIONS_OPEN, {
     timeoutMsg: "侧栏没有出现 Automations 入口",
   });
+  await clickTestIdByWebDriver(TID_AUTOMATION_CREATE_MENU);
   await clickTestIdByDom(TID_AUTOMATION_CREATE_MANUALLY, {
     timeoutMsg: "定时任务没有手动创建入口",
-  });
-  await clickTestIdByWebDriver(TID_COMPOSER_WORKSPACE_TRIGGER, {
-    timeoutMsg: "定时任务创建页没有工作区选择器",
-  });
-  await clickTestIdByDom(TID_COMPOSER_WORK_OUTSIDE_PROJECT, {
-    timeoutMsg: "定时任务工作区菜单没有「不在项目中工作」入口",
   });
   await setInputValueByTestIdDom(TID_AUTOMATION_FORM_TITLE, AUTOMATION_TITLE);
   await setInputValueByTestIdDom(TID_AUTOMATION_FORM_PROMPT, RUN_PROMPT);
@@ -164,12 +168,13 @@ async function createScheduledAutomationAndMakeDue(): Promise<string> {
     timeoutMsg: "定时任务创建按钮不可点击",
   });
   const automation = await waitForAutomationByTitle(AUTOMATION_TITLE);
-  if (automation.workspacePath !== DEFAULT_CONVERSATION_WORKSPACE) {
+  if (automation.workspacePath !== DEFAULT_WORKSPACE) {
     throw new Error(
-      `定时任务错误绑定项目空间：expected=${DEFAULT_CONVERSATION_WORKSPACE}; actual=${automation.workspacePath}`,
+      `定时任务模板未绑定默认项目：expected=${DEFAULT_WORKSPACE}; actual=${automation.workspacePath}`,
     );
   }
-  // 旧数据只在应用完全退出后注入；重启后不编辑任务、不调用迁移函数，由后台首次派发导入。
+  // 当前创建表单只接受项目；非项目遗留任务在完全退出后播种，保留未读与迁移原场景。
+  // 重启后不编辑任务、不调用迁移函数，由后台首次派发导入。
   await reloadElectronSessionSafely(browser, {
     afterElectronProcessExit: async () => seedLegacyAutomationSelection(automation.automationId),
   });
@@ -268,11 +273,11 @@ function readLatestUnreadTaskIndexState(automationId: string): TaskIndexState | 
   try {
     const row = database
       .prepare(
-        `select task_id as taskId, cron_automation_id as automationId,
-                unread_at as unreadAt, workspace_path as workspacePath
-         from tasks
-         where cron_automation_id = ? and unread_at is not null and deleted = 0
-         order by created_at desc, task_id desc
+        `select t.task_id as taskId, t.cron_automation_id as automationId,
+                t.unread_at as unreadAt, t.workspace_path as workspacePath
+         from automation_runs r join tasks t on t.task_id = r.session_id
+         where r.automation_id = ? and t.unread_at is not null and t.deleted = 0
+         order by r.created_at desc, t.task_id desc
          limit 1`,
       )
       .get(automationId) as TaskIndexState | undefined;
@@ -316,13 +321,25 @@ function seedLegacyAutomationSelection(automationId: string): void {
     const result = database
       .prepare(
         `update automations set next_run_at = NULL, retry_at = null, running = 0,
-           provider = 'zcode', model = ?, thought_level = 'high', model_selection = NULL
+           provider = 'zcode', model = ?, thought_level = 'high', model_selection = NULL,
+           workspace_key = ?, workspace_path = ?, workspace_identity = NULL,
+           project_id = NULL, additional_directories = NULL
          where automation_id = ?`,
       )
-      .run(encodeCustomModelValue(UPSTREAM_PROVIDER_ID, UPSTREAM_MODEL), automationId);
+      .run(
+        encodeCustomModelValue(UPSTREAM_PROVIDER_ID, UPSTREAM_MODEL),
+        resolveWorkspaceKey({ workspacePath: DEFAULT_CONVERSATION_WORKSPACE }),
+        DEFAULT_CONVERSATION_WORKSPACE,
+        automationId,
+      );
     if (result.changes !== 1) {
       throw new Error("无法把定时任务推进到 scheduler 到期窗口：" + automationId);
     }
+    // 原因：当前库已登记选择迁移完成，只写旧字段不会再次导入。
+    // 夹具在完整退出后将这一项迁移恢复为待应用；仍由真实启动流程执行迁移。
+    database
+      .prepare("delete from tasks_schema_migration where id = ?")
+      .run("0002_provider_selection");
   } finally {
     database.close();
   }

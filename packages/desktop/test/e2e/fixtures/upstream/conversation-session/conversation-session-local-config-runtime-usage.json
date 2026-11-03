@@ -1,0 +1,986 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-local-config-runtime-usage",
+  "spec": "./test/e2e/conversation-session/conversation-session-local-config-runtime-usage.test.ts",
+  "fixtures": [
+    {
+      "id": "dsync-18-title",
+      "description": "各 task 首发的标题生成。",
+      "metadata": {
+        "kind": "common",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "标题不属于可用性断言，只需保持 task 行稳定。"
+      },
+      "maxMatches": 20,
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["Generate a concise title", "E2E_DSYNC_18_LOCAL_RUNTIME"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"DSYNC 18 local runtime\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-subagent-reply",
+      "description": "子智能体按新建的定义运行：系统提示含子智能体正文时回复完成标记。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定子智能体回复，证明本机用的是刚新建的子智能体定义。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_AGENT_TASK"],
+        "bodyIncludes": ["E2E_DSYNC_18_AGENT_BODY"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-subagent\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"E2E_DSYNC_18_AGENT_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-subagent\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-subagent-wrong-profile",
+      "description": "子智能体请求没有带新建的定义正文。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "定义缺失时得到可断言的错误回复，而不是回放未命中。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_AGENT_TASK"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-subagent-wrong\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"E2E_DSYNC_18_AGENT_WRONG_PROFILE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-subagent-wrong\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-skill_existing-final",
+      "description": "Skill 工具结果返回后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME", "call_dsync18_skill_existing"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT_EXISTING:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MCP:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_INLINE:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MARKET:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_NEW:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-SKILL_EXISTING-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_SKILL_EXISTING_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-SKILL_EXISTING-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-agent_existing-final",
+      "description": "Agent 工具结果返回后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME", "call_dsync18_agent_existing"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MCP:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_INLINE:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MARKET:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_NEW:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-AGENT_EXISTING-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_AGENT_EXISTING_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-AGENT_EXISTING-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-mcp-final",
+      "description": "mcp__e2e-dsync-18-mcp__marker 工具结果返回后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME", "call_dsync18_mcp"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_INLINE:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MARKET:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_NEW:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-MCP-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_MCP_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-MCP-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-inline-final",
+      "description": "mcp__plugin_e2e-dsync-18-inline_rt__marker 工具结果返回后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME", "call_dsync18_inline"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MARKET:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_NEW:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-INLINE-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_INLINE_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-INLINE-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-market-final",
+      "description": "mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker 工具结果返回后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME", "call_dsync18_market"],
+        "bodyExcludes": [
+          "Generate a concise title",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_NEW:",
+          "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT:"
+        ]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-MARKET-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_MARKET_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-MARKET-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-skill_new-final",
+      "description": "Skill 工具结果返回后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME", "call_dsync18_skill_new"],
+        "bodyExcludes": ["Generate a concise title", "E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT:"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-SKILL_NEW-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_SKILL_NEW_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-SKILL_NEW-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-agent-final",
+      "description": "Agent 工具结果返回后的最终回复。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "bodyIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME", "call_dsync18_agent"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-AGENT-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_AGENT_DONE\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-AGENT-final\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-skill_existing-call",
+      "description": "模型请求暴露新建内容时调用 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定工具调用，检查本机是否真的执行新建的内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_EXISTING:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_skill_existing"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-SKILL_EXISTING-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-SKILL_EXISTING-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_dsync18_skill_existing\",\"type\":\"function\",\"function\":{\"name\":\"Skill\",\"arguments\":\"{\\\"skill\\\":\\\"e2e-dsync-18-skill\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-SKILL_EXISTING-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-skill_existing-not-exposed",
+      "description": "模型请求没有暴露 Skill 所需的新建内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "新建内容不可见时给出可断言的回复，而不是回放未命中。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_EXISTING:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_skill_existing"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-SKILL_EXISTING-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_SKILL_EXISTING_NOT_EXPOSED\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-SKILL_EXISTING-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-agent_existing-call",
+      "description": "模型请求暴露新建内容时调用 Agent。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定工具调用，检查本机是否真的执行新建的内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT_EXISTING:"],
+        "bodyIncludes": ["E2E_DSYNC_18_AGENT_DESC"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_agent_existing"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-AGENT_EXISTING-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-AGENT_EXISTING-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_dsync18_agent_existing\",\"type\":\"function\",\"function\":{\"name\":\"Agent\",\"arguments\":\"{\\\"description\\\":\\\"dsync18 subagent\\\",\\\"prompt\\\":\\\"E2E_DSYNC_18_AGENT_TASK: 只回复 E2E_DSYNC_18_AGENT_DONE\\\",\\\"subagent_type\\\":\\\"e2e-dsync-18-agent\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-AGENT_EXISTING-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-agent_existing-not-exposed",
+      "description": "模型请求没有暴露 Agent 所需的新建内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "新建内容不可见时给出可断言的回复，而不是回放未命中。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT_EXISTING:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_agent_existing"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-AGENT_EXISTING-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_AGENT_EXISTING_NOT_EXPOSED\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-AGENT_EXISTING-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-mcp-call",
+      "description": "模型请求暴露新建内容时调用 mcp__e2e-dsync-18-mcp__marker。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定工具调用，检查本机是否真的执行新建的内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MCP:"],
+        "bodyIncludes": ["mcp__e2e-dsync-18-mcp__marker"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_mcp"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-MCP-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-MCP-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_dsync18_mcp\",\"type\":\"function\",\"function\":{\"name\":\"mcp__e2e-dsync-18-mcp__marker\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-MCP-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-mcp-not-exposed",
+      "description": "模型请求没有暴露 mcp__e2e-dsync-18-mcp__marker 所需的新建内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "新建内容不可见时给出可断言的回复，而不是回放未命中。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MCP:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_mcp"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-MCP-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_MCP_NOT_EXPOSED\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-MCP-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-inline-call",
+      "description": "模型请求暴露新建内容时调用 mcp__plugin_e2e-dsync-18-inline_rt__marker。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定工具调用，检查本机是否真的执行新建的内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_INLINE:"],
+        "bodyIncludes": ["mcp__plugin_e2e-dsync-18-inline_rt__marker"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_inline"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-INLINE-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-INLINE-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_dsync18_inline\",\"type\":\"function\",\"function\":{\"name\":\"mcp__plugin_e2e-dsync-18-inline_rt__marker\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-INLINE-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-inline-not-exposed",
+      "description": "模型请求没有暴露 mcp__plugin_e2e-dsync-18-inline_rt__marker 所需的新建内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "新建内容不可见时给出可断言的回复，而不是回放未命中。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_INLINE:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_inline"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-INLINE-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_INLINE_NOT_EXPOSED\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-INLINE-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-market-call",
+      "description": "模型请求暴露新建内容时调用 mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定工具调用，检查本机是否真的执行新建的内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MARKET:"],
+        "bodyIncludes": ["mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_market"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-MARKET-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-MARKET-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_dsync18_market\",\"type\":\"function\",\"function\":{\"name\":\"mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker\",\"arguments\":\"{}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-MARKET-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-market-not-exposed",
+      "description": "模型请求没有暴露 mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker 所需的新建内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "新建内容不可见时给出可断言的回复，而不是回放未命中。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_MARKET:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_market"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-MARKET-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_MARKET_NOT_EXPOSED\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-MARKET-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-skill_new-call",
+      "description": "模型请求暴露新建内容时调用 Skill。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定工具调用，检查本机是否真的执行新建的内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_NEW:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_skill_new"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-SKILL_NEW-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-SKILL_NEW-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_dsync18_skill_new\",\"type\":\"function\",\"function\":{\"name\":\"Skill\",\"arguments\":\"{\\\"skill\\\":\\\"e2e-dsync-18-skill\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-SKILL_NEW-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-skill_new-not-exposed",
+      "description": "模型请求没有暴露 Skill 所需的新建内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "新建内容不可见时给出可断言的回复，而不是回放未命中。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_SKILL_NEW:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_skill_new"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-SKILL_NEW-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_SKILL_NEW_NOT_EXPOSED\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-SKILL_NEW-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-agent-call",
+      "description": "模型请求暴露新建内容时调用 Agent。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "tool-use",
+        "source": "synthetic",
+        "syntheticReason": "固定工具调用，检查本机是否真的执行新建的内容。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT:"],
+        "bodyIncludes": ["E2E_DSYNC_18_AGENT_DESC"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_agent"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-AGENT-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-AGENT-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_dsync18_agent\",\"type\":\"function\",\"function\":{\"name\":\"Agent\",\"arguments\":\"{\\\"description\\\":\\\"dsync18 subagent\\\",\\\"prompt\\\":\\\"E2E_DSYNC_18_AGENT_TASK: 只回复 E2E_DSYNC_18_AGENT_DONE\\\",\\\"subagent_type\\\":\\\"e2e-dsync-18-agent\\\"}\"}}]},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-AGENT-call\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-run-agent-not-exposed",
+      "description": "模型请求没有暴露 Agent 所需的新建内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "新建内容不可见时给出可断言的回复，而不是回放未命中。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_RUN_AGENT:"],
+        "bodyExcludes": ["Generate a concise title", "call_dsync18_agent"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-AGENT-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_RUN_AGENT_NOT_EXPOSED\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-AGENT-not-exposed\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-first-turn",
+      "description": "新建配置前 task A 的首发（对照组）。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "建立配置变更前已存在的本机会话。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_A_FIRST_PROMPT"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-first\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_LOCAL_RUNTIME_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-first\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-draft-subagent",
+      "description": "探针轮次 DRAFT_SUBAGENT：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_DRAFT_SUBAGENT:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-DRAFT_SUBAGENT\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_DRAFT_SUBAGENT_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-DRAFT_SUBAGENT\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-draft-subagent-2",
+      "description": "探针轮次 DRAFT_SUBAGENT_2：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_DRAFT_SUBAGENT_2:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-DRAFT_SUBAGENT_2\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_DRAFT_SUBAGENT_2_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-DRAFT_SUBAGENT_2\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-existing-subagent",
+      "description": "探针轮次 EXISTING_SUBAGENT：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_EXISTING_SUBAGENT:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-EXISTING_SUBAGENT\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_EXISTING_SUBAGENT_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-EXISTING_SUBAGENT\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-draft-mcp",
+      "description": "探针轮次 DRAFT_MCP：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_DRAFT_MCP:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-DRAFT_MCP\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_DRAFT_MCP_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-DRAFT_MCP\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-existing-mcp",
+      "description": "探针轮次 EXISTING_MCP：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_EXISTING_MCP:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-EXISTING_MCP\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_EXISTING_MCP_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-EXISTING_MCP\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-draft-hook",
+      "description": "探针轮次 DRAFT_HOOK：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_DRAFT_HOOK:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-DRAFT_HOOK\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_DRAFT_HOOK_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-DRAFT_HOOK\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-existing-hook",
+      "description": "探针轮次 EXISTING_HOOK：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_EXISTING_HOOK:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-EXISTING_HOOK\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_EXISTING_HOOK_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-EXISTING_HOOK\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-draft-skill",
+      "description": "探针轮次 DRAFT_SKILL：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_DRAFT_SKILL:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-DRAFT_SKILL\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_DRAFT_SKILL_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-DRAFT_SKILL\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-existing-skill",
+      "description": "探针轮次 EXISTING_SKILL：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_EXISTING_SKILL:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-EXISTING_SKILL\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_EXISTING_SKILL_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-EXISTING_SKILL\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-draft-inline",
+      "description": "探针轮次 DRAFT_INLINE：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_DRAFT_INLINE:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-DRAFT_INLINE\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_DRAFT_INLINE_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-DRAFT_INLINE\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-existing-inline",
+      "description": "探针轮次 EXISTING_INLINE：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_EXISTING_INLINE:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-EXISTING_INLINE\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_EXISTING_INLINE_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-EXISTING_INLINE\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-existing-market",
+      "description": "探针轮次 EXISTING_MARKET：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_EXISTING_MARKET:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-EXISTING_MARKET\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_EXISTING_MARKET_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-EXISTING_MARKET\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-probe-new",
+      "description": "探针轮次 NEW：只回复固定文本，用模型请求判断可见内容。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_LOCAL_RUNTIME_PROBE_NEW:"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-probe-NEW\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_PROBE_NEW_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-probe-NEW\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-command-draft",
+      "description": "命令轮次 DRAFT：检查 /命令 是否展开为命令正文。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "命令展开发生在 CLI，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_CMD_DRAFT"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-command-DRAFT\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_CMD_DRAFT_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-command-DRAFT\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-command-existing",
+      "description": "命令轮次 EXISTING：检查 /命令 是否展开为命令正文。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "命令展开发生在 CLI，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_CMD_EXISTING"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-command-EXISTING\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_CMD_EXISTING_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-command-EXISTING\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    },
+    {
+      "id": "dsync-18-command-new",
+      "description": "命令轮次 NEW：检查 /命令 是否展开为命令正文。",
+      "metadata": {
+        "kind": "main",
+        "timingPolicy": "fast-text",
+        "source": "synthetic",
+        "syntheticReason": "命令展开发生在 CLI，断言读取本轮模型请求。"
+      },
+      "match": {
+        "method": "POST",
+        "pathIncludes": "/chat/completions",
+        "lastUserMessageIncludes": ["E2E_DSYNC_18_CMD_NEW"],
+        "bodyExcludes": ["Generate a concise title"]
+      },
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
+        "body": "data: {\"id\":\"dsync-18-command-NEW\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"DSYNC_18_CMD_NEW_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"dsync-18-command-NEW\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-dsync-18-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+      }
+    }
+  ]
+}

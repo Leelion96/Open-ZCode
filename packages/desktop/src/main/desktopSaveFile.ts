@@ -60,9 +60,7 @@ function parseRemoteImageUrl(value: unknown): URL | null {
   }
 }
 
-async function resolvePublicRemoteUrl(
-  url: URL,
-): Promise<LookupAddress[]> {
+async function resolvePublicRemoteUrl(url: URL): Promise<LookupAddress[]> {
   const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     throw new SaveFileError("remote_address_not_allowed");
@@ -134,10 +132,7 @@ async function fetchPublicRemoteUrl(
   throw new SaveFileError("download_failed");
 }
 
-async function downloadRemoteFile(
-  sourceUrl: URL,
-  destinationPath: string,
-): Promise<void> {
+async function downloadRemoteFile(sourceUrl: URL, destinationPath: string): Promise<void> {
   const controller = new AbortController();
   const temporaryDirectory = await mkdtemp(join(tmpdir(), "zcode-save-file-"));
   const temporaryPath = join(temporaryDirectory, "download");
@@ -200,9 +195,7 @@ export function registerDesktopSaveFileIpcHandler(logger: { warn: (...args: unkn
       if (!suggestedName || (sourceUrl === null && !hasData)) {
         return { success: false, error: "invalid_file_payload" };
       }
-      if (data && data.byteLength === 0) {
-        return { success: false, error: "invalid_file_payload" };
-      }
+      // 通用“另存为”必须保留零字节原文件；远程下载仍单独拒绝空响应。
       if (data && data.byteLength > MAX_SAVE_FILE_BYTES) {
         return { success: false, error: "file_too_large" };
       }

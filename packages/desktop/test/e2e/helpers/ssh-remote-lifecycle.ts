@@ -579,15 +579,23 @@ export async function readRemoteCoreIdentity(
 export async function listRemoteAgentProcesses(
   config: SSHConnectionConfig,
 ): Promise<Array<RemoteProcessIdentity & { cwd: string }>> {
-  // 进程口径按 spawnArgs 定位:workspace agent 恒以 `app-server --stdio` 拉起,
-  // 与实现形态无关 —— 旧 dev 态是 `node zcode.cjs app-server`,3.12+ release 下
-  // 优先用 glm 原生二进制(bundledResourceDir "glm", resolveEntrySegments
-  // ["zcode-agent"]),只有缺二进制时才回落 node+zcode.cjs(server-cli.js 的
-  // ZCODE_AGENT_RUNTIME)。server daemon 跑 `serve --supervisor`(3.12 实测口径,早期写作
-  // `serve --daemon`),都不含 `app-server --stdio`,不会被误匹配。
+  // CLI 会把 argv 改名为 zcode-cli；旧的全文正则漏掉真 Agent，还会命中查询 shell。
+  // 先按 Core 的直接子进程筛选，再读 /proc 身份，排除 SSH 命令和 Agent 派生插件。
+  const corePids = new Set(await listRemoteServerCorePids(config));
+  const processes = await runSSHCommand(config, "ps -eo pid=,ppid=,args=");
+  if (processes.code !== 0) throw new Error(`读取远端进程失败: ${processes.stderr}`);
+  const pids = processes.stdout.split("\n").flatMap((line) => {
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/u);
+    if (!match || !corePids.has(Number(match[2]))) return [];
+    const command = match[3]!;
+    return /^zcode-cli(?:\s|$)/u.test(command) || /\bapp-server\s+--stdio\b/u.test(command)
+      ? [Number(match[1])]
+      : [];
+  });
+  if (pids.length === 0) return [];
   const result = await runSSHCommand(
     config,
-    "for pid in $(ps -eo pid=,args= | awk '/app-server --stdio/ {print $1}'); do " +
+    `for pid in ${pids.join(" ")}; do ` +
       "ppid=$(ps -o ppid= -p \"$pid\" | tr -d ' '); " +
       "ticks=$(awk '{print $22}' /proc/$pid/stat 2>/dev/null); " +
       'cwd=$(readlink /proc/$pid/cwd 2>/dev/null); printf \'%s\\t%s\\t%s\\t%s\\n\' "$pid" "$ppid" "$ticks" "$cwd"; done',

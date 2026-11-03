@@ -111,8 +111,12 @@ export type DeviceAdditionResult =
 
 /** 仅当前 renderer 内存中的原 owner 引用；不序列化草稿或凭据。 */
 export interface DeviceAdditionReturnTarget {
-  /** 已有设备连接留在原项目页；只有新增设备往返设置。 */
-  kind: "connect-device" | "add-device";
+  /**
+   * 已有设备连接留在原项目页；只有新增设备往返设置。
+   * data-sync：从「设置 → 数据同步」发起（连接已有设备或新增设备），完成后留在数据同步页，
+   * 不跳到「远程设备」页。
+   */
+  kind: "connect-device" | "add-device" | "data-sync";
   isCurrent(): boolean;
   /** 只投递连接层可见性；原 owner 决定自己的提交门禁。 */
   onVisibilityChange?(visible: boolean): void;

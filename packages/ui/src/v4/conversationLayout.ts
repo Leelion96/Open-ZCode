@@ -11,6 +11,13 @@ export const CONVERSATION_STATUS_PANEL_INLINE_OFFSET_PX = 168;
 export const CONVERSATION_STATUS_PANEL_WIDE_OFFSET_CLASS_NAME =
   "@min-[1280px]/conversation:-translate-x-42";
 
+// 状态胶囊浮在对话右上角（ConversationStatusPanel：top-0 + pt-4 + 胶囊 max-h-8.5，底边 50px），
+// 对话最顶部的内容必须让出这段高度，否则被胶囊盖住、点击也落到胶囊上。
+// Bug 根因：过去这段让位只是首轮用户气泡上方 pt-14 的副作用；中枢直接启动的轮没有气泡、
+// 顶部 padding 为 0，run 卡头部的配置 / 停止 / 详情按钮于是落在胶囊下面点不到。
+// 现在由时间线显式给会话首轮留这段 inset，首轮自身不再留顶部 padding（见 presentation.md「The run card」）。
+export const CONVERSATION_STATUS_PANEL_TOP_CLEARANCE_CLASS_NAME = "pt-14";
+
 export type ConversationStatusPanelResolvedVariant = ChatViewSummaryPanelVariant | "auto";
 
 export function getConversationContentWidthClassName(params: {

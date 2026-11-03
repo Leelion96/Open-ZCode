@@ -132,7 +132,11 @@ describe("会话区 Background Notification Batch E2E", () => {
         role: "user",
       });
       const batchInput = await readLatestUserMessageAt(batchNotificationIndex);
-      expect(batchInput.split("[SYSTEM NOTIFICATION - NOT USER INPUT]")).toHaveLength(2);
+      // 每条通知各自一个标题：两条通知共三段。
+      expect(batchInput.split("[SYSTEM NOTIFICATION - NOT USER INPUT]")).toHaveLength(3);
+      // 两条通知是同一条 user 消息的两个 text block。
+      const batchBlocks = await readLatestUserTextBlocksAt(batchNotificationIndex);
+      expect(batchBlocks).toHaveLength(2);
       expect(batchInput.indexOf(CHILD_TWO_RESULT)).toBeGreaterThanOrEqual(0);
       expect(batchInput.indexOf(CHILD_THREE_RESULT)).toBeGreaterThan(
         batchInput.indexOf(CHILD_TWO_RESULT),
@@ -160,7 +164,8 @@ describe("会话区 Background Notification Batch E2E", () => {
         { role: "assistant", content: "background-notification-batch-agents-launched-ok" },
         { role: "user", content: firstNotificationInput },
         { role: "assistant", content: "background-notification-batch-first-consumed-ok" },
-        { role: "user", content: batchInput },
+        // CLI 按它发出的 content 估算字符数：整批是 text block 数组，单条是字符串。
+        { role: "user", content: batchBlocks },
       ];
       const expectedIncrease = addedMessages.reduce(
         (sum, message) => sum + JSON.stringify(message).length,
@@ -247,6 +252,32 @@ async function readLatestUserMessageAt(recordIndex: number): Promise<string> {
     return contentToText((message as { content?: unknown }).content);
   }
   return "";
+}
+
+async function readLatestUserTextBlocksAt(
+  recordIndex: number,
+): Promise<Array<{ type: "text"; text: string }>> {
+  const requestJson = await readRequestJsonAt(recordIndex);
+  const messages =
+    requestJson && typeof requestJson === "object"
+      ? (requestJson as { messages?: unknown }).messages
+      : undefined;
+  if (!Array.isArray(messages)) return [];
+  const message = [...messages]
+    .reverse()
+    .find(
+      (item) => !!item && typeof item === "object" && (item as { role?: unknown }).role === "user",
+    ) as { content?: unknown } | undefined;
+  if (!Array.isArray(message?.content)) return [];
+  // wire 上的 cache_control 等字段不属于 CLI 的消息内容，只保留 type 与 text。
+  return message.content.flatMap((block: unknown) =>
+    block &&
+    typeof block === "object" &&
+    (block as { type?: unknown }).type === "text" &&
+    typeof (block as { text?: unknown }).text === "string"
+      ? [{ type: "text" as const, text: (block as { text: string }).text }]
+      : [],
+  );
 }
 
 async function readRequestJsonAt(recordIndex: number): Promise<unknown> {

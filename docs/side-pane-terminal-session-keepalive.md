@@ -6,6 +6,11 @@
 
 ## 0. 与既有设计的关系（不可违背）
 
+2026-10-22 补充：保活条目同时持有当前终端服务连接。手机 workspace bridge 换代后，
+同一工作区的条目重绑输入、输出和退出通知，保留原 PTY 与 xterm；相同服务引用不重复订阅，
+关闭通过最新连接释放。客户端命名空间或 workspaceKey 不同均不复用旧 PTY；底部终端生命周期不变。
+完整合同与 MRO04 回归见 [手机终端的连接换代](web-remote-control/web-remote-control-architecture.md#手机终端的连接换代2026-10-22)。
+
 `docs/ui/side-pane-terminal-tabs.md` 已明确：
 
 - 第 10/16 行：每个 side pane terminal tab 是**独立终端实例**，`+` 菜单每次新建、不复用单例。

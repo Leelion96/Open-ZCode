@@ -20,9 +20,23 @@ export const CREATE_WORKFLOW_TOOL_NAME = "CreateWorkflow";
  */
 export const DYNAMIC_WORKFLOW_SKILL_NAME = "dynamic-workflows";
 
-/** 「恰好给一个执行体来源」的违规说明。写成常量是因为模型是它唯一的读者，三条路径同一句话。 */
-export const CREATE_WORKFLOW_SOURCE_ERROR =
-  "Provide exactly one workflow source: `script` for a one-off script written inline, `saved` to run a workflow saved in this project, or `path` for a script file on disk (the file a previous result named). Passing more than one, or none, is ambiguous.";
+/**
+ * 「一个来源都没到」的共用尾句（CreateWorkflow 与 EvalWorkflowSnippet；两者字段全可选）。
+ *
+ * Bug 原因：参数不是合法 JSON 时，adapter 记 `model.tool_input.normalize_failed` 后把调用恢复成
+ * `{}`（adapters/src/model/tool-input-normalization.ts），`{}` 能过 schema，于是在「恰好一个来源」
+ * 上失败。旧文案把「多给」与「没给」并成一句「…or none, is ambiguous」，明明写了脚本的模型读不出
+ * 原因，只会原样重发同一个坏调用。所以「没给」单独成句，并说出最常见的原因和绕开它的办法。
+ */
+export const WORKFLOW_SOURCE_MISSING_HINT =
+  "If you did pass one, the call's arguments were not valid JSON, and a call that does not parse arrives empty. The usual cause is an unescaped backslash or double quote in the inline source: inside a JSON string a regex's `\\d` must be written `\\\\d`. Escape it, or write the source to a file and pass `path`.";
+
+/** 多给了来源（选择要撤回）。写成常量是因为模型是它唯一的读者，三条路径同一句话。 */
+export const CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR =
+  "Provide exactly one workflow source: `script` for a one-off script written inline, `saved` to run a workflow saved in this project, or `path` for a script file on disk (the file a previous result named). Passing more than one is ambiguous.";
+
+/** 一个来源都没有：多半是参数没解析出来（见 {@link WORKFLOW_SOURCE_MISSING_HINT}）。 */
+export const CREATE_WORKFLOW_SOURCE_MISSING_ERROR = `No workflow source arrived. Pass \`script\` for a one-off script written inline, \`saved\` to run a workflow saved in this project, or \`path\` for a script file on disk. ${WORKFLOW_SOURCE_MISSING_HINT}`;
 
 /** `args` 只属于 `path` 来源的违规说明（`saved` 有自己的 `saved.args`，内联脚本没有声明）。 */
 export const CREATE_WORKFLOW_ARGS_WITHOUT_PATH_ERROR =

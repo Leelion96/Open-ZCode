@@ -47,7 +47,7 @@
 ### Task 4: Promote the reviewed reproduction
 
 **Files:**
-- Move: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-agent-step-message-scope.test.ts` → `packages/desktop/test/e2e/conversation-session/conversation-session-agent-step-message-scope.test.ts`
+- Move: `packages/desktop/test/e2e/conversation-session/conversation-session-agent-step-message-scope.test.ts` → `packages/desktop/test/e2e/conversation-session/conversation-session-agent-step-message-scope.test.ts`
 - Modify: case manifest、provider fixture、coverage matrix
 
 - [x] **Step 1:** Run promotion dry-run with the explicit human-reviewed signal.

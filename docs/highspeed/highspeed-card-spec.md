@@ -617,7 +617,7 @@ Selection，请求打到 Highspeed 推理接口而非 Team Coding Plan Endpoint�
 - Desktop 保持 `desktop-continuous`，Highspeed 只作为 send admission 前置协调和单轮 `modelSelection` + `modelExecution`。
 - 手机 Web 仍通过 shared-host attachment 使用 `web-remote-replayable`；不得在 Web 壳另起 runtime。
 - 全局通知 UI 同时提供桌面侧栏 surface 与窄屏 surface；本期静态占位。
-- 远程 workspace 的 Task 仍使用原链路的 `workspaceIdentity/remoteSessionId`；Highspeed 用户级状态不得用 `workspacePath` 冒充身份 key。
+- 远程 workspace（SSH / WSL / Docker，含已识别的 Source Server 与 legacy mixed attachment）**不支持 Highspeed**，只在本地 workspace 生效（2026-10-21 产品决定）。Renderer 组装远程 workspace 服务时注入「远程不支持」的 `highspeedCardService`：`prepareTurn` 立即返回 `fallback/unavailable`，`getSnapshot` 无卡，`invalidateCard` 返回 `false`，`healthy` 拒绝；不 draw、不展示输入框 Highspeed 状态、不调用本地或远端 Highspeed 服务。远端服务集合没有 `highspeed-card` 频道，曾让每次远程发送先等满 Host ChannelServer 的 1000ms 未知频道超时。Highspeed 用户级状态不得用 `workspacePath` 冒充身份 key。
 - Highspeed 输入框的入场方式是 Renderer 本地展示状态：桌面 `desktop-continuous` 与手机 `web-remote-replayable` 各自只在本端发送路径 draw 新命中时播放激活动效；切换 Task、重载恢复或查看另一端抽中的卡都直接呈现稳定态（见 §9.2）。入场方式不经 session、协议或远控同步。
 - Renderer 内存 store 从 transcript 水合按 `sourceCommandId` **幂等合并**：权威完成态字段（`outputTokens/durationMs/耗时拆分/highspeedTps/savedDurationMs`）覆盖运行期临时值，运行态 row 不得清空已完成字段；重复、迟到与部分 metadata 更新只产生必要的一次 store 通知，完全相同的再次水合不通知。手机 Web/远控 Renderer 先登记运行中 row、桌面端随后持久化完成态并投影到 transcript 时，再次水合必须吸收这些字段，卡级 TPS、节省时间与自动分享候选才能收口，且不得由远端自行重算与 CLI 权威指标相左。
 

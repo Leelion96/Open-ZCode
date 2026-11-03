@@ -16,15 +16,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_PLUGIN_APPEND_ONLY_U1"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_PLUGIN_APPEND_ONLY_U1"]
       },
       "response": {
         "statusCode": 200,
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
-        "body": "data: {\"id\":\"chatcmpl-plugin-append-only-target-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-target-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"Plugin Append Only\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-target-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"chatcmpl-plugin-append-only-target-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Plugin Append Only\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}"
       }
     },
     {
@@ -54,7 +53,9 @@
       },
       "response": {
         "statusCode": 200,
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-plugin-append-only-u1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-u1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"PLUGIN_APPEND_ONLY_A1\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-u1\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":8,\"total_tokens\":128}}\n\ndata: [DONE]\n\n"
       }
     },
@@ -85,7 +86,9 @@
       },
       "response": {
         "statusCode": 200,
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-plugin-append-only-u2\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-u2\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"PLUGIN_APPEND_ONLY_A2\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-u2\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":160,\"completion_tokens\":8,\"total_tokens\":168}}\n\ndata: [DONE]\n\n"
       }
     },
@@ -102,15 +105,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_PLUGIN_APPEND_ONLY_PARKING"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_PLUGIN_APPEND_ONLY_PARKING"]
       },
       "response": {
         "statusCode": 200,
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
-        "body": "data: {\"id\":\"chatcmpl-plugin-append-only-parking-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-parking-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"Plugin Parking\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-parking-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"chatcmpl-plugin-append-only-parking-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Plugin Parking\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}"
       }
     },
     {
@@ -131,7 +133,9 @@
       },
       "response": {
         "statusCode": 200,
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-plugin-append-only-parking\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-parking\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"PLUGIN_APPEND_ONLY_PARKING_OK\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-parking\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":96,\"completion_tokens\":8,\"total_tokens\":104}}\n\ndata: [DONE]\n\n"
       }
     },
@@ -154,14 +158,13 @@
           "E2E_PLUGIN_APPEND_ONLY_U3_HOT",
           "<plugin_reference>"
         ],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "E2E_PLUGIN_APPEND_ONLY_U4_COLD"
-        ]
+        "bodyExcludes": ["Generate a concise title", "E2E_PLUGIN_APPEND_ONLY_U4_COLD"]
       },
       "response": {
         "statusCode": 200,
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-plugin-append-only-u3-hot\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-u3-hot\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"PLUGIN_APPEND_ONLY_A3_HOT\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-u3-hot\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":200,\"completion_tokens\":8,\"total_tokens\":208}}\n\ndata: [DONE]\n\n"
       }
     },
@@ -188,7 +191,9 @@
       },
       "response": {
         "statusCode": 200,
-        "headers": { "content-type": "text/event-stream; charset=utf-8" },
+        "headers": {
+          "content-type": "text/event-stream; charset=utf-8"
+        },
         "body": "data: {\"id\":\"chatcmpl-plugin-append-only-u4-cold\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-u4-cold\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"PLUGIN_APPEND_ONLY_A4_COLD\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-plugin-append-only-u4-cold\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"plugin-reference-append-only-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":240,\"completion_tokens\":8,\"total_tokens\":248}}\n\ndata: [DONE]\n\n"
       }
     }

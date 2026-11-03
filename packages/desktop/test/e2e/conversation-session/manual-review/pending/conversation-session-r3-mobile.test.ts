@@ -1,11 +1,13 @@
-import { openMobilePairingPage } from "#e2e/helpers/mobile-pairing";
+import { openMobilePairingPage, seedMobileFixtureLogin } from "#e2e/helpers/mobile-pairing";
 import { readV4UserMessagesInBrowser } from "#e2e/helpers/mobile-message-evidence";
 import { releaseControlledReplay } from "#e2e/helpers/controlled-replay";
 import { execFile } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
-import { parseRemoteWorkspaceIdentity } from "@zcode/shared";
+import { parseRemoteWorkspaceIdentity, parseWebRemoteControlAppPayload } from "@zcode/shared";
+import { BufferReader, deserialize, VSBuffer } from "@zcode/rpc";
+import type { Page, WebSocketRoute } from "playwright-core";
 import {
   TID_TASK_ITEM,
   TID_V4_COMPOSER_INPUT,
@@ -163,6 +165,163 @@ async function mobileUserRows(page: PwPage): Promise<Array<{ id: string; text: s
   return page.evaluate(readV4UserMessagesInBrowser, testId(TID_V4_SESSION_PANE, "workspace-main"));
 }
 
+/** 只扣真实发送前读取帧；SSH、Host 与业务服务不替换，恢复仍走产品的失效通知入口。 */
+async function installSubmissionBridgeProbe(page: Page) {
+  let armed = false;
+  let bridgeId: string | undefined;
+  let held: { bridgeId: string; sequence: number; release(): void; invalidate(): void } | undefined;
+  let commandMarker: string | undefined;
+  let accepted:
+    | { bridgeId: string; rpcId: unknown; invalidate(): void; releaseLate(): void }
+    | undefined;
+  let lateReply: string | Buffer | undefined;
+  let currentRoute: WebSocketRoute | undefined;
+  let currentServer: WebSocketRoute | undefined;
+  await page.routeWebSocket(/\/api\/v1\/remote\/ws2(?:\?|$)/u, (route) => {
+    const server = route.connectToServer();
+    currentRoute = route;
+    currentServer = server;
+    route.onMessage((message) => {
+      const payload = parseWebRemoteControlAppPayload(JSON.parse(String(message)).payload);
+      if (
+        commandMarker &&
+        !accepted &&
+        payload?.zcode_type === "rpc-frame" &&
+        payload.fragmentCount === 1
+      ) {
+        const reader = new BufferReader(VSBuffer.wrap(Buffer.from(payload.dataBase64, "base64")));
+        const header = deserialize(reader) as unknown[];
+        if (
+          header[0] === 100 &&
+          header[2] === "zcode-agent" &&
+          header[3] === "sendConversationCommandV4"
+        ) {
+          const args = deserialize(reader) as Array<{ envelope?: { payload?: { text?: string } } }>;
+          if (args[0]?.envelope?.payload?.text?.includes(commandMarker)) {
+            accepted = {
+              bridgeId: payload.bridgeSessionId,
+              rpcId: header[1],
+              invalidate: () =>
+                route.send(
+                  JSON.stringify({
+                    type: "data",
+                    payload: {
+                      zcode_type: "bridge-degraded",
+                      bridgeSessionId: payload.bridgeSessionId,
+                      reason: "rpc-transport-fault",
+                    },
+                  }),
+                ),
+              releaseLate: () => {
+                if (lateReply) currentRoute?.send(lateReply);
+              },
+            };
+          }
+        }
+      }
+      // 扣帧期间也扣住其 replay 与后续旧 bridge 数据，避免夹具自己制造缺片或漏放原请求。
+      if (
+        held &&
+        payload?.zcode_type === "rpc-frame" &&
+        payload.bridgeSessionId === held.bridgeId &&
+        payload.messageSeq >= held.sequence
+      )
+        return;
+      if (armed && !held && payload?.zcode_type === "rpc-frame" && payload.fragmentCount === 1) {
+        const header = deserialize(
+          new BufferReader(VSBuffer.wrap(Buffer.from(payload.dataBase64, "base64"))),
+        ) as unknown[];
+        if (header[0] === 100 && header[2] === "gen-ui" && header[3] === "listState") {
+          armed = false;
+          held = {
+            bridgeId: payload.bridgeSessionId,
+            sequence: payload.messageSeq,
+            release: () => currentServer?.send(message),
+            invalidate: () =>
+              route.send(
+                JSON.stringify({
+                  type: "data",
+                  payload: {
+                    zcode_type: "bridge-degraded",
+                    bridgeSessionId: payload.bridgeSessionId,
+                    reason: "rpc-transport-fault",
+                  },
+                }),
+              ),
+          };
+          return;
+        }
+      }
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      const payload = parseWebRemoteControlAppPayload(JSON.parse(String(message)).payload);
+      // MRS06 放行真实提交，只扣该代下行；模型请求是远端接纳的独立证据。
+      if (
+        accepted &&
+        payload?.zcode_type === "rpc-frame" &&
+        payload.bridgeSessionId === accepted.bridgeId
+      ) {
+        if (payload.fragmentCount === 1) {
+          const header = deserialize(
+            new BufferReader(VSBuffer.wrap(Buffer.from(payload.dataBase64, "base64"))),
+          ) as unknown[];
+          if (header[0] === 201 && header[1] === accepted.rpcId) lateReply = message;
+        }
+        return;
+      }
+      if (payload?.zcode_type === "workspace-bridge-ready") bridgeId = payload.bridgeSessionId;
+      route.send(message);
+    });
+  });
+  return {
+    arm: () => {
+      armed = true;
+    },
+    held: () => held,
+    bridgeId: () => bridgeId,
+    armAcceptedCommand: (marker: string) => {
+      commandMarker = marker;
+    },
+    accepted: () => accepted,
+    hasLateReply: () => lateReply !== undefined,
+  };
+}
+
+async function readMobileControllerServices(
+  page: Page,
+  target: {
+    remoteSessionId: string;
+    workspacePath: string;
+    identity: string;
+    taskId: string;
+  },
+) {
+  return page.evaluate(
+    async ({ moduleUrl, target }) => {
+      // 读取当前真实服务注册，不向 store 写入测试状态，也不另建 RPC 连接。
+      const { getRemoteWorkspaceSession } = await import(moduleUrl);
+      const services = getRemoteWorkspaceSession(target.remoteSessionId)?.services;
+      if (!services) throw new Error("MRS05 remote services unavailable");
+      const device = await services.feedbackService.getDeviceSnapshot();
+      const widgets = await services.genUiService.listState({
+        workspacePath: target.workspacePath,
+        workspaceIdentity: target.identity,
+        sessionId: target.taskId,
+      });
+      return {
+        osPlatform: device.osPlatform,
+        appVersion: device.appVersion,
+        widgets: widgets.length,
+      };
+    },
+    {
+      moduleUrl: `/@fs${resolve(process.cwd(), "../ui/src/store/remoteWorkspaceSessionStore.ts")}`,
+      target,
+    },
+  );
+}
+
 describe(`${CASE_MARKER}: 手机 viewport 经真实 relay 配对，选择 SSH task、断网恢复、双端交替输入`, () => {
   let provider: SSHLifecycleProvider | null = null;
   let mobileBrowser: PwBrowser = null;
@@ -216,23 +375,29 @@ describe(`${CASE_MARKER}: 手机 viewport 经真实 relay 配对，选择 SSH ta
     };
     mobileBrowser = await chromium.launch({ headless: true, executablePath: CHROME });
     let pairingAttempt = 0;
-    const newMobileContext = async (): Promise<{ context: PwContext; page: PwPage }> => {
+    const newMobileContext = async (instrumentSubmission = false) => {
       const context = await mobileBrowser.newContext({
         viewport: MOBILE_VIEWPORT,
         isMobile: true,
         hasTouch: true,
         locale: "zh-CN",
       });
+      await seedMobileFixtureLogin(context);
       const page = await context.newPage();
+      const submissionProbe = instrumentSubmission
+        ? await installSubmissionBridgeProbe(page)
+        : undefined;
       await openMobilePairingPage(page, pairUrl, {
         artifactDir,
         caseMarker: CASE_MARKER,
         phase: `pairing-${++pairingAttempt}`,
         readySelector: `[data-testid="${testId(TID_TASK_ITEM, taskA.taskId)}"]`,
       });
-      return { context, page };
+      return { context, page, submissionProbe };
     };
-    const first = await newMobileContext();
+    const first = await newMobileContext(true);
+    if (!first.submissionProbe) throw new Error("MRS05 wire probe unavailable");
+    const submissionProbe = first.submissionProbe;
     let mobile: PwPage = first.page;
     let mobileContext: PwContext = first.context;
     await browser.waitUntil(async () => (await readDesktopMobileStatus()).includes("手机已连接"), {
@@ -285,6 +450,113 @@ describe(`${CASE_MARKER}: 手机 viewport 经真实 relay 配对，选择 SSH ta
     expect((await readRemoteTabSnapshot(taskA.identity)).remoteSessionId).toBe(
       taskA.remoteSessionId,
     );
+
+    // MRS05：控制端反馈/Gen UI 读取经过真实手机 attachment，不落到 Linux Source 或等待未知频道。
+    const controllerServices = await readMobileControllerServices(mobile, {
+      remoteSessionId: taskA.remoteSessionId,
+      workspacePath: workspaceA,
+      identity: taskA.identity,
+      taskId: taskA.taskId,
+    });
+    expect(controllerServices.osPlatform).toBe(process.platform);
+    expect(controllerServices.widgets).toBeGreaterThanOrEqual(0);
+    const submissionMarker = `${CASE_MARKER}_MRS_UNSENT`;
+    const submissionInput = mobile.getByTestId(TID_V4_COMPOSER_INPUT).first();
+    submissionProbe.arm();
+    await submissionInput.fill(submissionMarker);
+    await mobile.getByTestId(TID_V4_COMPOSER_SEND).first().click();
+    await browser.waitUntil(() => Boolean(submissionProbe.held()), {
+      timeout: 30_000,
+      timeoutMsg: "MRS05 没有捕获真实 gen-ui.listState 请求",
+    });
+    const heldSubmission = submissionProbe.held()!;
+    heldSubmission.invalidate();
+    await browser.waitUntil(() => submissionProbe.bridgeId() !== heldSubmission.bridgeId, {
+      timeout: 60_000,
+      timeoutMsg: "MRS05 未重建失效 bridge",
+    });
+    await mobile.waitForFunction(
+      (marker: string) =>
+        document.querySelector('[data-testid="v4-composer-input"]')?.textContent?.includes(marker),
+      submissionMarker,
+    );
+    heldSubmission.release();
+    expect(await countUpstreamRequests({ lastUserMessageIncludes: [submissionMarker] })).toBe(0);
+    await mobile.screenshot({ path: resolve(artifactDir, "mrs05-draft-recovered.png") });
+    await submissionInput.fill("");
+    facts.mrs05 = { controllerServices, draftRestored: true, staleFrameReleased: true };
+
+    // MRS06：真实 Agent 已接纳，手机还没收到 ACK/投影；终结旧 RPC 不能重复发送或清除后续草稿。
+    const acceptedMarker = `${CASE_MARKER}_MRS_ACK`;
+    const laterDraft = `${CASE_MARKER}_MRS_LATER_DRAFT`;
+    const acceptedStart = await getUpstreamRequestRecordCount();
+    submissionProbe.armAcceptedCommand(acceptedMarker);
+    await submissionInput.fill(acceptedMarker);
+    await mobile.getByTestId(TID_V4_COMPOSER_SEND).first().click();
+    await waitForUpstreamRequest(
+      { lastUserMessageIncludes: [acceptedMarker] },
+      "MRS06 原命令没有到达远端模型",
+      60_000,
+      { afterIndex: acceptedStart - 1 },
+    );
+    const accepted = submissionProbe.accepted();
+    expect(accepted).toBeDefined();
+    await browser.waitUntil(() => submissionProbe.hasLateReply(), {
+      timeout: 30_000,
+      timeoutMsg: "MRS06 未扣住真实 command ACK，不能注入恢复故障",
+    });
+    await submissionInput.fill(laterDraft);
+    accepted!.invalidate();
+    await browser.waitUntil(() => submissionProbe.bridgeId() !== accepted!.bridgeId, {
+      timeout: 60_000,
+      timeoutMsg: "MRS06 已接纳命令后的 bridge 未恢复",
+    });
+    await browser.waitUntil(
+      async () => (await mobileUserRows(mobile)).some((row) => row.text.includes(acceptedMarker)),
+      {
+        timeout: 60_000,
+        timeoutMsg: "MRS06 手机未恢复已接纳输入",
+      },
+    );
+    await mobile.waitForFunction(
+      (marker: string) =>
+        document.querySelector('[data-testid="v4-composer-input"]')?.textContent?.includes(marker),
+      laterDraft,
+    );
+    expect(submissionProbe.hasLateReply()).toBe(true);
+    accepted!.releaseLate();
+    await readMobileControllerServices(mobile, {
+      remoteSessionId: taskA.remoteSessionId,
+      workspacePath: workspaceA,
+      identity: taskA.identity,
+      taskId: taskA.taskId,
+    });
+    expect(
+      (await mobileUserRows(mobile)).filter((row) => row.text.includes(acceptedMarker)),
+    ).toHaveLength(1);
+    expect(await submissionInput.textContent()).toContain(laterDraft);
+    expect(
+      await countUpstreamRequests(
+        { lastUserMessageIncludes: [acceptedMarker] },
+        { afterIndex: acceptedStart - 1 },
+      ),
+    ).toBe(1);
+    expect(await countUpstreamRequests({ lastUserMessageIncludes: [laterDraft] })).toBe(0);
+    facts.mrs06 = { acceptedOnce: true, laterDraftPreserved: true, lateReplyReleased: true };
+    await mobile.screenshot({ path: resolve(artifactDir, "mrs06-accepted-recovered.png") });
+    await submissionInput.fill("");
+
+    // WebSocket 路由只用于 MRS05 扣帧。原有 setOffline 回归必须使用未经拦截的新连接，
+    // 避免 Playwright 的转发连接改变浏览器真实断网行为。
+    await mobileContext.close();
+    const uninstrumented = await newMobileContext();
+    mobile = uninstrumented.page;
+    mobileContext = uninstrumented.context;
+    await mobile
+      .locator(`[data-testid="${testId(TID_TASK_ITEM, taskA.taskId)}"]`)
+      .first()
+      .click();
+    await mobile.getByText(taskA.firstReply, { exact: false }).first().waitFor({ timeout: 60_000 });
 
     // MOB-02：桌面发起慢回合（running），手机断网 15s 再恢复：手机独立 replay 补齐，桌面持续推进。
     const slowStart = await getUpstreamRequestRecordCount();
@@ -570,6 +842,7 @@ PY`,
       draftAutoSubmitted: false,
       themes: ["light", "dark"],
     };
+    expect(await countUpstreamRequests({ lastUserMessageIncludes: [submissionMarker] })).toBe(0);
     await mobileContext.close();
   });
 
@@ -616,6 +889,7 @@ PY`,
       hasTouch: true,
       locale: "zh-CN",
     });
+    await seedMobileFixtureLogin(context);
     const mobile = await context.newPage();
     let phase = "pairing";
     try {
@@ -643,14 +917,21 @@ PY`,
       const unsentDraft = `${marker}_UNSENT`;
       await composer.click();
       await mobile.keyboard.type(unsentDraft);
+      // 项目草稿已按 client/host/project 隔离；旧 workspace 草稿 key 不再承载 __draft__。
+      // 核对本项目的持久正文，不能用旧 key 超时误判为产品丢草稿。
       await mobile.waitForFunction(
-        (text: string) =>
-          Object.keys(localStorage).some(
-            (key) =>
-              key.startsWith("zcode-v4-composer-drafts:v1:") &&
-              localStorage.getItem(key)?.includes(text),
-          ),
-        unsentDraft,
+        ({ text, projectId, hostId }: { text: string; projectId: string; hostId: string }) => {
+          const prefix = "zcode-v4-composer-project-drafts:v1:";
+          return Object.keys(localStorage).some((key) => {
+            if (!key.startsWith(prefix)) return false;
+            const [client, host, project] = JSON.parse(key.slice(prefix.length));
+            if (!String(client).startsWith("mobile:") || host !== hostId || project !== projectId)
+              return false;
+            const stored = JSON.parse(localStorage.getItem(key) ?? "{}");
+            return stored.scopes?.__draft__?.text === text;
+          });
+        },
+        { text: unsentDraft, projectId, hostId: `remote:server:${sourceId}` },
       );
       expect(await mobileUserRows(mobile)).toHaveLength(0);
       // 沿用 RDUX-08-07：手机保持当前聊天 owner，不用首页/浏览器历史制造额外冷态。

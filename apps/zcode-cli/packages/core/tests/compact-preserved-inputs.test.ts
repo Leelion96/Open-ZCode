@@ -6,10 +6,15 @@ import {
   createPartId,
   createRootTraceContext,
   createSessionId,
+  createTraceId,
+  type MessageWithParts,
   type ModelRequest,
 } from "@zcode/contracts";
 import { MessageHistoryImpl } from "../src/agent/message-history.js";
-import { hydrateMessageHistoryFromSession } from "../src/agent/session-history-hydrator.js";
+import {
+  activeSessionMessages,
+  hydrateMessageHistoryFromSession,
+} from "../src/agent/session-history-hydrator.js";
 import { compactActiveConversation } from "../src/runtime/methods/compact-active.js";
 import { buildProviderRequestMessages } from "../src/runtime/helpers/provider-request-messages.js";
 import { selectPersistedCompactTail } from "../src/runtime/helpers/compact-preservation.js";
@@ -40,6 +45,8 @@ const inputs = [
   { text: "persisted attachment payload", source: "goal_state_change" },
   { text: "legacy synthetic payload", source: "background_task" },
 ];
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 describe("compact retained input persistence", () => {
   it("selects rounds from the active branch instead of the newest abandoned assistant", async () => {
@@ -241,20 +248,145 @@ describe("compact retained input persistence", () => {
         expect(matches).toHaveLength(1);
         if (input.inputPresentation) {
           const expected = golden.expected[input.inputPresentation].replace("{body}", input.text);
-          // 后面仍有 legacy user 和本轮输入，MCS 在这里必须降级；不能把内容移过输入。
-          expect(matches[0]!.role).toBe("user");
           expect(requestText(matches)).toContain(expected);
           const grouped = inputs
             .filter((item) => item.inputPresentation)
             .map((item) => golden.expected[item.inputPresentation!].replace("{body}", item.text))
             .join("\n\n");
-          expect(requestText(matches)).toBe(
-            `<system-reminder>\n${mcs ? grouped : expected}\n</system-reminder>`,
-          );
+          if (mcs) {
+            // 同一段 user run 的 MCS 文本合成一条 system，
+            // 放在 run 末尾，越过 legacy user 和本轮输入；中途消息之间保持原顺序。
+            expect(matches[0]!.role).toBe("system");
+            // 完整组成，块之间一个空行：中途消息在前，之后是本轮请求前公告（agent 列表、环境、
+            // 模型身份），最后是保留段里的 goal 状态变更（它不冒泡，后生成的公告越过它）。
+            // 只放宽 agent 描述和环境正文。
+            expect(requestText(matches)).toMatch(
+              new RegExp(
+                `^${escapeRegExp(grouped)}\\n\\nAvailable agent types for the Agent tool:\\n[\\s\\S]*\\n\\n# Environment\\n[\\s\\S]*\\n\\nYou are powered by the model named test/default-runtime-model\\.\\n\\npersisted attachment payload$`,
+              ),
+            );
+            expect(request.messages.at(-1)).toBe(matches[0]);
+          } else {
+            expect(matches[0]!.role).toBe("user");
+            expect(requestText(matches)).toBe(`<system-reminder>\n${expected}\n</system-reminder>`);
+          }
         }
       }
       expect(request.messages.filter((message) => message.role === "tool")).toHaveLength(2);
       expect(requestText(request.messages)).not.toContain("old setup one");
     }
+  });
+});
+
+describe("compact leading announcements on cold restore", () => {
+  const sessionId = createSessionId("compact-leading");
+  const traceId = createTraceId();
+  const message = (id: string, role: "user" | "assistant", parts: unknown[] = []) =>
+    ({
+      info: { id: createMessageId(id), sessionID: sessionId, role, time: { created: 1 } },
+      parts,
+    }) as unknown as MessageWithParts;
+  const summary = (
+    id: string,
+    preserved: { head: string; tail: string } | undefined,
+    metadata?: Record<string, unknown>,
+  ) =>
+    message(id, "user", [
+      {
+        id: createPartId(),
+        sessionID: sessionId,
+        messageID: createMessageId(id),
+        type: "compaction",
+        auto: true,
+        compactBoundary: {
+          boundaryId: `boundary-${id}`,
+          trigger: CompactTrigger.Auto,
+          preCompactTokenCount: 0,
+          summarizedMessageCount: 0,
+          summaryMessageIds: [createMessageId(id)],
+          traceId,
+          ...(preserved
+            ? {
+                preservedSegment: {
+                  headMessageId: createMessageId(preserved.head),
+                  anchorMessageId: createMessageId(id),
+                  tailMessageId: createMessageId(preserved.tail),
+                },
+              }
+            : {}),
+        },
+        ...(metadata ? { metadata } : {}),
+      },
+    ]);
+  const id = (name: string) => String(createMessageId(name));
+  const ids = (messages: MessageWithParts[]) => messages.map((item) => String(item.info.id));
+
+  it("places declared announcements before the summary and leaves older history out", () => {
+    const messages = [
+      message("old-assistant", "assistant"),
+      message("old-result", "user"),
+      message("kept-assistant", "assistant"),
+      message("kept-result", "user"),
+      message("leading-1", "user"),
+      summary(
+        "summary-1",
+        { head: "kept-assistant", tail: "kept-result" },
+        { compactLeadingMessageIds: [id("leading-1")] },
+      ),
+      message("attachment-1", "user"),
+    ];
+    // 存储顺序与 live 一致：公告在 summary 之前，由 summary 的 compaction part 声明。
+    expect(ids(activeSessionMessages(messages))).toEqual(
+      ["leading-1", "summary-1", "kept-assistant", "kept-result", "attachment-1"].map(id),
+    );
+  });
+
+  it("skips earlier announcements when the preserved range crosses an earlier summary", () => {
+    // 第一次 compact 保留两轮；第二次只保留最后一轮及第一次的附件，区间在存储中跨过第一次的公告和 summary。
+    const messages = [
+      message("round-1-assistant", "assistant"),
+      message("round-1-result", "user"),
+      message("round-3-assistant", "assistant"),
+      message("round-3-result", "user"),
+      message("round-4-assistant", "assistant"),
+      message("round-4-result", "user"),
+      message("leading-1", "user"),
+      summary(
+        "summary-1",
+        { head: "round-3-assistant", tail: "round-4-result" },
+        { compactLeadingMessageIds: [id("leading-1")] },
+      ),
+      message("attachment-1", "user"),
+      message("leading-2", "user"),
+      summary(
+        "summary-2",
+        { head: "round-4-assistant", tail: "attachment-1" },
+        { compactLeadingMessageIds: [id("leading-2")] },
+      ),
+      message("attachment-2", "user"),
+    ];
+    expect(ids(activeSessionMessages(messages))).toEqual(
+      [
+        "leading-2",
+        "summary-2",
+        "round-4-assistant",
+        "round-4-result",
+        "attachment-1",
+        "attachment-2",
+      ].map(id),
+    );
+  });
+
+  it.each([
+    { compactLeadingMessageIds: [id("missing-message"), 7] },
+    { compactLeadingMessageIds: id("leading-1") },
+    { unrelated: true },
+  ])("ignores a malformed or dangling declaration %j", (metadata) => {
+    const messages = [
+      message("leading-1", "user"),
+      summary("summary-1", undefined, metadata),
+      message("attachment-1", "user"),
+    ];
+    expect(ids(activeSessionMessages(messages))).toEqual(["summary-1", "attachment-1"].map(id));
   });
 });

@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-turn-steer-probe",
+  "spec": "./test/e2e/conversation-session/conversation-session-turn-steer-probe.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-turn-steer-probe.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/shared/readonly-tool.txt",
+      "source": "created-by-helper",
+      "description": "真实 Read 工具执行文件，随后在受控回复窗口中验证 FIFO 队列。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "title-e2e_turn_steer_",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留旧回放中的工具、队列或压缩窗口；实际命令、会话状态和请求仍由真实 Agent 与 UI 产生。"
+    },
+    {
+      "id": "upstream-conversation-readonly-turn-steer-tool-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "保留旧回放中的工具、队列或压缩窗口；实际命令、会话状态和请求仍由真实 Agent 与 UI 产生。"
+    },
+    {
+      "id": "turn-steer-slow",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "保留旧回放中的工具、队列或压缩窗口；实际命令、会话状态和请求仍由真实 Agent 与 UI 产生。"
+    },
+    {
+      "id": "upstream-conversation-readonly-tool-call",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只读工具首段用于构造稳定 tool_use/tool_result 历史；工具业务由本地文件 fixture 决定，不依赖真实模型选择。"
+    }
+  ]
+}

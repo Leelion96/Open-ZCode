@@ -6,6 +6,8 @@ import type { Logger } from "@zcode/contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const faults = vi.hoisted(() => ({
+  crossDeviceBackupTargetSuffix: undefined as string | undefined,
+  crossDevicePromoteTargetSuffix: undefined as string | undefined,
   moveTargetSuffix: undefined as string | undefined,
   promoteCurrentTargetSuffix: undefined as string | undefined,
   promoteTargetSuffix: undefined as string | undefined,
@@ -38,6 +40,22 @@ vi.mock("../src/app/official-plugin-cache-fs.js", async (importOriginal) => {
         toPath.endsWith(faults.recoverBackupTargetSuffix)
       ) {
         throw errno("EOWNER");
+      }
+      // overlayfs（未启用 redirect_dir）拒绝 rename 位于镜像下层的目录，同一父目录内也返回 EXDEV；
+      // 该错误不会因重试消失，与容器内复现到的内核行为一致。
+      if (
+        faults.crossDeviceBackupTargetSuffix &&
+        fromPath.endsWith(faults.crossDeviceBackupTargetSuffix) &&
+        toPath.startsWith(`${fromPath}.backup-`)
+      ) {
+        throw errno("EXDEV");
+      }
+      if (
+        faults.crossDevicePromoteTargetSuffix &&
+        fromPath.includes(".tmp-") &&
+        toPath.endsWith(faults.crossDevicePromoteTargetSuffix)
+      ) {
+        throw errno("EXDEV");
       }
       if (
         faults.moveTargetSuffix &&
@@ -126,6 +144,8 @@ describe("bundled official plugin cache resilience", () => {
 
   afterEach(async () => {
     process.argv[1] = originalEntrypoint;
+    faults.crossDeviceBackupTargetSuffix = undefined;
+    faults.crossDevicePromoteTargetSuffix = undefined;
     faults.moveTargetSuffix = undefined;
     faults.promoteCurrentTargetSuffix = undefined;
     faults.promoteTargetSuffix = undefined;
@@ -448,6 +468,87 @@ describe("bundled official plugin cache resilience", () => {
 
     faults.moveTargetSuffix = undefined;
     expect(() => resolveOfficialPluginRoots({ storageRoot })).not.toThrow();
+    await expectNoSeedBackups(browserRoot);
+  });
+
+  it("replaces an overlay lower-layer target when moving it to backup returns EXDEV", async () => {
+    const storageRoot = await createStorageRoot(cleanups);
+    resolveOfficialPluginRoots({ storageRoot });
+    const browserRoot = join(storageRoot, BROWSER_CACHE_SUFFIX);
+    const markerPath = join(browserRoot, ".zcode-plugin-seed.json");
+    const staleMarker = `${await readFile(markerPath, "utf8")}\n`;
+    await writeFile(markerPath, staleMarker.replace('"hash": "', '"hash": "stale-'));
+    const logger = createLogger();
+    faults.crossDeviceBackupTargetSuffix = BROWSER_CACHE_SUFFIX;
+
+    expect(() =>
+      resolveZCodePlugins({
+        logger,
+        pluginStorageRoot: storageRoot,
+        skipUserConfig: true,
+        workingDirectory: dirname(storageRoot),
+      }),
+    ).not.toThrow();
+
+    // 镜像下层的旧缓存无法 rename 成 backup，但仍须被替换成当前内容，而不是每次启动都失败。
+    expect(await readFile(markerPath, "utf8")).not.toContain('"hash": "stale-');
+    expect(existsSync(join(browserRoot, ".zcode-plugin", "plugin.json"))).toBe(true);
+    await expectNoSeedBackups(browserRoot);
+    const siblings = await readdir(dirname(browserRoot));
+    expect(siblings.filter((entry) => entry.includes(".tmp-"))).toEqual([]);
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      "Official plugin cache operation degraded",
+      expect.objectContaining({ pluginId: "browser-use@zcode-plugins-official" }),
+    );
+  });
+
+  it("degrades a persistent EXDEV promotion to a usable previous version", async () => {
+    const storageRoot = await createStorageRoot(cleanups);
+    expect(resolveOfficialPluginRoots({ storageRoot })).toEqual([]);
+    const currentRoot = join(storageRoot, BROWSER_CACHE_SUFFIX);
+    const staleRoot = join(dirname(currentRoot), "0.2.1");
+    await rename(currentRoot, staleRoot);
+    const logger = createLogger();
+    faults.crossDevicePromoteTargetSuffix = BROWSER_CACHE_SUFFIX;
+
+    let roots: string[] = [];
+    expect(() => {
+      roots = resolveOfficialPluginRoots({ logger, storageRoot });
+    }).not.toThrow();
+
+    expect(roots).toContain(staleRoot);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Official plugin cache operation degraded",
+      expect.objectContaining({
+        degraded: true,
+        errorCode: "EXDEV",
+        operation: "seed_plugin",
+        pluginId: "browser-use@zcode-plugins-official",
+      }),
+    );
+  });
+
+  it("drops the seed marker before deleting an EXDEV target so an interrupted delete reseeds", async () => {
+    const storageRoot = await createStorageRoot(cleanups);
+    resolveOfficialPluginRoots({ storageRoot });
+    const browserRoot = join(storageRoot, BROWSER_CACHE_SUFFIX);
+    const markerPath = join(browserRoot, ".zcode-plugin-seed.json");
+    const manifestPath = join(browserRoot, ".zcode-plugin", "plugin.json");
+    // marker 仍是当前 hash，但 manifest 已丢失：走「当前缓存不可用 → 重新 seed」分支。
+    await rm(manifestPath, { force: true });
+    faults.crossDeviceBackupTargetSuffix = BROWSER_CACHE_SUFFIX;
+    // 删除旧 target 中途失败，模拟进程在删除窗口内退出。
+    faults.removeTargetSuffix = BROWSER_CACHE_SUFFIX;
+
+    expect(() => resolveOfficialPluginRoots({ logger: createLogger(), storageRoot })).not.toThrow();
+
+    // marker 必须先于目录内容删除；否则残缺目录会带着当前 hash 被下次启动直接复用。
+    expect(existsSync(markerPath)).toBe(false);
+
+    faults.removeTargetSuffix = undefined;
+    expect(() => resolveOfficialPluginRoots({ storageRoot })).not.toThrow();
+    expect(existsSync(manifestPath)).toBe(true);
+    expect(existsSync(markerPath)).toBe(true);
     await expectNoSeedBackups(browserRoot);
   });
 

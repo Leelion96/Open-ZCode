@@ -72,7 +72,9 @@ export function formatWorkflowProviderStopError(
             ]
           : [
               `${provider} reports the user's usage cap is reached (code ${code}); it resets at ${new Date(details.resetAt).toISOString()}.`,
-              `Tell the user; after the reset, call ResumeWorkflowRun with run_id="${runId}". Do not rebuild the workflow.`,
+              // 带重置时刻的额度停止由宿主自动续跑（bootstrap 的 dynamic-workflow-quota-resume.ts）：
+              // 原先这句让主代理「重置后自己 Resume」，于是 run 一直等到有人记起来。
+              `The application resumes this run by itself a minute after the reset, while this session is open or the next time it is opened. Tell the user; do not call ResumeWorkflowRun before the reset, and do not rebuild the workflow.`,
             ];
       default:
         return [

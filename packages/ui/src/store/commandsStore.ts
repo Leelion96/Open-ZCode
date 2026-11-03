@@ -12,8 +12,11 @@ import type { ICommandsService } from "@zcode/services";
 interface CommandsStoreState {
   workspacePath: string | null;
   workspaceIdentity: string | null;
+  /** 远端「用户」的 cacheAuthorityKey（`source-settings:<id>`）；项目与本机为 null。 */
+  authorityKey: string | null;
   loadedWorkspacePath: string | null;
   loadedWorkspaceIdentity: string | null;
+  loadedAuthorityKey: string | null;
   commands: ZCodeCommand[];
   userCommands: UserCommand[];
   pluginCommands: ZCodeCommand[];
@@ -25,6 +28,7 @@ interface CommandsStoreState {
     workspacePath: string | undefined,
     commandsService: ICommandsService,
     workspaceIdentity?: string,
+    authorityKey?: string,
   ) => Promise<void>;
   refresh: (commandsService: ICommandsService) => Promise<void>;
   createCommand: (
@@ -49,23 +53,32 @@ const inflightLists = new Map<string, Promise<void>>();
 
 type StoreGet = () => CommandsStoreState;
 
-function listKey(workspacePath: string | undefined, workspaceIdentity?: string): string {
-  return workspaceIdentity?.trim() || workspacePath || "__no_workspace__";
+// Bug 原因：请求键只看 identity / 路径。同 home 的两台远端「用户」都没有 identity、路径都是 home，
+// 于是 B 复用 A 的在途请求、A 的迟到结果通过 B 的判定，B 显示 A 的命令，开关经 B 的服务提交 A 的命令。
+// 修法：authority 进入请求键、迟到判定和 loaded 投影，Scope 目标整组参与比对。
+function listKey(
+  workspacePath: string | undefined,
+  workspaceIdentity?: string,
+  authorityKey?: string | null,
+): string {
+  return `${authorityKey?.trim() || "workspace"}\0${workspaceIdentity?.trim() || workspacePath || "__no_workspace__"}`;
 }
 
 // store 是单例，Scope 菜单可在同一页面切换 target。任何异步结果写回之前都要比对
 // 发起时的 target key，否则慢 target 的列表会覆盖当前投影，随后 delete/toggle 会拿着旧 host
 // 的 filePath 在当前 target 的 host 上执行。
 function currentListKey(get: StoreGet): string {
-  const { workspacePath, workspaceIdentity } = get();
-  return listKey(workspacePath ?? undefined, workspaceIdentity ?? undefined);
+  const { workspacePath, workspaceIdentity, authorityKey } = get();
+  return listKey(workspacePath ?? undefined, workspaceIdentity ?? undefined, authorityKey);
 }
 
 export const useCommandsStore = create<CommandsStoreState>((set, get) => ({
   workspacePath: null,
   workspaceIdentity: null,
+  authorityKey: null,
   loadedWorkspacePath: null,
   loadedWorkspaceIdentity: null,
+  loadedAuthorityKey: null,
   commands: [],
   userCommands: [],
   pluginCommands: [],
@@ -74,10 +87,19 @@ export const useCommandsStore = create<CommandsStoreState>((set, get) => ({
   error: null,
   operatingCommandId: null,
 
-  initialize: async (workspacePath, commandsService, workspaceIdentity) => {
+  initialize: async (workspacePath, commandsService, workspaceIdentity, authorityKey) => {
     const normalizedWorkspaceIdentity = workspaceIdentity?.trim() || null;
-    set({ workspacePath: workspacePath ?? null, workspaceIdentity: normalizedWorkspaceIdentity });
-    const key = listKey(workspacePath, normalizedWorkspaceIdentity ?? undefined);
+    const normalizedAuthorityKey = authorityKey?.trim() || null;
+    set({
+      workspacePath: workspacePath ?? null,
+      workspaceIdentity: normalizedWorkspaceIdentity,
+      authorityKey: normalizedAuthorityKey,
+    });
+    const key = listKey(
+      workspacePath,
+      normalizedWorkspaceIdentity ?? undefined,
+      normalizedAuthorityKey,
+    );
     const existing = inflightLists.get(key);
     if (existing) {
       await existing;
@@ -100,6 +122,7 @@ export const useCommandsStore = create<CommandsStoreState>((set, get) => ({
           capability: result.capability,
           loadedWorkspacePath: workspacePath ?? null,
           loadedWorkspaceIdentity: normalizedWorkspaceIdentity,
+          loadedAuthorityKey: normalizedAuthorityKey,
           loading: false,
         });
       } catch (err) {
@@ -115,7 +138,7 @@ export const useCommandsStore = create<CommandsStoreState>((set, get) => ({
   },
 
   refresh: async (commandsService) => {
-    const { workspacePath, workspaceIdentity } = get();
+    const { workspacePath, workspaceIdentity, authorityKey } = get();
     const key = currentListKey(get);
     set({ loading: true, error: null });
     try {
@@ -131,6 +154,7 @@ export const useCommandsStore = create<CommandsStoreState>((set, get) => ({
         capability: result.capability,
         loadedWorkspacePath: workspacePath,
         loadedWorkspaceIdentity: workspaceIdentity,
+        loadedAuthorityKey: authorityKey,
         loading: false,
       });
     } catch (err) {

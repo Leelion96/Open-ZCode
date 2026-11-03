@@ -4,6 +4,9 @@
 >
 > 本文是官方 Server MCP 客户端鉴权、HTTP/stdio 投递与额度状态的当前事实入口。
 > 历史阶段设计保留在 phase-1 / phase-2 文档中，仅作 Decision Log，不再作为实现依据。
+>
+> 官方插件命令（`consumer: "plugin-command"`）复用同一个反向请求，规则见
+> [zcode-official-plugin-command-auth-spec.md](zcode-official-plugin-command-auth-spec.md)。
 
 ## 1. 身份与职责
 

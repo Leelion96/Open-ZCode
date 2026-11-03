@@ -30,6 +30,15 @@ export const HOOKS_CONTEXT = {
   stop: (index: number) => `HOOK_STOP_CONTEXT_${index}`,
 } as const;
 
+/** 工具 Hook 的 context 在模型请求里的文本：`<Event>:<ToolName> hook additional context: <context>`。 */
+export function toolHookContextText(
+  hookEventName: "PreToolUse" | "PostToolUse" | "PostToolUseFailure",
+  toolName: string,
+  context: string,
+): string {
+  return `${hookEventName}:${toolName} hook additional context: ${context}`;
+}
+
 export const HOOKS_REASON = {
   asyncIgnored: "HOOK_ASYNC_DECISION_MUST_BE_IGNORED",
   permissionDeny: "HOOK_PERMISSION_DENY_REASON",

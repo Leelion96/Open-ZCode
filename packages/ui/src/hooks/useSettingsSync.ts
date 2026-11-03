@@ -28,6 +28,7 @@ function createInitialState(): SettingsSyncUiState {
     selectedKeys: [],
     tasks: [],
     result: null,
+    workspaceRequiredCount: 0,
     error: null,
   };
 }
@@ -105,20 +106,76 @@ function buildStateSelections(selectedKeys: string[]): SettingsSyncSelection[] {
   });
 }
 
+function countSelectionItems(selection: SettingsSyncSelection): number {
+  return (
+    selection.skillPaths?.length ??
+    selection.commandPaths?.length ??
+    selection.pluginPaths?.length ??
+    selection.mcpServerPaths?.length ??
+    1
+  );
+}
+
 function buildTasksFromSelections(selections: SettingsSyncSelection[]): SettingsSyncUiTask[] {
   return selections.map((selection, index) => ({
     id: `${selection.agent}:${selection.category}:${selection.sourceScope ?? "all"}:${selection.targetScope ?? "auto"}:${index}`,
     agent: selection.agent,
     category: selection.category,
-    discoveredCount:
-      selection.skillPaths?.length ??
-      selection.commandPaths?.length ??
-      selection.pluginPaths?.length ??
-      selection.mcpServerPaths?.length ??
-      1,
+    discoveredCount: countSelectionItems(selection),
     status: "pending" as const,
   }));
 }
+
+/** 导入目标或来源是项目的选择：没有打开的项目时无处读写。 */
+function selectionRequiresWorkspace(selection: SettingsSyncSelection): boolean {
+  return selection.targetScope === "project" || selection.sourceScope === "project";
+}
+
+/**
+ * 按 selections 原顺序合并结果：需要项目的项记为失败，其余依次取导入服务的结果。
+ * applyTaskResults 按 agent:category 的出现顺序对齐任务，所以顺序必须与 selections 一致。
+ */
+function mergeWorkspaceRequiredResults(
+  selections: SettingsSyncSelection[],
+  blocked: ReadonlySet<SettingsSyncSelection>,
+  imported: SettingsSyncImportResult,
+): SettingsSyncImportResult {
+  const importedResults = [...imported.taskResults];
+  const taskResults = selections.flatMap((selection) => {
+    if (!blocked.has(selection)) {
+      const next = importedResults.shift();
+      return next ? [next] : [];
+    }
+    const failedCount = countSelectionItems(selection);
+    return [
+      {
+        agent: selection.agent,
+        category: selection.category,
+        status: "failed" as const,
+        importedCount: 0,
+        skippedCount: 0,
+        failedCount,
+      },
+    ];
+  });
+  const blockedCount = [...blocked].reduce(
+    (sum, selection) => sum + countSelectionItems(selection),
+    0,
+  );
+  return {
+    successCount: imported.successCount,
+    skippedCount: imported.skippedCount,
+    failedCount: imported.failedCount + blockedCount,
+    taskResults: [...taskResults, ...importedResults],
+  };
+}
+
+const EMPTY_IMPORT_RESULT: SettingsSyncImportResult = {
+  successCount: 0,
+  skippedCount: 0,
+  failedCount: 0,
+  taskResults: [],
+};
 
 function normalizeError(error: unknown): string {
   if (error instanceof Error) {
@@ -150,31 +207,34 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
     params.workspaceIdentity,
   );
   const runningImportRef = useRef(0);
+  const discoveryRequestRef = useRef(0);
   const [state, setState] = useState<SettingsSyncUiState>(createInitialState);
 
   const loadDiscovery = useCallback(
-    async (intent: LoadDiscoveryIntent = "firstRun") => {
+    async (intent: LoadDiscoveryIntent = "firstRun", requestId = ++discoveryRequestRef.current) => {
       if (!params.workspacePath) {
         return;
       }
 
-      setState((current) => ({
-        ...current,
-        loading: true,
-        error: null,
-      }));
+      // 首启回包曾覆盖手动窗口；关闭和工作区切换后的回包也会复活旧 UI。
+      // 每次检测只提交到自己的请求代次，连排队中的 React updater 也要复核。
+      const isCurrent = () => discoveryRequestRef.current === requestId;
+      const updateState = (update: (current: SettingsSyncUiState) => SettingsSyncUiState) =>
+        setState((current) => (isCurrent() ? update(current) : current));
+      updateState((current) => ({ ...current, loading: true, error: null }));
 
       try {
         const rawDiscovery = await settingsSyncService.detect({
           workspacePath: params.workspacePath,
           workspaceIdentity: params.workspaceIdentity,
         });
+        if (!isCurrent()) return;
         const discovery = normalizeDiscovery(rawDiscovery);
         if (discovery.agents.length === 0) {
           if (intent === "manual") {
-            // 设置页点「引导」会 reopen 并补跑 detect；空结果沿用首启逻辑会把 open 重置为 false，
-            // 用户会看到弹窗一闪即关。手动打开应保留欢迎页，让用户仍可走会话迁移等流程。
-            setState((current) => ({
+            // 数据同步页点「迁移」会 reopen 并补跑 detect；空结果沿用首启逻辑会把 open 重置为 false，
+            // 用户会看到弹窗一闪即关。手动打开应保留向导第一步「会话」，让用户仍可走会话迁移等流程。
+            updateState((current) => ({
               ...current,
               open: true,
               loading: false,
@@ -193,14 +253,15 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
           // 去掉三方 agent 迁移后，首启检测会返回空结果。
           // 空结果不应打开一个没有可操作项的 onboarding 弹窗，应直接标记为已处理。
           await settingsSyncService.markFirstRunPromptHandled();
-          setState(createInitialState());
+          if (!isCurrent()) return;
+          updateState(createInitialState);
           logger.info("[settings-sync] discovery empty, prompt handled", {
             workspacePath: params.workspacePath,
           });
           return;
         }
         const selectedKeys = buildDefaultSelectedKeys(discovery);
-        setState((current) => ({
+        updateState((current) => ({
           ...current,
           open: true,
           loading: false,
@@ -217,12 +278,13 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
           selectedCount: selectedKeys.length,
         });
       } catch (error) {
+        if (!isCurrent()) return;
         const message = normalizeError(error);
         logger.error("[settings-sync] discovery failed", {
           workspacePath: params.workspacePath,
           error: message,
         });
-        setState((current) => ({
+        updateState((current) => ({
           ...current,
           open: true,
           loading: false,
@@ -234,17 +296,20 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
   );
 
   useEffect(() => {
+    const requestId = ++discoveryRequestRef.current;
+    const cancel = () => {
+      discoveryRequestRef.current += 1;
+    };
+    // 新工作区不能沿用上一工作区的检测结果或加载状态。
+    setState(createInitialState());
     if (!params.workspacePath) {
-      setState(createInitialState());
-      return;
+      return cancel;
     }
 
     if (FORCE_SHOW_ONBOARDING_ON_EVERY_REFRESH) {
-      void loadDiscovery();
-      return;
+      void loadDiscovery("firstRun", requestId);
+      return cancel;
     }
-
-    let cancelled = false;
 
     void (async () => {
       try {
@@ -252,38 +317,34 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
         // 之前调试阶段直接每次进入 workspace 都弹，用户一旦跳过仍会被重复打断。
         // 这里先读取 handled 状态，只在第一次尚未消费时才继续做检测和展示。
         const promptState = await settingsSyncService.getFirstRunPromptState();
-        if (cancelled) {
+        if (discoveryRequestRef.current !== requestId) {
           return;
         }
 
         if (promptState.handled) {
-          setState(createInitialState());
+          setState((current) =>
+            discoveryRequestRef.current === requestId ? createInitialState() : current,
+          );
           return;
         }
 
-        await loadDiscovery();
+        await loadDiscovery("firstRun", requestId);
       } catch (error) {
+        if (discoveryRequestRef.current !== requestId) return;
         const message = normalizeError(error);
         logger.error("[settings-sync] first run prompt state failed", {
           workspacePath: params.workspacePath,
           error: message,
         });
-        if (cancelled) {
-          return;
-        }
-
-        setState((current) => ({
-          ...current,
-          open: true,
-          loading: false,
-          error: message,
-        }));
+        setState((current) =>
+          discoveryRequestRef.current === requestId
+            ? { ...current, open: true, loading: false, error: message }
+            : current,
+        );
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return cancel;
   }, [loadDiscovery, params.workspacePath, settingsSyncService]);
 
   const selectedCount = state.selectedKeys.length;
@@ -296,8 +357,9 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
   }, [state.tasks]);
 
   const close = useCallback(() => {
+    discoveryRequestRef.current += 1;
     runningImportRef.current += 1;
-    setState((current) => ({ ...current, open: false, importing: false }));
+    setState((current) => ({ ...current, open: false, loading: false, importing: false }));
     if (FORCE_SHOW_ONBOARDING_ON_EVERY_REFRESH) {
       return;
     }
@@ -312,16 +374,13 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
   }, [params.workspacePath, settingsSyncService]);
 
   const reopen = useCallback(() => {
-    setState((current) => {
-      if (!current.discovery && !current.loading && params.workspacePath) {
-        // 设置页里的“重新打开 onboarding”可能发生在首启提示已处理之后。
-        // 这时本地状态已经回到初始态；如果只把 open 设成 true，用户会看到一个没有 discovery 数据的空弹窗。
-        // 这里在缺少数据时主动补一次检测，保证从设置页进入仍然能拿到完整可迁移内容。
-        void loadDiscovery("manual");
-      }
-      return { ...current, open: true };
-    });
-  }, [loadDiscovery, params.workspacePath]);
+    const requestId = ++discoveryRequestRef.current;
+    setState((current) => ({ ...current, open: true, loading: false }));
+    // 手动打开接管首启检测，不能被旧 loading 阻止，也不能在 updater 内发起副作用。
+    if (!state.discovery && params.workspacePath) {
+      void loadDiscovery("manual", requestId);
+    }
+  }, [loadDiscovery, params.workspacePath, state.discovery]);
 
   const toggleSelection = useCallback((key: string) => {
     setState((current) => {
@@ -395,10 +454,6 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
       additionalSelections: SettingsSyncSelection[] = [],
       options: { includeCurrentSelections?: boolean } = {},
     ) => {
-      if (!params.workspacePath) {
-        return;
-      }
-
       const includeCurrentSelections = options.includeCurrentSelections ?? true;
       // 数据迁移向导可临时隐藏代理设置步骤；隐藏时不能把默认选中的 providers 暗中导入。
       const stateSelections =
@@ -407,6 +462,20 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
       if (selections.length === 0) {
         return;
       }
+      discoveryRequestRef.current += 1;
+      // 修复（决定 24）：原来没有 workspacePath 时直接 return，从数据同步页「迁移」进入时
+      // 技能 / MCP / 命令导入被整体静默跳过，结果页仍显示完成。导入服务支持没有项目：
+      // 用户级的项照常导入；需要项目的项不导入，记为失败并计数，由完成页写明原因。
+      const workspaceRequired = new Set(
+        params.workspacePath ? [] : selections.filter(selectionRequiresWorkspace),
+      );
+      const importableSelections = selections.filter(
+        (selection) => !workspaceRequired.has(selection),
+      );
+      const workspaceRequiredCount = [...workspaceRequired].reduce(
+        (sum, selection) => sum + countSelectionItems(selection),
+        0,
+      );
       const runId = runningImportRef.current + 1;
       runningImportRef.current = runId;
       const initialTasks =
@@ -419,23 +488,35 @@ export function useSettingsSync(params: { workspacePath?: string; workspaceIdent
 
       setState((current) => ({
         ...current,
+        loading: false,
         importing: true,
         step: "importing",
         tasks: initialTasks,
         result: null,
+        workspaceRequiredCount,
         error: null,
       }));
 
       logger.info("[settings-sync] import started", {
         workspacePath: params.workspacePath,
         selections,
+        workspaceRequiredCount,
       });
 
-      const importPromise = settingsSyncService.importSelected({
-        workspacePath: params.workspacePath,
-        workspaceIdentity: params.workspaceIdentity,
-        selections,
-      });
+      const importPromise =
+        importableSelections.length > 0
+          ? settingsSyncService
+              .importSelected({
+                workspacePath: params.workspacePath,
+                workspaceIdentity: params.workspaceIdentity,
+                selections: importableSelections,
+              })
+              .then((imported) =>
+                mergeWorkspaceRequiredResults(selections, workspaceRequired, imported),
+              )
+          : Promise.resolve(
+              mergeWorkspaceRequiredResults(selections, workspaceRequired, EMPTY_IMPORT_RESULT),
+            );
 
       for (let index = 0; index < initialTasks.length; index += 1) {
         if (runningImportRef.current !== runId) {

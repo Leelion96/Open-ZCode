@@ -31,7 +31,7 @@ function compareSessionTasks(
 }
 
 function getSessionLabel(task: ZCodeTaskMeta): string {
-  const title = task.title.replace(/^#sess_[a-zA-Z0-9._-]+\s*/, "").trim();
+  const title = task.title.replace(/^#(?:sess|session)_[a-zA-Z0-9._-]+\s*/, "").trim();
   return title || "Untitled session";
 }
 

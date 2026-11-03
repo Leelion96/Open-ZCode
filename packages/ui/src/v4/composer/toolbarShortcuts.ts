@@ -20,6 +20,7 @@ import {
 } from "@/shortcuts/bindings.js";
 import { useEffectiveShortcutBindings } from "@/shortcuts/useShortcutBindings.js";
 import { logger } from "@/logger.js";
+import { useConfirmDialogStore } from "@/store/confirmDialogStore.js";
 
 type ChatToolbarShortcutKey = "m" | "ctrlShiftM" | "t" | null;
 
@@ -137,7 +138,10 @@ export function resolveToolbarShortcutAction(
     if (candidate.disabled) {
       continue;
     }
-    if (!candidate.option || getChatToolbarShortcutKey(candidate.option.category) !== candidate.expectedKey) {
+    if (
+      !candidate.option ||
+      getChatToolbarShortcutKey(candidate.option.category) !== candidate.expectedKey
+    ) {
       continue;
     }
     for (const binding of effective[candidate.commandId] ?? []) {
@@ -187,7 +191,10 @@ export function useToolbarShortcutBindings(params: {
     function handleWindowKeydown(event: KeyboardEvent) {
       // 录制态键盘归录制器独占。本监听先于录制监听注册（同 capture 阶段），
       // 不短路的话录制期按键预览会真的触发工具条动作。
-      if (isShortcutRecordingActive()) {
+      if (
+        isShortcutRecordingActive() ||
+        useConfirmDialogStore.getState().pendingRequest?.presentation === "yolo-confirmation"
+      ) {
         return;
       }
       // Windows/Linux 上 Cmd/Ctrl+P 已由 useAppKeyboard 用于「搜索

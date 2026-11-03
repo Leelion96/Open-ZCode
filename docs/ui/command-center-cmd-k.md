@@ -61,6 +61,28 @@
 - `@` 限定 files。
 - 搜索结果仍按命令、任务、文件分组展示，并保留搜索历史。
 
+## 历史任务搜索范围
+
+- 输入关键词时，桌面和手机共享的 Command Center 请求当前 Host 的全部持久化任务。UI 只提交关键词、排序、数量上限及 `workspaceScopes: "host"`，不能用 `tabStore` 或已加载任务裁剪范围。
+- Host 从自己的 `tasks-index.sqlite` 查询标题和已索引正文，按存储 `host_id` 隔离。包括未打开目录、未归类、置顶和已归档任务；排除 App/CLI 已删除任务及其他 Host 的缓存。不依赖 CLI 启动，也不为搜索连接离线设备。
+- `kind: "all"` 表示全部未删除 membership；已有按 workspace 的 active/pinned/archived/timeline 列表及空关键词的当前工作区最近任务保持既有语义。
+- 搜索结果由 Host 完成筛选和排序。重新打开搜索或更换关键词必须重新读取 Host，不能复用仅覆盖已打开 workspace 的永久缓存。
+- 点击未打开本地目录的搜索结果时，复用任务导航入口打开目标 workspace，再选择目标任务；读取已归档任务不改变归档状态。
+- 本次不增加历史正文回填。索引为空的旧正文仍不匹配；当前 continuous 订阅只保证历史可读，不能视为正文索引已经回填。
+
+```text
+桌面 / 手机关键词 → Window Host → 当前 host_id 的持久化索引 → 排序和片段 → UI
+点击结果 → 打开目标 workspace → 选择任务 → 既有 continuous / replayable 历史读取
+```
+
+| ID            | 操作                                                                 | 断言                                                                   |
+| ------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| CC-HISTORY-01 | 冷启动，仅打开一个目录，搜索 36 天前其他目录及未归类任务的标题和正文 | 无需打开任务或启动其 CLI 即可命中；包括置顶、归档，不含删除和其他 Host |
+| CC-HISTORY-02 | 点击未打开目录的搜索结果，再关闭和重开搜索                           | 打开正确任务；范围不随 tab 改变；归档状态不变                          |
+| CC-HISTORY-03 | 手机通过真实 shared-host 配对后搜索同一批历史任务                    | 使用同一 Host 索引与隔离范围                                           |
+
+候选用例：`packages/desktop/test/e2e/ui-shell/manual-review/pending/command-center-history-search.test.ts`。使用隔离持久化历史，不发送模型请求。
+
 ## 任务行选中身份
 
 - cmdk 是面板选中状态的唯一持有者；React `key` 与 cmdk `value` 都必须使用稳定的行身份。
@@ -82,11 +104,11 @@
 | CC-SELECT-02 | 搜索返回同标题、同工作区显示名、同正文片段的不同任务        | 每行可独立选中；不同远程 identity 和同任务的不同片段也可独立选中 |
 
 组件回归：`packages/ui/test/commandCenterSelection.test.ts`。
-桌面交互候选：`packages/desktop/test/e2e/ui-shell/manual-review/pending/command-center-selection.test.ts`，验证真实索引列表与 cmdk 鼠标/键盘交互；不发送模型请求。
+桌面交互候选：`packages/desktop/test/e2e/ui-shell/command-center-selection.test.ts`，验证真实索引列表与 cmdk 鼠标/键盘交互；不发送模型请求。
 
 ## 视觉细节
 
-- 搜索框聚焦时只使用外层胶囊的 focus 边框和背景，内部输入元素不额外显示矩形 outline；深浅主题与窄屏保持一致。全局不再按弹窗、远程控件或设置导航强制添加 outline，命令中心不保留对应的 `!important` 局部覆盖。`ui-shell/manual-review/pending/command-center-focus.test.ts`（CC-FOCUS-01）独立检查内部 outline 为零、外层边框保留，不依赖任务列表数据。
+- 搜索框聚焦时只使用外层胶囊的 focus 边框和背景，内部输入元素不额外显示矩形 outline；深浅主题与窄屏保持一致。全局不再按弹窗、远程控件或设置导航强制添加 outline，命令中心不保留对应的 `!important` 局部覆盖。`ui-shell/manual-review/pending/command-center-focus.test.ts`（CC-FOCUS-01）独立检查内部 `outline-style: none`、无 box-shadow 且外层边框保留，不依赖任务列表数据。Electron 44 的计算样式在 `outline-style: none` 时仍可返回 `outline-width: 3px`；不能用该数值判断是否绘制边框。
 - Command Center 与 QuickPick 的列表 item 使用 `rounded-xl`，让键盘选中态和 hover 态更柔和。
 - 底层 `CommandItem` 保持 `rounded-lg` 默认值；Cmd+K/QuickPick 通过共享 item class 覆盖为更大圆角，避免影响其它命令列表。
 - 命令图标优先复用对应既有入口的 Lucide 图标；同一动作在 Header、Sidebar、Side pane 与 Cmd+K 中不能使用不同语义图标。

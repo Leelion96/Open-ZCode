@@ -1,11 +1,26 @@
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useState, useSyncExternalStore } from "react";
+import type { WorkspaceMcpAdmissionSnapshotState } from "@zcode/shared/zcode-protocol-v4";
+import { getWorkspaceKey } from "@/lib/workspaceKey.js";
 import {
-  TID_V4_WORKSPACE_HOOK_PENDING_BANNER,
+  TID_V4_WORKSPACE_MCP_PENDING_TRIGGER,
+  TID_V4_WORKSPACE_MCP_PENDING_POPOVER,
+  TID_V4_WORKSPACE_MCP_PENDING_UNREAD,
+  TID_V4_WORKSPACE_MCP_PENDING_REVIEW,
+  TID_V4_WORKSPACE_MCP_PENDING_DISMISS,
+  TID_V4_WORKSPACE_HOOK_PENDING_POPOVER,
+  TID_V4_WORKSPACE_HOOK_PENDING_TRIGGER,
+  TID_V4_WORKSPACE_HOOK_PENDING_UNREAD,
   TID_V4_WORKSPACE_HOOK_PENDING_DISMISS,
   TID_V4_WORKSPACE_HOOK_PENDING_REVIEW,
 } from "@zcode/shared/test-ids";
+import { Anchor, Cable } from "lucide-react";
+import { Button } from "@/components/ui/button.js";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { setPendingSettingsSectionIntent } from "@/lib/settingsNavigation.js";
+import {
+  setPendingSettingsSectionIntent,
+  setPendingSettingsPluginIntent,
+} from "@/lib/settingsNavigation.js";
 import { logger } from "@/logger.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
 import { useOptionalTabStore } from "@/store/TabStoreProvider.js";
@@ -16,35 +31,21 @@ import {
 } from "@/store/workspaceHookReviewStore.js";
 import { sendWorkspaceHookCommand } from "@/settings/workspaceHookReviewCommands.js";
 
-/**
- * 软门禁 dismiss store：轻量模块级 Map。
- * 幂等 key = sessionId + bundleDigest；bundle 变化后提示条重新出现。
- * 不落盘——刷新或重载后重新提示，符合「用户应该知道」的产品语义。
- */
-class WorkspaceHookPendingDismissStore {
-  private dismissed = new Set<string>();
-
-  /** 标记某个 session+bundle 组合已 dismiss */
-  dismiss(sessionId: string, bundleDigest: string): void {
-    this.dismissed.add(this.key(sessionId, bundleDigest));
-  }
-
-  /** 查询是否已 dismiss */
-  isDismissed(sessionId: string, bundleDigest: string): boolean {
-    return this.dismissed.has(this.key(sessionId, bundleDigest));
-  }
-
-  /** 清空全部 dismiss 记录（测试用） */
-  clear(): void {
-    this.dismissed.clear();
-  }
-
-  private key(sessionId: string, bundleDigest: string): string {
-    return `${sessionId}:${bundleDigest}`;
-  }
+// 已读和忽略只属于 renderer 展示状态，不能改写 Runtime admission 或 Trust。
+// 使用同一订阅源，避免同一会话多 pane 的图标显示互相矛盾。
+type ReminderState = "read" | "dismissed";
+const reminderStates = new Map<string, ReminderState>();
+const reminderListeners = new Set<() => void>();
+const subscribeReminder = (listener: () => void) => {
+  reminderListeners.add(listener);
+  return () => {
+    reminderListeners.delete(listener);
+  };
+};
+function setReminderState(key: string, state: ReminderState): void {
+  reminderStates.set(key, state);
+  reminderListeners.forEach((listener) => listener());
 }
-
-export const workspaceHookPendingDismissStore = new WorkspaceHookPendingDismissStore();
 
 export interface WorkspaceHookAdmissionInfo {
   pendingCount: number;
@@ -52,33 +53,35 @@ export interface WorkspaceHookAdmissionInfo {
   workspaceIdentity?: string;
 }
 
-export interface WorkspaceHookPendingBannerProps {
+export interface WorkspaceHookPendingIndicatorProps {
   sessionId: string;
   workspacePath: string;
   workspaceIdentity?: string;
   admission: WorkspaceHookAdmissionInfo | null;
 }
 
-/**
- * 软门禁常驻提示条。
- *
- * 当 snapshot.workspaceHookAdmission.pendingCount > 0 时显示，提供 [去审核] 与 [忽略]。
- * - [去审核]：打开设置页 Hooks 分区 + 发送 requestWorkspaceHookReview 命令。
- *   命令发送失败不阻断导航（容错，logger 记 warn）。
- * - [忽略]：renderer 本地 dismiss，幂等 key = sessionId + bundleDigest。
- */
-export const WorkspaceHookPendingBanner = memo(function WorkspaceHookPendingBanner({
+/** composer 权限右侧的待审核提醒；审核动作继续复用原 command binding。 */
+export const WorkspaceHookPendingIndicator = memo(function WorkspaceHookPendingIndicator({
   sessionId,
   workspacePath,
   workspaceIdentity,
   admission,
-}: WorkspaceHookPendingBannerProps) {
+}: WorkspaceHookPendingIndicatorProps) {
   const { intl } = useZCodeIntl();
   const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
   const commandBindings = useWorkspaceHookReviewStore((state) => state.commandBindings);
-  const [, setDismissRevision] = useState(0);
+  const [open, setOpen] = useState(false);
+  const reminderKey = JSON.stringify([sessionId, admission?.bundleDigest]);
+  const reminderState = useSyncExternalStore(subscribeReminder, () =>
+    reminderStates.get(reminderKey),
+  );
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) setReminderState(reminderKey, "read");
+  };
 
   const handleReview = useCallback(() => {
+    setOpen(false);
     // 两行式打开设置页：设置 intent 再 open tab（仿 V4ComposerToolbar 的 handleOpenModelProviderSettings）
     setPendingSettingsSectionIntent("hooks");
     openSettingsTab?.();
@@ -110,67 +113,184 @@ export const WorkspaceHookPendingBanner = memo(function WorkspaceHookPendingBann
         });
       });
     }
-  }, [
-    admission,
-    commandBindings,
-    openSettingsTab,
-    sessionId,
-    workspaceIdentity,
-    workspacePath,
-  ]);
+  }, [admission, commandBindings, openSettingsTab, sessionId, workspaceIdentity, workspacePath]);
 
   const handleDismiss = useCallback(() => {
     if (admission) {
       runUserAction({
         input: { featureId: "conversation.blocking.hook", action: "dismiss", trigger: "button" },
         operation: () => {
-          workspaceHookPendingDismissStore.dismiss(sessionId, admission.bundleDigest);
-          // Bug 原因：模块级 Set 的写入不属于 React 状态，memo 组件不会重渲染。
-          setDismissRevision((revision) => revision + 1);
+          setOpen(false);
+          setReminderState(reminderKey, "dismissed");
         },
         completed: { resultSource: "local_commit" },
         failureStage: "hook_dismiss",
       });
     }
-  }, [admission, sessionId]);
+  }, [admission, reminderKey]);
 
-  if (!admission || admission.pendingCount <= 0) {
+  if (!admission || admission.pendingCount <= 0 || reminderState === "dismissed") {
     return null;
   }
-
-  // 幂等 dismiss 检查：同 bundle 已 dismiss 则隐藏
-  if (workspaceHookPendingDismissStore.isDismissed(sessionId, admission.bundleDigest)) {
-    return null;
-  }
+  const message = intl.formatMessage(
+    { id: "chat.workspaceHookPending.message" },
+    { count: admission.pendingCount },
+  );
 
   return (
-    <div
-      role="status"
-      data-testid={TID_V4_WORKSPACE_HOOK_PENDING_BANNER}
-      className="mb-3 flex w-full shrink-0 flex-wrap items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-ui-base text-foreground backdrop-blur-md"
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-md"
+          data-testid={TID_V4_WORKSPACE_HOOK_PENDING_TRIGGER}
+          aria-label={intl.formatMessage({ id: "chat.workspaceHookPending.label" })}
+          aria-description={message}
+          className="relative text-foreground-subtle"
+        >
+          <Anchor className="size-4" />
+          {!reminderState ? (
+            <span
+              data-testid={TID_V4_WORKSPACE_HOOK_PENDING_UNREAD}
+              aria-hidden="true"
+              className="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-brand"
+            />
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        collisionPadding={12}
+        data-testid={TID_V4_WORKSPACE_HOOK_PENDING_POPOVER}
+        aria-label={intl.formatMessage({ id: "chat.workspaceHookPending.label" })}
+        className="w-80 max-w-[calc(100vw-24px)] gap-3 border-popover-border p-3"
+      >
+        <p className="text-ui-sm text-foreground">{message}</p>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid={TID_V4_WORKSPACE_HOOK_PENDING_DISMISS}
+            className="rounded-lg text-foreground-subtle"
+            onClick={handleDismiss}
+          >
+            {intl.formatMessage({ id: "chat.workspaceHookPending.dismiss" })}
+          </Button>
+          <Button
+            type="button"
+            data-testid={TID_V4_WORKSPACE_HOOK_PENDING_REVIEW}
+            className="rounded-lg"
+            onClick={handleReview}
+          >
+            {intl.formatMessage({ id: "chat.workspaceHookPending.review" })}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+});
+
+export const WorkspaceMcpPendingIndicator = memo(function WorkspaceMcpPendingIndicator({
+  sessionId,
+  workspacePath,
+  workspaceIdentity,
+  admission,
+}: {
+  sessionId: string;
+  workspacePath: string;
+  workspaceIdentity?: string;
+  admission: WorkspaceMcpAdmissionSnapshotState;
+}) {
+  const { intl } = useZCodeIntl();
+  const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
+  const [open, setOpen] = useState(false);
+  const workspaceKey = getWorkspaceKey(workspacePath, workspaceIdentity);
+  // MCP 与 Hook 共用 renderer 订阅机制；类型和工作区参与 key，避免已读/忽略互相覆盖。
+  const reminderKey = JSON.stringify(["mcp", workspaceKey, sessionId, admission.bundleDigest]);
+  const reminderState = useSyncExternalStore(subscribeReminder, () =>
+    reminderStates.get(reminderKey),
+  );
+  if (
+    admission.pendingCount <= 0 ||
+    (admission.workspaceIdentity && admission.workspaceIdentity !== workspaceKey) ||
+    reminderState === "dismissed"
+  )
+    return null;
+  const message = intl.formatMessage(
+    { id: "chat.workspaceMcpPending.message" },
+    { count: admission.pendingCount },
+  );
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) setReminderState(reminderKey, "read");
+      }}
     >
-      <p className="min-w-0 flex-1">
-        {intl.formatMessage(
-          { id: "chat.workspaceHookPending.message" },
-          { count: admission.pendingCount },
-        )}
-      </p>
-      <button
-        type="button"
-        data-testid={TID_V4_WORKSPACE_HOOK_PENDING_REVIEW}
-        className="shrink-0 rounded-md bg-primary px-2.5 py-1 text-primary-foreground hover:bg-primary/80"
-        onClick={handleReview}
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-md"
+          data-testid={TID_V4_WORKSPACE_MCP_PENDING_TRIGGER}
+          aria-label={intl.formatMessage({ id: "chat.workspaceMcpPending.label" })}
+          aria-description={message}
+          className="relative text-foreground-subtle"
+        >
+          <Cable className="size-4" />
+          {!reminderState ? (
+            <span
+              data-testid={TID_V4_WORKSPACE_MCP_PENDING_UNREAD}
+              aria-hidden="true"
+              className="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-brand"
+            />
+          ) : null}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        collisionPadding={12}
+        data-testid={TID_V4_WORKSPACE_MCP_PENDING_POPOVER}
+        aria-label={intl.formatMessage({ id: "chat.workspaceMcpPending.label" })}
+        className="w-80 max-w-[calc(100vw-24px)] gap-3 border-popover-border p-3"
       >
-        {intl.formatMessage({ id: "chat.workspaceHookPending.review" })}
-      </button>
-      <button
-        type="button"
-        data-testid={TID_V4_WORKSPACE_HOOK_PENDING_DISMISS}
-        className="shrink-0 rounded-md px-2 py-1 text-foreground-subtle hover:bg-hover"
-        onClick={handleDismiss}
-      >
-        {intl.formatMessage({ id: "chat.workspaceHookPending.dismiss" })}
-      </button>
-    </div>
+        <p className="text-ui-sm text-foreground">{message}</p>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid={TID_V4_WORKSPACE_MCP_PENDING_DISMISS}
+            className="rounded-lg text-foreground-subtle"
+            onClick={() => {
+              setOpen(false);
+              setReminderState(reminderKey, "dismissed");
+              logger.info("[workspace-mcp-pending] dismissed", { sessionId, workspaceKey });
+            }}
+          >
+            {intl.formatMessage({ id: "chat.workspaceMcpPending.dismiss" })}
+          </Button>
+          <Button
+            type="button"
+            data-testid={TID_V4_WORKSPACE_MCP_PENDING_REVIEW}
+            className="rounded-lg"
+            disabled={!openSettingsTab}
+            onClick={() => {
+              setOpen(false);
+              // 导航固定到当前工作区，不能沿用设置页上一次查看的其它目标。
+              setPendingSettingsPluginIntent("mcps", { scopeKey: workspaceKey });
+              openSettingsTab?.();
+              logger.info("[workspace-mcp-pending] open settings", { sessionId, workspaceKey });
+            }}
+          >
+            {intl.formatMessage({ id: "chat.workspaceMcpPending.review" })}
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 });

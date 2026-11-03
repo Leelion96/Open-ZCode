@@ -70,13 +70,12 @@ describe("project removal persists across restart E2E", () => {
         });
       },
     });
-    await waitForDefaultWorkspaceReady(30_000);
+    // 冷启动允许进入未选项目草稿；项目列表才是“不复活”的验收边界。
     await waitForProjectRow(DEFAULT_WORKSPACE);
     await waitForProjectRowGone(closedWorkspacePath);
     expect(Number(readDeletedProject()?.deleted_at)).toBeGreaterThan(0);
     // 刷新再触发 renderer 恢复，证明不是仅首帧没显示。
     await browser.refresh();
-    await waitForDefaultWorkspaceReady(30_000);
     await waitForProjectRow(DEFAULT_WORKSPACE);
     await waitForProjectRowGone(closedWorkspacePath);
   });

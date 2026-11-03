@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-workspace-mcp-trust",
+  "spec": "./test/e2e/conversation-session/conversation-session-workspace-mcp-trust.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-workspace-mcp-trust.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode/config.json",
+      "source": "created-by-spec",
+      "description": "Direct workspace MCP fixture; session guidance and real runtime handshake are observed."
+    },
+    {
+      "path": ".agents/mcp.json",
+      "source": "created-by-spec",
+      "description": "Fallback MCP with legacy environment and an invalid neighbor after the final project MCP is deleted."
+    }
+  ],
+  "requests": [
+    {
+      "id": "mcp-guidance-first",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "The model reply proves pending workspace MCP trust does not block chat; UI and process markers verify admission."
+    },
+    {
+      "id": "mcp-guidance-changed",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "The model reply proves pending workspace MCP trust does not block chat; UI and process markers verify admission."
+    }
+  ]
+}

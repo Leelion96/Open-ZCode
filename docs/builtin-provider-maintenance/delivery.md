@@ -20,7 +20,7 @@ MR 说明至少列出模板与型号增删、默认启停、能力/Map/URL 的�
 
 创建/更新 MR 使用仓库 `zcode-mr` 工具：在干净的特性分支先运行 `python3 .agents/skills/zcode-mr/scripts/zcode_git_workflow.py setup` 检查认证，将五章描述写入临时 UTF-8 文件，再运行 `python3 .agents/skills/zcode-mr/scripts/zcode_git_workflow.py mr --description-file <描述文件> staging`。工具会保留 push hook、查找同源/目标 MR 并只在缺少时创建。检查返回的真实 MR URL；仅生成预填链接不算创建成功。已有 MR 的正文变化还需通过 glab 更新并核对。认证失败保留本地成果，不把凭据写入描述或命令。
 
-普通目录改动走配置 MR；新协议、Access、Adapter、Logo 资源或 UI 行为需要对应代码和测试，不能以“只是模型更新”省略检查。缺 Key 的变更在 MR 中清楚保留待验证，是否接受例外由负责角色明确决定。
+普通目录改动走配置 MR；新协议、Access、Adapter、Logo 资源或 UI 行为需要对应代码和测试，不能以“只是模型更新”省略检查。缺 Key 的变更在 MR 中清楚保留真实 API 待验证项，默认启用按维护范围原则决定，不把缺 Key 作为额外例外审批事项。
 
 ## 选择交付方式
 
@@ -42,7 +42,7 @@ MR 说明至少列出模板与型号增删、默认启停、能力/Map/URL 的�
 
 ## 必要时动态上线
 
-现有客户端使用两阶段下载：控制面 `/api/v1/client/configs` 按 app_version/platform 返回 `data.configs.builtin_provider_config_json`，该字段是 HTTPS 下载 URL；URL 内容是完整 Release。没有该字段表示本次无发布，不清空已有配置。
+现有客户端使用两阶段下载：控制面 `/api/v1/client/configs` 按 app_version/platform 返回 `data.configs.builtin_provider_config_json`，该字段是 HTTP 或 HTTPS 下载 URL；URL 内容是完整 Release。没有该字段表示本次无发布，不清空已有配置。
 
 ```mermaid
 sequenceDiagram
@@ -67,7 +67,11 @@ sequenceDiagram
 4. 验证实际客户端的下载结果、Active revision、完整 Registry 和后续创建 Model 的请求。成功下载不是成功采用，页面列表变化也不代表所有调用方已更新。
 5. 观察受影响入口的鉴权、参数拒绝、工具流和用户反馈；按下述边界恢复。记录采用证据，更新工作项交付状态。
 
-下载器限制 HTTPS、无 URL userinfo、无重定向，不携带账号 Token/Key；两次请求总预算 20 秒，正文按实际字节限制为 10,000,000。以[下载实现](../../packages/provider-node/src/zcode-builtin-download.ts)为准，不复制一套发布客户端。
+正式、测试环境以及 App Host、独立 CLI 共用下载器，均允许 HTTP / HTTPS；正式交付使用维护者配置的 HTTPS 地址，HTTP 保留给临时测试等场景；客户端不按环境强制分流。URL 不允许 userinfo，不跟随重定向，不携带账号 Token/Key；两次请求总预算 20 秒，正文按实际字节限制为 10,000,000。以[下载实现](../../packages/provider-node/src/zcode-builtin-download.ts)为准，不复制一套发布客户端。
+
+HTTP 支持属于客户端代码能力，不能通过修改远端 JSON 让旧客户端解除 HTTPS 限制；发布 HTTP 地址前需按客户端版本确认支持范围。本次不新增环境开关，不自动切换协议。HTTP 下载失败与 HTTPS 一样保留有效本地配置。
+
+2026-10-28 合入测试退役前的验证记录（相关 App 单测现已退役，桌面 E2E 和 CLI 测试保留）：共用下载边界及失败保留专项 28 项、独立 CLI Registry 12 项通过；真实 HTTP socket 覆盖正文超时取消和随后成功下载。桌面 BR117-F01 已验证 HTTP 下载请求实际到达并返回 500 后，Team 切换和 Start 模型选择仍成功。没有改动配置内容或 revision，也未切换线上下载地址。
 
 ## 生效与恢复边界
 

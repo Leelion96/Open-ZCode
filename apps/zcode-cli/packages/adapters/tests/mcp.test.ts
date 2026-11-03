@@ -1,4 +1,4 @@
-import { dirname } from "node:path";
+import { delimiter, dirname } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { UnauthorizedError } from "@modelcontextprotocol/client";
 import { ZCODE_TOOL_ENV_PASSTHROUGH_ENV_KEY } from "@zcode/shared";
@@ -200,6 +200,37 @@ describe("createMcpAdapter", () => {
     });
   });
 
+  it("close waits for cancelled handshake resource cleanup before returning", async () => {
+    const started = Promise.withResolvers<void>();
+    const cleanupStarted = Promise.withResolvers<void>();
+    const cleaned = Promise.withResolvers<void>();
+    clientConnectMock.mockImplementationOnce(async () => {
+      started.resolve();
+      await new Promise(() => {});
+    });
+    clientCloseMock.mockImplementationOnce(async () => {
+      cleanupStarted.resolve();
+      await cleaned.promise;
+    });
+    const adapter = createMcpAdapter();
+    const connecting = adapter.connectServer("slow", {
+      type: "http",
+      url: "https://mcp.example.test/mcp",
+    });
+    await started.promise;
+    let settled = false;
+    const closing = adapter.close().then(() => {
+      settled = true;
+    });
+    await cleanupStarted.promise;
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    expect(settled).toBe(false);
+    cleaned.resolve();
+    await closing;
+    await connecting;
+    expect(await adapter.status()).toEqual({});
+  });
+
   it("waits for the existing App connection without exposing a premature snapshot or reconnecting", async () => {
     const gate = Promise.withResolvers<void>();
     clientConnectMock.mockImplementationOnce(() => gate.promise);
@@ -290,6 +321,30 @@ describe("createMcpAdapter", () => {
       },
       expect.objectContaining({ resetTimeoutOnProgress: true }),
     );
+  });
+
+  it("forwards the root session of a subagent call through MCP request metadata", async () => {
+    const adapter = createMcpAdapter();
+    await adapter.connectServer("node_repl", { command: "node", type: "stdio" });
+
+    await adapter.callTool({
+      arguments: { code: "1 + 1" },
+      serverName: "node_repl",
+      toolName: "js",
+      runtimeScope: "subagent",
+      trace: {
+        rootSessionId: "session-1" as never,
+        sessionId: "subagent-1" as never,
+        traceId: "trace-1" as never,
+      },
+    });
+
+    const meta = clientCallToolMock.mock.calls.at(-1)?.[0]._meta;
+    expect(meta).toMatchObject({ root_session_id: "session-1", session_id: "subagent-1" });
+    expect(meta["com.zcode/request-context"]).toMatchObject({
+      root_session_id: "session-1",
+      session_id: "subagent-1",
+    });
   });
 
   it("uses the injected client version for MCP initialize", async () => {
@@ -870,6 +925,29 @@ describe("createMcpAdapter", () => {
       https_proxy: "http://127.0.0.1:8888",
       no_proxy: "localhost,127.0.0.1",
     });
+  });
+
+  it("appends the injected node fallback after the server env", async () => {
+    const resolve = vi.fn(async () => ({
+      binDir: "/fallback/bin",
+      env: { ZCODE_NODE_FALLBACK_EXEC_PATH: "/electron" },
+    }));
+    const adapter = createMcpAdapter({
+      env: { PATH: dirname(process.execPath) },
+      nodeFallback: { resolve },
+    });
+
+    await adapter.connectServer("demo", {
+      command: "node",
+      // 插件自带 PATH 会整体替换宿主 PATH；fallback 仍须追加在它后面。
+      env: { PATH: "/plugin/bin" },
+      type: "stdio",
+    });
+
+    const options = capturedStdioOptions[0] as { env?: Record<string, string> };
+    expect(options.env?.PATH).toBe(["/plugin/bin", "/fallback/bin"].join(delimiter));
+    expect(options.env?.ZCODE_NODE_FALLBACK_EXEC_PATH).toBe("/electron");
+    expect(resolve).toHaveBeenCalledTimes(1);
   });
 
   it("restores captured user network env into stdio MCP transports", async () => {

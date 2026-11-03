@@ -13,55 +13,55 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "goal/text 混合 queue 需要当前轮保持 running；真实 provider 过快完成会让输入不再进入队列。"
+      "syntheticReason": "真实首轮输出后保持流；队列交互全部结束再由用户 Stop 收口，不靠延时或自然完成跳过断言。"
     },
     {
       "id": "upstream-goal-queue-order-base-slow-stream",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "queued goal 顺序消费前需要基础轮保持 running；真实 provider 过快完成会跳过 held queue 语义。"
+      "syntheticReason": "真实首轮输出后保持流；队列交互全部结束再由用户 Stop 收口，不靠延时或自然完成跳过断言。"
     },
     {
       "id": "upstream-goal-queue-order-first-continuation-slow",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "controlled-stream",
+      "source": "synthetic",
       "syntheticReason": "测试需要在第一条 queued goal 已成为 active target 且仍 streaming 时验证可 stop。"
     },
     {
       "id": "upstream-goal-queue-order-second-continuation-slow",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "controlled-stream",
+      "source": "synthetic",
       "syntheticReason": "测试需要在第二条 queued goal 覆盖第一目标且仍 streaming 时验证最终 queue 清空。"
     },
     {
       "id": "upstream-goal-queue-first-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "running 中 /goal 只进入本地 queue；fixture 只覆盖 marker 合同。"
     },
     {
       "id": "upstream-goal-queue-text-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "running 中普通文本只进入本地 queue；fixture 只覆盖 marker 合同。"
     },
     {
       "id": "upstream-goal-queue-second-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "running 中第二条 /goal 只进入本地 queue；fixture 只覆盖 marker 合同。"
     },
     {
       "id": "upstream-goal-queue-second-edited-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "queue edit 只改本地队列项，不应触发 provider；fixture 只覆盖 marker 合同。"
     }
   ]

@@ -8,6 +8,13 @@ import type {
 import { ServiceChannels } from "@zcode/shared";
 import type { FileEntry } from "@zcode/shared";
 import { createServiceDescriptor } from "#src/descriptors.js";
+import type { ProjectDataDeleteResult, ProjectDataMeasure } from "#src/project/data/contract.js";
+export type {
+  ProjectDataDeleteResult,
+  ProjectDataMeasure,
+  ProjectDataPort,
+  ProjectDataSession,
+} from "#src/project/data/contract.js";
 export { LEGACY_SINGLE_ROOT_PROJECT_PREFIX } from "#src/project-storage/contract.js";
 export type {
   ProjectDirectories,
@@ -39,6 +46,8 @@ export interface IProjectService {
   saveProject(input: SaveProjectInput): Promise<VirtualProject>;
   /** 幂等软删除容器，保留任务归属与 roots。 */
   deleteProject(id: string, hostId?: string): Promise<void>;
+  /** 撤销软删除：roots、主要目录、置顶与顺序原样，重名加序号；不校验目录存在（主目录状态仍由读取派生）。 */
+  restoreProject(id: string, hostId?: string): Promise<VirtualProject>;
   /** 跨 host 拒绝；缺 root 时必须明确 addMissingRoot 才原子加入并移动。 */
   moveTask(input: {
     task: ProjectTaskRef;
@@ -54,6 +63,10 @@ export interface IProjectService {
     draftId?: string;
     reuseDraft?: boolean;
   }): Promise<ProjectDirectories>;
+  /** 只读测量本机项目可删除的数据；远程报 project.data-local-only。同批项目共享的目录只计一次。 */
+  measureProjectData(ids: string[], hostId?: string): Promise<{ projects: ProjectDataMeasure[] }>;
+  /** 彻底删除一个已软删除的本机项目的数据；未软删除报 project.data-requires-removed。 */
+  deleteProjectData(id: string, hostId?: string): Promise<ProjectDataDeleteResult>;
   /** 缺 task = []，缺 project / DB 错误必须拒绝。软删项目仍可恢复历史任务。 */
   resolveSessionDirectories(task: ProjectTaskRef, hostId?: string): Promise<ProjectDirectories>;
 }

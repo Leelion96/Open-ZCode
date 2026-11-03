@@ -1,3 +1,4 @@
+import type { GenUiModelContext } from "@zcode/shared/gen-ui";
 import type { RuntimeInputPresentation } from "./runtime-input-presentation.js";
 // ============================================================
 // Session Ports - Core interfaces for session management
@@ -152,6 +153,8 @@ export interface PendingSteerInputInfo {
   commandKind?: TurnSteerCommandKind;
   source?: TurnSteerSource;
   inputPresentation?: RuntimeInputPresentation;
+  /** Host 准入注入的可信 automation 身份；队列提升时必须原样恢复。 */
+  automationId?: string;
   /** 当前排队输入附带的工具隐藏列表；automation busy 入队必须在消费时继续生效。 */
   toolDisallowlist?: readonly string[];
   queuedAt: Date;
@@ -275,6 +278,8 @@ export interface TurnSteerInput {
   attachments?: PendingTurnAttachment[];
   pendingInputId?: string;
   traceContext?: TraceContext;
+  /** Host 准入注入的可信 automation 身份；不能从 inputId/queryId 推断。 */
+  automationId?: string;
   /** 当前输入消费时不向 provider 暴露的工具名。 */
   toolDisallowlist?: readonly string[];
 }
@@ -395,6 +400,8 @@ export interface TurnInputIntentMetadata {
     messageCount?: number;
   }>;
   highspeed?: HighspeedMessageMetadata;
+  /** 发送时冻结的页面状态；不得混入用户正文或出队时重新读取。 */
+  genUiContext?: GenUiModelContext;
   sharedContextRefs?: Array<{
     kind: "shared_context_import";
     context_id: string;
@@ -433,6 +440,8 @@ export interface PendingTurnInput {
   delivery?: TurnSteerDeliveryMode;
   intent?: TurnInputIntentMetadata;
   attachments?: PendingTurnAttachment[];
+  /** Host 准入注入的可信 automation 身份；队列编辑和提升必须原样保留。 */
+  automationId?: string;
   /** 当前 pending input drain 后不向 provider 暴露的工具名。 */
   toolDisallowlist?: readonly string[];
   turnId: TurnId;

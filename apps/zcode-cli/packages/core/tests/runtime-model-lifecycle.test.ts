@@ -18,6 +18,53 @@ import { createTestModelFormatProperties } from "./test-runtime-model.js";
 import { createTestModelFactory } from "./test-runtime-model.js";
 
 describe("Agent Runtime Model lifecycle", () => {
+  it("manual compact executes its submitted B after newer C was accepted without reverting C", async () => {
+    const requests: string[] = [];
+    const runtime = createTestAgentRuntime(
+      createSessionId("compact-submitted-model"),
+      { mode: "build", modelSelection: createTestModelSelection("test/model-a") },
+      {
+        eventStore: createTestSessionEventStore(),
+        modelFactory: ({ selection }) => {
+          const model = createLifecycleTestModel(selection);
+          return {
+            ...model,
+            async generateText(request) {
+              const compact = JSON.stringify(request.messages).includes(
+                "create a detailed summary",
+              );
+              requests.push(`${selection.modelId}:${compact ? "compact" : "normal"}`);
+              return result(selection, {
+                finishReason: "stop",
+                text: compact ? "<summary>Preserve the task and files.</summary>" : "done",
+              });
+            },
+          };
+        },
+      },
+    );
+    await runtime.executeTurn("first history");
+    await runtime.executeTurn("newer input", undefined, {
+      intent: {
+        sourceCommandId: "newer-c",
+        kind: "sendText",
+        admissionSeq: 3,
+        modelSelection: createTestModelSelection("test/model-c"),
+      },
+    });
+    await runtime.executeTurn("/compact", undefined, {
+      intent: {
+        sourceCommandId: "queued-b",
+        kind: "compact",
+        admissionSeq: 2,
+        modelSelection: createTestModelSelection("test/model-b"),
+      },
+    });
+    expect(requests).toContain("model-b:compact");
+    expect(requests).not.toContain("model-c:compact");
+    expect(runtime.getSessionModelSelection().modelId).toBe("model-c");
+  });
+
   it("does not fall back to the Adapter when the explicit ModelFactory is unavailable", async () => {
     const eventStore = createTestSessionEventStore();
     const modelSelection = createTestModelSelection("test/adapter-only-model");

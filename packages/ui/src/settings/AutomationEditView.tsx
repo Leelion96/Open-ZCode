@@ -125,7 +125,7 @@ import {
   type AutomationEditRequiredField,
 } from "@/settings/automationEditValidation.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
+import { useConfirmDialog, useYoloModeConfirmation } from "@/hooks/useConfirmDialog.js";
 import { useAutomationProjectOptions } from "@/hooks/useAutomationProjectOptions.js";
 import { useWorkspaceServicesResolution } from "@/hooks/useWorkspaceServices.js";
 import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
@@ -1541,6 +1541,10 @@ export function AutomationEditView({
   );
   // 定时任务编辑页只维护表单草稿，不能为了读取选项调用 workspace 默认配置接口；
   // 否则用户仅打开后取消，也会改掉当前项目或 draft session 的模型、模式和思考强度。
+  const confirmMode = useYoloModeConfirmation(
+    JSON.stringify([editing?.automationId, workspaceKey, saving, tab]),
+    mode,
+  );
   const modeOption = useMemo(() => buildAutomationModeOption(mode), [mode]);
   const selectedModelItem = useMemo(
     () => resolveAutomationModelItem(modelSelectGroups, effectiveModelValue),
@@ -2618,11 +2622,13 @@ export function AutomationEditView({
                         直接复用首页 ConfigSelect，只覆盖紧凑 trigger 布局。 */}
                     <ConfigSelect
                       option={modeOption}
-                      onValueChange={(value) => {
-                        markFieldTouched("mode");
-                        modeRef.current = value;
-                        setMode(value);
-                      }}
+                      onValueChange={(value) =>
+                        confirmMode(value, () => {
+                          markFieldTouched("mode");
+                          modeRef.current = value;
+                          setMode(value);
+                        })
+                      }
                       tooltipTitle={intl.formatMessage({
                         id: "chat.toolbar.mode.label",
                       })}

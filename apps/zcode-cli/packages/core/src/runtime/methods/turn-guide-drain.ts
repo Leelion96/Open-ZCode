@@ -4,9 +4,10 @@ import { applySubmissionExecutionState, sameModelSelection } from "./turn-model.
 import { rebuildContextPrefix } from "./context-refresh.js";
 import { appendTurnRequestEntries } from "./turn-output-token-continuation.js";
 import { applyRuntimeExecutionState } from "../execution-state.js";
+import { throwIfTurnAborted } from "../helpers/turn-errors.js";
 
 /**
- * 在合法的 model-step 边界最多消费一条 guide，并准备下一次 provider request。
+ * 在合法的 model-step 边界按 FIFO 一次消费全部已等待的 guide，并准备下一次 provider request。
  * SendMessage 可能在 child 的 model request 进行中到达；若该 step 正常
  * text-only 收口，等待未来 tool batch 会把 coordinator input 永久留在无人唤醒的 queue。
  */
@@ -14,6 +15,8 @@ export async function drainInlineGuideForNextRequest(
   runtime: AgentRuntimeInternal,
   state: RegularTurnLoopState,
 ): Promise<boolean> {
+  // 已停止的轮次不再消费挂起输入，直接结束；guide 由取消路径退回队列。
+  throwIfTurnAborted(state.turnAbortSignal);
   const activeTurn = state.activeTurn;
   if (!activeTurn || !runtime.hasInlineGuidePendingInput(activeTurn)) return false;
 
@@ -49,9 +52,9 @@ export async function drainInlineGuideForNextRequest(
     }
   }
   state.currentUserMessageId = drained?.latestMessageId ?? state.currentUserMessageId;
-  const nextQueryId = drained?.queryIds?.[0];
+  const nextQueryId = drained?.queryIds?.at(-1);
   if (nextQueryId) {
-    // guide 以 user role 续上当前 active turn；后续请求归因到该输入的 query。
+    // guide 以 user role 续上当前 active turn；后续请求归因到最后一条输入的 query。
     state.turnTraceContext = { ...state.turnTraceContext, queryId: nextQueryId };
   }
   if ((drained.toolDisallowlist?.length ?? 0) > 0) {

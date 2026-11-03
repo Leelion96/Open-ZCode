@@ -25,6 +25,7 @@ import {
 interface FileConfigOptions {
   baseDir?: string;
   configFileName?: string;
+  scope?: "user" | "project";
 }
 
 export interface LoadedConfig {
@@ -100,7 +101,7 @@ export function loadFileConfig(filePath?: string, options: FileConfigOptions = {
       // 仅装载态归一化会让旧 key 永久留在磁盘，后续版本无法安全删除迁移逻辑。
       persistPluginConfigMigration(resolvedPath, migrated);
     }
-    const result = parseConfigFileToRuntimePatchWithDiagnostics(parsed);
+    const result = parseConfigFileToRuntimePatchWithDiagnostics(parsed, options.scope);
 
     return {
       config: result.config,

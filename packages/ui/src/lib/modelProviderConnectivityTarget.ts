@@ -15,6 +15,7 @@ function isRemoteWorkspaceTab(tab: ConnectivityWorkspaceTab | null | undefined):
 /**
  * Provider Settings 属于本地 Environment；连通性探测需要 cwd 时，只能选择本地 workspace。
  * 远程 tab 的 workspacePath 是远端文件系统路径，不能直接交给 Local Host。
+ * 返回空串表示没有本地 tab，调用方改用本机 Host 的对话目录。
  */
 export function resolveModelProviderConnectivityWorkspacePath(params: {
   activeWorkspacePath?: string | null;

@@ -4,7 +4,7 @@
  * 设计目的：unmanaged-new-file 规则要求新代码必须落在 managed 模块内，那么"登记一个模块"
  * 必须比"绕过规则"更便宜。本命令一次完成：
  *   1. 从实际 import 反推 requires（可与 --requires 合并）
- *   2. 生成缺失的五件套骨架（module.ts / contract.ts / contract.example.ts / contract.test.ts / CONTRACT.md）
+ *   2. 生成缺失的四件套骨架（module.ts / contract.ts / contract.example.ts / CONTRACT.md）
  *   3. 在 architecture-policy.yaml 登记（保留注释；已存在则置 managed: true，不重复添加）
  */
 import { promises as fs } from "node:fs";
@@ -21,13 +21,7 @@ import {
 } from "./policy.mjs";
 import { loadWorkspace } from "./resolver.mjs";
 
-const ARTIFACTS = [
-  "module.ts",
-  "contract.ts",
-  "contract.example.ts",
-  "contract.test.ts",
-  "CONTRACT.md",
-];
+const ARTIFACTS = ["module.ts", "contract.ts", "contract.example.ts", "CONTRACT.md"];
 
 function camel(id) {
   return id.replace(/[-_](\w)/g, (_, c) => c.toUpperCase());
@@ -65,17 +59,6 @@ import type { ${name[0].toUpperCase() + name.slice(1)}Contract } from "./contrac
 export function example${name[0].toUpperCase() + name.slice(1)}(_contract: ${name[0].toUpperCase() + name.slice(1)}Contract): void {
   // TODO(${id}): 展示最常见的一次完整调用。
 }
-`,
-    "contract.test.ts": `import { describe, expect, it } from "vitest";
-
-import { ${name}Module } from "./module.js";
-
-// 契约测试只 import contract 与 module，不知道实现是谁；同一份测试应同时跑真实现与跨进程代理。
-describe("${id} contract", () => {
-  it("declares its module manifest", () => {
-    expect(${name}Module.id).toBe("${id}");
-  });
-});
 `,
     "CONTRACT.md": `# ${id}
 

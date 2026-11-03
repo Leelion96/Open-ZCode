@@ -695,41 +695,54 @@ describe("v4 原生 sendQueuedNow", () => {
     );
   });
 
-  it("compact queue item：sendQueuedNow 走手动 compact path，不作为普通 prompt 重发", async () => {
-    let finishCompact!: () => void;
-    const compactGate = new Promise<Record<string, never>>((resolve) => {
-      finishCompact = () => resolve({});
-    });
-    const app = makeApp({ submitPrompt: vi.fn().mockReturnValue(compactGate) });
-    const record = makeRecord({ app });
-    const host = makeHost(record, {
-      getQueueItem: vi.fn().mockReturnValue(
-        queueItem({
-          queueItemId: "q-compact",
-          sourceCommandId: "source-compact",
-          kind: "compact",
-          text: "/compact",
-          attachments: [],
+  it.each([false, true])(
+    "compact queue item：提升保留原选择，autoDrain=%s",
+    async (autoDrainPromotion) => {
+      let finishCompact!: () => void;
+      const compactGate = new Promise<Record<string, never>>((resolve) => {
+        finishCompact = () => resolve({});
+      });
+      const app = makeApp({ submitPrompt: vi.fn().mockReturnValue(compactGate) });
+      const record = makeRecord({ app });
+      const host = makeHost(record, {
+        getQueueItem: vi.fn().mockReturnValue(
+          queueItem({
+            queueItemId: "q-compact",
+            sourceCommandId: "source-compact",
+            kind: "compact",
+            text: "/compact",
+            attachments: [],
+          }),
+        ),
+        recordPersistentCommandFact: vi.fn().mockResolvedValue(undefined),
+      });
+      await new V4CommandExecutor(host).execute(
+        Object.assign(envelope("sendQueuedNow", { queueItemId: "q-compact" }), {
+          __v4ExecutionContext: autoDrainPromotion ? { autoDrainPromotion: true } : undefined,
         }),
-      ),
-      recordPersistentCommandFact: vi.fn().mockResolvedValue(undefined),
-    });
-    await new V4CommandExecutor(host).execute(
-      envelope("sendQueuedNow", { queueItemId: "q-compact" }),
-    );
-    expect(app.submitPrompt).toHaveBeenCalledWith(
-      "/compact",
-      expect.objectContaining({ inputId: "source-compact" }),
-    );
-    expect(app.sendInput).not.toHaveBeenCalled();
-    expect(app.removeQueueItem).toHaveBeenCalledWith(
-      "q-compact",
-      expect.objectContaining({ reason: "promoted", reservationId: "cmd-q1" }),
-    );
-    expect(host.legacyMutations).toContain("queue_compact_promoted");
-    finishCompact();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
+      );
+      expect(app.submitPrompt).toHaveBeenCalledWith(
+        "/compact",
+        expect.objectContaining({
+          inputId: "source-compact",
+          intent: expect.objectContaining({
+            sourceCommandId: "source-compact",
+            queueItemId: "q-compact",
+            admissionSeq: 7,
+            modelSelection: queueItem().modelSelection,
+          }),
+        }),
+      );
+      expect(app.sendInput).not.toHaveBeenCalled();
+      expect(app.removeQueueItem).toHaveBeenCalledWith(
+        "q-compact",
+        expect.objectContaining({ reason: "promoted", reservationId: "cmd-q1" }),
+      );
+      expect(host.legacyMutations).toContain("queue_compact_promoted");
+      finishCompact();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    },
+  );
 
   it("运行中会话：stop（只 abort 不 await）→ 轮询等 finally 释放锁 → 重发", async () => {
     const calls: string[] = [];
@@ -765,14 +778,52 @@ describe("v4 原生 sendQueuedNow", () => {
     );
   });
 
+  it("automation queue 提升时回放可信身份，并在该 turn 结束后清理", async () => {
+    const completion = deferred<unknown>();
+    const app = makeApp({
+      sendInput: vi.fn().mockImplementation(async (_input, options) => {
+        options?.onTurnStartedObserved?.({
+          id: "event-automation-queue-turn-started",
+          type: SessionEventType.TurnStarted,
+          payload: { messageId: "msg-automation-queue-turn-started" },
+        });
+        return {
+          completion: completion.promise,
+          kind: "started_turn",
+          turnId: "turn-automation-queued",
+        };
+      }),
+    });
+    const record = makeRecord({ app });
+    const item = queueItem({ attachments: [], automationId: "automation-queued" });
+
+    await new V4CommandExecutor(makeHost(record, { getQueueItem: () => item })).execute(
+      envelope("sendQueuedNow", { queueItemId: item.queueItemId }),
+    );
+
+    expect(app.sendInput).toHaveBeenCalledWith(
+      expect.objectContaining({ text: item.text }),
+      expect.objectContaining({
+        automationId: "automation-queued",
+        inputId: item.sourceCommandId,
+        requireIdle: true,
+      }),
+    );
+    expect(record.activeAutomationId).toBe("automation-queued");
+
+    completion.resolve({});
+    await flushDetachedWork();
+    expect(record.activeAutomationId).toBeUndefined();
+  });
+
+  // 手动提升实际抢占旧执行时，被点文本同样是普通用户消息，与自动 drain 相同。
   it.each([
-    { stopKind: "stopped", withAttachment: false, autoDrain: false, expected: "user_steer" },
-    { stopKind: "idle", withAttachment: false, autoDrain: false, expected: undefined },
-    { stopKind: "stopped", withAttachment: true, autoDrain: false, expected: undefined },
-    { stopKind: "stopped", withAttachment: false, autoDrain: true, expected: undefined },
+    { stopKind: "stopped", withAttachment: false, autoDrain: false },
+    { stopKind: "idle", withAttachment: false, autoDrain: false },
+    { stopKind: "stopped", withAttachment: false, autoDrain: true },
   ])(
-    "队列立即发送 human 提示：$stopKind / attachment=$withAttachment / auto=$autoDrain",
-    async ({ stopKind, withAttachment, autoDrain, expected }) => {
+    "队列立即发送仍是普通用户输入：$stopKind / attachment=$withAttachment / auto=$autoDrain",
+    async ({ stopKind, withAttachment, autoDrain }) => {
       const stopActiveForegroundExecution = vi
         .fn()
         .mockReturnValue(
@@ -792,7 +843,7 @@ describe("v4 原生 sendQueuedNow", () => {
       expect(app.sendInput).toHaveBeenCalledTimes(1);
       const [input, options] = app.sendInput.mock.calls[0]!;
       expect(input.text).toBe(item.text);
-      expect(options.inputPresentation).toBe(expected);
+      expect(options).not.toHaveProperty("inputPresentation");
       expect(options).toMatchObject({
         inputId: item.sourceCommandId,
         requireIdle: true,

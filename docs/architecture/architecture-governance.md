@@ -60,9 +60,9 @@ pnpm architecture:context <module-id>
 pnpm architecture:adopt <module-id> --root <dir> [--layer domain|app|adapters|ui] [--owner <group>]
 ```
 
-`--changed` 的比较基线按顺序选择：`--base <sha>` 或 `ZCODE_PRE_PUSH_BASE` > CI 合并请求变量（`CI_MERGE_REQUEST_DIFF_BASE_SHA` 等）> pre-push stdin 的远端 sha > `@{upstream}` > 默认分支 merge-base（顺序与 `run-affected-unit-tests` 一致，`origin/staging` 优先）> `HEAD`。报告第二行打印实际使用的基线。2026-09 review 发现首版只用 `git diff HEAD`，CI 干净 checkout 与 pre-push 时差异为空，门禁实际只检查环；已修复。
+`--changed` 的比较基线按顺序选择：`--base <sha>` 或 `ZCODE_PRE_PUSH_BASE` > CI 合并请求变量（`CI_MERGE_REQUEST_DIFF_BASE_SHA` 等）> pre-push stdin 的远端 sha > `@{upstream}` > 默认分支 merge-base（由 `scripts/architecture/default-branch.mjs` 维护，`origin/staging` 优先）> `HEAD`。报告第二行打印实际使用的基线。2026-09 review 发现首版只用 `git diff HEAD`，CI 干净 checkout 与 pre-push 时差异为空，门禁实际只检查环；已修复。
 
-`architecture:adopt` 把一个目录登记为 managed 模块：从真实 import 反推 `requires`、生成缺失的五件套骨架、在策略文件登记并保留注释。它存在的理由是让"登记模块"比"绕过规则"更便宜。
+`architecture:adopt` 把一个目录登记为 managed 模块：从真实 import 反推 `requires`、生成缺失的四件套骨架（`module.ts`、`contract.ts`、`contract.example.ts`、`CONTRACT.md`），不再要求或生成 App 单测、在策略文件登记并保留注释。它存在的理由是让"登记模块"比"绕过规则"更便宜。
 
 本地与 CI 使用同一检查器。`--changed` 解析完整依赖图，但只对本次变更及其必要影响闭包阻断；全局策略、循环依赖和 baseline 增长始终检查。CI 不得自动刷新 baseline；`baseline:update -- --changed` 只替换变更闭包内的条目，不会丢弃闭包之外的记录。违规与 baseline 中的文件路径都是相对仓库根的 posix 路径，跨机器稳定。检查器自身的回归测试是 `pnpm test:architecture`，已接入 `verify:pre-push` 与 CI 的 lint 任务。
 
@@ -88,7 +88,7 @@ Git diff / 未跟踪文件枚举
 
 [architecture-governance skill](../../.agents/skills/architecture-governance/SKILL.md) 对代码变更适用，纯文档任务跳过。代码修改前识别预期模块并检查当前基线，修改后重新检查；跨模块、状态归属变化或契约不明确时生成 `architecture:context` 阅读包，局部且契约明确的改动只读相关契约、spec 与测试。Spec、验证范围及完成条件统一遵循[根 AGENTS.md](../../AGENTS.md)，不在本文件重复定义。
 
-阅读包由代码和策略生成，包含目标模块的 `module.ts`、`contract.ts`、示例、契约测试、短 CONTRACT.md、直接依赖契约、owner、允许边和受影响测试，不复制完整实现。
+阅读包由代码和策略生成，包含目标模块的 `module.ts`、`contract.ts`、示例、短 CONTRACT.md、直接依赖契约、owner 和允许边，不复制完整实现。
 
 ## 推进顺序
 

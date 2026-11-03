@@ -191,6 +191,7 @@ Subagent 设置页只读取目标 Environment 的 Model Selection View。远端 
 - effort 的加载门禁与 Draft 对齐：Selection View 中目标模型的 Option Spec 是唯一能力来源；页面不读取 Session `configOptionsStatus`，也不从另一个 Environment 的 metadata 补齐。
 - Provider/Model 身份使用 `providerId + modelId`；展示态 variant 不创建第二份模型身份。
 - 目标 Environment 尚未 ready 时显示 loading；读取失败显示错误并允许显式重试，不使用旧 Registry Snapshot 或本地 View 为远端兜底。
+- effort 控件只在目录仍会到达时显示 loading（首读中、等待远端连接）。读取失败或目标没有模型目录（远端设备「用户」）时，目录不会自行变成 ready：显示「推理档位暂不可用」，不转圈；已存的 model / `thoughtLevel` 保持原值，不判为非法，也不阻止保存。
 - reasoning Option Spec 缺失或空档位表示当前模型没有可选 reasoning 档位；非空档位是该模型的合法集合。
 - 用户选择不同模型时同步清空内存中的 explicit `thoughtLevel`；重复选择同一模型是 no-op。
 - 具体模型尚未配置 explicit `thoughtLevel` 时，控件可以展示 catalog 默认档位，但展示值不等于已经持久化的覆盖。Select 的真实选中值始终是当前 effective 档位，保证键盘焦点与可访问选中态一致；explicit 状态独立维护。用户未操作 effort 控件就保存时继续保留 `thoughtLevel: undefined`；用户再次确认当前 effective 档位或选择其他合法档位时，都必须把选择写入草稿并持久化。

@@ -8,8 +8,9 @@ import {
   type ToolPart,
 } from "@zcode/contracts";
 import { hydrateReadFileStateFromSession } from "../src/agent/read-file-state-hydrator.js";
-import { createReadFileStateKey } from "../src/tool/read-file-state.js";
-import type { ReadFileStateMap } from "../src/tool/types.js";
+import { READ_FILE_UNCHANGED_STUB } from "../src/tool/handlers/read-text.js";
+import { createReadFileStatePathKey } from "../src/tool/read-file-state.js";
+import type { ReadFileStateEntry, ReadFileStateMap } from "../src/tool/types.js";
 
 const workspaceRoot = "/tmp/zcode-read-state-hydrator";
 
@@ -29,21 +30,64 @@ describe("read file state hydrator", () => {
           }),
         ]),
       ],
+      markRestoredFromSession: true,
       readFileState,
       workingDirectory: workspaceRoot,
       workspaceRoot,
     });
 
     expect(result.restoredCount).toBe(1);
-    expect(readFileState.get(createReadFileStateKey(file, 1, undefined))).toMatchObject({
+    expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject({
       content: "export const answer = 42;\n",
       isPartialView: false,
       limit: undefined,
       mtimeMs: 1,
       offset: undefined,
       path: file,
+      restoredFromSession: true,
       revisionId: `rev:${file}:${Buffer.byteLength("export const answer = 42;\n", "utf8")}:1`,
     });
+  });
+
+  // 修复原因：旧数据里 file_unchanged 的 Read 也存了快照（当时最新记录的副本）。按它重放会把
+  // 读取时间改成这次调用的时间；之前那次真实读取不在 active history 里时，还会恢复出模型看不到原文的视图。
+  it("skips stored file_unchanged Read snapshots and keeps the earlier real Read", async () => {
+    const sessionID = createSessionId("hydrate-read-state-skip-unchanged");
+    const file = join(workspaceRoot, "src", "unchanged.ts");
+    const unchangedOnly = join(workspaceRoot, "src", "unchanged-only.ts");
+    const readFileState: ReadFileStateMap = new Map();
+
+    const result = await hydrateReadFileStateFromSession({
+      messages: [
+        assistantToolMessage(sessionID, "assistant-real-read", 10, [
+          completedToolPart(sessionID, "assistant-real-read", "tool-real-read", "Read", {
+            input: { file_path: file },
+            output: "1\tsame",
+            metadata: readStateMetadata(file, "same", { readAtMs: 2 }),
+          }),
+        ]),
+        assistantToolMessage(sessionID, "assistant-unchanged-read", 20, [
+          completedToolPart(sessionID, "assistant-unchanged-read", "tool-unchanged", "Read", {
+            input: { file_path: file },
+            output: READ_FILE_UNCHANGED_STUB,
+            metadata: readStateMetadata(file, "same", { readAtMs: 30 }),
+          }),
+          completedToolPart(sessionID, "assistant-unchanged-read", "tool-unchanged-only", "Read", {
+            input: { file_path: unchangedOnly },
+            output: READ_FILE_UNCHANGED_STUB,
+            metadata: readStateMetadata(unchangedOnly, "summarized", { readAtMs: 31 }),
+          }),
+        ]),
+      ],
+      readFileState,
+      workingDirectory: workspaceRoot,
+      workspaceRoot,
+    });
+
+    expect(result.restoredCount).toBe(1);
+    expect([...readFileState.values()]).toEqual([
+      expect.objectContaining({ content: "same", path: file, readAt: new Date(2) }),
+    ]);
   });
 
   it.each([0, 1])(
@@ -69,8 +113,7 @@ describe("read file state hydrator", () => {
       });
 
       expect(result.restoredCount).toBe(1);
-      expect(result.skippedRangeReadCount).toBe(0);
-      expect(readFileState.get(createReadFileStateKey(file, 1, undefined))).toMatchObject({
+      expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject({
         content: "alpha\nbeta\n",
         isPartialView: false,
         limit: undefined,
@@ -145,7 +188,7 @@ describe("read file state hydrator", () => {
     expect(readFileState.size).toBe(0);
   });
 
-  it("skips historical range Reads during resume", async () => {
+  it("restores historical range Reads with their offset and limit", async () => {
     const sessionID = createSessionId("hydrate-read-state-range");
     const file = join(workspaceRoot, "src", "range.ts");
     const readFileState: ReadFileStateMap = new Map();
@@ -156,6 +199,7 @@ describe("read file state hydrator", () => {
           completedToolPart(sessionID, "assistant-range-read", "tool-read-range", "Read", {
             input: { file_path: file, offset: 2, limit: 1 },
             output: "2\tline two",
+            metadata: readStateMetadata(file, "line two", { offset: 2, limit: 1 }),
           }),
         ]),
       ],
@@ -164,12 +208,18 @@ describe("read file state hydrator", () => {
       workspaceRoot,
     });
 
-    expect(result.restoredCount).toBe(0);
-    expect(result.skippedRangeReadCount).toBe(1);
-    expect(readFileState.size).toBe(0);
+    // range Read 和 same-runtime 一样是有效的读取记录。
+    expect(result.restoredCount).toBe(1);
+    expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject({
+      content: "line two",
+      isPartialView: false,
+      limit: 1,
+      offset: 2,
+      path: file,
+    });
   });
 
-  it("keeps earlier full Read state when a later range Read is skipped during resume", async () => {
+  it("keeps only the latest Read per file, including a later range Read", async () => {
     const sessionID = createSessionId("hydrate-read-state-full-then-range");
     const file = join(workspaceRoot, "src", "full-then-range.ts");
     const readFileState: ReadFileStateMap = new Map();
@@ -198,6 +248,7 @@ describe("read file state hydrator", () => {
             {
               input: { file_path: file, offset: 2, limit: 1 },
               output: "2\tline two",
+              metadata: readStateMetadata(file, "line two", { offset: 2, limit: 1 }),
             },
           ),
         ]),
@@ -207,16 +258,129 @@ describe("read file state hydrator", () => {
       workspaceRoot,
     });
 
-    expect(result.restoredCount).toBe(1);
-    expect(result.skippedRangeReadCount).toBe(1);
-    expect(readFileState.get(createReadFileStateKey(file, 1, undefined))).toMatchObject({
-      content: "line one\nline two\n",
-      isPartialView: false,
-      limit: undefined,
-      offset: undefined,
+    // 冷恢复与 same-runtime 相同：最近一次是 range 视图，之后的完整 Read 会返回正文。
+    expect(result.restoredCount).toBe(2);
+    expect(readFileState.size).toBe(1);
+    expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject({
+      content: "line two",
+      limit: 1,
+      offset: 2,
       path: file,
     });
   });
+
+  it("restores a Read from its metadata even when the stored tool input is not an object", async () => {
+    const sessionID = createSessionId("hydrate-read-state-odd-input");
+    const file = join(workspaceRoot, "src", "odd-input.ts");
+    const readFileState: ReadFileStateMap = new Map();
+    const part = completedToolPart(sessionID, "assistant-odd-input", "tool-read-odd", "Read", {
+      input: {},
+      output: "1\tvalue\n2\t",
+      metadata: readStateMetadata(file, "value\n"),
+    });
+    // 恢复只读 metadata；input 不参与，形态异常也不能挡住恢复。
+    (part.state as { input: unknown }).input = "not-an-object";
+
+    const result = await hydrateReadFileStateFromSession({
+      messages: [assistantToolMessage(sessionID, "assistant-odd-input", 10, [part])],
+      readFileState,
+      workingDirectory: workspaceRoot,
+      workspaceRoot,
+    });
+
+    expect(result.restoredCount).toBe(1);
+    expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject({
+      content: "value\n",
+    });
+  });
+
+  it("orders Reads across assistant messages by history, not by readAtMs", async () => {
+    const sessionID = createSessionId("hydrate-read-state-history-over-clock");
+    const file = join(workspaceRoot, "src", "history-over-clock.ts");
+    const readFileState: ReadFileStateMap = new Map();
+
+    await hydrateReadFileStateFromSession({
+      messages: [
+        assistantToolMessage(sessionID, "assistant-full-read-late-clock", 10, [
+          completedToolPart(sessionID, "assistant-full-read-late-clock", "tool-read-full", "Read", {
+            input: { file_path: file },
+            output: "1\tline one\n2\tline two\n3\t",
+            metadata: readStateMetadata(file, "line one\nline two\n", { readAtMs: 100 }),
+          }),
+        ]),
+        assistantToolMessage(sessionID, "assistant-range-read-early-clock", 20, [
+          completedToolPart(
+            sessionID,
+            "assistant-range-read-early-clock",
+            "tool-read-range",
+            "Read",
+            {
+              input: { file_path: file, offset: 2, limit: 1 },
+              output: "2\tline two",
+              metadata: readStateMetadata(file, "line two", { offset: 2, limit: 1, readAtMs: 50 }),
+            },
+          ),
+        ]),
+      ],
+      readFileState,
+      workingDirectory: workspaceRoot,
+      workspaceRoot,
+    });
+
+    // 不同批次之间历史顺序就是 live 的更新顺序；系统时钟回拨不能改变它。
+    expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject({
+      limit: 1,
+      offset: 2,
+    });
+  });
+
+  // 修复原因：part 在工具开始前按声明顺序落盘，完成时原地更新、位置不变，part 顺序不是写入顺序。
+  // 并行时范围 Read 先写、完整 Read 后写，live 最后是完整视图；按 part 顺序重放会选成范围视图。
+  it.each([
+    ["by snapshotIndex when the full Read writes last", { full: 1, range: 0 }, "full"],
+    ["by snapshotIndex when the range Read writes last", { full: 0, range: 1 }, "range"],
+    ["in part order for legacy snapshots without snapshotIndex", {}, "range"],
+    ["in part order when only some snapshots carry snapshotIndex", { full: 1 }, "range"],
+  ] as const)(
+    "replays Reads within one assistant message %s",
+    async (_label, snapshotIndex: { full?: number; range?: number }, expectedView) => {
+      const sessionID = createSessionId("hydrate-read-state-snapshot-order");
+      const file = join(workspaceRoot, "src", "snapshot-order.ts");
+      const readFileState: ReadFileStateMap = new Map();
+
+      await hydrateReadFileStateFromSession({
+        messages: [
+          assistantToolMessage(sessionID, "assistant-parallel-reads", 10, [
+            completedToolPart(sessionID, "assistant-parallel-reads", "tool-read-full", "Read", {
+              input: { file_path: file },
+              output: "1\tline one\n2\tline two\n3\t",
+              metadata: readStateMetadata(file, "line one\nline two\n", {
+                snapshotIndex: snapshotIndex.full,
+              }),
+            }),
+            completedToolPart(sessionID, "assistant-parallel-reads", "tool-read-range", "Read", {
+              input: { file_path: file, offset: 2, limit: 1 },
+              output: "2\tline two",
+              metadata: readStateMetadata(file, "line two", {
+                offset: 2,
+                limit: 1,
+                snapshotIndex: snapshotIndex.range,
+              }),
+            }),
+          ]),
+        ],
+        readFileState,
+        workingDirectory: workspaceRoot,
+        workspaceRoot,
+      });
+
+      expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject(
+        expectedView === "full"
+          ? { content: "line one\nline two\n", limit: undefined }
+          : { content: "line two", limit: 1, offset: 2 },
+      );
+    },
+  );
 
   it("restores a later token-truncated full Read as partial state over an earlier full Read", async () => {
     const sessionID = createSessionId("hydrate-read-state-full-then-partial");
@@ -258,7 +422,7 @@ describe("read file state hydrator", () => {
     });
 
     expect(result.restoredCount).toBe(2);
-    expect(readFileState.get(createReadFileStateKey(file, 1, undefined))).toMatchObject({
+    expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject({
       content: "line one\n",
       isPartialView: true,
       limit: undefined,
@@ -294,7 +458,7 @@ describe("read file state hydrator", () => {
       workspaceRoot,
     });
 
-    expect(readFileState.get(createReadFileStateKey(file, 1, undefined))).toMatchObject({
+    expect(readFileState.get(createReadFileStatePathKey(file))).toMatchObject({
       content: "written\n",
       mtimeMs: 1,
       path: file,
@@ -364,16 +528,75 @@ describe("read file state hydrator", () => {
     });
 
     expect(result.restoredCount).toBe(2);
-    expect(readFileState.get(createReadFileStateKey(writeFile, 1, undefined))).toMatchObject({
+    expect(readFileState.get(createReadFileStatePathKey(writeFile))).toMatchObject({
       content: "written content\n",
       isPartialView: false,
       path: writeFile,
     });
-    expect(readFileState.get(createReadFileStateKey(editFile, 1, undefined))).toMatchObject({
+    expect(readFileState.get(createReadFileStatePathKey(editFile))).toMatchObject({
       content: "edited from metadata\n",
       isPartialView: false,
       path: editFile,
     });
+  });
+
+  it("keeps the context seed on rewind and clears it on resume", async () => {
+    const sessionID = createSessionId("hydrate-read-state-context-seed");
+    const memoryIndex = join(workspaceRoot, "memory", "MEMORY.md");
+    const rewoundFile = join(workspaceRoot, "rewound.ts");
+    const seed = {
+      path: memoryIndex,
+      content: "- [Note](note.md)\n",
+      isPartialView: false,
+      readAt: new Date(1),
+      seededFromContext: true as const,
+      mtimeMs: 1,
+      sizeBytes: 18,
+    };
+    const seeded = (): ReadFileStateMap =>
+      new Map<string, ReadFileStateEntry>([
+        [createReadFileStatePathKey(memoryIndex), seed],
+        [
+          createReadFileStatePathKey(rewoundFile),
+          { path: rewoundFile, content: "x", isPartialView: false, readAt: new Date(2) },
+        ],
+      ]);
+    const messages = [
+      assistantToolMessage(sessionID, "assistant-kept", 10, [
+        completedToolPart(sessionID, "assistant-kept", "tool-kept", "Read", {
+          input: { file_path: join(workspaceRoot, "kept.ts") },
+          output: "1\tkept",
+          metadata: readStateMetadata(join(workspaceRoot, "kept.ts"), "kept"),
+        }),
+      ]),
+    ];
+
+    // 修复原因：rewind 重建时清空整张表，会话开始由 context 写入的 MEMORY.md 记录也被清掉，
+    // 之后 Write MEMORY.md 报未读。rewind 只按 active history 重建工具记录，保留这条。
+    const afterRewind = seeded();
+    await hydrateReadFileStateFromSession({
+      messages,
+      readFileState: afterRewind,
+      retainContextSeeds: true,
+      workingDirectory: workspaceRoot,
+      workspaceRoot,
+    });
+    expect(afterRewind.get(createReadFileStatePathKey(memoryIndex))).toBe(seed);
+    expect(afterRewind.has(createReadFileStatePathKey(rewoundFile))).toBe(false);
+    // 修复原因：rewind 重建的记录曾被标成冷恢复，compaction 改按读取时间选文件；同进程重建应和 live 一样按 mtime。
+    expect(afterRewind.get(createReadFileStatePathKey(join(workspaceRoot, "kept.ts")))).toEqual(
+      expect.not.objectContaining({ restoredFromSession: true }),
+    );
+
+    // resume 全部清空，由 context 初始化重新写入。
+    const afterResume = seeded();
+    await hydrateReadFileStateFromSession({
+      messages,
+      readFileState: afterResume,
+      workingDirectory: workspaceRoot,
+      workspaceRoot,
+    });
+    expect(afterResume.has(createReadFileStatePathKey(memoryIndex))).toBe(false);
   });
 
   it("only restores tool state from messages after the active compaction boundary", async () => {
@@ -405,8 +628,8 @@ describe("read file state hydrator", () => {
       workspaceRoot,
     });
 
-    expect(readFileState.has(createReadFileStateKey(oldFile, 1, undefined))).toBe(false);
-    expect(readFileState.has(createReadFileStateKey(newFile, 1, undefined))).toBe(true);
+    expect(readFileState.has(createReadFileStatePathKey(oldFile))).toBe(false);
+    expect(readFileState.has(createReadFileStatePathKey(newFile))).toBe(true);
   });
 });
 
@@ -503,6 +726,8 @@ function readStateMetadata(
     isPartialView?: boolean;
     limit?: number;
     offset?: number;
+    readAtMs?: number;
+    snapshotIndex?: number;
     tool?: "Read" | "Write" | "Edit";
   } = {},
 ): Record<string, unknown> {
@@ -515,10 +740,11 @@ function readStateMetadata(
       mtimeMs: 1,
       ...(options.offset === undefined ? {} : { offset: options.offset }),
       path: filePath,
-      readAtMs: 2,
+      readAtMs: options.readAtMs ?? 2,
       revisionId: `rev:${filePath}:${sizeBytes}:1`,
       schemaVersion: 1,
       sizeBytes,
+      ...(options.snapshotIndex === undefined ? {} : { snapshotIndex: options.snapshotIndex }),
       tool: options.tool ?? "Read",
     },
     schemaVersion: 1,

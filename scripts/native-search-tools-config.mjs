@@ -381,13 +381,27 @@ export function resolveNativeSearchRipgrepDownloadBaseUrl(env = process.env) {
   );
 }
 
+const NATIVE_SEARCH_ARTIFACT_SOURCES = Object.freeze(["intranet", "repository"]);
+
 /**
  * native search 预编译归档来源的唯一判定，desktop / SEA / server-cli / remote 准备共用：
+ * - 显式设置 NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE（`intranet` / `repository`）时直接采用，优先于下列推断；
+ *   用于默认内网地址不可达的构建机（例如隔离网络中的桌面预览 VM）强制使用仓库内置归档。
  * - 显式配置 NATIVE_SEARCH_TOOLS_DOWNLOAD_BASE_URL，或内网依赖源可解析：`intranet`，沿用原有下载链路；
  * - 内网依赖源未配置（resolveIntranetDepsBaseUrl 抛错或返回空）：`repository`，解包仓库内置归档。
  * 两种来源使用同一份 release plan 与固定 SHA-256，只是字节来源不同。
  */
 export function resolveNativeSearchArtifactSource(env = process.env) {
+  const explicitSource = env.NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE?.trim();
+  if (explicitSource) {
+    // 拼写错误不能静默回落到推断结果，否则隔离网络中的构建仍会去访问不可达的内网地址。
+    if (!NATIVE_SEARCH_ARTIFACT_SOURCES.includes(explicitSource)) {
+      throw new Error(
+        `Unsupported NATIVE_SEARCH_TOOLS_ARTIFACT_SOURCE: ${explicitSource} (expected ${NATIVE_SEARCH_ARTIFACT_SOURCES.join(" or ")})`,
+      );
+    }
+    return explicitSource;
+  }
   if (env.NATIVE_SEARCH_TOOLS_DOWNLOAD_BASE_URL?.trim()) return "intranet";
   try {
     return resolveIntranetDepsBaseUrl(env) ? "intranet" : "repository";

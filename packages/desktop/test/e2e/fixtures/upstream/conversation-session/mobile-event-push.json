@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "caseName": "mobile-event-push",
+  "spec": "./test/e2e/conversation-session/mobile-event-push.test.ts",
+  "fixtures": []
+}

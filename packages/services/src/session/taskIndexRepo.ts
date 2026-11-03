@@ -23,7 +23,11 @@ import type {
 
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { getTasksIndexDatabasePath, getZCodeDataRootDir } from "#src/paths.js";
-import { projectStorage, type ProjectMigrationContext } from "#src/project-storage/index.js";
+import {
+  createProjectDataRepository,
+  projectStorage,
+  type ProjectMigrationContext,
+} from "#src/project-storage/index.js";
 import { runTasksDatabaseMigrations } from "#src/session/tasksDatabase/migrations.js";
 
 const require = createRequire(import.meta.url);
@@ -349,6 +353,11 @@ export class TaskIndexRepo {
   async getProjectRepository() {
     await this.ensureReady();
     return projectStorage.repository(this.getDatabase(), this.storageHostId);
+  }
+
+  async getProjectDataRepository() {
+    await this.ensureReady();
+    return createProjectDataRepository(this.getDatabase(), this.storageHostId);
   }
 
   async ensureReady(): Promise<void> {
@@ -1288,21 +1297,26 @@ export class TaskIndexRepo {
     params: ZCodeTaskListQuery & { provider?: ZCodeProvider },
   ): Promise<ZCodeTaskListResult> {
     await this.ensureReady();
-    const workspaceKeys = normalizeWorkspaceKeys(params.workspaceScopes);
-    if (workspaceKeys.length === 0) {
+    const scopes = params.workspaceScopes === "host" ? [] : params.workspaceScopes;
+    const workspaceKeys = normalizeWorkspaceKeys(scopes);
+    if (params.workspaceScopes !== "host" && workspaceKeys.length === 0) {
       return { items: [], total: 0, hasMore: false };
     }
 
     const search = params.search?.trim();
     const normalizedSearchLike =
       search && search.length > 0 ? `%${search.toLocaleLowerCase()}%` : null;
-    const where = [
-      "deleted = 0",
-      "coalesce(cli_deleted,0) = 0",
-      "cli_created_at IS NOT NULL",
-      `workspace_key IN (${workspaceKeys.map(() => "?").join(", ")})`,
-    ];
-    const args: Array<string | number> = [...workspaceKeys];
+    const where = ["deleted = 0", "coalesce(cli_deleted,0) = 0", "cli_created_at IS NOT NULL"];
+    const args: Array<string | number> = [];
+    if (params.workspaceScopes === "host") {
+      // 旧搜索由 tabStore 裁剪 workspace，未重开的历史永远不可见。
+      // 在索引 owner 查询全部任务，同时排除本地数据库里的其他 Host 缓存。
+      where.push("host_id = ?");
+      args.push(this.storageHostId ?? "local");
+    } else {
+      where.push(`workspace_key IN (${workspaceKeys.map(() => "?").join(", ")})`);
+      args.push(...workspaceKeys);
+    }
     if (params.provider) {
       appendZCodeAgentIndexedProviderFilter(where, args, params.provider);
     }
@@ -1310,7 +1324,7 @@ export class TaskIndexRepo {
       where.push("pinned = 1", "archived = 0");
     } else if (params.kind === "archived") {
       where.push("archived = 1");
-    } else {
+    } else if (params.kind !== "all") {
       where.push("pinned = 0", "archived = 0");
     }
     if (normalizedSearchLike) {
@@ -1370,7 +1384,7 @@ export class TaskIndexRepo {
       )
       .all(...listArgs) as unknown as TaskIndexRow[];
     const workspacePurposeByKey = new Map(
-      params.workspaceScopes.flatMap((scope) =>
+      scopes.flatMap((scope) =>
         scope.workspacePurpose ? [[workspaceKey(scope), scope.workspacePurpose] as const] : [],
       ),
     );

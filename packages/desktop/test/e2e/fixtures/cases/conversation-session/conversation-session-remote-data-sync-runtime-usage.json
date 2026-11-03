@@ -1,0 +1,276 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-data-sync-runtime-usage",
+  "spec": "./test/e2e/conversation-session/conversation-session-remote-data-sync-runtime-usage.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-data-sync-runtime-usage.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "dsync-17-title",
+      "description": "task A、B、C 首发的标题生成。",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "标题不属于远端可用性断言，只需保持 task 行稳定。"
+    },
+    {
+      "id": "dsync-17-subagent-reply",
+      "description": "子智能体按推送的定义运行：系统提示含子智能体正文时回复完成标记。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定子智能体回复，证明远端用的是推送过去的子智能体定义。"
+    },
+    {
+      "id": "dsync-17-subagent-wrong-profile",
+      "description": "子智能体请求没有带推送的定义正文。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "让定义缺失时得到可断言的错误回复，而不是回放未命中。"
+    },
+    {
+      "id": "dsync-17-run-skill_existing-final",
+      "description": "Skill 工具结果返回后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+    },
+    {
+      "id": "dsync-17-run-existing_agent-final",
+      "description": "Agent 工具结果返回后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+    },
+    {
+      "id": "dsync-17-run-mcp-final",
+      "description": "mcp__e2e-dsync-17-mcp__marker 工具结果返回后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+    },
+    {
+      "id": "dsync-17-run-inline-final",
+      "description": "mcp__plugin_e2e-dsync-17-inline_rt__marker 工具结果返回后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+    },
+    {
+      "id": "dsync-17-run-market-final",
+      "description": "mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker 工具结果返回后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+    },
+    {
+      "id": "dsync-17-run-skill_new-final",
+      "description": "Skill 工具结果返回后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+    },
+    {
+      "id": "dsync-17-run-agent-final",
+      "description": "Agent 工具结果返回后的最终回复。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定最终回复，闭合本轮工具调用；排除之后的 RUN 轮次，避免历史里的调用 ID 误匹配。"
+    },
+    {
+      "id": "dsync-17-run-skill_existing-call",
+      "description": "模型请求暴露推送内容时调用 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定工具调用，检查远端是否真的执行推送过去的内容。"
+    },
+    {
+      "id": "dsync-17-run-skill_existing-not-exposed",
+      "description": "模型请求没有暴露 Skill 所需的推送内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "推送内容不可见时给出可断言的回复，而不是回放未命中。"
+    },
+    {
+      "id": "dsync-17-run-existing_agent-call",
+      "description": "模型请求暴露推送内容时调用 Agent。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定工具调用，检查远端是否真的执行推送过去的内容。"
+    },
+    {
+      "id": "dsync-17-run-existing_agent-not-exposed",
+      "description": "模型请求没有暴露 Agent 所需的推送内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "推送内容不可见时给出可断言的回复，而不是回放未命中。"
+    },
+    {
+      "id": "dsync-17-run-mcp-call",
+      "description": "模型请求暴露推送内容时调用 mcp__e2e-dsync-17-mcp__marker。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定工具调用，检查远端是否真的执行推送过去的内容。"
+    },
+    {
+      "id": "dsync-17-run-mcp-not-exposed",
+      "description": "模型请求没有暴露 mcp__e2e-dsync-17-mcp__marker 所需的推送内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "推送内容不可见时给出可断言的回复，而不是回放未命中。"
+    },
+    {
+      "id": "dsync-17-run-inline-call",
+      "description": "模型请求暴露推送内容时调用 mcp__plugin_e2e-dsync-17-inline_rt__marker。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定工具调用，检查远端是否真的执行推送过去的内容。"
+    },
+    {
+      "id": "dsync-17-run-inline-not-exposed",
+      "description": "模型请求没有暴露 mcp__plugin_e2e-dsync-17-inline_rt__marker 所需的推送内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "推送内容不可见时给出可断言的回复，而不是回放未命中。"
+    },
+    {
+      "id": "dsync-17-run-market-call",
+      "description": "模型请求暴露推送内容时调用 mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定工具调用，检查远端是否真的执行推送过去的内容。"
+    },
+    {
+      "id": "dsync-17-run-market-not-exposed",
+      "description": "模型请求没有暴露 mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker 所需的推送内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "推送内容不可见时给出可断言的回复，而不是回放未命中。"
+    },
+    {
+      "id": "dsync-17-run-skill_new-call",
+      "description": "模型请求暴露推送内容时调用 Skill。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定工具调用，检查远端是否真的执行推送过去的内容。"
+    },
+    {
+      "id": "dsync-17-run-skill_new-not-exposed",
+      "description": "模型请求没有暴露 Skill 所需的推送内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "推送内容不可见时给出可断言的回复，而不是回放未命中。"
+    },
+    {
+      "id": "dsync-17-run-agent-call",
+      "description": "模型请求暴露推送内容时调用 Agent。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "tool-use",
+      "syntheticReason": "固定工具调用，检查远端是否真的执行推送过去的内容。"
+    },
+    {
+      "id": "dsync-17-run-agent-not-exposed",
+      "description": "模型请求没有暴露 Agent 所需的推送内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "推送内容不可见时给出可断言的回复，而不是回放未命中。"
+    },
+    {
+      "id": "dsync-17-first-turn",
+      "description": "推送前 task A 的首发（对照组）。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "建立推送前已存在的远端会话。"
+    },
+    {
+      "id": "dsync-17-probe-draft",
+      "description": "探针轮次 DRAFT：只回复固定文本，用模型请求判断可见内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+    },
+    {
+      "id": "dsync-17-probe-hook-draft",
+      "description": "探针轮次 HOOK_DRAFT：只回复固定文本，用模型请求判断可见内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+    },
+    {
+      "id": "dsync-17-probe-existing-1",
+      "description": "探针轮次 EXISTING_1：只回复固定文本，用模型请求判断可见内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+    },
+    {
+      "id": "dsync-17-probe-existing-2",
+      "description": "探针轮次 EXISTING_2：只回复固定文本，用模型请求判断可见内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+    },
+    {
+      "id": "dsync-17-probe-new",
+      "description": "探针轮次 NEW：只回复固定文本，用模型请求判断可见内容。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "探针只需要完成一轮，断言读取本轮模型请求。"
+    },
+    {
+      "id": "dsync-17-command-draft",
+      "description": "命令轮次 DRAFT：检查 /命令 是否展开为命令正文。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "命令展开发生在远端 CLI，断言读取本轮模型请求。"
+    },
+    {
+      "id": "dsync-17-command-existing",
+      "description": "命令轮次 EXISTING：检查 /命令 是否展开为命令正文。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "命令展开发生在远端 CLI，断言读取本轮模型请求。"
+    },
+    {
+      "id": "dsync-17-command-new",
+      "description": "命令轮次 NEW：检查 /命令 是否展开为命令正文。",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "命令展开发生在远端 CLI，断言读取本轮模型请求。"
+    }
+  ]
+}

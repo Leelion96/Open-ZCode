@@ -11,6 +11,11 @@ export function readRequestVerificationConfig(
 ): RequestVerificationConfig | null {
   return null;
 }
+export function readValidatedRequestVerificationConfig(
+  _configs: RequestVerificationClientConfig | null | undefined,
+): RequestVerificationConfig | null {
+  return null;
+}
 export function requestVerificationClaimHeaders(
   _proof: RequestVerificationProof,
 ): Record<string, string> {
@@ -26,7 +31,10 @@ export function allowRequestVerificationHeaders(
 ): Record<string, string> {
   return {};
 }
-export function requiresRequestVerification(_access: { mode: string } | undefined): boolean {
+export function requiresRequestVerification(
+  _access: { mode: string } | undefined,
+  _config?: RequestVerificationConfig | null,
+): boolean {
   return false;
 }
 export function isRequestVerificationMessage(_message: string): boolean {

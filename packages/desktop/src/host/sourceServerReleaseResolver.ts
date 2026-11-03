@@ -22,6 +22,7 @@ import {
   resolveRemoteAssetFetch,
   type RemoteAssetNetworkPort,
 } from "@zcode/server/remote/remoteAssetNetwork.js";
+import { createUnsupportedRemotePlatformError } from "@zcode/server/remote/remotePlatformSupport.js";
 import type { ServerReleaseAsset, SourceServerProbeResult } from "@zcode/server/source-server";
 import type { WindowRemoteAssetDirs } from "./windowRemoteConnectionRegistry.js";
 
@@ -199,7 +200,13 @@ async function resolveReleaseAsset(
     (probe.platform !== "linux" && probe.platform !== "darwin") ||
     (probe.arch !== "x64" && probe.arch !== "arm64")
   ) {
-    throw new Error(`Unsupported Source Server release target: ${probe.platform}-${probe.arch}`);
+    // Bug 原因：英文拒绝信息没有公开码，又被下载阶段兜底成 remote-download-failed，
+    // riscv64 等设备看到“下载失败”并被建议重试；平台不支持应使用专用码和中文原因。
+    // Bug 原因：原因曾写成“Linux / macOS”，连接错误脱敏把空格后的裸 `/` 当作路径遮到行尾，
+    // 用户只看到“只提供 Linux [redacted-path]”。脱敏无法区分路径与分隔符，列举改用顿号。
+    throw createUnsupportedRemotePlatformError(
+      `当前不支持 ${probe.platform}-${probe.arch} 设备：远程服务只提供 Linux、macOS 的 x64 与 arm64 版本`,
+    );
   }
   const target = `${probe.platform}-${probe.arch}`;
   const installMode =

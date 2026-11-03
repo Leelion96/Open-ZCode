@@ -23,6 +23,14 @@ function resolveUpdatePhaseMessageId(phase: string): string {
   return "settings.source.updatePhase.preparing";
 }
 
+/** 更新进度的唯一百分比来源：最新一条日志带进度时取整，否则未知。设备行与更新横幅共用。 */
+export function resolveSourceServerUpdatePercent(
+  logs: readonly SourceServerOperationLog[],
+): number | undefined {
+  const progress = logs.at(-1)?.progress;
+  return progress === undefined ? undefined : Math.round(progress * 100);
+}
+
 export function SourceServerUpdateActivity({
   active,
   logs,
@@ -35,9 +43,7 @@ export function SourceServerUpdateActivity({
   const { intl, locale } = useZCodeIntl();
   const [expanded, setExpanded] = useState(active);
   const latest = logs.at(-1);
-  const latestProgress = latest?.progress;
-  const progressPercent =
-    latestProgress === undefined ? undefined : Math.round(latestProgress * 100);
+  const progressPercent = resolveSourceServerUpdatePercent(logs);
   const numberFormatter = useMemo(
     () => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }),
     [locale],
@@ -51,7 +57,7 @@ export function SourceServerUpdateActivity({
     <div className="basis-full space-y-2 border-t border-border pt-2">
       {!recent ? (
         <>
-          <div className="flex min-w-0 items-center gap-2 text-ui-xs">
+          <div className="flex min-w-0 items-center gap-2 text-ui-sm">
             {active ? (
               <LoaderCircle className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
             ) : null}
@@ -112,7 +118,7 @@ export function SourceServerLogList({ logs }: { logs: readonly SourceServerOpera
   return (
     <div
       data-source-server-log
-      className="max-h-36 space-y-1 overflow-y-auto rounded-lg bg-surface px-3 py-2 font-mono text-ui-xs leading-5 text-foreground-subtle"
+      className="max-h-36 space-y-1 overflow-y-auto rounded-lg bg-surface px-3 py-2 font-mono text-ui-sm leading-5 text-foreground-subtle"
     >
       {logs.length > 0 ? (
         logs.map((entry, index) => (

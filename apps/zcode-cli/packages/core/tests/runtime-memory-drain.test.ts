@@ -22,21 +22,6 @@ describe("runtime Memory Extraction drain", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("preserves the default bounded drain used by session close", async () => {
-    vi.useFakeTimers();
-    let finished = false;
-    const draining = AgentRuntime.prototype.drainMemoryExtractions
-      .call({ memoryExtractionScheduler: { drain: () => new Promise<void>(() => {}) } } as never)
-      .then(() => {
-        finished = true;
-      });
-    await vi.advanceTimersByTimeAsync(59_999);
-    expect(finished).toBe(false);
-    await vi.advanceTimersByTimeAsync(1);
-    await draining;
-    expect(finished).toBe(true);
-  });
-
   it("returns immediately when there is no scheduled work", async () => {
     await expect(
       AgentRuntime.prototype.drainMemoryExtractions.call({} as never, null),

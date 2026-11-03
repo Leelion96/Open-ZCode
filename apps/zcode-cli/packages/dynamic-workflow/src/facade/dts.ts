@@ -273,9 +273,8 @@ const FACADE_WORLD_RUN_SEGMENT = String.raw`
 declare interface WorldRunResult {
   /** The process exit code. Nonzero is a normal, returned outcome — branch on it. */
   exitCode: number;
-  /** Captured stdout (UTF-8). Capped at 256KB; over the cap the call rejects. */
+  /** Captured output (UTF-8), shaped by opts.output. */
   stdout: string;
-  /** Captured stderr (UTF-8). Same cap and rejection semantics as stdout. */
   stderr: string;
 }
 
@@ -287,9 +286,11 @@ declare interface WorldRunResult {
  * literal, shown to the user at confirmation. Fixed argv, never a shell: no pipes,
  * redirection or expansion. cwd is the workspace. Node builtins are reachable as
  * world.run("node", ["-e", code]).
+ * opts.output (both streams): "full" (default) rejects over 16 MiB; "discard" is "";
+ * { tail: n } keeps the last n bytes, n <= 16777216 (16 MiB). Neither bounds what the process prints.
  */
 declare const world: {
-  run(cmd: string, args?: string[], opts?: { timeoutMs?: number }): Promise<WorldRunResult>;
+  run(cmd: string, args?: string[], opts?: { timeoutMs?: number; output?: "full" | "discard" | { tail: number } }): Promise<WorldRunResult>;
 };
 `;
 
@@ -304,9 +305,22 @@ const FACADE_ARGS_SEGMENT = String.raw`
 declare const args: Readonly<Record<string, unknown>>;
 `;
 
+/**
+ * run 身份：两个 facade 都含（snippet 里是一次性的 `dwfeval-…`，无前驱）。注释只写参考层；
+ * 「别放进 ask 指令、persona、world 实参」的理由（缓存键）在技能与 authoring.md 里。
+ */
+const FACADE_RUN_SEGMENT = String.raw`
+/**
+ * This run's id, and the run it amends. ResumeWorkflowRun keeps both; AmendWorkflow mints a
+ * new id. Keep them out of ask text, personas and world arguments: those are cache keys.
+ */
+declare const run: { readonly id: string; readonly resumedFrom?: string };
+`;
+
 export const FACADE_DTS =
   FACADE_ACTOR_SEGMENT +
   FACADE_ARGS_SEGMENT +
+  FACADE_RUN_SEGMENT +
   FACADE_LOG_SEGMENT +
   FACADE_REPORT_SEGMENT +
   FACADE_ARTIFACT_SEGMENT +
@@ -332,6 +346,7 @@ export const FACADE_DTS =
  */
 export const SNIPPET_FACADE_DTS =
   FACADE_ARGS_SEGMENT +
+  FACADE_RUN_SEGMENT +
   FACADE_LOG_SEGMENT +
   FACADE_WORLD_SEGMENT +
   FACADE_WORLD_RUN_SEGMENT +

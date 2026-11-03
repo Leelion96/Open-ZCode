@@ -1,5 +1,5 @@
 import { ReadOutputSchema } from "@zcode/contracts";
-import { createReadFileStateKey } from "./read-file-state.js";
+import { findLatestReadFileState } from "./read-file-state.js";
 import type { ReadFileStateEntry, ReadFileStateMap } from "./types.js";
 
 export const READ_FILE_STATE_METADATA_SCHEMA_VERSION = 1;
@@ -25,6 +25,11 @@ export interface PersistedReadFileStateMetadata {
   revisionId: string;
   mtimeMs: number;
   sizeBytes: number;
+  /**
+   * 执行器在工具记录快照时取的序号（与写 live 状态在同一个同步步骤里），即 live 的写入顺序；
+   * 只在同一 assistant 内比较。旧记录没有这个字段。
+   */
+  snapshotIndex?: number;
 }
 
 export function createReadFileStateMetadata(input: {
@@ -39,14 +44,16 @@ export function createReadFileStateMetadata(input: {
   const parsedOutput = ReadOutputSchema.safeParse(input.output);
   if (!parsedOutput.success) return undefined;
   const output = parsedOutput.data;
-  if (output.type !== "text" && output.type !== "file_unchanged") return undefined;
+  // 只有真实读到内容的结果记录快照；file_unchanged 不记录（见 handlers/read.ts）。
+  if (output.type !== "text") return undefined;
 
   const toolInput = asRecord(input.toolInput);
   const offset = toolInput ? numberField(toolInput, "offset") : undefined;
   const limit = toolInput ? numberField(toolInput, "limit") : undefined;
-  const entry = input.readFileState?.get(
-    createReadFileStateKey(output.filePath, offset === undefined ? 1 : offset, limit),
-  );
+  const latest = findLatestReadFileState(input.readFileState, output.filePath);
+  // 每个文件只有一条；只有它就是这次请求的视图时才记录，避免把别的视图写进这次的 metadata。
+  const entry =
+    latest && (latest.offset ?? 1) === (offset ?? 1) && latest.limit === limit ? latest : undefined;
   return createReadFileStateMetadataFromEntry({
     completedAt: input.completedAt,
     entry,
@@ -114,6 +121,7 @@ export function parseReadFileStateMetadata(
   }
   const offset = numberField(readState, "offset");
   const limit = numberField(readState, "limit");
+  const snapshotIndex = numberField(readState, "snapshotIndex");
 
   return {
     schemaVersion: READ_FILE_STATE_METADATA_SCHEMA_VERSION,
@@ -127,6 +135,7 @@ export function parseReadFileStateMetadata(
     revisionId,
     mtimeMs,
     sizeBytes,
+    ...(snapshotIndex === undefined ? {} : { snapshotIndex }),
   };
 }
 

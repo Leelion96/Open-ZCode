@@ -4,6 +4,7 @@ import {
   recoverPendingPermissionGrant,
 } from "../permission-grant-recovery.js";
 import { runtimeInputMetadata } from "../../agent/runtime-input-presentation.js";
+import { refreshWorkspaceTrustAdmission } from "./mcp.js";
 import { withConversationQuotes } from "../helpers/conversation-quotes.js";
 import {
   CoreErrorType,
@@ -46,6 +47,7 @@ import type {
   DrainedPendingInputDiagnostics,
 } from "../types.js";
 import {
+  attachGenUiContext,
   createRuntimeUserEntry,
   realUserRuntimeMetadata,
   type RuntimeMessageEntry,
@@ -123,6 +125,7 @@ export async function steerTurn(
   const commandKind = request.commandKind;
   const source: TurnSteerSource | undefined = request.source;
   const delivery = request.delivery;
+  const automationId = request.automationId;
   const toolDisallowlist = request.toolDisallowlist;
   const queuePosition = activeTurn.pendingInputs.length;
   const intent = request.intent
@@ -147,6 +150,7 @@ export async function steerTurn(
     ...(delivery ? { delivery } : {}),
     ...(intent ? { intent } : {}),
     ...(request.attachments ? { attachments: request.attachments } : {}),
+    ...(automationId ? { automationId } : {}),
     ...(toolDisallowlist ? { toolDisallowlist } : {}),
     turnId: activeTurn.turnId,
   };
@@ -181,6 +185,7 @@ export async function steerTurn(
       ...(request.inputPresentation ? { inputPresentation: request.inputPresentation } : {}),
       ...(delivery ? { delivery } : {}),
       ...(intent ? { intent } : {}),
+      ...(automationId ? { automationId } : {}),
       ...(toolDisallowlist ? { toolDisallowlist } : {}),
       targetTurnId: activeTurn.turnId,
       queueLength,
@@ -253,6 +258,7 @@ export async function enqueueDeferredInput(
   const commandKind = request.commandKind;
   const source: TurnSteerSource | undefined = request.source;
   const delivery = request.delivery ?? "queue";
+  const automationId = request.automationId;
   const toolDisallowlist = request.toolDisallowlist;
   const pendingInputId =
     request.pendingInputId ??
@@ -282,6 +288,7 @@ export async function enqueueDeferredInput(
       ...(request.inputPresentation ? { inputPresentation: request.inputPresentation } : {}),
       delivery,
       ...(intent ? { intent } : {}),
+      ...(automationId ? { automationId } : {}),
       ...(toolDisallowlist ? { toolDisallowlist } : {}),
       targetTurnId,
       queueLength,
@@ -474,16 +481,23 @@ function pendingInputDelivery(pendingInput: PendingTurnInput | undefined): "guid
   return delivery === "guide" ? "guide" : "queue";
 }
 
+function isInlineGuide(pendingInput: PendingTurnInput): boolean {
+  return (
+    pendingInput.commandKind !== "sendGoalCommand" &&
+    pendingInput.commandKind !== "compact" &&
+    pendingInputDelivery(pendingInput) === "guide"
+  );
+}
+
 function firstInlineGuideIndex(activeTurn: ActiveTurnSteeringState): number {
   // pendingInputs 同时承载 future queue 与 current-turn guide，只检查
   // 数组队首，导致先入队的普通消息把后续显式 guide 永久挡住。delivery 才是消费车道；
   // 这里只在 guide 子序列内保持 admission FIFO，普通 queue 留在原位等待外层提升。
-  return activeTurn.pendingInputs.findIndex(
-    (pendingInput) =>
-      pendingInput.commandKind !== "sendGoalCommand" &&
-      pendingInput.commandKind !== "compact" &&
-      pendingInputDelivery(pendingInput) === "guide",
-  );
+  return activeTurn.pendingInputs.findIndex(isInlineGuide);
+}
+
+function withQueryId(traceContext: TraceContext, queryId: QueryId | undefined): TraceContext {
+  return queryId ? { ...traceContext, queryId } : traceContext;
 }
 
 export function hasInlineGuidePendingInput(
@@ -901,6 +915,7 @@ export async function editPendingInputById(
         inputSize: measureUtf8Bytes(options.newText),
         ...(held.commandKind ? { commandKind: held.commandKind } : {}),
         ...(held.intent ? { intent: { ...held.intent, text: options.newText } } : {}),
+        ...(held.automationId ? { automationId: held.automationId } : {}),
         ...(held.toolDisallowlist ? { toolDisallowlist: held.toolDisallowlist } : {}),
         queueLength: projection.pendingSteerInputs.length,
         targetTurnId: held.targetTurnId,
@@ -932,6 +947,7 @@ export async function editPendingInputById(
         ? { inputPresentation: pendingInput.inputPresentation }
         : {}),
       ...(pendingInput.intent ? { intent: pendingInput.intent } : {}),
+      ...(pendingInput.automationId ? { automationId: pendingInput.automationId } : {}),
       ...(pendingInput.toolDisallowlist ? { toolDisallowlist: pendingInput.toolDisallowlist } : {}),
       queueLength: activeTurn.pendingInputs.length,
       targetTurnId: activeTurn.turnId,
@@ -1196,50 +1212,47 @@ async function drainPendingInputUnlocked(
   this: AgentRuntimeInternal,
   options: Parameters<typeof drainPendingInput>[0],
 ): Promise<DrainedPendingInputDiagnostics | undefined> {
-  const guideIndex = firstInlineGuideIndex(options.activeTurn);
-  const pendingInput = guideIndex >= 0 ? options.activeTurn.pendingInputs[guideIndex] : undefined;
-  if (!pendingInput) return undefined;
-  // sendQueuedNow 已 reserve 的队首只能由 reservation owner 提升；普通 roundtrip drain
-  // 必须暂停，避免 stop barrier 期间同一输入又被当前 turn 消费一次。
-  if (this.pendingInputReservations.has(pendingInput.id)) return undefined;
-  // 普通 queue 只能由 bootstrap 在 session-ready + goal gate 后提升；runtime 行内 drain
-  // 从 guide 子序列取最早一项，不能让 future queue 偷跑，也不能让它阻塞当前轮引导。
-  options.activeTurn.pendingInputs.splice(guideIndex, 1);
-  const pendingInputs = [pendingInput];
-  const queryIds = pendingInput.queryId ? [pendingInput.queryId] : undefined;
-  // steer 是新的真实用户 query。drain 后的下一次模型请求必须切到该 queryId，
-  // 不能继续沿用原始 turn query，否则 tool 后续请求会被归因到上一条用户消息。
-  const drainTraceContext = pendingInput.queryId
-    ? { ...options.traceContext, queryId: pendingInput.queryId }
-    : options.traceContext;
+  // 同一边界按 admission FIFO 取出全部已等待的 guide。普通 queue 只能由 bootstrap 在
+  // session-ready + goal gate 后提升，留在原位，不能偷跑，也不能阻塞当前轮引导。
+  // sendQueuedNow 已 reserve 的 guide 只能由 reservation owner 提升；取到它为止，避免
+  // stop barrier 期间同一输入又被当前 turn 消费一次，后面的 guide 也不越过它。
+  const pendingInputs: PendingTurnInput[] = [];
+  for (const pendingInput of options.activeTurn.pendingInputs) {
+    if (!isInlineGuide(pendingInput)) continue;
+    if (this.pendingInputReservations.has(pendingInput.id)) break;
+    pendingInputs.push(pendingInput);
+  }
+  if (pendingInputs.length === 0) return undefined;
+  for (const pendingInput of pendingInputs) {
+    options.activeTurn.pendingInputs.splice(
+      options.activeTurn.pendingInputs.indexOf(pendingInput),
+      1,
+    );
+  }
+  const drainedQueryIds = pendingInputs.flatMap((pendingInput) =>
+    pendingInput.queryId ? [pendingInput.queryId] : [],
+  );
+  const queryIds = drainedQueryIds.length > 0 ? drainedQueryIds : undefined;
 
   const drainedAt = Date.now();
-  const inputPreviews = pendingInputs.map((pendingInput) => previewInput(pendingInput.input));
-  const inputSizes = pendingInputs.map((pendingInput) => measureUtf8Bytes(pendingInput.input));
-  const queuedDurationsMs = pendingInputs.map(
-    (pendingInput) => drainedAt - pendingInput.queuedAt.getTime(),
-  );
   const messageIds: MessageId[] = [];
   const runtimeEntries: RuntimeMessageEntry[] = [];
-  const drainedInputs: Array<{
-    pendingInputId: string;
-    messageId: MessageId;
-    text: string;
-    delivery?: "guide" | "queue";
-    intent?: NonNullable<PendingTurnInput["intent"]>;
-    toolDisallowlist?: readonly string[];
-  }> = [];
+  // 每条 guide 的记录、移出队列（promote）与显示（drained 事件）按条完成，组装请求时才合并。
+  // 修复原因：整批提交后才发 drained 事件时，后一条写库失败会让前一条已保存、已移出队列，
+  // 却没有生成正式的 user 行，实时界面上看不到它。
   for (const pendingInput of pendingInputs) {
     const messageId = createMessageId();
     // 投递语义缺省按 queue（排队消费=独立轮）；guide 由 v4 命令面
     // 按 inputRouting 显式标注。落到持久 metadata 供冷恢复还原同一切分。
     const delivery = pendingInput.delivery ?? "queue";
+    // 每条输入记自己的 query；一起取出时不能都归到最后一条。
+    const inputTraceContext = withQueryId(options.traceContext, pendingInput.queryId);
     const resolvedAttachments = await resolveTurnAttachments(pendingInput.attachments, {
       artifactStore: this.artifactStore,
       fileSystemPort: this.fileSystemPort,
       imageProcessorPort: this.imageProcessorPort,
       sessionId: this.sessionId,
-      traceContext: drainTraceContext,
+      traceContext: inputTraceContext,
       turnId: options.activeTurn.turnId,
       workingDirectory: this.workingDirectory,
     });
@@ -1259,13 +1272,11 @@ async function drainPendingInputUnlocked(
       ),
       runtimeInputMetadata(inputPresentation) ?? realUserRuntimeMetadata(),
     );
-    this.messageHistory.addEntries([runtimeEntry]);
-    runtimeEntries.push(runtimeEntry);
     await this.persistUserPrompt(
       messageId,
       pendingInput.input,
       resolvedAttachments,
-      drainTraceContext,
+      inputTraceContext,
       {
         steerDelivery: delivery,
         inputPresentation,
@@ -1276,14 +1287,57 @@ async function drainPendingInputUnlocked(
         intent: pendingInput.intent,
       },
     );
+    // 写库成功后才进入内存历史。
+    // 修复原因：先进内存历史时，写库失败的 guide 仍在队列里，下一轮请求却已经带着它；
+    // 用户继续队列后，模型会看到它两次，冷恢复后又只剩一次。
+    const entry = attachGenUiContext(runtimeEntry, pendingInput.intent?.genUiContext);
+    this.messageHistory.addEntries([entry]);
+    runtimeEntries.push(entry);
+    // 按原始来源判断；附件会省略展示标记，不能把合成消息误当成用户输入。
+    if (
+      this.mcpToolsRegistered &&
+      runtimeInputMetadata(pendingInput.inputPresentation)?.source !== "legacy_synthetic"
+    ) {
+      await refreshWorkspaceTrustAdmission(this, inputTraceContext);
+    }
     messageIds.push(messageId);
-    drainedInputs.push({
-      pendingInputId: pendingInput.id,
-      messageId,
-      text: pendingInput.input,
-      delivery,
-      ...(pendingInput.intent ? { intent: pendingInput.intent } : {}),
-      ...(pendingInput.toolDisallowlist ? { toolDisallowlist: pendingInput.toolDisallowlist } : {}),
+    const event = this.createEvent(
+      SessionEventType.TurnSteerDrained,
+      {
+        injectedMessageIds: [messageId],
+        pendingInputIds: [pendingInput.id],
+        drainedInputs: [
+          {
+            pendingInputId: pendingInput.id,
+            messageId,
+            text: pendingInput.input,
+            delivery,
+            ...(pendingInput.intent ? { intent: pendingInput.intent } : {}),
+            ...(pendingInput.toolDisallowlist
+              ? { toolDisallowlist: pendingInput.toolDisallowlist }
+              : {}),
+          },
+        ],
+        ...(pendingInput.queryId ? { queryIds: [pendingInput.queryId] } : {}),
+        targetTurnId: options.activeTurn.turnId,
+      },
+      inputTraceContext,
+    );
+    await this.appendEvent(event, inputTraceContext);
+    options.events.push(event);
+    this.logger?.debug("Turn steer drained", {
+      ...traceContextToLogContext(inputTraceContext),
+      drainedCount: 1,
+      event: "turn.steer.drained",
+      injectedMessageIds: [messageId],
+      inputPreviews: [previewInput(pendingInput.input)],
+      inputSizes: [measureUtf8Bytes(pendingInput.input)],
+      module: "core.runtime",
+      pendingInputIds: [pendingInput.id],
+      queryIds: pendingInput.queryId ? [pendingInput.queryId] : undefined,
+      queuedDurationsMs: [drainedAt - pendingInput.queuedAt.getTime()],
+      status: "completed",
+      targetTurnId: options.activeTurn.turnId,
     });
   }
 
@@ -1291,36 +1345,11 @@ async function drainPendingInputUnlocked(
   const toolDisallowlist = [
     ...new Set(pendingInputs.flatMap((pendingInput) => pendingInput.toolDisallowlist ?? [])),
   ];
-  const event = this.createEvent(
-    SessionEventType.TurnSteerDrained,
-    {
-      injectedMessageIds: messageIds,
-      pendingInputIds,
-      drainedInputs,
-      ...(queryIds ? { queryIds } : {}),
-      targetTurnId: options.activeTurn.turnId,
-    },
-    drainTraceContext,
-  );
-  await this.appendEvent(event, drainTraceContext);
-  options.events.push(event);
-  this.logger?.debug("Turn steer drained", {
-    ...traceContextToLogContext(drainTraceContext),
-    drainedCount: pendingInputs.length,
-    event: "turn.steer.drained",
-    injectedMessageIds: messageIds,
-    inputPreviews,
-    inputSizes,
-    module: "core.runtime",
-    pendingInputIds,
-    queryIds,
-    queuedDurationsMs,
-    status: "completed",
-    targetTurnId: options.activeTurn.turnId,
-  });
+  // 同一边界取出多条时，最后一条带意图的输入决定下一 step 的模型、权限与 Plan。
+  const intent = pendingInputs.findLast((pendingInput) => pendingInput.intent)?.intent;
   return {
     injectedMessageIds: messageIds,
-    ...(pendingInput.intent ? { intent: pendingInput.intent } : {}),
+    ...(intent ? { intent } : {}),
     latestMessageId: messageIds.at(-1),
     pendingInputIds,
     queryIds,

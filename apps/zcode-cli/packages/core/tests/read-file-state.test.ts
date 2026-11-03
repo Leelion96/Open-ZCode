@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   createReadFileStatePathKey,
-  findEditableReadFileState,
-  findStrictFullReadFileState,
+  findLatestReadFileState,
   normalizeReadFileStateMtimeMs,
+  setReadFileStateEntry,
 } from "../src/tool/read-file-state.js";
 import type { ReadFileStateMap } from "../src/tool/types.js";
 
@@ -64,42 +64,26 @@ describe("read file state path keys", () => {
 });
 
 describe("read file state lookup", () => {
-  it("uses the newest same-file entry for Edit freshness", () => {
-    const file = "/tmp/latest.txt";
-    const olderFull = createEntry(file, "old", {
+  it("keeps one entry per file; the newest view replaces the older one", () => {
+    const olderFull = createEntry("c:/repo/latest.txt", "old", {
       isPartialView: false,
       readAt: new Date(1),
     });
-    const newerPartial = createEntry(file, "new slice", {
-      isPartialView: true,
-      limit: 1,
-      readAt: new Date(2),
-    });
-    const state: ReadFileStateMap = new Map([
-      ["older", olderFull],
-      ["newer", newerPartial],
-    ]);
-
-    expect(findEditableReadFileState(state, file, "linux")).toBe(newerPartial);
-  });
-
-  it("keeps Write on the newest strict full read only", () => {
-    const file = "/tmp/full-only.txt";
-    const olderFull = createEntry(file, "old", {
+    const newerRange = createEntry("C:\\repo\\latest.txt", "new slice", {
       isPartialView: false,
-      readAt: new Date(1),
-    });
-    const newerPartial = createEntry(file, "new slice", {
-      isPartialView: true,
       limit: 1,
+      offset: 2,
       readAt: new Date(2),
     });
-    const state: ReadFileStateMap = new Map([
-      ["older", olderFull],
-      ["newer", newerPartial],
-    ]);
+    const state: ReadFileStateMap = new Map();
 
-    expect(findStrictFullReadFileState(state, file, "linux")).toBe(olderFull);
+    setReadFileStateEntry(state, olderFull, "win32");
+    setReadFileStateEntry(state, newerRange, "win32");
+
+    // 同一文件的不同写法落到同一条；查找直接按路径取，不遍历整张表。
+    expect(state.size).toBe(1);
+    expect(findLatestReadFileState(state, "C:/repo/latest.txt", "win32")).toBe(newerRange);
+    expect(findLatestReadFileState(state, "C:/repo/other.txt", "win32")).toBeUndefined();
   });
 
   it("normalizes mtime to integer milliseconds", () => {
@@ -114,13 +98,14 @@ function createEntry(
   options: {
     isPartialView: boolean;
     limit?: number;
+    offset?: number;
     readAt: Date;
   },
 ) {
   return {
     path: filePath,
     content,
-    offset: undefined,
+    offset: options.offset,
     limit: options.limit,
     isPartialView: options.isPartialView,
     readAt: options.readAt,

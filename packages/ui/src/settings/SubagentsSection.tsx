@@ -1,5 +1,10 @@
-import { useConfigWorkspaceTargets } from "@/workspace-config-catalog/index.js";
-import { SettingsUserScopeProvider } from "@/settings/SettingsMachine.js";
+import {
+  SettingsScopeDeviceProvider,
+  SettingsScopeBlockedNotice,
+  resolveSettingsScopeBlock,
+  useSettingsScope,
+  useSettingsScopeForm,
+} from "@/settings-scope/index.js";
 /* eslint-disable max-lines -- 子智能体管理页集中维护作用域列表、表单和启用状态，避免状态分散 */
 import { useStartPlanRecommendation } from "@/hooks/useStartPlanRecommendation.js";
 import { hasExplicitModelChanged } from "@/lib/startPlanRecommendation.js";
@@ -44,10 +49,8 @@ import { cn } from "@/components/lib/utils.js";
 import { logger } from "@/logger.js";
 import { settingsResourceRowInteraction } from "@/settings/settingsResourceRowInteraction.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
-import { useServices } from "@/hooks/useServices.js";
 import { useModelSelectionServiceView } from "@/hooks/useModelSelectionView.js";
 import { useConfigWorkspaceServicesResolution as useWorkspaceServicesResolution } from "@/workspace-config-catalog/index.js";
-import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
   buildRegistryModelSelectGroups,
@@ -65,8 +68,11 @@ import {
   SubagentReasoningField,
   type SubagentReasoningFieldState,
 } from "@/settings/SubagentReasoningField.js";
-import { refreshLoadedSubagentsStoreForWorkspace } from "@/store/subagentsStore.js";
-import { PluginScopeMenu, getPluginWorkspaceKey } from "@/settings/PluginScopeMenu.js";
+import {
+  refreshLoadedSubagentsStoreForWorkspace,
+  refreshSubagentsStoreForRemoteWorkspaces,
+} from "@/store/subagentsStore.js";
+import { PluginScopeMenu } from "@/settings/PluginScopeMenu.js";
 import type { ConfigWorkspaceTarget } from "@/workspace-config-catalog/index.js";
 import { buildSourceSettingsProjectionKey } from "@/settings/settingsSourceWorkspace.js";
 import {
@@ -129,7 +135,6 @@ interface SubagentsSectionProps {
   onManageModels?: () => void;
   workspacePath?: string | null;
   workspaceIdentity?: string;
-  settingsSourceServerId?: string | null;
 }
 
 function isEditableUserAgent(agent: AgentSummary): boolean {
@@ -218,11 +223,17 @@ function toSubagentModelSelection(
 
 export type SubagentThoughtOptionState = SubagentReasoningFieldState;
 
+/**
+ * 模型目录对子智能体页的含义：ready 有目录；loading 目录仍会到达；
+ * unavailable 读取失败或目标没有目录（远端设备「用户」），不会自行变成 ready。
+ */
+export type SubagentModelCatalogStatus = "ready" | "loading" | "unavailable";
+
 export function resolveSubagentThoughtOptionState(params: {
   model: string;
   modelAvailable: boolean;
   modelSelectionView?: ModelSelectionView | null;
-  modelSelectionLoading: boolean;
+  modelCatalogStatus: SubagentModelCatalogStatus;
   thoughtLevel?: string;
 }): SubagentThoughtOptionState {
   const persistedModel = toPersistedModel(params.model);
@@ -248,8 +259,10 @@ export function resolveSubagentThoughtOptionState(params: {
       option: metadataOption,
     };
   }
-  if (params.modelSelectionLoading) {
-    return { kind: "unknown", status: "loading" };
+  // Bug 原因：旧实现只有"是否 ready"一个布尔值，读取失败与远端「用户」没有目录也显示加载中，
+  // 而这两种状态不会自行变成 ready，控件一直转圈。能力未知时按目录状态区分加载中与不可用。
+  if (params.modelCatalogStatus !== "ready") {
+    return { kind: "unknown", status: params.modelCatalogStatus };
   }
   return { kind: "unsupported" };
 }
@@ -283,13 +296,14 @@ function resolvedSubagentThoughtLevel(state: SubagentThoughtOptionState): string
 export function isSubagentModelAvailable(
   modelGroups: readonly ModelSelectGroup[],
   model: string | undefined,
-  modelSelectionLoading = false,
+  modelCatalogStatus: SubagentModelCatalogStatus = "ready",
 ): boolean {
   const trimmedModel = model?.trim();
   if (!trimmedModel || trimmedModel === INHERIT_MODEL_VALUE) {
     return true;
   }
-  if (modelSelectionLoading) {
+  // 没有可用目录时无法判断模型是否失效，保留原意图。
+  if (modelCatalogStatus !== "ready") {
     return true;
   }
   return modelGroups.some((group) => group.items.some((item) => item.value === trimmedModel));
@@ -453,7 +467,7 @@ function AgentListRow({
   isOperating,
   modelGroups,
   modelSelectionView,
-  modelSelectionLoading,
+  modelCatalogStatus,
   modelSelectGroups,
   onModelOverrideChange,
   onDelete,
@@ -465,7 +479,7 @@ function AgentListRow({
   isOperating: boolean;
   modelGroups: readonly ModelSelectGroup[];
   modelSelectionView?: ModelSelectionView | null;
-  modelSelectionLoading: boolean;
+  modelCatalogStatus: SubagentModelCatalogStatus;
   modelSelectGroups: readonly ModelSelectGroup[];
   onModelOverrideChange: (
     agent: AgentSummary,
@@ -556,7 +570,7 @@ function AgentListRow({
             disabled={isOperating}
             modelGroups={modelGroups}
             modelSelectionView={modelSelectionView}
-            modelSelectionLoading={modelSelectionLoading}
+            modelCatalogStatus={modelCatalogStatus}
             onModelOverrideChange={onModelOverrideChange}
           />
         ) : null}
@@ -596,14 +610,14 @@ function SubagentModelOverrideControl({
   disabled,
   modelGroups,
   modelSelectionView,
-  modelSelectionLoading,
+  modelCatalogStatus,
   onModelOverrideChange,
 }: {
   agent: AgentSummary;
   disabled: boolean;
   modelGroups: readonly ModelSelectGroup[];
   modelSelectionView?: ModelSelectionView | null;
-  modelSelectionLoading: boolean;
+  modelCatalogStatus: SubagentModelCatalogStatus;
   onModelOverrideChange: (
     agent: AgentSummary,
     config: { model?: string; thoughtLevel?: string },
@@ -628,12 +642,12 @@ function SubagentModelOverrideControl({
     id: "settings.subagents.model.select",
   });
   const value = config.model ?? INHERIT_MODEL_VALUE;
-  const modelAvailable = isSubagentModelAvailable(modelGroups, value, modelSelectionLoading);
+  const modelAvailable = isSubagentModelAvailable(modelGroups, value, modelCatalogStatus);
   const thoughtLevelState = resolveSubagentThoughtOptionState({
     model: value,
     modelAvailable,
     modelSelectionView,
-    modelSelectionLoading,
+    modelCatalogStatus,
     thoughtLevel: config.thoughtLevel,
   });
   const thoughtLevelInvalid = Boolean(
@@ -703,13 +717,13 @@ function SubagentModelOverrideControl({
       const nextModelAvailable = isSubagentModelAvailable(
         modelGroups,
         nextValue,
-        modelSelectionLoading,
+        modelCatalogStatus,
       );
       const nextThoughtState = resolveSubagentThoughtOptionState({
         model: nextValue,
         modelAvailable: nextModelAvailable,
         modelSelectionView,
-        modelSelectionLoading,
+        modelCatalogStatus,
         thoughtLevel:
           nextModel && modelSelectionView
             ? completeNewModelSelection(modelSelectionView, parseModelPickerValue(nextModel))
@@ -723,7 +737,7 @@ function SubagentModelOverrideControl({
         thoughtLevel: resolvedSubagentThoughtLevel(nextThoughtState),
       });
     },
-    [config.model, modelGroups, modelSelectionLoading, modelSelectionView, persistConfig],
+    [config.model, modelGroups, modelCatalogStatus, modelSelectionView, persistConfig],
   );
   const footerActions = useMemo<ModelSelectFooterAction[]>(
     () => [
@@ -793,7 +807,7 @@ function SubagentModelOverrideControl({
 function SubagentForm({
   initial,
   modelSelectionView,
-  modelSelectionLoading,
+  modelCatalogStatus,
   modelSelectGroups,
   onManageModels,
   saving,
@@ -806,7 +820,7 @@ function SubagentForm({
 }: {
   initial?: AgentSummary;
   modelSelectionView?: ModelSelectionView | null;
-  modelSelectionLoading: boolean;
+  modelCatalogStatus: SubagentModelCatalogStatus;
   modelSelectGroups: readonly ModelSelectGroup[];
   onManageModels?: () => void;
   saving: boolean;
@@ -858,7 +872,7 @@ function SubagentForm({
     [model, modelSelectionView],
   );
   const persistedModel = toPersistedModel(model);
-  const modelAvailable = isSubagentModelAvailable(modelSelectGroups, model, modelSelectionLoading);
+  const modelAvailable = isSubagentModelAvailable(modelSelectGroups, model, modelCatalogStatus);
   // 候选已明确失效时仍展示原型号会误导用户；只改触发器文案，不清空草稿或补回候选。
   // 非 ready 阶段由可用性函数保留原意图，不能把读取失败当成模型被删除。
   const modelTriggerLabel = modelAvailable
@@ -883,7 +897,7 @@ function SubagentForm({
     model,
     modelAvailable,
     modelSelectionView,
-    modelSelectionLoading,
+    modelCatalogStatus,
     thoughtLevel,
   });
   const thoughtLevelInvalid = Boolean(
@@ -970,7 +984,7 @@ function SubagentForm({
       setPromptError(null);
     }
     // 不可用模型会展示为“选择模型”，保存时也必须阻止历史值被静默写回。
-    if (!isSubagentModelAvailable(modelSelectGroups, model, modelSelectionLoading)) {
+    if (!isSubagentModelAvailable(modelSelectGroups, model, modelCatalogStatus)) {
       setModelError(
         intl.formatMessage({
           id: "settings.subagents.form.validation.modelUnavailable",
@@ -1272,50 +1286,46 @@ export function SubagentsSection({
   onManageModels,
   workspacePath,
   workspaceIdentity,
-  settingsSourceServerId,
 }: SubagentsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
   const plugins = usePluginManagementStore((state) => state.plugins);
   const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
   const initializePlugins = usePluginManagementStore((state) => state.initialize);
-  const currentServices = useServices();
-  const workspaceTabs = useConfigWorkspaceTargets(settingsSourceServerId);
-  const baseServices = useBaseWorkspaceServices();
+  // Scope 状态唯一 owner：默认选中当前 workspace 所在设备的「用户」。
+  // Bug 根因：旧实现把 User 固定为本机（避免远程 tab 下误写远端 home），用户在远程 tab 里看不出
+  // 也改不了远端 User 配置；现在 User 跟随菜单选中的设备：本机走 base services，远端走该设备的
+  // source-settings attachment，设备离线时 fail-closed，不回退本机。
+  const scope = useSettingsScope({ workspacePath, workspaceIdentity });
+  const selectedScopeKey = scope.toLocalScopeKey(scope.selectedScopeKey);
+  const setSelectedScopeKey = (localKey: string) =>
+    scope.setSelectedScopeKey(scope.toPageScopeKey(localKey));
+  const workspaceTabs = scope.deviceTargets;
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [capability, setCapability] = useState<AgentsCapability | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [showForm, setShowForm] = useState(false);
-  const [editingAgent, setEditingAgent] = useState<AgentSummary | null>(null);
+  // 表单归属打开它的设备（agent 为 null 表示新建），根因与修法见 useSettingsScopeForm。
+  const { form, openForm, closeForm } = useSettingsScopeForm<{ agent: AgentSummary | null }>(scope);
+  const editingAgent = form?.agent ?? null;
+  const showForm = form !== null && form.agent === null;
   const [saving, setSaving] = useState(false);
   const [operatingAgentId, setOperatingAgentId] = useState<string | null>(null);
   const [loadedAgentTargetKey, setLoadedAgentTargetKey] = useState("");
-  const [selectedScopeKey, setSelectedScopeKey] = useState("user");
-  const selectedWorkspace = workspaceTabs.find(
-    (tab) => getPluginWorkspaceKey(tab) === selectedScopeKey,
-  );
-  // Bug 根因：User 未选项目时曾继承 active remote identity，把本机用户配置写进远端 home。
-  // User 的服务权威固定为 base；需要 cwd 的插件初始化只借用同权威的本机项目。
-  const localWorkspaceTabs = workspaceTabs.filter(
-    (tab) => !tab.workspaceIdentity && !tab.remoteSessionId && !tab.remoteTarget,
-  );
-  const localWorkspace =
-    localWorkspaceTabs.find((tab) => tab.workspacePath === workspacePath) ?? localWorkspaceTabs[0];
-  const targetWorkspacePath =
-    selectedWorkspace?.workspacePath ??
-    (settingsSourceServerId ? workspacePath : localWorkspace?.workspacePath);
-  const targetWorkspaceIdentity =
-    selectedWorkspace?.workspaceIdentity ??
-    (settingsSourceServerId ? workspaceIdentity : undefined);
-  const cacheAuthorityKey =
-    settingsSourceServerId && !selectedWorkspace
-      ? `source-settings:${settingsSourceServerId}`
-      : selectedWorkspace
-        ? undefined
-        : "local-user";
+  const selectedWorkspace =
+    scope.resolution.status === "ready" && scope.resolution.kind === "workspace"
+      ? scope.resolution.target
+      : undefined;
+  const userScope = scope.user.status === "ready" ? scope.user : null;
+  const scopeBlocked = resolveSettingsScopeBlock(scope, !selectedWorkspace);
+  const targetWorkspacePath = selectedWorkspace?.workspacePath ?? userScope?.target.workspacePath;
+  const targetWorkspaceIdentity = selectedWorkspace?.workspaceIdentity;
+  // 本机 User 沿用 "local-user" 缓存权威；远端 User 用 source-settings 权威，项目用 identity。
+  const cacheAuthorityKey = selectedWorkspace
+    ? undefined
+    : (userScope?.cacheAuthorityKey ?? "local-user");
   const activeAgentTargetKey = buildSourceSettingsProjectionKey(
     targetWorkspacePath,
     targetWorkspaceIdentity,
@@ -1323,34 +1333,48 @@ export function SubagentsSection({
   );
   const projectionMatchesTarget =
     !loadedAgentTargetKey || loadedAgentTargetKey === activeAgentTargetKey;
-  const targetServiceResolution = useWorkspaceServicesResolution(
+  const resolvedTargetServices = useWorkspaceServicesResolution(
     targetWorkspacePath,
     selectedWorkspace?.remoteSessionId,
     targetWorkspaceIdentity,
     selectedWorkspace?.remoteTarget,
     {
-      unscopedServices: selectedWorkspace
-        ? undefined
-        : settingsSourceServerId
-          ? currentServices
-          : baseServices,
+      unscopedServices: selectedWorkspace ? undefined : userScope?.unscopedServices,
       forceUnscoped: !selectedWorkspace,
     },
   );
+  // 设备离线或远端 attachment 未就绪时暂停全部 RPC（fail-closed），不借用其他 Host 的服务。
+  const targetServiceResolution = scopeBlocked
+    ? { ...resolvedTargetServices, rpcReady: false }
+    : resolvedTargetServices;
   // Bug 原因：Scope target 与 useServices() 的当前上下文可以属于不同远程 host，
   // 子智能体及插件投影必须统一使用 target-scoped services，连接恢复前暂停 RPC。
   const { pluginManagementService, subagentsService } = targetServiceResolution.services;
   const activeScope = selectedWorkspace ? "workspace" : "user";
   // Provider/Model 事实属于目标 Environment：内置模型覆盖必须读 Scope target 自己的
   // Registry 视图，等待远端连接期间不能回退到 Base Host 的模型列表。
+  // Bug 原因：远端「用户」的服务来自该设备的 source-settings attachment，Host 按 R3 §8.2 不注册
+  // model-selection；旧实现照常读取，Host 1s 后回 Unknown channel，页面显示"模型列表加载失败"且重试必败。
+  // 这类目标没有模型目录：不读取（状态为 unavailable，不报错），表单只能选「继承默认」。
+  const modelCatalogUnavailable = !selectedWorkspace && scope.device.kind === "remote";
   const modelSelectionRead = useModelSelectionServiceView(
-    targetServiceResolution.services.modelSelectionService,
+    modelCatalogUnavailable ? null : targetServiceResolution.services.modelSelectionService,
     targetServiceResolution.rpcReady,
+    modelCatalogUnavailable ? "missing-target" : "remote-waiting",
   );
+  const modelSelectionState = modelSelectionRead.state;
   const modelSelectionView =
-    modelSelectionRead.state.status === "ready" ? modelSelectionRead.state.view : null;
+    modelSelectionState.status === "ready" ? modelSelectionState.view : null;
   // 非 Ready 生命周期均保留表单中的模型意图；error/unavailable 不能被误判成模型已失效。
-  const modelSelectionLoading = modelSelectionRead.state.status !== "ready";
+  // 只有首读中与等待远端连接的目录仍会到达；读取失败与没有目录（missing-target）算不可用。
+  const modelCatalogStatus: SubagentModelCatalogStatus =
+    modelSelectionState.status === "ready"
+      ? "ready"
+      : modelSelectionState.status === "loading" ||
+          (modelSelectionState.status === "unavailable" &&
+            modelSelectionState.reason === "remote-waiting")
+        ? "loading"
+        : "unavailable";
   const latestRequestIdRef = useRef(0);
   const pluginInventoryWorkspacePath = targetWorkspacePath;
   const chatModelSelectGroups = useMemo(() => {
@@ -1462,13 +1486,19 @@ export function SubagentsSection({
   }, [loadAgents]);
 
   const refreshMentionStore = useCallback(async () => {
-    await refreshLoadedSubagentsStoreForWorkspace({
-      scope: activeScope,
-      workspacePath: targetWorkspacePath,
-      workspaceIdentity: targetWorkspaceIdentity,
-      subagentsService,
-    });
-  }, [activeScope, subagentsService, targetWorkspaceIdentity, targetWorkspacePath]);
+    await Promise.all([
+      refreshLoadedSubagentsStoreForWorkspace({
+        scope: activeScope,
+        workspacePath: targetWorkspacePath,
+        workspaceIdentity: targetWorkspaceIdentity,
+        subagentsService,
+      }),
+      // Bug 根因：远端「用户」经 source-settings 服务读写，而已打开远程项目的斜杠建议缓存按项目服务
+      // 分桶，上面的刷新碰不到它们。修法：「用户」改动后再按该设备已打开项目各自的服务刷新；
+      // 本机项目没有 identity，会被跳过（本机仍由上面的刷新覆盖）。
+      activeScope === "user" ? refreshSubagentsStoreForRemoteWorkspaces(workspaceTabs) : undefined,
+    ]);
+  }, [activeScope, subagentsService, targetWorkspaceIdentity, targetWorkspacePath, workspaceTabs]);
 
   const handleSave = useCallback(
     async (config: SubAgentConfig) => {
@@ -1493,8 +1523,7 @@ export function SubagentsSection({
             workspaceIdentity: targetWorkspaceIdentity,
           });
         }
-        setShowForm(false);
-        setEditingAgent(null);
+        closeForm();
         await Promise.all([refresh(), refreshMentionStore()]);
       } catch (saveError) {
         toast(saveError instanceof Error ? saveError.message : String(saveError));
@@ -1504,6 +1533,7 @@ export function SubagentsSection({
     },
     [
       activeScope,
+      closeForm,
       editingAgent,
       refresh,
       refreshMentionStore,
@@ -1536,8 +1566,7 @@ export function SubagentsSection({
           agentId: agent.id,
           filePath: agent.path,
         });
-        setEditingAgent(null);
-        setShowForm(false);
+        closeForm();
         await Promise.all([refresh(), refreshMentionStore()]);
       } catch (deleteError) {
         toast(deleteError instanceof Error ? deleteError.message : String(deleteError));
@@ -1545,7 +1574,7 @@ export function SubagentsSection({
         setOperatingAgentId(null);
       }
     },
-    [confirmDialog, intl, refresh, refreshMentionStore, subagentsService],
+    [closeForm, confirmDialog, intl, refresh, refreshMentionStore, subagentsService],
   );
 
   const handleToggle = useCallback(
@@ -1601,13 +1630,15 @@ export function SubagentsSection({
     [refresh, refreshMentionStore, subagentsService],
   );
 
-  const handleEdit = useCallback((agent: AgentSummary) => {
-    if (!isEditableUserAgent(agent)) {
-      return;
-    }
-    setEditingAgent(agent);
-    setShowForm(false);
-  }, []);
+  const handleEdit = useCallback(
+    (agent: AgentSummary) => {
+      if (!isEditableUserAgent(agent)) {
+        return;
+      }
+      openForm({ agent });
+    },
+    [openForm],
+  );
 
   const canManageUserAgents =
     activeScope === "workspace"
@@ -1618,14 +1649,8 @@ export function SubagentsSection({
     if (!canManageUserAgents) {
       return;
     }
-    setEditingAgent(null);
-    setShowForm(true);
-  }, [canManageUserAgents]);
-
-  const handleCancelForm = useCallback(() => {
-    setEditingAgent(null);
-    setShowForm(false);
-  }, []);
+    openForm({ agent: null });
+  }, [canManageUserAgents, openForm]);
 
   const filteredAgents = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -1694,7 +1719,10 @@ export function SubagentsSection({
 
   if (isFormView && targetServiceResolution.rpcReady) {
     return (
-      <SettingsUserScopeProvider sourceServerId={settingsSourceServerId}>
+      <SettingsScopeDeviceProvider
+        device={scope.device}
+        userAvailable={scope.user.status !== "unavailable"}
+      >
         <div className="space-y-6">
           <SettingsBreadcrumbReporter
             items={[
@@ -1704,7 +1732,7 @@ export function SubagentsSection({
                   intl.formatMessage({ id: "settings.subagents.addNew" }),
               },
             ]}
-            onSectionSelect={handleCancelForm}
+            onSectionSelect={closeForm}
           />
           <div className="space-y-4">
             <div className="space-y-1">
@@ -1727,11 +1755,11 @@ export function SubagentsSection({
             <SubagentForm
               initial={currentEditingAgent ?? undefined}
               modelSelectionView={modelSelectionView}
-              modelSelectionLoading={modelSelectionLoading}
+              modelCatalogStatus={modelCatalogStatus}
               modelSelectGroups={subagentModelSelectGroups}
               onManageModels={onManageModels}
               saving={saving}
-              onCancel={handleCancelForm}
+              onCancel={closeForm}
               onDelete={handleDelete}
               onSave={handleSave}
               scopeKey={selectedScopeKey}
@@ -1740,7 +1768,7 @@ export function SubagentsSection({
             />
           </div>
         </div>
-      </SettingsUserScopeProvider>
+      </SettingsScopeDeviceProvider>
     );
   }
 
@@ -1764,7 +1792,7 @@ export function SubagentsSection({
             isOperating={operatingAgentId === agent.id || refreshing}
             modelGroups={chatModelSelectGroups}
             modelSelectionView={modelSelectionView}
-            modelSelectionLoading={modelSelectionLoading}
+            modelCatalogStatus={modelCatalogStatus}
             modelSelectGroups={subagentModelSelectGroups}
             onModelOverrideChange={handleModelOverrideChange}
             onDelete={handleDelete}
@@ -1782,11 +1810,11 @@ export function SubagentsSection({
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">
           <PluginScopeMenu
-            userSourceServerId={settingsSourceServerId}
             align="start"
-            selectedScopeKey={selectedScopeKey}
-            workspaceTabs={workspaceTabs}
-            onScopeKeyChange={setSelectedScopeKey}
+            groups={scope.groups}
+            selectedScopeKey={scope.selectedScopeKey}
+            selectedDevice={scope.device}
+            onScopeKeyChange={scope.setSelectedScopeKey}
           />
           <div className="hidden h-4 w-px bg-border sm:block" aria-hidden="true" />
           <div className="flex h-7 items-center gap-1 px-3 text-ui-base font-medium text-foreground">
@@ -1829,7 +1857,9 @@ export function SubagentsSection({
         </div>
       ) : null}
 
-      {!targetServiceResolution.rpcReady ? (
+      {scopeBlocked ? (
+        <SettingsScopeBlockedNotice state={scopeBlocked} device={scope.device} />
+      ) : !targetServiceResolution.rpcReady ? (
         <PluginLoadingState label={intl.formatMessage({ id: "common.connecting" })} />
       ) : loading || !projectionMatchesTarget ? (
         <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />

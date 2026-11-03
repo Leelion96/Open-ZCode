@@ -1,14 +1,15 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { type Model, type ModelToolContract } from "@zcode/contracts";
 import { createTestRuntimeModel } from "./test-runtime-model.js";
 import { buildToolExposure, buildToolSearchAnnouncement } from "../src/tool/search/exposure.js";
 import { createToolRegistry } from "../src/tool/registry.js";
 import { toolSearchToolEntry } from "../src/tool/handlers/tool-search.js";
+import { deferredToolCallEntry } from "../src/tool/handlers/deferred-tool-call.js";
 import { webFetchToolEntry } from "../src/tool/handlers/webfetch.js";
 import { readToolEntry } from "../src/tool/handlers/read.js";
 import { todoWriteToolEntry } from "../src/tool/handlers/todo.js";
 import type { RuntimeMessageEntry } from "../src/agent/message-history.js";
-import { collectDiscoveredTools } from "../src/tool/search/history.js";
+import { collectDiscoveredTools, parseToolSearchHiddenNames } from "../src/tool/search/history.js";
 
 const model = (enabled: boolean): Model => ({
   ...createTestRuntimeModel({
@@ -229,7 +230,7 @@ it("rebuilds complete name listings from retained deltas, including a readded-on
     readdedNames: ["WebFetch"],
   });
   expect(readded.content).toBe(
-    `1 deferred tool is available again (names announced earlier in this conversation): WebFetch. Load via ToolSearch as before.`,
+    `1 deferred tool is available again in this session (announced earlier in this conversation): WebFetch. Load via ToolSearch as before.`,
   );
   expect(collect([first, second, removed, readded])).toBeUndefined();
   const readdedSuffix = collect([readded])!;
@@ -312,9 +313,11 @@ it("separates added, grouped readded and removed announcement paragraphs", () =>
     .toBe(`The following deferred tools are now available via ToolSearch. Their schemas are NOT loaded — calling them directly will fail with InputValidationError. Use ToolSearch with query "select:<name>[,<name>...]" to load tool schemas before calling them:
 WebFetch
 
-4 deferred tools are available again (names announced earlier in this conversation): mcp__demo__* (2), mcp__other__*, TodoWrite. Load via ToolSearch as before.
+3 deferred tools are available again (MCP server reconnected — names announced earlier in this conversation): mcp__demo__* (2), mcp__other__*. Load via ToolSearch as before.
 
-The following deferred tools are no longer available. Do not search for them — ToolSearch will return no match:
+1 deferred tool is available again in this session (announced earlier in this conversation): TodoWrite. Load via ToolSearch as before.
+
+The following deferred tools are no longer available in this session. Do not search for them — ToolSearch will return no match:
 Gone
 
 This is ambient context — do not narrate it to the user unless they ask or it is directly relevant to their request.`);
@@ -370,4 +373,117 @@ it("disables deferral when ToolSearch is outside the allowed scope and honors al
     entries: [],
   });
   expect(scoped.enabled).toBe(false);
+});
+
+describe("removal reasons", () => {
+  const AMBIENT =
+    "This is ambient context — do not narrate it to the user unless they ask or it is directly relevant to their request.";
+  // removed 离开工具目录；hidden 仍在 registry，只是本轮不在 tools 里。
+  function announceThenRemove(removed: string[], hidden: string[] = []) {
+    const registry = createToolRegistry();
+    [toolSearchToolEntry, webFetchToolEntry].forEach((entry) => registry.register(entry));
+    // mcp__demo__keep 始终留在本轮，ToolSearch 保持开启。
+    for (const name of [...removed, "mcp__demo__keep"]) {
+      registry.register({
+        ...webFetchToolEntry,
+        metadata: { ...webFetchToolEntry.metadata, name },
+      });
+    }
+    const first = buildToolSearchAnnouncement({
+      mode: "native" as const,
+      model: model(true),
+      tools: registry.toContracts(),
+      registry,
+      entries: [],
+    })!;
+    for (const name of removed) registry.unregister(name);
+    return buildToolSearchAnnouncement({
+      mode: "native" as const,
+      model: model(true),
+      tools: registry.toContracts().filter((tool) => !hidden.includes(tool.name)),
+      registry,
+      entries: [first],
+    })!;
+  }
+
+  it("names an MCP disconnect by the mcp__ name prefix", () => {
+    // 只看名称前缀，不读取连接状态；非 MCP 名称不写成断开。
+    const removed = announceThenRemove(["mcp__my_server__read", "mcp__other__read", "TodoWrite"]);
+    expect(removed.content)
+      .toBe(`The following deferred tools are no longer available (their MCP server disconnected). Do not search for them — ToolSearch will return no match:
+mcp__my_server__read
+mcp__other__read
+
+The following deferred tools are no longer available in this session. Do not search for them — ToolSearch will return no match:
+TodoWrite
+
+${AMBIENT}`);
+    // 原因只进入文案，增量事实不变。
+    expect(removed.metadata?.toolSearchAnnouncement?.removedNames).toEqual([
+      "TodoWrite",
+      "mcp__my_server__read",
+      "mcp__other__read",
+    ]);
+  });
+
+  it("summarizes more than 30 tools of a disconnected server", () => {
+    const names = Array.from(
+      { length: 31 },
+      (_, i) => `mcp__demo__tool${String(i).padStart(2, "0")}`,
+    );
+    expect(announceThenRemove(names).content).toBe(
+      `31 deferred tools are no longer available (MCP server disconnected): mcp__demo__* (31). Do not search for them — ToolSearch will return no match.
+
+${AMBIENT}`,
+    );
+  });
+
+  it("keeps the neutral text for a tool that is only hidden in this turn", () => {
+    expect(announceThenRemove([], ["WebFetch"]).content)
+      .toBe(`The following deferred tools are no longer available. Do not search for them — ToolSearch will return no match:
+WebFetch
+
+${AMBIENT}`);
+  });
+
+  // 请求投影每次按 metadata 重新渲染；隐藏名称不记下来时，同一条公告在请求里会变成"会话内不可用"。
+  it("renders the hidden names in every request and after cold resume", () => {
+    const announcement = announceThenRemove([], ["WebFetch"]);
+    expect(announcement.metadata?.toolSearchHiddenNames).toEqual(["WebFetch"]);
+    const registry = createToolRegistry();
+    [toolSearchToolEntry, deferredToolCallEntry, webFetchToolEntry].forEach((entry) =>
+      registry.register(entry),
+    );
+    registry.register({
+      ...webFetchToolEntry,
+      metadata: { ...webFetchToolEntry.metadata, name: "mcp__demo__keep" },
+    });
+    const tools = registry.toContracts().filter((tool) => tool.name !== "WebFetch");
+    // 冷恢复只剩持久化的 metadata 原样回来。
+    const resumed = parseToolSearchHiddenNames(
+      JSON.parse(JSON.stringify(announcement.metadata!.toolSearchHiddenNames)),
+      announcement.metadata!.toolSearchAnnouncement!,
+    );
+    const restored: RuntimeMessageEntry = {
+      ...announcement,
+      metadata: { ...announcement.metadata!, toolSearchHiddenNames: resumed },
+    };
+    for (const entry of [announcement, restored]) {
+      for (const mode of ["native", "local"] as const) {
+        const projected = buildToolExposure({
+          mode,
+          model: model(true),
+          tools,
+          registry,
+          entries: [entry],
+        });
+        const searchName = mode === "local" ? "LocalToolSearch" : "ToolSearch";
+        expect(projected.entries.find((item) => item.kind === "attachment")?.content)
+          .toBe(`The following deferred tools are no longer available. Do not search for them — ${searchName} will return no match:
+WebFetch
+
+${AMBIENT}`);
+      }
+    }
+  });
 });

@@ -23,9 +23,11 @@ export function createSubagentMessageSink(
 async function steerSubagentMessage(
   runtime: SteerableRuntime,
   request: { traceContext: TraceContext },
-  message: { id: string; message: string; summary?: string; traceContext?: TraceContext },
+  message: { id: string; message: string; traceContext?: TraceContext },
 ): Promise<TurnSteerResult> {
-  const input = formatSubagentCoordinatorMessage(message);
+  // 只交付 message，summary 只用于 UI 预览。
+  // 修复原因：summary 拼在 message 前面时，子 agent 会多收到一行只为预览写的摘要。
+  const input = message.message;
   for (let attempt = 0; attempt < 20; attempt++) {
     const result = await runtime.steerTurn({
       delivery: "guide",
@@ -46,12 +48,6 @@ async function steerSubagentMessage(
     inputId: message.id,
     traceContext: message.traceContext ?? request.traceContext,
   });
-}
-
-function formatSubagentCoordinatorMessage(message: { message: string; summary?: string }): string {
-  const summary = message.summary?.trim();
-  if (!summary) return message.message;
-  return [summary, "", message.message].join("\n");
 }
 
 function sleep(ms: number): Promise<void> {

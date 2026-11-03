@@ -1,0 +1,38 @@
+{
+  "comment": "electron-builder 26.17 macOS 构建宿主所需的工具镜像资产。工具在构建机上执行并按宿主 process.arch 选择，与目标应用 --arch 无关；release/file/size/sha256 必须与 app-builder-lib/dmg-builder 内置值逐字一致。toolchain 记录 npm 包版本（dmg-builder 的 npm 版本 26.17.0，其 release tag 为 dmg-builder@1.2.5）。升级 electron-builder 时必须审查并更新本清单。",
+  "toolchain": {
+    "electronBuilder": "26.17.0",
+    "appBuilderLib": "26.17.0",
+    "dmgBuilder": "26.17.0"
+  },
+  "hostAssets": {
+    "darwin-arm64": [
+      {
+        "release": "7zip@1.0.0",
+        "file": "7zip-darwin-arm64.tar.gz",
+        "size": 2599879,
+        "sha256": "496a341abe210aae1a25bc202ee97f6de6c76a3dc80f91d96616be05502d72c1"
+      },
+      {
+        "release": "dmg-builder@1.2.5",
+        "file": "dmgbuild-bundle-arm64-75c8a6c.tar.gz",
+        "size": 22995919,
+        "sha256": "793404d0c96687e27d5ee40a668d498c92e36a64d6c2906df511031adb33cbeb"
+      }
+    ],
+    "darwin-x86_64": [
+      {
+        "release": "7zip@1.0.0",
+        "file": "7zip-darwin-x86_64.tar.gz",
+        "size": 2599879,
+        "sha256": "496a341abe210aae1a25bc202ee97f6de6c76a3dc80f91d96616be05502d72c1"
+      },
+      {
+        "release": "dmg-builder@1.2.5",
+        "file": "dmgbuild-bundle-x86_64-75c8a6c.tar.gz",
+        "size": 23033357,
+        "sha256": "1664972f9cc2d6e8fce3b63e42cd30078aff602669c5856939c4519921200433"
+      }
+    ]
+  }
+}

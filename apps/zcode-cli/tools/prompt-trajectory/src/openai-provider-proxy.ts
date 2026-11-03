@@ -104,17 +104,81 @@ async function writeMockResponse(input: {
 }): Promise<void> {
   const mockResponse = input.getMockResponse(input.requestBody);
   if (mockResponse === undefined) {
-    throw new Error(`Missing mock OpenAI response for request ${input.requestIndex}.`);
+    throw new MissingMockResponseError(input.requestIndex);
   }
   const responseBody = normalizeMockResponseForRequest(mockResponse, input.requestBody);
-  const responseText = JSON.stringify(responseBody);
   input.response.statusCode = 200;
-  input.response.setHeader("content-type", "application/json");
-  input.response.end(responseText);
+  const chunks =
+    input.requestBody.stream === true ? chatCompletionStreamChunks(responseBody) : undefined;
+  if (chunks) {
+    // 修复原因：compact 摘要等请求固定走流式；按 JSON 回复时 SDK 读到空流，
+    // 回退成非流式后再发一次请求，同一条 mock 已被消费，录制以缺少 mock 失败。
+    input.response.setHeader("content-type", "text/event-stream");
+    input.response.end(
+      [...chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`), "data: [DONE]\n\n"].join(""),
+    );
+  } else {
+    input.response.setHeader("content-type", "application/json");
+    input.response.end(JSON.stringify(responseBody));
+  }
   await input.ledger.recordAssistantMessage(
     input.requestIndex,
     assembleNonStreamingAssistantMessage(responseBody),
   );
+}
+
+/** 把 chat.completion 形状的 mock 拆成等价的流式分片；其他形状返回 undefined，按 JSON 回复。 */
+function chatCompletionStreamChunks(body: unknown): JsonObject[] | undefined {
+  if (!isRecord(body) || !Array.isArray(body.choices)) return undefined;
+  const base = {
+    id: stringProperty(body, "id") ?? "mock-response",
+    object: "chat.completion.chunk",
+    created: numberProperty(body, "created") ?? 0,
+    model: stringProperty(body, "model") ?? "mock-model",
+  };
+  const chunks: JsonObject[] = [];
+  const finishChoices: JsonObject[] = [];
+  for (const choice of body.choices) {
+    if (!isRecord(choice) || !isRecord(choice.message)) return undefined;
+    const index = typeof choice.index === "number" ? choice.index : 0;
+    const message = choice.message;
+    const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    chunks.push({
+      ...base,
+      choices: [
+        {
+          index,
+          delta: {
+            role: "assistant",
+            ...(typeof message.content === "string" ? { content: message.content } : {}),
+            ...(toolCalls.length > 0
+              ? {
+                  tool_calls: toolCalls.map((toolCall, toolIndex) => ({
+                    index: toolIndex,
+                    ...(isRecord(toolCall) ? toolCall : {}),
+                  })),
+                }
+              : {}),
+          },
+          finish_reason: null,
+        },
+      ],
+    });
+    finishChoices.push({ index, delta: {}, finish_reason: choice.finish_reason ?? "stop" });
+  }
+  chunks.push({
+    ...base,
+    choices: finishChoices,
+    ...(isRecord(body.usage) ? { usage: body.usage } : {}),
+  });
+  return chunks;
+}
+
+class MissingMockResponseError extends Error {
+  constructor(requestIndex: number) {
+    super(`Missing mock OpenAI response for request ${requestIndex}.`);
+    this.name = "MissingMockResponseError";
+  }
 }
 
 interface MockResponseMatch {
@@ -408,7 +472,8 @@ function writeProxyError(response: ServerResponse, error: unknown): void {
     response.destroy(error instanceof Error ? error : undefined);
     return;
   }
-  response.statusCode = 502;
+  // 没有匹配的 mock 是 fixture 断言失败，不是上游故障；按 400 返回，避免 provider 重试拖慢失败。
+  response.statusCode = error instanceof MissingMockResponseError ? 400 : 502;
   response.setHeader("content-type", "application/json");
   response.end(
     JSON.stringify({

@@ -1,11 +1,91 @@
 // Session 常驻池的真实事实适配与去激活执行面。
 
 import type { SessionId } from "@zcode/contracts";
+import { zcodeProtocolMethods } from "@zcode/shared";
+import { waitForSessionResidencyFinalization } from "../session-execution/index.js";
 import type {
   SessionDeactivationDecision,
   SessionResidentPoolHost,
 } from "./session-resident-pool.js";
 import type { ZCodeProtocolAgentServerContext } from "./server-types.js";
+import { SessionLifecycleController } from "../session-lifecycle/index.js";
+import { activateSessionRuntime } from "./server-operations.js";
+import { abortMcpUiToolCallsForSession, clearMcpUiAppToolsForSession } from "./mcp-ui/index.js";
+
+export function getSessionLifecycle(
+  context: ZCodeProtocolAgentServerContext,
+): SessionLifecycleController {
+  return (context.sessionLifecycle ??= new SessionLifecycleController({
+    exists: async (sessionId) => {
+      const persisted = await context.deps.sessionStore?.getSession(sessionId as SessionId);
+      if (persisted?.time.deleted !== undefined) return false;
+      return Boolean(persisted || context.sessions.has(sessionId));
+    },
+    hasRuntime: (sessionId) => context.sessions.has(sessionId),
+    activate: async (sessionId) => {
+      const persistedMessages = await context.v4Gateway?.prepareSessionHistory(sessionId);
+      await activateSessionRuntime(
+        context,
+        { sessionId },
+        {
+          reusePersistedMessages: true,
+          persistedMessages,
+        },
+      );
+    },
+    assertCanStop: (sessionId) => {
+      // 主动停止不继承 TTL/LRU 的 busy 保护；回收仍由 resident pool 单独预检。
+      void sessionId;
+    },
+    release: (sessionId, initializationFailed) =>
+      releaseSessionRecord(context, sessionId, initializationFailed ? "discard" : "close"),
+    onChange: (snapshot) => {
+      context.logger?.info("Session runtime lifecycle changed", {
+        event: "zcode_protocol.session.lifecycle_changed",
+        ...snapshot,
+      });
+      try {
+        context.notify({ method: zcodeProtocolMethods.sessionLifecycleChanged, params: snapshot });
+      } catch (error) {
+        // 通知连接失败不改变已完成的生命周期事实，客户端重连后通过查询对账。
+        context.logger?.warn("Session lifecycle notification failed", {
+          sessionId: snapshot.sessionId,
+          error,
+        });
+      }
+    },
+  }));
+}
+
+/** 条件关闭和删除复用资源释放；调用方保留自己的产品预检及软删除顺序。 */
+export function closeSessionRuntime(
+  context: ZCodeProtocolAgentServerContext,
+  sessionId: string,
+  deleted = false,
+): Promise<void> {
+  return getSessionLifecycle(context).dispose(sessionId, () =>
+    releaseSessionRecord(context, sessionId, deleted ? "delete" : "close"),
+  );
+}
+
+export function discardSessionRuntime(
+  context: ZCodeProtocolAgentServerContext,
+  sessionId: string,
+): Promise<void> {
+  return getSessionLifecycle(context).dispose(sessionId, () =>
+    releaseSessionRecord(context, sessionId, "discard"),
+  );
+}
+
+/** 整体退出保留原有投影收口顺序；尚未初始化完成的 app 仍由进程资源 owner 收集。 */
+export function shutdownSessionRuntime(
+  context: ZCodeProtocolAgentServerContext,
+  sessionId: string,
+): Promise<void> {
+  return getSessionLifecycle(context).dispose(sessionId, () =>
+    releaseSessionRecord(context, sessionId, "shutdown"),
+  );
+}
 
 export {
   acquireSessionResidencyFinalization,
@@ -16,10 +96,8 @@ export {
 /**
  * 只释放 resident runtime，不删除任何持久 session/task 事实。
  *
- * 若先 await app.close，再从 registry 摘除，新的 cold subscribe 会在 await
- * 窗口命中一个已进入 shutdown 的旧 runtime；若先删 record 但不设置 pool gate，新旧 app
- * 又会并发碰同一 session 资源。因此同步摘除与异步 close 必须由 pool 的 in-flight gate
- * 组合成一个生命周期事务。
+ * 同步摘除与异步关闭由 session lifecycle owner 组合成一个事务；pool 只决定何时回收。
+ * registry 缺席不代表已经释放，只有 owner 确认关闭成功后才能恢复新实例。
  */
 export async function deactivateSessionRecord(
   context: ZCodeProtocolAgentServerContext,
@@ -30,12 +108,95 @@ export async function deactivateSessionRecord(
   // CommandInbox pin 的拒绝曾发生在 unsubscribe 之后，异常会留下仍在 registry
   // 但收不到 runtime event 的半清 record。所有可预检拒绝必须早于第一个副作用。
   context.v4Gateway?.assertSessionRuntimeDeactivatable(sessionId);
-  record.unsubscribe?.();
-  context.v4Gateway?.deactivateSession(sessionId);
+  await getSessionLifecycle(context).dispose(sessionId, () =>
+    releaseSessionRecord(context, sessionId, "deactivate"),
+  );
+}
+
+async function releaseSessionRecord(
+  context: ZCodeProtocolAgentServerContext,
+  sessionId: string,
+  mode: "close" | "deactivate" | "discard" | "delete" | "shutdown",
+): Promise<void> {
+  const record = context.sessions.get(sessionId);
+  if (!record) {
+    if (mode === "close") {
+      await context.v4Gateway?.releaseSessionProjection(sessionId);
+      await context.v4Gateway?.finishSessionRelease(sessionId);
+    } else if (mode !== "discard" && mode !== "shutdown")
+      context.v4Gateway?.disposeSession(sessionId);
+    return;
+  }
+  const errors: unknown[] = [];
+  let projectionReleased: Promise<void> | undefined;
+  if (mode === "close") {
+    // 先冻结后台唤醒和队列，再暂停目标并取消执行；重启不能在取消后自动续跑。
+    try {
+      record.app.runtime.beginShutdown();
+      const target = await record.app.readTarget?.();
+      if (target?.status === "active") await record.app.updateTargetStatus?.("paused");
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      record.app.runtime.stopActiveForegroundExecution?.({ reason: "session runtime restarting" });
+      record.activeAbortController?.abort(new Error("Session runtime restarting"));
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    record.unsubscribe?.();
+  } catch (error) {
+    errors.push(error);
+  }
+  // 先摘除旧实例，避免 close 的 await 窗口向半关闭 runtime 发命令。
+  // gateway 的删除通知需要 registry 中的 workspace 身份，因此必须在摘除前发出。
+  try {
+    if (mode === "close")
+      projectionReleased = context.v4Gateway?.releaseSessionProjection(sessionId);
+    else if (mode === "deactivate") context.v4Gateway?.deactivateSession(sessionId);
+    else if (mode !== "discard" && mode !== "shutdown")
+      context.v4Gateway?.disposeSession(sessionId, { deleted: mode === "delete" });
+  } catch (error) {
+    errors.push(error);
+  }
   context.sessions.delete(sessionId);
-  await record.app.close?.();
-  // 去激活后内存 event store 必须与“从未加载”等价。
-  await record.eventStore.deleteSession(sessionId as SessionId);
+  if (mode === "close" || mode === "delete") {
+    try {
+      abortMcpUiToolCallsForSession(sessionId);
+      clearMcpUiAppToolsForSession(context, sessionId);
+      await record.app.unsubscribeMcpResourcesForUi?.(`${sessionId}|`);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  // 一个清理步骤失败不能跳过 app.close；最终错误仍由生命周期 owner 隔离。
+  try {
+    await record.app.close?.();
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length === 0) {
+    try {
+      await projectionReleased;
+      await waitForSessionResidencyFinalization(record);
+      if (mode === "close") await context.v4Gateway?.finishSessionRelease(sessionId);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    if (mode !== "shutdown") await record.eventStore.deleteSession(sessionId as SessionId);
+  } catch (error) {
+    // 独立内存投影不拥有运行资源；失败不阻止替代实例，保留诊断即可。
+    context.logger?.warn("Session event cache cleanup failed", {
+      event: "zcode_protocol.session.event_cache_cleanup_failed",
+      sessionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (errors.length) throw new AggregateError(errors, "Session runtime release failed");
 }
 
 export function createSessionResidentPoolHost(
@@ -54,6 +215,8 @@ export function createSessionResidentPoolHost(
         // active/queue 与 registry background task 不能覆盖 title、MCP、memory
         // 等 detached work；统一查询由 runtime 维护，协议 finalization 只补协议所有权。
         hasResidencyBlockingWork:
+          (context.sessionLifecycle !== undefined &&
+            !context.sessionLifecycle.isReady(sessionId)) ||
           record.activeAbortController !== undefined ||
           (record.residencyFinalizationCount ?? 0) > 0 ||
           record.app.runtime.hasResidencyBlockingWork(),

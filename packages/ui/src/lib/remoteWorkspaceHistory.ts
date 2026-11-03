@@ -402,6 +402,7 @@ export function buildRemoteWorkspaceSessionMutation(params: {
   workspacePurpose?: "project" | "conversation";
   lastConnectionStatus: RemoteWorkspaceSessionEntry["lastConnectionStatus"];
   lastConnectionError?: string;
+  lastConnectionErrorCode?: string;
   touchOpenedAt: boolean;
 }): RemoteWorkspaceSessionMutation {
   const currentEntry =
@@ -423,6 +424,13 @@ export function buildRemoteWorkspaceSessionMutation(params: {
   const localWorkspacePath = normalizeOptionalPath(
     params.localWorkspacePath ?? currentEntry?.localWorkspacePath,
   );
+  // 错误码与文案同写同清：新失败只用自己的码（可以没有），只更新状态时沿用原记录。
+  const lastConnectionErrorCode =
+    params.lastConnectionStatus !== "failed"
+      ? undefined
+      : params.lastConnectionError !== undefined
+        ? params.lastConnectionErrorCode
+        : currentEntry?.lastConnectionErrorCode;
   const nextEntry: RemoteWorkspaceSessionEntry = {
     kind: "remote",
     workspacePath: params.workspacePath,
@@ -442,6 +450,7 @@ export function buildRemoteWorkspaceSessionMutation(params: {
       params.lastConnectionStatus === "failed"
         ? (params.lastConnectionError ?? currentEntry?.lastConnectionError)
         : undefined,
+    ...(lastConnectionErrorCode ? { lastConnectionErrorCode } : {}),
   };
   // Bug 原因：Host 绑定 stable identity 后，旧 route entry 与新 entry 的 key 不同，
   // 通用 upsert 会把两条都保留。已经通过 target/alias 证明的 currentEntry 就是被换代对象，

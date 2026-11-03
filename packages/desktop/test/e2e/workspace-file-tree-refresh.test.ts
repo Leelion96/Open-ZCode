@@ -37,65 +37,14 @@ describe("工作区文件树刷新 E2E", () => {
     await mkdir(TREE_DIR, { recursive: true });
     await writeFile(OLD_FILE, "old file", "utf-8");
 
-    await observeSidebarSlide();
+    // 文件树已迁到右侧标签；左侧导航保持可用，不再等待退役侧栏的位移动画。
     await openWorkspaceFileTree();
-    await assertSidebarSlide("open");
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const panel = document.querySelector<HTMLElement>('[data-project-sidebar-panel="files"]');
-          const navigation = document.querySelector<HTMLElement>(
-            '[data-project-sidebar-panel="navigation"]',
-          );
-          if (!panel || !navigation) return false;
-          const style = getComputedStyle(panel);
-          return (
-            panel.getAttribute("aria-hidden") === "false" &&
-            navigation.getAttribute("aria-hidden") === "true" &&
-            style.transitionProperty.includes("transform") &&
-            Math.abs(
-              panel.getBoundingClientRect().left -
-                panel.parentElement!.getBoundingClientRect().left,
-            ) < 1
-          );
-        }),
-      { timeout: 10000, timeoutMsg: "查看文件没有完成 transform 滑入动效" },
-    );
-    await observeSidebarSlide();
-    await browser.execute(() => {
-      document
-        .querySelector<HTMLButtonElement>('[data-project-sidebar-panel="files"] button')
-        ?.click();
-    });
-    await assertSidebarSlide("close");
-    await browser.waitUntil(
-      async () =>
-        browser.execute(() => {
-          const files = document.querySelector<HTMLElement>('[data-project-sidebar-panel="files"]');
-          const navigation = document.querySelector<HTMLElement>(
-            '[data-project-sidebar-panel="navigation"]',
-          );
-          if (!files || !navigation) return false;
-          return (
-            files.inert &&
-            files.getAttribute("aria-hidden") === "true" &&
-            !navigation.inert &&
-            Math.abs(
-              navigation.getBoundingClientRect().left -
-                navigation.parentElement!.getBoundingClientRect().left,
-            ) < 1
-          );
-        }),
-      { timeout: 10000, timeoutMsg: "返回项目列表没有完成反向滑动或隐藏文件树仍可聚焦" },
-    );
-    await browser.waitUntil(
-      async () =>
-        browser.execute(
-          () =>
-            document.querySelector('[data-project-sidebar-panel="files"]')?.childElementCount === 0,
-        ),
-      { timeout: 10000, timeoutMsg: "退场完成后文件树未卸载，目录监听仍可能持续运行" },
-    );
+    await expect($('[data-project-sidebar-panel="navigation"]')).toBeDisplayed();
+    const activeFileTab = $('[data-side-pane-tab-id][data-state="active"]');
+    await activeFileTab.moveTo();
+    await activeFileTab.$("button[aria-label]").click();
+    await $(`[data-testid="${TID_WORKSPACE_FILE_TREE_PANEL}"]`).waitForExist({ reverse: true });
+    await expect($('[data-project-sidebar-panel="navigation"]')).toBeDisplayed();
     await openWorkspaceFileTree();
     await clickWorkspaceFileTreeRow(TREE_DIR);
     await waitForWorkspaceFileTreeRow(OLD_FILE);
@@ -191,72 +140,6 @@ async function waitForWorkspaceFileTreeRowMissing(path: string) {
       timeoutMsg: `文件树仍显示已重命名的旧路径: ${path}`,
     },
   );
-}
-
-// 只检查终点会把瞬间跳转误判为动效成功；用真实 transition 事件和逐帧位置验证过程。
-async function observeSidebarSlide() {
-  await browser.execute(() => {
-    for (const panel of document.querySelectorAll<HTMLElement>("[data-project-sidebar-panel]")) {
-      const start = panel.getBoundingClientRect().left;
-      const samples = [start];
-      panel.dataset.slideEvidence = JSON.stringify({ samples, ended: false });
-      const record = () => {
-        if (panel.dataset.slideRunning !== "true") return;
-        samples.push(panel.getBoundingClientRect().left);
-        panel.dataset.slideEvidence = JSON.stringify({ samples, ended: false });
-        if (panel.dataset.slideRunning === "true") requestAnimationFrame(record);
-      };
-      panel.addEventListener("transitionrun", function onRun(event) {
-        if (event.target !== panel || !["translate", "transform"].includes(event.propertyName))
-          return;
-        panel.removeEventListener("transitionrun", onRun);
-        panel.dataset.slideRunning = "true";
-        requestAnimationFrame(record);
-      });
-      panel.addEventListener("transitionend", function onEnd(event) {
-        if (event.target !== panel || !["translate", "transform"].includes(event.propertyName))
-          return;
-        panel.removeEventListener("transitionend", onEnd);
-        panel.dataset.slideRunning = "false";
-        samples.push(panel.getBoundingClientRect().left);
-        panel.dataset.slideEvidence = JSON.stringify({
-          samples,
-          ended: true,
-          elapsed: event.elapsedTime,
-        });
-      });
-    }
-  });
-}
-
-async function assertSidebarSlide(direction: "open" | "close") {
-  await browser.waitUntil(
-    () =>
-      browser.execute(() =>
-        Array.from(document.querySelectorAll<HTMLElement>("[data-project-sidebar-panel]")).every(
-          (panel) => JSON.parse(panel.dataset.slideEvidence ?? "{}").ended === true,
-        ),
-      ),
-    { timeout: 5000, timeoutMsg: `${direction}: 没有发生实际 CSS 位移动画` },
-  );
-  const evidence = await browser.execute(() =>
-    Array.from(document.querySelectorAll<HTMLElement>("[data-project-sidebar-panel]")).map(
-      (panel) => ({
-        panel: panel.dataset.projectSidebarPanel,
-        ...(JSON.parse(panel.dataset.slideEvidence!) as { samples: number[]; elapsed: number }),
-      }),
-    ),
-  );
-  for (const item of evidence) {
-    const start = item.samples[0]!;
-    const end = item.samples[item.samples.length - 1]!;
-    expect(
-      item.samples.some((x) => x > Math.min(start, end) + 1 && x < Math.max(start, end) - 1),
-    ).toBe(true);
-    expect(direction === "open" ? end < start : end > start).toBe(true);
-    expect(item.elapsed).toBeCloseTo(0.2, 2);
-  }
-  console.log("[sidebar-slide-evidence]", direction, JSON.stringify(evidence));
 }
 
 async function assertTaskListScrollMask() {

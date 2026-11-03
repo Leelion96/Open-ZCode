@@ -1022,7 +1022,8 @@ describe("Team Plan 设置与使用统计 E2E", () => {
       const teamLabel = locale === "zh-CN" ? "团队" : "Team";
       // 套餐标签已移入头像菜单；不再从头像按钮的旧布局查找。
       await profileTrigger.click();
-      const badge = $('[data-testid="profile-menu-plan"]').$(`span[title="${teamLabel}"]`);
+      // 侧栏提示已移到延迟 Tooltip，不再保留原生 title；限定套餐容器读取可见文字。
+      const badge = $('[data-testid="profile-menu-plan"]');
       await badge.waitForDisplayed({ timeout: 30000 });
       await expect(badge).toHaveText(teamLabel);
       await browser.keys("Escape");

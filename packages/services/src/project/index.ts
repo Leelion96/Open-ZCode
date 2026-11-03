@@ -1,10 +1,22 @@
 import type { FileEntry } from "@zcode/shared";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
+import type { Stats } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 import type { ProjectRepositoryContract } from "#src/project-storage/contract.js";
-import type { IProjectService, ProjectDirectories, VirtualProject } from "#src/project/contract.js";
+import type { ProjectDataRepositoryContract } from "#src/project-storage/index.js";
+import type {
+  IProjectService,
+  ProjectDataPort,
+  ProjectDirectories,
+  VirtualProject,
+} from "#src/project/contract.js";
+import { createProjectDataCommands } from "#src/project/data/project-data.js";
+export {
+  createProjectDataPort,
+  type ProjectSessionDataAgent,
+} from "#src/project/data/project-data-port.js";
 export { IProjectService } from "#src/project/contract.js";
 export { createLegacySingleRootProjectService } from "#src/project/legacy-single-root.js";
 export {
@@ -19,6 +31,10 @@ export type {
   ProjectRoot,
   SaveProjectInput,
   ProjectDirectories,
+  ProjectDataPort,
+  ProjectDataSession,
+  ProjectDataMeasure,
+  ProjectDataDeleteResult,
 } from "#src/project/contract.js";
 
 interface ProjectDirectoryPort {
@@ -26,36 +42,62 @@ interface ProjectDirectoryPort {
   read(params: { path: string; includeHidden?: boolean }): Promise<FileEntry[]>;
 }
 
+// Bug 原因（ZCT-2113660144497782784）：目录的 stat 可能永久不返回（例如 macOS 等待文件夹访问授权、
+// 网络盘无响应）。过去每次 readTree/prepareSession 都重新 stat 并无限等待：项目树和新建任务一直不返回，
+// 且每次重试再占一个 libuv 线程，4 个后进程内所有文件操作都卡住。
+// 修复：同一路径上一次 stat 还没返回时复用它；从首次发起起超过截止时间仍未返回，按“无法访问”返回。
+// stat 返回后立即删除记录，下一次读取重新检查，不缓存结果。
+const PRIMARY_ROOT_STATUS_TIMEOUT_MS = 30_000;
+const inFlightPrimaryRootStats = new Map<string, { startedAt: number; result: Promise<Stats> }>();
+
+function startPrimaryRootStat(path: string) {
+  const flight = { startedAt: Date.now(), result: stat(path) };
+  const clear = () => {
+    if (inFlightPrimaryRootStats.get(path) === flight) inFlightPrimaryRootStats.delete(path);
+  };
+  flight.result.then(clear, clear);
+  inFlightPrimaryRootStats.set(path, flight);
+  return flight;
+}
+
 async function readPrimaryRootStatus(
   path: string,
 ): Promise<NonNullable<VirtualProject["primaryRootStatus"]>> {
+  const flight = inFlightPrimaryRootStats.get(path) ?? startPrimaryRootStat(path);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((resolve) => {
+    timer = setTimeout(
+      () => resolve(null),
+      Math.max(0, flight.startedAt + PRIMARY_ROOT_STATUS_TIMEOUT_MS - Date.now()),
+    );
+  });
   try {
-    return (await stat(path)).isDirectory() ? "available" : "missing";
+    const stats = await Promise.race([flight.result, deadline]);
+    if (!stats) return "unavailable";
+    return stats.isDirectory() ? "available" : "missing";
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     return code === "ENOENT" || code === "ENOTDIR" ? "missing" : "unavailable";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 async function projectPrimaryRootStatuses(projects: VirtualProject[]): Promise<VirtualProject[]> {
   // 主目录存在性属于文件系统事实；每次读取重新派生，不能把删除/恢复后的旧值固化进 SQLite。
-  const checks = new Map<string, ReturnType<typeof readPrimaryRootStatus>>();
+  // 同一主目录的检查由 readPrimaryRootStatus 复用进行中的 stat，这里不再单独去重。
   return Promise.all(
     projects.map(async (project) => {
       const primary = project.roots.find((root) => root.isPrimary)?.rootPath;
       if (!primary || project.deleted) return project;
-      let check = checks.get(primary);
-      if (!check) {
-        check = readPrimaryRootStatus(primary);
-        checks.set(primary, check);
-      }
-      return { ...project, primaryRootStatus: await check };
+      return { ...project, primaryRootStatus: await readPrimaryRootStatus(primary) };
     }),
   );
 }
 
 const saveProjectSchema = z
   .object({
+    reuseExistingRoot: z.boolean().optional(),
     id: z.string().min(1).optional(),
     hostId: z.string().min(1).optional(),
     restoreProjectId: z.string().min(1).optional(),
@@ -66,6 +108,14 @@ const saveProjectSchema = z
     pinned: z.boolean().optional(),
   })
   .strict()
+  .refine(
+    (value) =>
+      !value.reuseExistingRoot ||
+      (value.roots?.length === 1 &&
+        (!value.hostId || value.hostId === "local") &&
+        Object.keys(value).every((key) => ["roots", "hostId", "reuseExistingRoot"].includes(key))),
+    "project.invalid-directory-open",
+  )
   .refine((value) => !(value.id && value.restoreProjectId), "project.ambiguous-save")
   .refine(
     (value) => !value.restoreProjectId || value.roots !== undefined,
@@ -80,6 +130,8 @@ export function createProjectService(options: {
   /** 只解析现有连接；连接缺失拒绝，不创建替代 Host。 */
   resolveHost?: (hostId: string) => Promise<IProjectService>;
   afterChange?: () => Promise<void>;
+  /** 彻底删除数据：副作用端口与同一 Host 的行操作；缺省时两条命令报 project.data-unavailable。 */
+  data?: { port: ProjectDataPort; repository(): Promise<ProjectDataRepositoryContract> };
 }): IProjectService {
   const route = async (hostId?: string) => {
     if (!hostId || hostId === (options.ownerHostId ?? "local")) return null;
@@ -91,6 +143,7 @@ export function createProjectService(options: {
     await options.afterChange?.();
   };
   const service: IProjectService = {
+    ...createProjectDataCommands({ ...options, changed }),
     async readDirectory(params = {}) {
       const input = z
         .object({
@@ -142,6 +195,8 @@ export function createProjectService(options: {
     },
     async saveProject(input) {
       input = saveProjectSchema.parse(input);
+      if (input.reuseExistingRoot && options.ownerHostId && options.ownerHostId !== "local")
+        throw new Error("project.invalid-directory-open");
       const remote = await route(input.hostId);
       if (remote) return remote.saveProject(input);
       const roots = input.roots
@@ -172,6 +227,25 @@ export function createProjectService(options: {
       if (remote) return remote.deleteProject(id);
       (await options.repository()).deleteProject(id);
       await changed();
+    },
+    async restoreProject(id, hostId) {
+      z.string().min(1).parse(id);
+      const remote = await route(hostId);
+      if (remote) return remote.restoreProject(id);
+      const repository = await options.repository();
+      const project = repository
+        .readTree({ includeDeleted: true, includeTasks: false })
+        .projects.find((item) => item.id === id);
+      if (!project) throw new Error("project.not-found");
+      if (!project.deleted) return project;
+      // 复用新建时的「恢复」写路径：原样传回 roots，仓库保留主要目录、置顶与顺序并处理重名；
+      // 不经 saveProject 的目录校验，否则「文件夹不存在」的项目无法撤销删除。
+      const result = repository.saveProject({
+        restoreProjectId: id,
+        roots: project.roots.map((root) => root.rootPath),
+      });
+      await changed();
+      return result;
     },
     async moveTask(input) {
       const remote = await route(input.hostId);
@@ -308,8 +382,11 @@ export function bindRemoteProjectIdentities(
     readDirectory: (params) => service.readDirectory(params),
     saveProject: (input) => service.saveProject(input),
     deleteProject: (id, hostId) => service.deleteProject(id, hostId),
+    restoreProject: (id, hostId) => service.restoreProject(id, hostId),
     moveTask: (input) => service.moveTask(input),
     reorderProjects: (ids, hostId) => service.reorderProjects(ids, hostId),
+    measureProjectData: (ids, hostId) => service.measureProjectData(ids, hostId),
+    deleteProjectData: (id, hostId) => service.deleteProjectData(id, hostId),
     async prepareSession(params) {
       const directories = await service.prepareSession(params);
       return {
@@ -326,5 +403,37 @@ export function bindRemoteProjectIdentities(
         workspaceIdentity: await resolveIdentity(directories.workspacePath),
       };
     },
+  };
+}
+
+/**
+ * 远端身份登记按物理连接代际去重，供装配器包住传给 `bindRemoteProjectIdentities` 的 resolver。
+ *
+ * Bug 原因：3.16 起，每次远端 readTree、resolveSessionDirectories、prepareSession 都对每个路径
+ * 重新调用一次远端 resolveWorkspace。登记只写入 Server Core 进程内的 stable → canonical
+ * 映射表，同一连接内重复登记不改变任何状态，却给发送前的目录解析多加一次串行 SSH 往返，
+ * 并让远端每次同步打开两个 SQLite 库。
+ *
+ * 修复：映射表随 Core 进程存活且只增不删；Core 重启一定会断开连接，Host 会拿到新的物理连接
+ * 对象。所以按物理连接对象缓存登记结果即可，不需要超时。登记失败不缓存，下次重新登记。
+ */
+export function createRemoteIdentityRegistrationCache(): (
+  physicalConnection: object,
+  workspacePath: string,
+  register: () => Promise<string>,
+) => Promise<string> {
+  const byConnection = new WeakMap<object, Map<string, Promise<string>>>();
+  return (physicalConnection, workspacePath, register) => {
+    const byPath = byConnection.get(physicalConnection) ?? new Map<string, Promise<string>>();
+    byConnection.set(physicalConnection, byPath);
+    const registered = byPath.get(workspacePath);
+    if (registered) return registered;
+    const flight = register();
+    byPath.set(workspacePath, flight);
+    // 调用方照常收到失败；这里只删除缓存，让下一次读取重新登记。
+    flight.catch(() => {
+      if (byPath.get(workspacePath) === flight) byPath.delete(workspacePath);
+    });
+    return flight;
   };
 }

@@ -6,6 +6,12 @@
 - API 基线：会话分享接口 revision 27，加 2026-08-12 联调约定。
 - 本文同时约束发布端、Desktop 导入端和同仓库 `packages/web` 的独立 share 落地页契约。
 
+## 文本 URI 分享规则
+
+普通文本及工具输入/输出中的 `file:`、`data:` URI 原样保留，不因 URI 前缀阻止预检或发布。
+本次放行不新增 URI 读取或解码路径；现有文件候选发现逻辑不变，正式附件仍遵守 share artifact 引用、清单和上传校验。
+Base64 二进制字段、未完成行及 session artifact 引用的原有约束不变。
+
 ## 产品边界
 
 V1 支持 Desktop 本地、SSH、WSL、Docker workspace 发起分享。手机 `/remote` 和普通 Web

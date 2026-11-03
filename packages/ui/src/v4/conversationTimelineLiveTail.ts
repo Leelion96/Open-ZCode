@@ -1,4 +1,45 @@
-import type { ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
+import type { BotTopicPreparation } from "@zcode/shared";
+import type { ConversationRow } from "@zcode/shared/zcode-protocol-v4";
+import {
+  sameItems,
+  type ConversationTurnRenderUnit,
+  type ConversationTurnRenderUnitsPartition,
+} from "@/v4/conversationTurnRenderUnits.js";
+import { withTopicPreparationMessages } from "@/v4/topicPreparationRenderUnits.js";
+
+// 准备消息挂在历史末项上时（尾轮为空）的结果，按 history 数组缓存：同一份材料复用同一个数组，
+// 下游按 history 引用缓存的派生不会每次失效。
+const topicPreparationHistories = new WeakMap<
+  readonly ConversationTurnRenderUnit[],
+  {
+    pending: readonly BotTopicPreparation[];
+    history: readonly ConversationTurnRenderUnit[];
+  }
+>();
+
+/**
+ * bot 话题准备消息挂在全部 unit 的最后一个上，结果与对 history ++ tail 调用
+ * withTopicPreparationMessages 相同。没有准备中的材料时结果必为空，直接返回、不扫描 rows
+ * （流式帧的常见情况）；有材料时只在 bot 话题准备期间按整窗计算。
+ */
+export function withTopicPreparationUnits(
+  units: ConversationTurnRenderUnitsPartition,
+  rows: readonly ConversationRow[],
+  items: readonly BotTopicPreparation[],
+): ConversationTurnRenderUnitsPartition {
+  if (items.length === 0) return units;
+  const all = [...units.history, ...units.tail];
+  const merged = withTopicPreparationMessages(all, rows, items);
+  if (merged === all) return units;
+  if (units.tail.length > 0 || units.history.length === 0) {
+    return { history: units.history, tail: merged.slice(units.history.length) };
+  }
+  const pending = merged.at(-1)?.topicPreparations ?? [];
+  const cached = topicPreparationHistories.get(units.history);
+  if (cached && sameItems(cached.pending, pending)) return { history: cached.history, tail: [] };
+  topicPreparationHistories.set(units.history, { pending, history: merged });
+  return { history: merged, tail: [] };
+}
 
 export interface ConversationTimelineLiveTailSplit {
   virtualizedUnits: readonly ConversationTurnRenderUnit[];
@@ -11,19 +52,31 @@ export interface ConversationTimelineLiveTailSplit {
  * ResizeObserver 下一帧才回填 totalSize/scrollTop，导致轮尾 ChatLoading 来回跳。
  * 只把真正的最后一个 running unit 拆成 normal-flow live tail；历史或陈旧 running
  * 行仍归虚拟列表，避免扩大常驻 DOM。
+ *
+ * 输入按「历史 + 尾轮」分区：运行中的最后一轮通常是唯一的尾轮 unit，此时虚拟列表直接用
+ * 历史数组，引用在流式帧之间不变，virtualizer 与目录不会随每个 token 重建。
  */
 export function splitConversationTimelineLiveTail(
-  units: readonly ConversationTurnRenderUnit[],
+  units: ConversationTurnRenderUnitsPartition,
 ): ConversationTimelineLiveTailSplit {
-  const liveUnitIndex = units.length - 1;
-  const liveUnit = units[liveUnitIndex];
+  const { history, tail } = units;
+  const liveUnit = tail.at(-1) ?? history.at(-1);
   if (!liveUnit?.isRunning) {
-    return { virtualizedUnits: units, liveUnit: null, liveUnitIndex: null };
+    return {
+      virtualizedUnits: tail.length === 0 ? history : [...history, ...tail],
+      liveUnit: null,
+      liveUnitIndex: null,
+    };
   }
   return {
-    virtualizedUnits: units.slice(0, liveUnitIndex),
+    virtualizedUnits:
+      tail.length === 0
+        ? history.slice(0, -1)
+        : tail.length === 1
+          ? history
+          : [...history, ...tail.slice(0, -1)],
     liveUnit,
-    liveUnitIndex,
+    liveUnitIndex: history.length + tail.length - 1,
   };
 }
 

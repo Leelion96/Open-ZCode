@@ -168,6 +168,14 @@ describe("Local ToolSearch CLI 请求与恢复", () => {
             });
             const request = fixture.requests[before]!.body;
             if (coldMode === "local") expectLocalSearchDescription(request);
+            expect(toolNames(request).includes("LocalToolSearch")).toBe(coldMode === "local");
+            expect(toolNames(request).includes("ToolSearch")).toBe(coldMode === "native");
+            if (api === "anthropic-messages" && coldMode !== "off")
+              expect(
+                toolSearchBlocks(request).find(
+                  (block) => block.type === "tool_use" && block.id === "local_search",
+                )?.name,
+              ).toBe(coldMode === "local" ? "LocalToolSearch" : "ToolSearch");
             expect(JSON.stringify(request.messages).match(/Tool loaded\./g) ?? []).toHaveLength(
               coldMode === "native" ? 1 : 0,
             );
@@ -193,7 +201,9 @@ function expectLocalSearchDescription(body: ToolSearchRequest): void {
       const entry = tool as { name: string; description?: string; function?: unknown };
       return (entry.function ?? entry) as { name: string; description?: string };
     })
-    .find((tool) => tool.name === "ToolSearch");
+    .find((tool) => tool.name === "LocalToolSearch");
+  expect(toolNames(body)).toContain("LocalToolSearch");
+  expect(toolNames(body)).not.toContain("ToolSearch");
   expect(definition?.description).toContain("called using DeferredToolCall.");
   expect(definition?.description).toContain(
     "For deferred tools, parameters describes the input object passed to DeferredToolCall.",

@@ -61,8 +61,8 @@ Workspace B ─┼─> Remote Environment key ─> single-flight lane ─> 一�
 Workspace C ─┘
 ```
 
-Main 只保存 Environment key、Host registration、trigger、generation 和请求关联信息，不读取
-或转发配置与 Secret。被选中的 Window Host 在执行时重新读取最新 Local Source，并调用该
+Main 只保存 Environment key、Host registration（含可选 sourceServerId）、trigger、generation、
+最近一次执行结果（不含 Secret）和请求关联信息，不读取或转发配置与 Secret。被选中的 Window Host 在执行时重新读取最新 Local Source，并调用该
 Environment 的 Remote Target。同步期间发生的新触发只推进 generation；当前轮结束后再读取
 一次最新快照形成尾随同步，不为每个事件排队，也不使用固定延迟。
 
@@ -99,8 +99,11 @@ Settings，也不显示 Local → Remote 手动同步按钮。远端配置的修
 自身的管理入口完成；首次连接自动 Provisioning 仍遵循上面的条件与失败语义。
 
 页面中的模型连通性测试同样属于 Local Environment。激活远程 Workspace 时，测试必须选择本地
-workspace 作为 Agent cwd；没有可用本地 workspace 时返回不可用结果，不能把远程
-`workspacePath`/`workspaceIdentity` 发送给 Local Host。
+目录作为 Agent cwd，顺序为：远程 tab 记住的本地来源路径 → 已打开的本地 workspace → Local Host
+的对话目录（`fileService.ensureConversationWorkspace()`，由 Host 解析并创建）。Provider 配置是本机
+全局配置，测试不依赖项目；只打开远程项目、没有本地 tab 时也在本机测试。只有 Local Host 无法提供
+对话目录时才返回不可用结果。任何情况下都不能把远程 `workspacePath`/`workspaceIdentity` 发送给
+Local Host。
 
 ```text
 SettingsPage
@@ -281,8 +284,11 @@ Host execution admission
   （“Provider Provisioning 仅支持受信 Desktop Host”），Window Host 的手机 allowlist 也不含该 channel。
   旧版 daemon（无 target）不会在 R3 主链上收到 Envelope：`ZCODE_MIN_COMPATIBLE_VERSION` 默认等于
   产品版本，R3 兼容门在握手阶段就判定“需升级”并先执行远端更新，更新后的 Core 才进入首连 Provisioning。
-  Core 使用的 ZCode Built-in Provider Config 由构建期 define 按内容 hash 物化到
-  `~/.zcode/server/config/provider/zcode-builtin-<sha256>.json`（不写进不可变 release 目录）。
+  Core 使用的 ZCode Built-in Provider Config 由构建期 define 在 Core 启动时物化到 Environment 配置根
+  `~/.zcode/v2/runtime/provider/bundled/zcode-builtin.json`（不写进不可变 release 目录）。运行中该文件与
+  Endpoint Active 同时被删除时，Source 使用本进程已解析的 Bundled 基线继续服务并重建 Active，
+  Provisioning 同步不再持续失败到 Core 重启（规则见
+  [Built-in Release 与活动缓存](../working-memory/provider-refactor/design/registry/configuration.md)）。
   R3 侧接线见 [r3-source-server-remote-architecture.md §8.3](../architecture/r3-source-server-remote-architecture.md)。
 
   ```text
@@ -291,11 +297,11 @@ Host execution admission
     └─ /ws       web-remote-replayable ─► { apply: () => throw }（stub；手机 allowlist 亦不含该 channel）
   ```
 
-- Remote Workspace 已连接后的自动同步失败只记录结构化 warning，不拆除现有连接，也不改变本地保存成功反馈；本轮不新增 Environment 错误状态、协议、Banner 或设置页入口。这是远程配置独立管理上线前的临时过渡语义。
+- Remote Workspace 已连接后的自动同步失败记录结构化 warning，不拆除现有连接，也不改变本地保存成功反馈；不新增 Banner，也不在模型设置页新增入口。Main 协调器按 lane 在内存中保留最近一次执行结果（时间、成功 / 失败、固定阶段码），只供数据同步页「模型提供商」分类读取；该分类在设备有 lane 且最近一次失败时提供「重试」，重试推进同一条 lane（trigger `user-retry`），不新增同步链路，见 [R3 §8.3.6](../architecture/r3-source-server-remote-architecture.md) 与 [数据同步](data-sync.md)。
 - 网络断开导致结果未知时，以 `syncId` 重试；目标端重复收到任意已完成 `syncId` 时返回之前结果，
   不会因后续同步覆盖幂等记录而重新应用旧 Envelope。
 - Environment 离线时保留一次待同步意图，重新上线后读取最新本地状态执行；普通失败不循环
-  重试，等待下一次真实触发。
+  重试，等待下一次真实触发或用户在数据同步页的重试。
 
 ## Desktop 附着 Source 的连接初始化与反向资源通道
 

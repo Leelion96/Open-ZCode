@@ -25,11 +25,20 @@ export function windowsExecutableCandidates(
     return windowsExtensionCandidates(basePath, pathExts);
   }
 
-  const dirs =
-    getWindowsEnvValue(env, "PATH")
-      ?.split(win32.delimiter)
-      .filter((dir) => dir.length > 0) ?? [];
+  const dirs = splitWindowsPath(getWindowsEnvValue(env, "PATH") ?? "");
   return dirs.flatMap((dir) => fileCandidates.map((candidate) => win32.join(dir, candidate)));
+}
+
+/**
+ * Windows PATH 的目录列表：按 `;` 拆分，去掉首尾的双引号，跳过空条目。
+ * 修复原因：条目可以写成 `"C:\Program Files\Git\cmd"`，Node 按裸名启动时会去掉引号；
+ * 原来带着引号拼路径，这样的目录里的程序都找不到。
+ */
+export function splitWindowsPath(value: string): string[] {
+  return value
+    .split(win32.delimiter)
+    .map((entry) => entry.replace(/^"/, "").replace(/"$/, ""))
+    .filter((entry) => entry.length > 0);
 }
 
 function windowsExtensionCandidates(file: string, pathExts: string[]): string[] {

@@ -102,9 +102,9 @@ const fixtures = options.fixturePaths.flatMap((path) =>
 - Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-v4-turn-navigator.test.ts`
 - Modify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-background.test.ts`
 - Modify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-compact-auto.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-plan-mode-capabilities.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-telemetry-parity-core.test.ts`
-- Modify: `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-tool-actions.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-plan-mode-capabilities.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-telemetry-parity-core.test.ts`
+- Modify: `packages/desktop/test/e2e/conversation-session/conversation-session-tool-actions.test.ts`
 - Modify: `packages/desktop/test/e2e/bots/helpers/bots-service-harness.ts`
 - Modify: `packages/desktop/test/e2e/bots/feishu-streaming-card-lifecycle.test.ts`
 

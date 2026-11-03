@@ -95,6 +95,10 @@ export type BrowserRecordingJob = z.infer<typeof browserRecordingJobSchema>;
 export const browserCommandResultSchema = z
   .object({
     ok: z.boolean(),
+    scope: z
+      .object({ id: z.string().min(1), state: z.enum(["open", "released", "absent", "rejected"]) })
+      .strict()
+      .optional(),
     state: browserPageStateSchema.optional(),
     snapshot: browserSnapshotSchema.optional(),
     image: z

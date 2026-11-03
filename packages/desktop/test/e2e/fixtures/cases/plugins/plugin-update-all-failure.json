@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "plugin-update-all-failure",
+  "spec": "./test/e2e/plugins/plugin-update-all-failure.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-update-all-failure.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [
+    "runtime-generated local marketplace with two installed v1 plugins and a damaged first v2 payload"
+  ],
+  "requests": []
+}

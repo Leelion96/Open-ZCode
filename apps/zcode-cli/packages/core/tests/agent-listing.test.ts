@@ -190,22 +190,74 @@ describe("agent listing attachments", () => {
       content: `<system-reminder>\n${listing.content}\n</system-reminder>`,
     });
   });
-  it.each([
-    "plan_file_reference",
-    "resume_referenced_session_context",
-    "conversation_fork",
-  ] as const)("preserves the existing MCS anchor after %s without listing", (source) => {
+  it("anchors MCS text after a user-side conversation_fork attachment", () => {
     const { messages } = buildProviderRequestMessages({
       entries: [
         { message: { role: "user", content: "question" } },
-        { kind: "attachment", content: "continuity", metadata: { source } },
+        {
+          kind: "attachment",
+          content: "continuity",
+          metadata: { source: "conversation_fork" },
+        },
         { kind: "attachment", content: "mode", metadata: { source: "runtime_mode" } },
       ],
       useMidConversationSystem: true,
     });
-    expect(messages.find((m) => String(m.content).includes("mode"))).toEqual({
-      role: "user",
-      content: "<system-reminder>\nmode\n</system-reminder>",
+    // 留在 user 侧的 attachment 渲染为 user 消息，MCS 文本可以落在它之后。
+    expect(messages.slice(-2)).toEqual([
+      { role: "user", content: "<system-reminder>\ncontinuity\n</system-reminder>" },
+      { role: "system", content: "mode" },
+    ]);
+  });
+
+  const compactionAttachments: RuntimeMessageEntry[] = [
+    {
+      kind: "attachment",
+      content: "file",
+      metadata: { source: "resume_referenced_session_context" },
+    },
+    { kind: "attachment", content: "plan", metadata: { source: "plan_file_reference" } },
+    { kind: "attachment", content: "mode", metadata: { source: "runtime_mode" } },
+    { kind: "attachment", content: "env", metadata: { source: "environment" } },
+    { kind: "attachment", content: "model", metadata: { source: "model" } },
+  ];
+
+  it("merges compaction attachments into one MCS message in generation order", () => {
+    const { messages } = buildProviderRequestMessages({
+      entries: [
+        { message: { role: "assistant", content: "answer" } },
+        { message: { role: "user", content: "question" } },
+        ...compactionAttachments,
+      ],
+      useMidConversationSystem: true,
     });
+    // 文件恢复与 plan 文件和其他 compaction 附件一样是 system，按生成顺序合成一条。
+    expect(messages).toEqual([
+      { role: "assistant", content: "answer" },
+      { role: "user", content: "question" },
+      { role: "system", content: "file\n\nplan\n\nmode\n\nenv\n\nmodel" },
+    ]);
+  });
+
+  it("bubbles compaction attachments together in generation order without MCS", () => {
+    const { messages } = buildProviderRequestMessages({
+      entries: [
+        { message: { role: "assistant", content: "answer" } },
+        { message: { role: "user", content: "question" } },
+        ...compactionAttachments,
+      ],
+      useMidConversationSystem: false,
+    });
+    // 附件一起越过 user 输入，停在 assistant 之后；附件之间不互相越过。
+    expect(messages).toEqual([
+      { role: "assistant", content: "answer" },
+      { role: "user", content: "<system-reminder>\nfile\n</system-reminder>" },
+      { role: "user", content: "<system-reminder>\nplan\n</system-reminder>" },
+      { role: "user", content: "<system-reminder>\nmode\n</system-reminder>" },
+      { role: "user", content: "<system-reminder>\nenv\n</system-reminder>" },
+      // 不合并相邻 user 的协议不补换行（补换行只在 Anthropic 上）。
+      { role: "user", content: "<system-reminder>\nmodel\n</system-reminder>" },
+      { role: "user", content: "question" },
+    ]);
   });
 });

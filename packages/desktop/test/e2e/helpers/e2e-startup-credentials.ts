@@ -28,6 +28,8 @@ export function createE2EStartupCredentialSeed(
       fileName === "start-plan-manual-claim-experience.test.ts" ||
       fileName === "provider-family-responsive.test.ts" ||
       fileName === "conversation-session-offpeak-subagent-model-inheritance.test.ts" ||
+      // Team 回归只替代 HTTP，仍走真实凭据解析；缺少 JWT 会在创建前被拒绝。
+      fileName === "conversation-session-off-peak-team-plan.test.ts" ||
       fileName === "conversation-session-off-peak-invalid-ticket.test.ts"
     );
   });

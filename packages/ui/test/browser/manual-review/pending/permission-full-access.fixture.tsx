@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { createRoot } from "react-dom/client";
+import { ConfirmDialogHost } from "@/ConfirmDialog.js";
 import { PermissionDialog } from "@/PermissionDialog.js";
 import { ZCodeIntlProvider } from "@/i18n/IntlProvider.js";
 import type { ZCodePermissionRequest } from "@zcode/shared";
@@ -49,10 +50,12 @@ function Fixture() {
   return (
     <main className="min-h-screen bg-background text-foreground p-3">
       <PermissionDialog
+        workspacePath="/example"
         request={request}
         isWebRemoteControl={innerWidth < 600}
         onRespond={(_id, option) => setResponse(option.optionId)}
       />
+      <ConfirmDialogHost />
       <output data-testid="response">{response}</output>
     </main>
   );

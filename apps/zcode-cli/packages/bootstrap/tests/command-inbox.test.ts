@@ -30,6 +30,24 @@ function envelope(partial: Partial<CommandEnvelope> = {}): CommandEnvelope {
 }
 
 describe("CommandInbox ACK 裁决", () => {
+  it("重启等待在途命令结算，之后查询重新读取持久事实", async () => {
+    const lookup = vi.fn(async () => null);
+    const inbox = new CommandInbox(makeHost({ lookupDiscardedCommand: lookup }));
+    const outcome = await inbox.handle(envelope());
+    if (outcome.kind !== "execute") throw new Error("expected execution");
+    let reset = false;
+    const resetting = inbox.resetReleasedSession("s-1").then(() => {
+      reset = true;
+    });
+    await Promise.resolve();
+    expect(reset).toBe(false);
+    outcome.settle({ status: "accepted" });
+    await resetting;
+    expect(inbox.hasPinnedSessionState("s-1")).toBe(false);
+    const result = await inbox.query([{ sessionId: "s-1", commandId: "cmd-1" }]);
+    expect(result[0]?.result).toBe("unknown");
+    expect(lookup).toHaveBeenCalled();
+  });
   it("cold preparation runs after deduplication inside session admission", async () => {
     let revision: number | null = null;
     const prepareDecision = vi.fn(async () => {

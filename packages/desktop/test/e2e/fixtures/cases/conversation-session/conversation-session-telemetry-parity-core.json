@@ -19,63 +19,63 @@
       "kind": "common",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定标题 sidecar，避免后台重试污染差分时序。"
+      "syntheticReason": "标题不属于对话埋点统计口径；固定成功可避免后台 title 重试干扰主链路时序。"
     },
     {
       "id": "telemetry-parity-tool-call",
       "kind": "main",
       "source": "synthetic",
-      "timingPolicy": "tool-use",
-      "syntheticReason": "固定 Read 工具调用，稳定覆盖 tool step 与 perf detail。"
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定工具类型和输入，确保旧版与 V4 执行同一个只读工具。"
     },
     {
       "id": "telemetry-parity-tool-final",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定工具轮 generation 终态。"
+      "syntheticReason": "稳定结束工具轮，使 tool 和 generation 两个 step 可完整对账。"
     },
     {
       "id": "telemetry-parity-compact-seed",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "为 compact 建立稳定历史。"
+      "syntheticReason": "手动压缩需要一轮已完成历史。"
     },
     {
       "id": "telemetry-parity-compact-success-legacy",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "旧版非流式 compact 的等价响应。"
+      "syntheticReason": "旧版 compact 使用非流式 generateText；返回 Messages 协议非流式 JSON，保持与 V4 流式响应相同的 summary 语义。"
     },
     {
       "id": "telemetry-parity-compact-success",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "稳定产生 compaction success terminal。"
+      "syntheticReason": "V4 compact 使用流式响应；内容与旧版非流式 fixture 完全相同。"
     },
     {
       "id": "telemetry-parity-reasoning",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "固定 thought -> text 顺序。"
+      "syntheticReason": "真实模型是否输出 thought 不稳定，使用确定性 Messages 协议 SSE。"
     },
     {
       "id": "telemetry-parity-stall",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "recorded-stream",
-      "syntheticReason": "固定 4001ms chunk gap；精确 3000/3001ms 边界由 fake clock 用例覆盖。"
+      "syntheticReason": "精确 3000/3001ms 由 fake clock 覆盖；Electron 双跑使用 4001ms，避免操作系统 timer 抖动把 3001ms 压回阈值。"
     },
     {
       "id": "telemetry-parity-interrupted",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
-      "syntheticReason": "保持 running 直到 UI stop，稳定产生 interrupted。"
+      "syntheticReason": "真实模型可能在点击 stop 前完成，使用一分钟尾部间隔稳定制造 interrupted。"
     }
   ]
 }

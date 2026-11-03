@@ -451,6 +451,11 @@ describe(`${MARKER}: staging 自然历史升级与回退`, () => {
       await browser.waitUntil(
         () =>
           browser.execute(() => {
+            // RDUX-13：连接历史提醒在设备行展开区；行上只显示警告图标与数量，先展开收起的设备行。
+            for (const toggle of document.querySelectorAll<HTMLElement>(
+              '[data-source-server-toggle][aria-expanded="false"]',
+            ))
+              toggle.click();
             const button = Array.from(
               document.querySelectorAll<HTMLButtonElement>("[data-settings-content-frame] button"),
             ).find((button) => button.innerText.includes("连接历史需要处理"));

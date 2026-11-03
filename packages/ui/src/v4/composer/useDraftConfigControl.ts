@@ -75,6 +75,21 @@ export function shouldHydrateWorkspaceCatalog(params: {
   return params.slashCommands.length === 0 || !hasModePresentation;
 }
 
+export type ComposerDraftContent = Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">;
+
+export interface ComposerSubmissionDraftTransactionResult {
+  current: boolean;
+  applied: boolean;
+}
+
+export interface ComposerSubmissionDraftTransaction {
+  claim: () => boolean;
+  restore: () => ComposerSubmissionDraftTransactionResult;
+  finalize: () => ComposerSubmissionDraftTransactionResult | null;
+  release: () => void;
+  matchesTarget: (scopeToken: symbol) => boolean;
+}
+
 export interface DraftConfigControl {
   modelSelectionRead: ModelSelectionRead;
   /** Renderer 下一次提交的配置；恢复采用当前权限，在线授权只同步对应字段。 */
@@ -84,12 +99,22 @@ export interface DraftConfigControl {
   /** 当前草稿生命周期冻结的初始化 config；只供 prewarm/createSession 建立时使用。 */
   resolveInitialDraftConfig: () => Partial<SessionConfigState> | undefined;
   composerDraft: V4ComposerDraft;
-  updateComposerContent: (
-    content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">,
-  ) => void;
+  /** 当前 scope incarnation；Root promotion 沿用同一 token，离开再返回会生成新 token。 */
+  composerDraftScopeToken: symbol;
+  /** 输入热路径只暂存正文，不触发父级 render 或 localStorage。 */
+  stageComposerContent: (content: ComposerDraftContent) => void;
+  /** 为 effect setup 捕获一次性生命周期收口；切换后仍只写回该 scope incarnation。 */
+  captureComposerContentLifecycleCommit: () => (content: ComposerDraftContent) => void;
+  /** 发送事务绑定提交时的 scope；失败恢复和成功结算都不能写入后来切换的 scope。 */
+  captureComposerSubmissionDraftTransaction: (
+    content: ComposerDraftContent,
+  ) => ComposerSubmissionDraftTransaction;
+  /** 普通保存只落盘已有正文缓冲，不发布整页配置更新。 */
+  persistComposerContent: (content: ComposerDraftContent) => void;
+  updateComposerContent: (content: ComposerDraftContent) => void;
   replaceComposerDraft: (draft: Omit<V4ComposerDraft, "updatedAt">) => void;
   /** 新任务被接纳后，把当前完整 Root Draft 原子式转移到真实 Session scope。 */
-  promoteComposerDraft: (createdSessionId: string) => void;
+  promoteComposerDraft: (createdSessionId: string) => boolean;
   /** 在提交前捕获原意图；只在权威 accepted 后调用返回函数。 */
   captureAcceptedModelSelection: (
     selection: ModelSelection,
@@ -100,13 +125,30 @@ export interface DraftConfigControl {
   handleDraftSwitchMode: (mode: string) => void;
 }
 
+interface ComposerDraftPersistenceTarget {
+  scopeKey: string;
+  incarnation: symbol;
+  contentRevision: { current: number };
+  baseDraft: V4ComposerDraft;
+  persist: (draft: V4ComposerDraft) => boolean;
+}
+
 interface ComposerState {
   scopeKey: string;
+  incarnation: symbol;
   workspaceKey: string;
   draft: V4ComposerDraft;
   initialization: "new-task" | "session" | "promotion";
   observedConfig?: { permissionGrantId?: string; planTransitionId?: string };
   promotedSessionId?: string;
+}
+
+function hasSameComposerDraftContent(left: V4ComposerDraft, right: V4ComposerDraft): boolean {
+  return (
+    left.text === right.text &&
+    left.editorStateJson === right.editorStateJson &&
+    left.mention === right.mention
+  );
 }
 
 export function useDraftConfigControl(params: {
@@ -165,6 +207,7 @@ export function useDraftConfigControl(params: {
     const saved = readV4ComposerDraft(workspacePath, workspaceIdentity, scopeId, rootScope);
     return {
       scopeKey,
+      incarnation: Symbol(scopeKey),
       workspaceKey,
       draft: saved ?? { text: "", updatedAt: 0, ...navigationInitialization?.config },
       initialization:
@@ -172,6 +215,12 @@ export function useDraftConfigControl(params: {
     };
   }, [scopeKey]);
   const [storedState, setStoredState] = useState(loadedScope);
+  const stagedContentRef = useRef<
+    | (ComposerDraftPersistenceTarget & {
+        content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">;
+      })
+    | null
+  >(null);
   // 首发是同一 pane 的地址迁移，保持其间的新编辑；换页或卸载不保留第二份配置。
   let currentState: ComposerState =
     storedState.scopeKey === scopeKey
@@ -180,6 +229,8 @@ export function useDraftConfigControl(params: {
         ? {
             ...storedState,
             scopeKey,
+            // Root→session promotion 是同一 pane 的地址迁移；发送事务必须沿用同一 incarnation。
+            incarnation: storedState.incarnation,
             initialization: "promotion",
             observedConfig: undefined,
             promotedSessionId: undefined,
@@ -259,9 +310,12 @@ export function useDraftConfigControl(params: {
   stateRef.current = currentState;
   // 原因：按 revision 清草稿会把短暂不可用永久写成空选择。这里只派生当前结果，
   // 正文/模式自动保存继续保存 draft 中的原意图；读取未就绪时保留展示，提交由 View 门禁阻断。
-  const effectiveSelection = modelSelectionView
-    ? (modelSelectionView.effectiveSelection ?? undefined)
-    : draft.modelSelection;
+  // 已有会话首份配置未恢复时，null selection 的 View 只是新任务默认值，不能显示到此会话。
+  const sessionConfigPending = sessionId !== null && !currentState.observedConfig;
+  const effectiveSelection =
+    modelSelectionView && !sessionConfigPending
+      ? (modelSelectionView.effectiveSelection ?? undefined)
+      : draft.modelSelection;
   const draftConfig = useMemo<Partial<SessionConfigState>>(
     () => ({
       mode:
@@ -284,31 +338,71 @@ export function useDraftConfigControl(params: {
   );
   const draftConfigRef = useRef(draftConfig);
   draftConfigRef.current = draftConfig;
-  const persistDraft = useCallback(
-    (value: V4ComposerDraft) => {
+  const createDraftPersistence = useCallback(
+    (targetScopeId = stateRef.current.promotedSessionId ?? scopeId) => {
       const workspace = useZCodeSessionStore
         .getState()
         .getWorkspaceState(workspacePath, workspaceIdentity);
-      return persistV4ComposerDraft(
-        workspacePath,
-        workspaceIdentity,
-        // 首发已绑定但 React 尚未切换地址时，新输入也属于已创建的会话。
-        stateRef.current.promotedSessionId ?? scopeId,
-        scopeId === V4_DRAFT_SCOPE_ROOT
-          ? {
-              ...value,
-              projectId:
-                workspace.draftProjectId !== undefined ? workspace.draftProjectId : value.projectId,
-              taskGroupId:
-                workspace.draftTaskGroupId !== undefined
-                  ? workspace.draftTaskGroupId
-                  : value.taskGroupId,
-            }
-          : value,
-        rootScope,
-      );
+      return (value: V4ComposerDraft) => {
+        const current = useZCodeSessionStore
+          .getState()
+          .getWorkspaceState(workspacePath, workspaceIdentity);
+        // Bug 根因：自动保存不再触发父级 render 后，旧闭包可能把已关闭的分组归属写回来。
+        // 同一草稿从唯一 owner 读取最新意图；新草稿/项目已接管时仍冻结原 scope 的归属。
+        const placement =
+          current.draftFocusVersion === workspace.draftFocusVersion &&
+          current.draftProjectId === workspace.draftProjectId
+            ? current
+            : workspace;
+        return persistV4ComposerDraft(
+          workspacePath,
+          workspaceIdentity,
+          targetScopeId,
+          scopeId === V4_DRAFT_SCOPE_ROOT
+            ? {
+                ...value,
+                projectId:
+                  placement.draftProjectId !== undefined
+                    ? placement.draftProjectId
+                    : value.projectId,
+                // undefined 是显式撤销分组，不能回退到旧正文快照中的 taskGroupId。
+                taskGroupId: placement.draftTaskGroupId,
+              }
+            : value,
+          rootScope,
+        );
+      };
     },
     [workspacePath, workspaceIdentity, scopeId, rootScope],
+  );
+  const draftPersistence = createDraftPersistence();
+  const draftPersistenceRef = useRef(draftPersistence);
+  draftPersistenceRef.current = draftPersistence;
+  const incarnation = currentState.incarnation;
+  const scopeContentRevisionRef = useRef(new Map<string, { current: number }>());
+  const promotedRevisionSourceKey =
+    currentState.initialization === "promotion" && storedState.scopeKey !== scopeKey
+      ? storedState.scopeKey
+      : scopeKey;
+  const scopePersistenceTarget = useMemo<ComposerDraftPersistenceTarget>(() => {
+    const contentRevision = scopeContentRevisionRef.current.get(promotedRevisionSourceKey) ?? {
+      current: 0,
+    };
+    scopeContentRevisionRef.current.set(scopeKey, contentRevision);
+    return {
+      scopeKey,
+      incarnation,
+      contentRevision,
+      baseDraft: stateRef.current.draft,
+      persist: createDraftPersistence(),
+    };
+  }, [createDraftPersistence, incarnation, promotedRevisionSourceKey, scopeKey]);
+  const bumpScopeContentRevision = useCallback((target: ComposerDraftPersistenceTarget) => {
+    target.contentRevision.current += 1;
+  }, []);
+  const persistDraft = useCallback(
+    (value: V4ComposerDraft) => draftPersistenceRef.current(value),
+    [],
   );
   const mountedRef = useRef(false);
   useEffect(() => {
@@ -327,10 +421,50 @@ export function useDraftConfigControl(params: {
     () =>
       mountedRef.current &&
       stateRef.current.scopeKey === scopeKey &&
+      stateRef.current.incarnation === incarnation &&
       (sessionId !== null ||
         (useZCodeSessionStore.getState().getWorkspaceState(workspacePath, workspaceIdentity)
           .draftFocusVersion ?? 0) === draftFocusVersion),
-    [scopeKey, sessionId, workspacePath, workspaceIdentity, draftFocusVersion],
+    [scopeKey, incarnation, sessionId, workspacePath, workspaceIdentity, draftFocusVersion],
+  );
+  const mergeStagedContent = useCallback(
+    (current: V4ComposerDraft): V4ComposerDraft => {
+      const staged = stagedContentRef.current;
+      if (!staged || staged.scopeKey !== scopeKey) return current;
+      return {
+        ...current,
+        editorStateJson: undefined,
+        mention: undefined,
+        ...staged.content,
+      };
+    },
+    [scopeKey],
+  );
+  useEffect(() => {
+    if (!hasSameComposerDraftContent(scopePersistenceTarget.baseDraft, currentState.draft)) {
+      bumpScopeContentRevision(scopePersistenceTarget);
+    }
+    scopePersistenceTarget.baseDraft = currentState.draft;
+    scopePersistenceTarget.persist = draftPersistenceRef.current;
+    const pending = stagedContentRef.current;
+    if (pending?.scopeKey === scopeKey) {
+      pending.baseDraft = currentState.draft;
+      pending.persist = draftPersistenceRef.current;
+    }
+  }, [currentState.draft, scopeKey, scopePersistenceTarget]);
+  useEffect(
+    () => () => {
+      const pending = stagedContentRef.current;
+      if (!pending || pending.scopeKey !== scopeKey) return;
+      pending.persist({
+        ...pending.baseDraft,
+        editorStateJson: undefined,
+        mention: undefined,
+        ...pending.content,
+      });
+      stagedContentRef.current = null;
+    },
+    [scopeKey],
   );
   const lastPersistedDraftRef = useRef<V4ComposerDraft | null>(null);
   useEffect(() => {
@@ -340,18 +474,25 @@ export function useDraftConfigControl(params: {
       stateRef.current.draft === draft &&
       stateRef.current.scopeKey === scopeKey
     ) {
-      persistDraft(draft);
+      persistDraft(mergeStagedContent(draft));
       lastPersistedDraftRef.current = draft;
     }
-  }, [draft, scopeKey, persistDraft]);
+  }, [draft, scopeKey, persistDraft, mergeStagedContent]);
   const updateComposerDraft = useCallback(
     (update: (current: V4ComposerDraft) => V4ComposerDraft) => {
       // 旧 scope 的延迟编辑器回调不能写入刚切换到的会话。
       if (!isCurrentScope()) return;
-      const previous = stateRef.current.draft;
+      const previous = mergeStagedContent(stateRef.current.draft);
       const next = update(previous);
+      if (!hasSameComposerDraftContent(previous, next)) {
+        bumpScopeContentRevision(scopePersistenceTarget);
+      }
+      const staged = stagedContentRef.current;
+      if (staged?.scopeKey === scopeKey) stagedContentRef.current = null;
       const nextState = { ...stateRef.current, draft: next };
       stateRef.current = nextState;
+      scopePersistenceTarget.baseDraft = next;
+      scopePersistenceTarget.persist = draftPersistenceRef.current;
       const selection =
         next.modelSelection === previous.modelSelection
           ? draftConfigRef.current.modelSelection
@@ -368,7 +509,7 @@ export function useDraftConfigControl(params: {
       persistDraft(next);
       lastPersistedDraftRef.current = next;
     },
-    [isCurrentScope, persistDraft],
+    [isCurrentScope, mergeStagedContent, persistDraft, scopePersistenceTarget],
   );
   const updateDraftConfig = useCallback(
     (update: (current: Partial<SessionConfigState>) => Partial<SessionConfigState>) => {
@@ -416,6 +557,191 @@ export function useDraftConfigControl(params: {
     return config;
   }, [appFollowupMode]);
 
+  const stageComposerContent = useCallback(
+    (content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">) => {
+      // scopeKey 会在 A₁→B→A₂ 后复用；旧输入回调必须同时校验本次挂载身份。
+      if (!isCurrentScope()) return;
+      stagedContentRef.current = {
+        scopeKey,
+        incarnation,
+        contentRevision: scopePersistenceTarget.contentRevision,
+        content,
+        baseDraft: stateRef.current.draft,
+        persist: draftPersistenceRef.current,
+      };
+      bumpScopeContentRevision(scopePersistenceTarget);
+      if (stateRef.current.promotedSessionId) {
+        // 首发接纳到路由切换之间仍是同一 pane；这一窄窗口需同步更新 owner，避免 render 读取 ref。
+        const nextDraft = {
+          ...stateRef.current.draft,
+          editorStateJson: undefined,
+          mention: undefined,
+          ...content,
+        };
+        const nextState = { ...stateRef.current, draft: nextDraft };
+        stateRef.current = nextState;
+        scopePersistenceTarget.baseDraft = nextDraft;
+        scopePersistenceTarget.persist = draftPersistenceRef.current;
+        setStoredState(nextState);
+      }
+    },
+    [incarnation, isCurrentScope, scopeKey, scopePersistenceTarget],
+  );
+  const captureComposerContentLifecycleCommit = useCallback(() => {
+    const target = scopePersistenceTarget;
+    let active = true;
+    return (content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">) => {
+      if (!active) return;
+      active = false;
+      const draft = {
+        ...target.baseDraft,
+        editorStateJson: undefined,
+        mention: undefined,
+        ...content,
+      };
+      target.baseDraft = draft;
+      bumpScopeContentRevision(target);
+      target.persist(draft);
+      const pending = stagedContentRef.current;
+      if (pending?.scopeKey === target.scopeKey) stagedContentRef.current = null;
+    };
+  }, [bumpScopeContentRevision, scopePersistenceTarget]);
+  const captureComposerSubmissionDraftTransaction = useCallback(
+    (content: ComposerDraftContent): ComposerSubmissionDraftTransaction => {
+      const target = scopePersistenceTarget;
+      const submittedContent = {
+        text: content.text,
+        editorStateJson: content.editorStateJson,
+        mention: content.mention,
+      };
+      const capturedRevision = target.contentRevision.current;
+      let state: "captured" | "claimed" | "restored" | "finalized" = "captured";
+      let claimedRevision: number | null = null;
+      let restoredRevision: number | null = null;
+      const isCurrent = () =>
+        mountedRef.current &&
+        stateRef.current.incarnation === target.incarnation &&
+        stateRef.current.draft.text === target.baseDraft.text;
+      const clearPending = () => {
+        const pending = stagedContentRef.current;
+        if (pending?.scopeKey === target.scopeKey && pending.incarnation === target.incarnation) {
+          stagedContentRef.current = null;
+        }
+      };
+      return {
+        matchesTarget: (candidateScopeToken) => candidateScopeToken === target.incarnation,
+        claim: () => {
+          if (
+            state !== "captured" ||
+            !isCurrent() ||
+            target.contentRevision.current !== capturedRevision
+          ) {
+            return false;
+          }
+          const claimedDraft = {
+            ...target.baseDraft,
+            text: "",
+            editorStateJson: undefined,
+            mention: undefined,
+          };
+          target.baseDraft = claimedDraft;
+          bumpScopeContentRevision(target);
+          claimedRevision = target.contentRevision.current;
+          state = "claimed";
+          target.persist(claimedDraft);
+          const nextState = { ...stateRef.current, draft: claimedDraft };
+          stateRef.current = nextState;
+          setStoredState(nextState);
+          clearPending();
+          return true;
+        },
+        restore: () => {
+          if (state !== "claimed" || claimedRevision === null) {
+            return { current: isCurrent(), applied: state === "restored" };
+          }
+          const current = isCurrent();
+          const restored = target.contentRevision.current === claimedRevision;
+          if (restored) {
+            const restoredDraft = {
+              ...target.baseDraft,
+              ...submittedContent,
+            };
+            target.baseDraft = restoredDraft;
+            bumpScopeContentRevision(target);
+            restoredRevision = target.contentRevision.current;
+            target.persist(restoredDraft);
+            if (current) {
+              const nextState = { ...stateRef.current, draft: restoredDraft };
+              stateRef.current = nextState;
+              setStoredState(nextState);
+            }
+            state = "restored";
+          }
+          clearPending();
+          return { current, applied: restored };
+        },
+        release: () => {
+          state = "finalized";
+        },
+        finalize: () => {
+          // ACK、投影和发送 Promise 可先后到达；事务唯一持有结算状态，副作用只执行一次。
+          if (state === "finalized") return null;
+          const current = isCurrent();
+          const pending = stagedContentRef.current;
+          if (pending?.scopeKey === target.scopeKey && pending.incarnation === target.incarnation) {
+            target.baseDraft = {
+              ...pending.baseDraft,
+              editorStateJson: undefined,
+              mention: undefined,
+              ...pending.content,
+            };
+            bumpScopeContentRevision(target);
+            target.persist(target.baseDraft);
+            stagedContentRef.current = null;
+            if (current) {
+              const nextState = { ...stateRef.current, draft: target.baseDraft };
+              stateRef.current = nextState;
+              setStoredState(nextState);
+            }
+          }
+          const expectedRevision =
+            state === "claimed" ? claimedRevision : state === "restored" ? restoredRevision : null;
+          const finalized =
+            expectedRevision !== null && target.contentRevision.current === expectedRevision;
+          if (finalized) {
+            const finalizedDraft = {
+              ...target.baseDraft,
+              text: "",
+              editorStateJson: undefined,
+              mention: undefined,
+            };
+            target.baseDraft = finalizedDraft;
+            bumpScopeContentRevision(target);
+            target.persist(finalizedDraft);
+            if (current) {
+              const nextState = { ...stateRef.current, draft: finalizedDraft };
+              stateRef.current = nextState;
+              setStoredState(nextState);
+            }
+          }
+          state = "finalized";
+          clearPending();
+          return { current, applied: finalized };
+        },
+      };
+    },
+    [bumpScopeContentRevision, scopePersistenceTarget],
+  );
+  const persistComposerContent = useCallback(
+    (content: ComposerDraftContent) => {
+      if (!isCurrentScope()) return;
+      // Bug 根因：350ms 自动保存走配置 setState，导致整页、Logo 和 Timeline 一起刷新。
+      // 正文继续由编辑器及既有 staged buffer 持有；配置变更/发送事务仍会合并或结算它。
+      stageComposerContent(content);
+      persistDraft(mergeStagedContent(stateRef.current.draft));
+    },
+    [isCurrentScope, stageComposerContent, persistDraft, mergeStagedContent],
+  );
   const updateComposerContent = useCallback(
     (content: Pick<V4ComposerDraft, "text" | "editorStateJson" | "mention">) => {
       updateComposerDraft((current) => ({
@@ -436,23 +762,44 @@ export function useDraftConfigControl(params: {
 
   const promoteComposerDraft = useCallback(
     (createdSessionId: string) => {
-      if (!isCurrentScope() || scopeId !== V4_DRAFT_SCOPE_ROOT) return;
+      if (!isCurrentScope() || scopeId !== V4_DRAFT_SCOPE_ROOT) return false;
       const targetSessionId = createdSessionId.trim();
-      if (!targetSessionId) return;
+      if (!targetSessionId) return false;
       // 首发 Snapshot 可能迟到：空正文只在内存交接配置，有新文字则先写目标再删来源。
+      const draftForPromotion = mergeStagedContent(stateRef.current.draft);
       const written = persistV4ComposerDraft(
         workspacePath,
         workspaceIdentity,
         targetSessionId,
-        stateRef.current.draft,
+        draftForPromotion,
       );
-      if (!written) return;
-      const next = { ...stateRef.current, promotedSessionId: targetSessionId };
+      if (!written) return false;
+      const staged = stagedContentRef.current;
+      if (staged?.scopeKey === scopeKey) stagedContentRef.current = null;
+      const next = {
+        ...stateRef.current,
+        draft: draftForPromotion,
+        promotedSessionId: targetSessionId,
+      };
       stateRef.current = next;
+      const promotedPersistence = createDraftPersistence(targetSessionId);
+      scopePersistenceTarget.baseDraft = draftForPromotion;
+      scopePersistenceTarget.persist = promotedPersistence;
+      draftPersistenceRef.current = promotedPersistence;
       setStoredState(next);
       clearV4ComposerDraft(workspacePath, workspaceIdentity, V4_DRAFT_SCOPE_ROOT, rootScope);
+      return true;
     },
-    [scopeId, isCurrentScope, workspaceIdentity, workspacePath, rootScope],
+    [
+      scopeId,
+      isCurrentScope,
+      mergeStagedContent,
+      scopeKey,
+      scopePersistenceTarget,
+      workspaceIdentity,
+      workspacePath,
+      rootScope,
+    ],
   );
 
   // ── workspace 目录水合（见文件头说明）──
@@ -631,6 +978,11 @@ export function useDraftConfigControl(params: {
     draftConfigRef,
     resolveInitialDraftConfig,
     composerDraft: draft,
+    composerDraftScopeToken: incarnation,
+    stageComposerContent,
+    captureComposerContentLifecycleCommit,
+    captureComposerSubmissionDraftTransaction,
+    persistComposerContent,
     updateComposerContent,
     replaceComposerDraft,
     promoteComposerDraft,

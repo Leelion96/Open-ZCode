@@ -15,7 +15,6 @@ export interface StartPromptTurnParamsBase {
   content: string;
   /** v4 锚点：inputId=queryId=commandId（权威数据 sourceCommandId 对账）。 */
   inputId: string;
-  inputPresentation?: SendInputOptions["inputPresentation"];
   /** 附件命令面：AttachmentRef 已在 handler 层映射为 core TurnAttachment。 */
   attachments?: TurnAttachment[];
   browserAmbientContext?: SendInputOptions["browserAmbientContext"];
@@ -210,7 +209,6 @@ async function startPromptTurnAfterPreflight(
           ? { browserAmbientContext: params.browserAmbientContext }
           : {}),
         inputId: params.inputId,
-        ...(params.inputPresentation ? { inputPresentation: params.inputPresentation } : {}),
         ...turnBackgroundAttributionOf({
           automationId: activeAutomationId,
           // 归因用解析后的 id：resume 段仅靠 inputId 前缀兜底时也要进 core loop state。
@@ -310,7 +308,7 @@ export function buildTurnToolDisallowlist(
 ): readonly string[] | undefined {
   const tools = new Set(params.toolDisallowlist ?? []);
   if (activeAutomationId) {
-    // automation 派发漏传身份时，后续 model step 会重新暴露 Cron 写工具。
+    // Host 显式注入 automation 身份后，后续 model step 不能重新暴露 Cron 写工具。
     for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) tools.add(toolName);
   }
   if (activeOffPeakTaskId) {
@@ -322,15 +320,10 @@ export function buildTurnToolDisallowlist(
 }
 
 export function resolveTurnAutomationId(
-  params: Pick<StartPromptTurnParams, "automationId" | "inputId">,
+  params: Pick<StartPromptTurnParams, "automationId">,
 ): string | undefined {
-  const explicit = params.automationId?.trim();
-  if (explicit) return explicit;
-  const inputId = params.inputId.trim();
-  if (!inputId.startsWith(AUTOMATION_INPUT_ID_PREFIX)) return undefined;
-  const separatorIndex = inputId.indexOf(":");
-  const automationId = separatorIndex >= 0 ? inputId.slice(0, separatorIndex) : inputId;
-  return automationId.length > AUTOMATION_INPUT_ID_PREFIX.length ? automationId : undefined;
+  // Bug 原因：commandId/inputId 可由调用方指定，追踪字段不能提升为 CronPauseSelf 的授权身份。
+  return params.automationId?.trim() || undefined;
 }
 
 export function resolveTurnOffPeakTaskId(
@@ -362,7 +355,6 @@ export function turnBackgroundAttributionOf(params: {
   return {};
 }
 
-const AUTOMATION_INPUT_ID_PREFIX = "automation-";
 const AUTOMATION_MUTATION_TOOL_NAMES = ["CronCreate", "CronUpdate", "CronDelete"] as const;
 // 独立常量，绝不并入 AUTOMATION_MUTATION_TOOL_NAMES（cron 轮放行 OffPeakCreate）。
 // 与 core turn-loop-state 同值——闲时轮同时隐藏 SendMessage / Workflow（两者会在本轮

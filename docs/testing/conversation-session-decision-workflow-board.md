@@ -12,11 +12,11 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 
 | 指标 | 当前值 |
 | --- | ---: |
-| Workflow case | 89 |
+| Workflow case | 87 |
 | Draft-ready case | 0 |
 | Worksheet-ready case | 0 |
 | Source-backfill-needed case | 0 |
-| Roadmap ready-to-write | 35 |
+| Roadmap ready-to-write | 33 |
 | Roadmap implemented | 18 |
 
 ## Next Action Counts
@@ -27,7 +27,7 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 | 填写 N02.1 | 1 |
 | 填写 N03.1 | 1 |
 | 填写 N04.1 | 1 |
-| 补齐 | 53 |
+| 补齐 | 51 |
 | 填写 N06.1 | 1 |
 | 填写 N07.1 | 1 |
 | 填写 N08.1 | 1 |
@@ -69,7 +69,7 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 | N02 | P0-2 模型/API 请求故障 | placeholder-only | blocked | decision-needed | blocked-by-product-decision | 填写 N02.1 |
 | N03 | P0-2 模型/API 请求故障 | placeholder-only | blocked | decision-needed | blocked-by-product-decision | 填写 N03.1 |
 | N04 | P0-2 模型/API 请求故障 | placeholder-only | blocked | decision-needed | blocked-by-product-decision | 填写 N04.1 |
-| N05 | P0-2 模型/API 请求故障 | missing | not-in-decision-protocol | missing | ready-to-write | 补齐 |
+| N05 | P0-2 模型/API 请求故障 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | N06 | P0-2 模型/API 请求故障 | placeholder-only | blocked | decision-needed | blocked-by-product-decision | 填写 N06.1 |
 | N07 | P0-2 模型/API 请求故障 | placeholder-only | blocked | decision-needed | blocked-by-product-decision | 填写 N07.1 |
 | N08 | P0-2 模型/API 请求故障 | placeholder-only | blocked | decision-needed | blocked-by-product-decision | 填写 N08.1 |
@@ -106,7 +106,7 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 | A09 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | A10 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | A11 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
-| A12 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
+| A12 | 未分组 | missing | not-in-decision-protocol | missing | ready-to-write | 补齐 |
 | B06 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | B07 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
 | B08 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |
@@ -144,12 +144,10 @@ node scripts/audit-conversation-session-case-coverage.mjs --check --workflow-boa
 | I52 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I53 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I54 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
-| I56 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I57 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I58 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I59 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I60 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
-| I61 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I62 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I63 | 未分组 | missing | not-in-decision-protocol | planned | ready-to-write | 补齐 |
 | I64 | 未分组 | missing | not-in-decision-protocol | partial | implemented | 补齐 |

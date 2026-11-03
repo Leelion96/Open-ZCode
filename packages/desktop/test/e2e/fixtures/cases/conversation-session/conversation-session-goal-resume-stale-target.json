@@ -9,25 +9,27 @@
   "fileFixtures": [],
   "requests": [
     {
-      "id": "upstream-goal-resume-stale-seed-final",
-      "kind": "main",
+      "id": "conversation-session-goal-resume-stale-target-title-sidecar",
+      "kind": "common",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "seed 只需要形成 completed task，后续通过 sqlite 注入 stale target 状态。"
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "goal-resume-stale-controlled-goal",
+      "description": "真实 Goal 运行期间入队，随后通过 Stop 暂停目标并保留队列。",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "用受控流维持真实 active Goal，测试通过 UI Stop 取消，不写 renderer 状态。"
     },
     {
       "id": "upstream-goal-resume-stale-send-now-final",
+      "description": "M07k stale active meta 下队列 item 点立即发送后的固定回复。",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "核心断言是 queued item 能出队并发起新一轮请求，响应只需稳定完成。"
-    },
-    {
-      "id": "upstream-goal-resume-stale-objective-contract",
-      "kind": "main",
       "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "该 marker 表示被注入的 stale objective，本身不应作为 provider 用户输入发送。"
+      "syntheticReason": "真实队列项立即发送后必须只产生一次新请求并完成，不恢复 Goal verifier。"
     }
   ]
 }

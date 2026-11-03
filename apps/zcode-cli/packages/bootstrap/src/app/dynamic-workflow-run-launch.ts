@@ -406,7 +406,9 @@ export function launchDynamicWorkflowRun(
     // 关联锚点随 run 落库：重启后工具卡 join 与 resume 通知都只能从 dwf_run 还原它。
     ...(toolCallId === undefined ? {} : { toolCallId }),
     // 修订续跑：lineage 指针落库（createRun 一次写死），导入缓存注入引擎（纯数据，核心零 I/O）。
-    ...(resumedFrom === undefined ? {} : { resumedFrom }),
+    // 传的是 lineageFrom 而不是入参：它同时是脚本读到的 run.resumedFrom，resume 那一世入参缺席，
+    // 只递入参的话脚本在续跑时会读到 undefined（引擎命中既有行时不再落库，传它无害）。
+    ...(lineageFrom === undefined ? {} : { resumedFrom: lineageFrom }),
     ...(importedCache === undefined ? {} : { importedCache }),
     // 用量起点与缓存同车：引擎在 createRun 时把它写成 spent_tokens 的初值，命中既有行时忽略。
     ...(input.inheritedTokens === undefined ? {} : { inheritedTokens: input.inheritedTokens }),

@@ -367,11 +367,24 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
     id === SINK_ID ? Number.MAX_SAFE_INTEGER : (minIssue.get(id) ?? 0);
   const lastIssueOf = (id: string): number =>
     id === SINK_ID ? Number.MAX_SAFE_INTEGER : (maxIssue.get(id) ?? 0);
-  const iterationRegionsOf = (id: string): string[] =>
-    [...(regionsOf.get(id) ?? [])].filter((region) => {
-      const kind = regionById.get(region)?.kind;
-      return kind === "loop" || kind === "fanout";
-    });
+  // 修复原因：sharesIteration 每次调用都重新过滤站点出现过的全部 region。阶段拷贝的时间可行性
+  // 判定（phase-graph.ts 的 admits）对每个拷贝对都问一次，而被许多阶段共用的 helper 的站点有
+  // 成千上万个 region，于是代价是拷贝对数 × region 数（25 个 fan-out、250 处调用时 33 秒）。
+  // regionsOf 在上面的事件扫描里已经定型，所以每个站点算一次即可。
+  const iterationRegionCache = new Map<string, ReadonlySet<string>>();
+  const iterationRegionsOf = (id: string): ReadonlySet<string> => {
+    let regions = iterationRegionCache.get(id);
+    if (regions === undefined) {
+      regions = new Set(
+        [...(regionsOf.get(id) ?? [])].filter((region) => {
+          const kind = regionById.get(region)?.kind;
+          return kind === "loop" || kind === "fanout";
+        }),
+      );
+      iterationRegionCache.set(id, regions);
+    }
+    return regions;
+  };
   /**
    * Do two sites share an enclosing iteration region? That is the one thing repetition can
    * realize, and it is why "b's position precedes a's" does not mean "b cannot follow a":
@@ -383,8 +396,8 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
    * by another would put a contradiction in one picture.
    */
   const sharesIteration = (a: string, b: string): boolean => {
-    const enclosing = new Set(iterationRegionsOf(b));
-    return iterationRegionsOf(a).some((region) => enclosing.has(region));
+    const enclosing = iterationRegionsOf(b);
+    return [...iterationRegionsOf(a)].some((region) => enclosing.has(region));
   };
   /**
    * Can `to` really run again after `from`? A back edge in issue order is only
@@ -406,7 +419,7 @@ export function projectCausalityGraph(core: AnalysisCore, site: SiteGraph): Caus
    */
   const realizableCarry = (from: string, to: string): boolean => {
     if (from === to) {
-      return iterationRegionsOf(to).length > 0 || lastIssueOf(to) > positionOf(to);
+      return iterationRegionsOf(to).size > 0 || lastIssueOf(to) > positionOf(to);
     }
     return sharesIteration(from, to);
   };

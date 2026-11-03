@@ -4,7 +4,7 @@
 >
 > 日期：2026-07-13。
 >
-> 上位规格：`2026-07-10-browser-use-codex-parity-spec.md`、
+> 上位规格：`2026-07-10-browser-use-spec.md`、
 > `2026-07-13-node-repl-mcp-runtime-spec.md`。
 
 ## 1. 功能摘要

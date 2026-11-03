@@ -1,7 +1,7 @@
 import type ts from "typescript";
 import type { ScriptLoc } from "../compiler/compile.js";
 import type { TaintOcc } from "./domain.js";
-import type { ApplicationVia } from "./state.js";
+import type { ApplicationVia, ArgBinding, ThroughParam } from "./state.js";
 import type { JumpKind, TraceRegionKind } from "./constants.js";
 
 // causality-order.ts 顶到 oxlint max-lines 上限（400 行），把追踪产物的类型
@@ -26,6 +26,14 @@ export interface OrderOracle {
    * these bodies at exactly these sites.
    */
   applications: ReadonlyMap<ts.Node, ReadonlyMap<ts.Node, ApplicationVia>>;
+  /**
+   * Provenance for `applications`: at a site, which parameter of which enclosing function the
+   * applied functions came through, and the functions the merged record owes to it
+   * (`TaintState.throughParams`). The walk resolves it against the activation it is inlining.
+   */
+  throughParams: ReadonlyMap<ts.Node, ReadonlyMap<string, ThroughParam & { via: ApplicationVia }>>;
+  /** Per callee application, what each argument bound to the callee's parameters (`TaintState.bindings`). */
+  bindings: ReadonlyMap<ts.Node, ReadonlyMap<ts.Node, readonly ArgBinding[]>>;
 }
 
 export interface OrderRegion {
@@ -123,6 +131,14 @@ export interface SettleEvent {
    * nothing. Absent when the barrier joins no strand.
    */
   joins?: string[];
+  /**
+   * The subset of {@link joins} this barrier LIFTED on a may-claim: the promise reached
+   * the await through a container or a helper, so all that is known is that something the
+   * strand issued has settled. Absent when every join is certain. The control-flow
+   * projection keeps the spawner's control standing for these (docs/analysis.md, "The
+   * control-flow graph").
+   */
+  maybeJoins?: string[];
 }
 
 /** An `agent()` call was evaluated — the lane's creation point, for family depth. */

@@ -1,11 +1,15 @@
 import { join } from "node:path";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
+import { startUpstreamReplayServer } from "#e2e/helpers/upstream-replay-server";
 
 import {
   hasUpstreamCaseLocalReplayFixtureForWorker,
   resolveUpstreamE2EHttpMode,
   resolveUpstreamE2EHttpModeForWorker,
   resolveUpstreamReplayFixturePaths,
+  resolvePluginReplayFixturePaths,
 } from "./e2e/helpers/upstream-replay-fixture-resolution.js";
 
 const root = join("repo", "packages", "desktop", "test", "e2e", "fixtures");
@@ -51,6 +55,51 @@ function createOptions(existingPaths: string[]) {
 }
 
 describe("Upstream replay fixture resolution", () => {
+  it.each(["plugin-mcp-skill", "plugin-management"])(
+    "loads JSON files from the %s compatibility directory into a real replay server",
+    async (domain) => {
+      const fixtureRoot = await mkdtemp(join(tmpdir(), "plugin-replay-paths-"));
+      let server: Awaited<ReturnType<typeof startUpstreamReplayServer>> | undefined;
+      try {
+        const directory = join(fixtureRoot, domain);
+        await mkdir(join(directory, "nested.json"), { recursive: true });
+        await writeFile(join(directory, "README.md"), "not a replay fixture");
+        const fixture = join(directory, "response.json");
+        await writeFile(
+          fixture,
+          JSON.stringify({
+            version: 1,
+            fixtures: [
+              {
+                id: "plugin-path",
+                match: { pathIncludes: "/messages" },
+                response: { statusCode: 200, body: "plugin-ready" },
+              },
+            ],
+          }),
+        );
+        const fixturePaths = await resolvePluginReplayFixturePaths({
+          fixtureRoot,
+          specs: [`./test/e2e/conversation-session/conversation-session-${domain}-enabled.test.ts`],
+        });
+        server = await startUpstreamReplayServer({
+          artifactPath: join(fixtureRoot, "capture.json"),
+          fixturePaths,
+        });
+        const response = await fetch(`${server.baseUrl}/messages`);
+        expect(response.status).toBe(200);
+        expect(await response.text()).toBe("plugin-ready");
+        expect(fixturePaths).toEqual([fixture]);
+        expect(await resolvePluginReplayFixturePaths({ fixtureRoot, specs: [formalSpec] })).toEqual(
+          [],
+        );
+      } finally {
+        await server?.stop();
+        await rm(fixtureRoot, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("keeps manual-review on capture without an explicit replay fixture", () => {
     expect(
       resolveUpstreamE2EHttpMode({
@@ -71,7 +120,7 @@ describe("Upstream replay fixture resolution", () => {
       resolveUpstreamE2EHttpModeForWorker({
         explicitReplayFixture: false,
         specs: [
-          "./test/e2e/conversation-session/manual-review/pending/conversation-session-edit.test.ts",
+          "./test/e2e/conversation-session/manual-review/pending/conversation-session-example-pending.test.ts",
         ],
       }),
     ).toBe("capture");
@@ -110,7 +159,7 @@ describe("Upstream replay fixture resolution", () => {
         explicitReplayFixture: false,
         specs: [
           "./test/e2e/conversation-session/conversation-session-v4-edit.test.ts",
-          "./test/e2e/conversation-session/manual-review/pending/conversation-session-edit.test.ts",
+          "./test/e2e/conversation-session/manual-review/pending/conversation-session-example-pending.test.ts",
         ],
       }),
     ).toThrow(/cannot mix replay and capture/i);
@@ -134,6 +183,25 @@ describe("Upstream replay fixture resolution", () => {
       }),
     ).toThrow(/cannot be combined/);
   });
+
+  it.each([
+    ["plugins", "plugin-management", "plugin-runtime-env-agent-projection"],
+    ["ui-shell", "ui-shell", "sidebar-tooltips"],
+    ["", "ui-shell", "workspace-removal-runtime-release"],
+  ])(
+    "loads the %s case fixture after promotion without an explicit override",
+    (domain, fixtureDomain, name) => {
+      const fixture = join(root, "upstream", fixtureDomain, `${name}.json`);
+      const manifest = join(root, "cases", domain || "ui-shell", `${name}.json`);
+      expect(
+        resolveUpstreamReplayFixturePaths({
+          ...createOptions([commonFixturePath, fixture, manifest]),
+          mode: "strict-case-local",
+          specs: [`./test/e2e/${domain ? `${domain}/` : ""}${name}.test.ts`],
+        }),
+      ).toEqual([commonFixturePath, fixture]);
+    },
+  );
 
   it("keeps legacy fallback in compatible mode", () => {
     const caseFixture = join(caseFixtureDir, "conversation-session-v4-edit.json");

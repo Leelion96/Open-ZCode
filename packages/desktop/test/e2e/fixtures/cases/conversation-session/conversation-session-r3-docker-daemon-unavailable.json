@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-docker-daemon-unavailable",
+  "spec": "./test/e2e/conversation-session/conversation-session-r3-docker-daemon-unavailable.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-docker-daemon-unavailable.json"
+  ],
+  "fileFixtures": [
+    {
+      "kind": "app-config",
+      "path": "~/.docker/config.json",
+      "description": "在隔离 E2E HOME 下切换 docker context，依次指向不存在的 socket 与当前用户无权连接的 socket，最后切回 default，模拟本机 Docker daemon 不可用后恢复。",
+      "source": "created-by-helper"
+    }
+  ],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "requests": []
+}

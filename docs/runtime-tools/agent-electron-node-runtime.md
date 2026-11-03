@@ -43,6 +43,10 @@ esbuild `target` 从 `node26` 降到 **`node22`**，取两端运行时里最低�
 - Desktop 本地下载上传与 SSH 远端直下只改变 archive 获取位置，最终都进入 `zcode update --from-archive`。
 - legacy `prepare-prebuilds.mjs`、component manifest 与散文件部署不再进入开发、CI 或发布链路。
 
+## MCP stdio 复用同一份 Node
+
+桌面 agent 拉起的 stdio MCP（插件或用户配置，`command: "node"` / `"npx"`）在用户机器没有 Node 时，回退到同一个 Electron 可执行文件与随包 npm（`resources/glm/node-runtime/npm`）。用户自己的 node/npm/npx 永远优先。shim 目录、环境变量契约与已知限制见 [mcp-node-fallback.md](../../apps/zcode-cli/docs/design/v2/mcp-node-fallback.md)。
+
 ## 验证
 
 - `tsc -b packages/rpc packages/shared packages/services packages/server` 通过；`oxlint` 改动文件 0/0。

@@ -3,6 +3,8 @@ import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen, shell } fro
 import { join } from "node:path";
 import type {
   ContextMenuParams,
+  DownloadItem,
+  Event,
   Input,
   MenuItemConstructorOptions,
   WebContents,
@@ -263,6 +265,15 @@ function attachWindowsWindowRepaint(targetWindow: BrowserWindow) {
     // renderer 与 host 仍存活但窗口只剩宿主底色；复用 resize 的有界双帧重绘，不 reload renderer 或会话。
     scheduleRepaint();
   });
+  targetWindow.on("focus", () => {
+    // Bug 原因（ZCT-202610-E0C5B48D）：窗口被其他程序完全覆盖后，Chromium 的 Windows
+    // 遮挡检测（native window occlusion）把它标记为 occluded 并停止提交帧、暂停计时器；
+    // 部分 Intel 核显驱动组合下切回前台（Alt-Tab / 点通知 / 点击窗口）时遮挡状态不重算，
+    // 画面停留在最后一帧，像一张截图。该路径只触发 focus，不触发 show/resized，托盘恢复
+    // 与手动拉伸的补丁都盖不到。用户手动拖动窗口或点标题栏能恢复，说明强制重绘一帧即可
+    // 打破残留状态；focus 时补同样的有界双帧重绘，等价于把用户的手动恢复动作自动化。
+    scheduleRepaint();
+  });
 }
 
 function isAllowedEmbeddedBrowserUrl(url: string): boolean {
@@ -361,6 +372,19 @@ function attachEmbeddedBrowserWindowOpenHandler(options: {
     | undefined;
   logger: { warn: (...args: unknown[]) => void };
 }) {
+  // 下载响应会让 loadURL 以 ERR_FAILED 拒绝；用真实下载事件区分网络失败。
+  const downloadSession = options.guestWebContents.session;
+  const onDownload = (_event: Event, item: DownloadItem, contents: WebContents) => {
+    if (contents !== options.guestWebContents || options.hostWebContents.isDestroyed()) return;
+    options.hostWebContents.send(PlatformChannels.BrowserViewDownloadStarted, {
+      webContentsId: contents.id,
+      urls: item.getURLChain(),
+    });
+  };
+  downloadSession.on("will-download", onDownload);
+  options.guestWebContents.once("destroyed", () => {
+    downloadSession.removeListener("will-download", onDownload);
+  });
   let externalBrowserModifierActive = false;
 
   options.guestWebContents.on("before-input-event", (_event, input) => {
@@ -611,6 +635,17 @@ export function createBrowserWindow(options: {
       // 将 deviceMid 透传给 preload，供 renderer 在 React 渲染前同步读取
       additionalArguments: [`--device-id=${options.deviceMid ?? ""}`],
     },
+  });
+
+  // 文档渲染库曾直接 window.open 绕过 DOM 链接检查；主窗口不创建未经管控的原生子窗口。
+  // 合法外链复用现有 Browser 路由，guest 仍由各自的策略管理。
+  win.webContents.setWindowOpenHandler(({ url, disposition }) => {
+    if (isAllowedEmbeddedBrowserNewWindowUrl(url)) {
+      win.webContents.send(PlatformChannels.OpenBrowserUrl, { url, disposition });
+    } else {
+      options.logger.warn("[desktop-window] blocked unsupported popup protocol");
+    }
+    return { action: "deny" };
   });
 
   // 缩放命令原本只改当前运行窗口，没有在重启后恢复。

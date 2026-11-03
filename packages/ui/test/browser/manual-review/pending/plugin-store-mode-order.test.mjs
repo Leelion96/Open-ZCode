@@ -74,6 +74,38 @@ for (const [width, locale, theme] of [
   [390, "zh-CN", "light"],
   [390, "en-US", "dark"],
 ]) {
+  test(`installed actions ${width}/${locale}/${theme}`, async () => {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    await page.route("**/order", (route) => route.fulfill({ json: null }));
+    try {
+      await page.goto(`${origin}fixture?installedActions=1&locale=${locale}&theme=${theme}`);
+      const card = page.locator(
+        `[data-testid="plugin-store-card"][data-plugin-id="installed-example@${official}"]`,
+      );
+      const toggle = card.getByRole("switch");
+      await toggle.waitFor();
+      assert.equal(await toggle.isChecked(), true);
+      await toggle.click();
+      assert.equal(await toggle.isChecked(), false);
+      assert.equal(await page.getByTestId("last-action").textContent(), "");
+      const menu = card.getByTestId("plugin-store-item-menu");
+      await page.getByTestId("work").focus();
+      await page.getByTestId("work").hover();
+      assert.equal(await menu.evaluate((el) => getComputedStyle(el).opacity), "0");
+      await card.hover();
+      await menu.click();
+      assert.equal(await page.getByRole("menuitem").count(), 1);
+      await page.getByTestId("plugin-store-menu-uninstall").click();
+      assert.equal(await page.getByTestId("last-action").textContent(), "uninstall");
+      assert.equal(await page.getByTestId("plugin-store-install").count(), 1);
+      await mkdir(artifacts, { recursive: true });
+      await page.screenshot({
+        path: join(artifacts, `installed-actions-${width}-${locale}-${theme}.png`),
+      });
+    } finally {
+      await page.close();
+    }
+  });
   test(`PLM-UI-GROUP inline collapse ${width}/${locale}/${theme}`, async () => {
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     const errors = [];

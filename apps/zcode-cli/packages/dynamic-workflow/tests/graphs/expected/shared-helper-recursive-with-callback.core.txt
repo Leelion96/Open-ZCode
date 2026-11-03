@@ -1,0 +1,17 @@
+fan-out fan-out#1 "fan-out" @11:3 order=0
+ask ask#1 "ask" head="v-" @14:56 order=1 type="string"
+actor actor#1 head="v-" @14:35 order=2
+fact ask-data ask#1 <- fan-out#1 exact
+fact ask-actor ask#1 <- actor#1 exact
+fact fan-out-in fan-out#1 <- fan-out#1 exact
+region seq#1 seq entered
+region loop#1 loop parent=seq#1 @9:1 entered recursive label="walkTree"
+region call#1 call parent=loop#1 @14:7 entered label="walkTree" strand
+region call#2 call parent=call#1 @10:9 entered strand
+region loop#2 loop parent=call#1 @11:3
+spawn actor#1 in=seq#1>loop#1>call#1>call#2
+issue ask#1 in=seq#1>loop#1>call#1>call#2 phase=unphased
+settle ask#1 in=seq#1>loop#1>call#1 joins=call#2
+jump recur loop#1 in=seq#1>loop#1>call#1>loop#2 phase=unphased
+settle ask#1 in=seq#1 joins=call#1
+jump return seq#1 in=seq#1 phase=unphased

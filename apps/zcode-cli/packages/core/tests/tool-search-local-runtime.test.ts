@@ -53,7 +53,7 @@ it.each(["off", "on"] as const)(
       step++;
       const call =
         step === 1
-          ? { id: "search", name: "ToolSearch", input: { query: "select:Lookup" } }
+          ? { id: "search", name: "LocalToolSearch", input: { query: "select:Lookup" } }
           : step === 2
             ? {
                 id: "invoke",
@@ -85,6 +85,7 @@ it.each(["off", "on"] as const)(
       const registry = createToolRegistry();
       registry.register({
         ...toolSearchToolEntry,
+        aliases: undefined,
         metadata: {
           ...toolSearchToolEntry.metadata,
           name: "Lookup",
@@ -151,6 +152,13 @@ it.each(["off", "on"] as const)(
       expect(requests[1]!.tools).toEqual(requests[0]!.tools);
       expect(requests[2]!.tools).toEqual(requests[0]!.tools);
       expect(requests[1]!.toolSearchEnabled).toBe(false);
+      expect(requests[0]!.tools?.map((tool) => tool.name)).toContain("LocalToolSearch");
+      expect(requests[0]!.tools?.map((tool) => tool.name)).not.toContain("ToolSearch");
+      expect(requests[1]!.messages.flatMap((message) => message.toolCalls ?? [])).toContainEqual({
+        id: "search",
+        name: "LocalToolSearch",
+        input: { query: "select:Lookup" },
+      });
       const searchResult = requests[1]!.messages.find((m) => m.toolCallId === "search");
       expect(JSON.stringify(searchResult)).toContain("<functions>");
       expect(requests[2]!.messages.find((m) => m.toolCallId === "search")?.content).toEqual(
@@ -263,8 +271,11 @@ it.each(["off", "on"] as const)(
           input: { name: "Lookup", input: { value: 7 } },
         });
         const result = request.messages.find(
-          (m) => m.role === "tool" && m.toolName === "ToolSearch",
+          (m) =>
+            m.role === "tool" && (m.toolName === "ToolSearch" || m.toolName === "LocalToolSearch"),
         );
+        if (mode !== "off")
+          expect(result?.toolName).toBe(mode === "local" ? "LocalToolSearch" : "ToolSearch");
         expect(JSON.stringify(result)).toContain(
           mode === "local"
             ? "<functions>"

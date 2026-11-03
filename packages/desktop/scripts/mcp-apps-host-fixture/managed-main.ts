@@ -1,3 +1,4 @@
+import { checkRetention } from "./managed-retention-checks.js";
 import { app, protocol } from "electron";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
@@ -94,6 +95,7 @@ app
       );
       await checkManaged(env, win, scope, check);
       await checkPermissions(env, root, check);
+      await checkRetention(env, root, check);
       await checkLifecycle(env, win, scope, check);
       await writeFile(
         join(root, "managed-storage-identity.json"),

@@ -186,3 +186,27 @@ describe("protocol runtime resource ownership", () => {
     await cleanup;
   });
 });
+
+describe("session lifecycle shutdown reentry", () => {
+  it("reserves the shutdown promise before synchronous abort listeners reenter", async () => {
+    const { app } = fakeApp();
+    const controller = new AbortController();
+    const server = new ZCodeProtocolAgentServer({
+      createZCodeApp: async () => app,
+      cwd: "/workspace",
+    });
+    const context = (server as unknown as { context: { sessions: Map<string, unknown> } }).context;
+    context.sessions.set(app.sessionId, {
+      app,
+      activeAbortController: controller,
+      unsubscribe: () => {},
+    });
+    let nested: Promise<void> | undefined;
+    controller.signal.addEventListener("abort", () => {
+      nested = server.shutdown();
+    });
+    const closing = server.shutdown();
+    expect(nested).toBe(closing);
+    await closing;
+  });
+});

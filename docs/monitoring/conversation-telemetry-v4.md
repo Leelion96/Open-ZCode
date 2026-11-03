@@ -1,7 +1,7 @@
 # V4 对话埋点兼容规范
 
 本文冻结 V4 conversation 主链路的对话埋点口径。实现以 `z-code-2` 的生产行为为兼容基准，
-只恢复旧版已经存在的数据，不借迁移修改字段类型、指标公式或采集范围。
+基础迁移保持旧字段类型与指标公式；扫码远控的 completion/step 增量覆盖见文末专节。
 
 ## 目标与非目标
 
@@ -22,6 +22,9 @@
 - 把 telemetry 状态写入 conversation rows、snapshot、relay 或 main 进程。
 
 ## 架构与状态边界
+
+以下为桌面 continuous 链路；扫码远控由执行服务复用同一归集算法，直接经 Host → Main 投递。
+两条链路按 command 来源互斥，不依赖当前页面是否可见。
 
 ```text
 CLI V4 live SessionEvent
@@ -102,7 +105,8 @@ header、header count、token、prompt、上游原始 message 或 finish reason�
 - `workspace_kind`：`local` / `remote`，表示本轮实际运行的 workspace 类型；
 - `remote_kind`：`ssh` / `wsl` / `docker` / `server`，本地或无法解析远端类型时为空字符串。
 
-这两个字段是低基数维度，值由 renderer workspace attachment 在 supervisor 创建时冻结，并同时写入同一
+这两个字段是低基数维度，桌面由 renderer workspace attachment、扫码远控由执行服务的 workspace
+在归集器创建时冻结，并同时写入同一
 message 的 completion 与 step。远端类型只能通过统一的 `parseRemoteWorkspaceIdentity` 解析；不得把
 `remoteSessionId`、`workspaceIdentity`、`workspacePath`、主机地址或其它高基数身份直接写入埋点。
 
@@ -112,7 +116,8 @@ Host 依据 attachment 注入的可信 `clientMode` 决定订阅权限，不能�
 远程链路可能存在 Desktop Host attachment → trusted host relay 的多层 connection scope；relay 本身仍
 不得安装 reporter，但必须把现有 trusted 下游连接的 `clientMode` 和 namespace connectionId 继续传给
 上游。只有带可信下游 `desktop-continuous` 上下文的 telemetry fact 订阅可以穿过 relay，直接 relay
-订阅或 `web-remote-replayable` 下游必须返回空事件。
+订阅或 `web-remote-replayable` 下游必须返回空事件。扫码远控新增的已归集业务事件使用独立
+Host-only 通道，允许 trusted relay 转发至 Main，不向终端开放事实订阅或网络 reporter。
 Telemetry attachment 是旁路能力；Platform 或 agent service 尚未就绪时必须保持 no-op，不能阻断
 workspace/remote renderer，依赖齐备后才按 service generation 建立 supervisor 与 live subscription。
 
@@ -121,6 +126,11 @@ fact 只从当前进程的 live ingest 产生：
 - persisted hydration、subscribe initial、snapshot 和 recovery：不产生。
 - hydration 期间新到达并暂存在 live buffer 的事件：产生一次。
 - CLI/runtime 重启后不根据 orphan 或历史终态补造 completion。
+
+## 界面模式归属
+
+`send_btn`、`message_completion`、`agent_step` 增加 `ui_mode`，发送时冻结并沿既有 seed/父子
+归因链传递，无来源时为 `unknown`。详见[业务埋点界面模式契约](./business-monitoring.md)。
 
 ## ID、时钟和去重
 
@@ -136,6 +146,8 @@ fact 只从当前进程的 live ingest 产生：
 - 本地 prompt seed 只在内存中保留；renderer reload 后不补报。
 
 ## 事件触发矩阵
+
+下表描述桌面 UI reporter；扫码远控的两个业务事件由执行服务在 live 执行中产生，与 foreground 无关。
 
 | 事件 | foreground | 切走后的 background | initial/recovery |
 | --- | --- | --- | --- |
@@ -310,8 +322,8 @@ ACK 与 live telemetry fact 增加可选 boolean `memoryEnabled`；缺失保持 
 先于 ACK 的普通事实继续使用现有 pending fact 缓冲；child 启动事实直接沿用父会话字段，不等待 ACK；去重、FIFO、workspace identity 不变。
 后台任务不伪造 send_btn；子 Agent 继承来源 prompt 的开关，不把其自身记忆工具使用当开关。
 传输只增加无正文元数据，CLI snapshot/历史恢复不补造 telemetry fact。桌面保持
-`desktop-continuous` live reporter，手机 `web-remote-replayable` 不安装 reporter、
-不扩大 telemetry 采集范围；命令 ACK 在两端均兼容新字段。
+`desktop-continuous` live reporter，手机 `web-remote-replayable` 不安装 reporter；扫码远控的
+completion/step 由执行服务覆盖（见下节），命令 ACK 在两端均兼容新字段。
 
 验收：开/关各验证三个事件同值；设置变更后存量实例不漂移；后台轮和 detached child
 继承；事实早于 ACK、重复 ACK 保持原有去重；旧 CLI 缺字段留空；非 boolean 协议值被拒绝。
@@ -327,3 +339,41 @@ ACK 与 live telemetry fact 增加可选 boolean `memoryEnabled`；缺失保持 
 - Memory WDIO 的 `before all` 未能选择 Full access/yolo 模式，未到新增埋点断言；
   不能把本次运行作为桌面开/关埋点的端到端通过证据。手机远控未进行新增实机验证，
   原有 reporter 的 desktop-continuous 边界保持不变。
+
+## 扫码远控执行统计（2026-10-23）
+
+扫码或复制链接进入的 Web Remote Control（含手机 App 使用同一远控 attachment）由执行服务记录
+`message_completion`、`agent_step`，沿 PC 既有 TelemetryCore /event/report 投递。此增量不报
+`send_btn`、不新增手机 SDK/设备身份/账号认证协议；公共设备和账号仍按 PC 现有口径。
+`client_kind=mobile` 在本功能表示扫码远控输入通道，不用于区分原生 App 与手机浏览器；
+`message_source` 保留 chat / scheduled_task / off_peak_task / background_task 及 completion 的后台细分。
+`workspace_kind` / `remote_kind` 表示执行位置，与客户端来源正交。
+
+```text
+可信 remote attachment → Host 覆盖 inputOrigin → 原 CommandInbox admission / input intent
+ → live turn.started（inputOrigin、执行配置）→ 执行服务唯一遥测归集器
+ → step / turn 终态 → Host 事件 → Desktop main → 既有 TelemetryCore 投递与重试
+桌面 continuous → 原 UI reporter；手机 replayable snapshot / recovery → 仅投影，不补报
+```
+
+- 每条命令由可信 clientMode 决定来源，不能读取“当前手机在线”或 session 的最后使用端。
+  覆盖 createSession 首发、sendText、goal、edit/retry；排队提升保留原 input 来源，不能用提升者覆盖。
+- 复用现有纯归集算法，不从 UI rows 推导 token/step，不建立第二份业务 accepted queue。
+  手机断开、切页和桌面 pane 未挂载/卸载不销毁执行侧归集器。
+- 后台通知合批仍只统计实际执行的一轮；批中包含手机触发时保留 mobile，避免合批漏掉远控来源。
+  整批 traceContext 同时传给合批轮和后续 goal 自动轮，不再回退到首条通知的单条来源。
+- 同一服务 workspace 中一份归集器；子 Agent / workflow 步骤沿原父消息归因；桌面 reporter
+  不再消费被执行侧接管的远控事实。用户在 PC 续聊同一 session 时仍走原桌面统计。
+- 去重沿用 eventId、sessionId/sourceCommandId、step_id；重试 ACK、队列提升、快照恢复不重新计数。
+- 本机与远端 Source 都在实际 live ingest 处归集。远端通过独立能力声明开放 Host-only 事件，
+  旧 Source 不订阅未知事件，须升级 Source 后才能覆盖该远程工作区。
+- 执行事实不持久化补造：PC/执行进程退出前尚未产生的终态、进程崩溃期间丢失的事实不承诺补齐；
+  已交给 Main 的事件继续使用原投递与重试机制，不新增持久化补报队列。手机断连本身不影响仍运行的执行服务统计。
+- Main 在远控事件入队时同步将完整投递 Promise 登记到 TelemetryCore 的 pending 集合；
+  正常退出沿用一个 2 秒 drain 预算，覆盖尚在 dispatcher 排队的事件，不为每条事件重新计时。
+  顺序为「接收 → 登记完整 Promise → 排队 → 发送 → 移出 pending」，超出预算仍允许退出。
+
+验收：无 UI reporter 下手机首发/续聊成功、失败、取消；工具/模型/前后台子 Agent/workflow；
+手机断连后终态；PC/mobile 同 session 交替；不同 workspace 隔离；重复 live fact、队列提升与恢复
+不重复；不产生 send_btn；客户端伪造来源被 Host 覆盖；Host → Main 最终 payload 的两个事件
+均含 client_kind=mobile，且 Token/步骤、message_source 与原算法一致。

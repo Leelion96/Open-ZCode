@@ -43,7 +43,9 @@ it("executes concurrent searches only within the request snapshot and cancellati
     { id: "excluded", name: "ToolSearch", input: { query: "select:WebFetch" } },
     { toolSearch: { ...toolSearch, catalog: [] } },
   );
-  expect(excluded.modelContent).toBe("No matching deferred tools found");
+  expect(excluded.modelContent).toBe(
+    "No matching deferred tools found. Loaded tools are not searchable here and need no loading. Check your loaded tool list and query; try corrected spelling, alternative names, or broader keywords before concluding a tool is missing.",
+  );
   const defaultResults = await executor.execute(
     { id: "default-count", name: "ToolSearch", input: { query: "lookup" } },
     {

@@ -95,6 +95,16 @@ run、Active Model 和历史记录不重新对应账号。定时任务长期配�
 接口读取失败与正常不完整结果分开：公共 hook 继续订阅，首次临时读取失败允许有限、可取消重试，
 不重试不完整选择或派发；耗尽后显式 reload。没有目标、远端未连接不回退本地。没有发送前配置同步屏障。
 
+## 手动压缩的模型选择（2026-10-20）
+
+手动 `/compact` 与上下文面板的压缩动作使用提交时 Composer 的 ModelSelection。
+命令携带 provider/model 及稀疏 options；不携带 mode、Plan 或执行凭据。
+CLI 接收时固定为 canonical intent，立即执行、FIFO 排队、恢复及提升均沿用该快照。
+旧客户端缺少选择时，CLI 在接收边界固定当前 Session Selection。
+已开始的请求不受后续菜单编辑影响；Session 续跑选择沿用现有 admissionSeq 防倒写规则。
+摘要请求的 reasoning/output 策略继续由 compact 实现决定；自动 compact 使用触发轮的 Active Model。
+验收与实施边界见 [compact 裁决](../../../../testing/conversation-session-compact-decision-worksheet.md)。
+
 ## App Recent
 
 App Recent 保存 App 在某个 Workspace 中最近一次成功提交的 ModelSelection：

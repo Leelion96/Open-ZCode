@@ -28,7 +28,7 @@ import {
   scanMemoryManifest,
   type MemoryManifestEntry,
 } from "../src/memory/recall/index.js";
-import { createReadFileStateKey } from "../src/tool/read-file-state.js";
+import { createReadFileStatePathKey } from "../src/tool/read-file-state.js";
 import type { ReadFileStateMap } from "../src/tool/types.js";
 import { createTestModelFormatProperties } from "./test-runtime-model.js";
 
@@ -417,7 +417,7 @@ describe("Semantic Memory selection and content", () => {
     const manifest = Array.from({ length: 8 }, (_, index) => manifestEntry(`memory-${index}.md`));
     const readFileState: ReadFileStateMap = new Map();
     const readEntry = manifest[1]!;
-    readFileState.set(createReadFileStateKey(readEntry.filePath, 1, undefined), {
+    readFileState.set(createReadFileStatePathKey(readEntry.filePath), {
       content: "read",
       isPartialView: false,
       path: readEntry.filePath,

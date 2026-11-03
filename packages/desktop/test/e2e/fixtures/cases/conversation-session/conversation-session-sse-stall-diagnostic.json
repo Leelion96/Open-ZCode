@@ -89,7 +89,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "证明 content_block_stop 已提交并执行工具，成功结果成为恢复锚点且同一工具不会重放。"
+      "syntheticReason": "证明 content_block_stop 已提交并执行工具，成功 tool_result 成为恢复锚点。"
     },
     {
       "id": "sse-stall-post-tool-call",

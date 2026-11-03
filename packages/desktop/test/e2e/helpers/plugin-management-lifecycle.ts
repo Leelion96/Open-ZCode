@@ -26,6 +26,7 @@ import {
   waitForTestIdByDom,
   waitForWorkspaceApp,
 } from "./desktop-app.js";
+import { dismissOccupationOnboarding } from "#e2e/helpers/occupation-onboarding";
 
 export const PLUGIN_LIFECYCLE_MARKETPLACE_ID = "e2e-plugin-lifecycle-market";
 export const PLUGIN_LIFECYCLE_MARKETPLACE_NAME = "E2E Plugin Lifecycle Market";
@@ -39,6 +40,8 @@ export const PLUGIN_LIFECYCLE_INHERITED_CONFIG_KEY = "timeout_seconds";
 export const PLUGIN_LIFECYCLE_MCP_TOOL_NAME =
   "mcp__plugin_e2e-plugin-lifecycle_lifecycle__version_marker";
 export const PLUGIN_LIFECYCLE_RUNTIME_MARKER = "E2E_PLUGIN_LIFECYCLE_RUNTIME";
+export const PLUGIN_LIFECYCLE_EXTRA_NAME = "e2e-lifecycle-extra-1";
+export const PLUGIN_LIFECYCLE_EXTRA_ID = `${PLUGIN_LIFECYCLE_EXTRA_NAME}@${PLUGIN_LIFECYCLE_MARKETPLACE_ID}`;
 export const PLUGIN_INLINE_NAME = "e2e-inline-lifecycle";
 export const PLUGIN_INLINE_ID = `${PLUGIN_INLINE_NAME}@inline`;
 export const PLUGIN_INLINE_SUBAGENT_NAME = `${PLUGIN_INLINE_NAME}:inline-reviewer`;
@@ -120,6 +123,26 @@ export async function updatePluginLifecycleFixture(
   await writeLifecyclePlugin(fixture.pluginRoot, version);
   await writeMarketplaceManifest(fixture.marketplaceRoot, version);
   return { ...fixture, version };
+}
+
+/**
+ * 「全部更新」需要第二个可更新插件：只改 extra-1 的 payload 与目录版本。
+ * 须在 updatePluginLifecycleFixture 之后调用，后者会按默认版本重写整份 marketplace.json。
+ */
+export async function updateLifecycleExtraPluginFixture(
+  fixture: PluginLifecycleFixture,
+  version: string,
+): Promise<void> {
+  await writeSimplePlugin(
+    join(fixture.marketplaceRoot, "plugins", PLUGIN_LIFECYCLE_EXTRA_NAME),
+    1,
+    version,
+  );
+  const path = join(fixture.marketplaceRoot, ".claude-plugin", "marketplace.json");
+  const catalog = await readJsonRecord(path);
+  const entries = catalog.plugins as Array<Record<string, unknown>>;
+  entries.find((entry) => entry.name === PLUGIN_LIFECYCLE_EXTRA_NAME)!.version = version;
+  await writeJson(path, catalog);
 }
 
 export async function removeLifecyclePluginSource(fixture: PluginLifecycleFixture): Promise<void> {
@@ -229,13 +252,27 @@ export async function seedInlineLifecyclePlugin(): Promise<string> {
   return root;
 }
 
+async function waitForPluginSettingsEntry(): Promise<void> {
+  // 隔离 profile 会先显示职业引导；仅等设置按钮会一直卡住，固定项目等待又不适用创建后的未归类草稿。
+  await browser.waitUntil(
+    async () => {
+      if (await $('[data-testid="onboarding-page"]').isExisting()) {
+        await dismissOccupationOnboarding();
+        return false;
+      }
+      return $(`[data-testid="${TID_TASK_SETTINGS_BUTTON}"]`).isExisting();
+    },
+    { timeout: 30000, timeoutMsg: "退出职业引导后没有出现全局设置入口" },
+  );
+}
+
 export async function openPluginSettings(scope: "user" | "workspace" = "user"): Promise<void> {
   if (scope === "workspace") {
     await openPluginManagementSettings();
     await selectPluginSettingsScope("workspace");
     return;
   }
-  await waitForDefaultWorkspaceReady();
+  await waitForPluginSettingsEntry();
   await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON, {
     timeout: 15000,
     timeoutMsg: "Plugin lifecycle E2E could not open Settings",
@@ -258,7 +295,8 @@ export async function openPluginSettings(scope: "user" | "workspace" = "user"): 
 }
 
 export async function openPluginManagementSettings(): Promise<void> {
-  await waitForDefaultWorkspaceReady();
+  // 插件创建会进入未归类草稿；设置入口属于全局外壳，不能强制等回固定项目。
+  await waitForPluginSettingsEntry();
   await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON, {
     timeout: 15000,
     timeoutMsg: "Workspace Plugin E2E could not open Settings",
@@ -299,9 +337,15 @@ export async function selectPluginSettingsScope(scope: "user" | "workspace"): Pr
   } else {
     await browser.waitUntil(
       async () =>
-        browser.execute(() =>
-          Boolean(document.querySelector('[data-testid^="plugin-settings-scope-option"]')),
-        ),
+        browser.execute(() => {
+          if (document.querySelector('[data-testid^="plugin-settings-scope-option"]')) return true;
+          // 项目在各设备的「项目」子菜单里（19 号票）：打开第一个设备的子菜单，等同旧的第一项。
+          const projects = document.querySelector<HTMLElement>(
+            '[data-scope-projects-trigger="true"]',
+          );
+          if (projects && projects.dataset.state !== "open") projects.click();
+          return false;
+        }),
       {
         timeout: 15000,
         timeoutMsg: `Workspace Plugin scope option did not render: ${JSON.stringify(
@@ -361,14 +405,15 @@ export async function clickPluginSettingsListBreadcrumb(): Promise<void> {
 }
 
 export async function openInstalledPluginSettingsDetail(pluginId: string): Promise<void> {
+  await waitForPluginControl("plugin-settings-plugin-row", { pluginId });
   const rowSelector = pluginControlSelector("plugin-settings-plugin-row", {
     pluginId,
   });
   const opened = await browser.execute((selector) => {
     const row = document.querySelector<HTMLElement>(selector);
-    const button = row?.querySelector<HTMLButtonElement>("button");
-    button?.click();
-    return Boolean(button);
+    const card = row?.querySelector<HTMLElement>('[data-testid="plugin-store-card"]');
+    card?.click();
+    return Boolean(card);
   }, rowSelector);
   if (!opened) {
     throw new Error(`Could not open installed Plugin detail: ${pluginId}`);
@@ -425,6 +470,7 @@ export async function addMarketplaceSourceThroughUi(source: string): Promise<voi
   await setInputValueByTestIdDom("plugin-store-add-source-input", source, {
     timeout: 15000,
   });
+  await clickPluginControl("plugin-store-add-source-risk-acknowledgement");
   await clickPluginControl("plugin-store-add-source-submit");
 }
 
@@ -492,12 +538,13 @@ export async function installPluginThroughUi(pluginId: string): Promise<void> {
 export async function setPluginEnabledThroughUi(
   pluginId: string,
   enabled: boolean,
-  entry: "detail" | "manage" = "detail",
+  entry: "detail" | "manage" | "market" = "detail",
 ): Promise<void> {
-  if (entry === "manage") {
-    const current = await readPluginControlChecked("plugin-settings-enabled-switch", { pluginId });
-    if (current !== enabled)
-      await clickPluginControl("plugin-settings-enabled-switch", { pluginId });
+  if (entry === "manage" || entry === "market") {
+    const testId =
+      entry === "manage" ? "plugin-settings-enabled-switch" : "plugin-store-enabled-switch";
+    const current = await readPluginControlChecked(testId, { pluginId });
+    if (current !== enabled) await clickPluginControl(testId, { pluginId });
   } else {
     const list = await getPluginList();
     if (list.plugins.find((plugin) => plugin.id === pluginId)?.enabled !== enabled) {
@@ -512,6 +559,17 @@ export async function setPluginEnabledThroughUi(
 }
 
 export async function configureLifecyclePluginThroughUi(value: string): Promise<void> {
+  // 当前市场详情只展示信息；配置写入归管理页详情，必须走真实管理入口。
+  const fromStore = !(await hasPluginControl("plugin-settings-detail-back"));
+  if (fromStore) {
+    await clickPluginControl("plugin-store-detail-back");
+    await openManageView();
+    // 管理列表行已改为复用 PluginStoreCard（整卡 role=button），行内第一个 <button> 是更新/菜单等子按钮，
+    // 点它进不了详情；必须点卡片本身。
+    await $(
+      `[data-testid="plugin-settings-plugin-row"][data-plugin-id="${PLUGIN_LIFECYCLE_ID}"] [data-testid="plugin-store-card"]`,
+    ).click();
+  }
   await clickPluginControl("plugin-store-advanced");
   await setPluginControlValue(
     "plugin-store-config-input",
@@ -525,6 +583,13 @@ export async function configureLifecyclePluginThroughUi(value: string): Promise<
     async () => (await readPluginConfigOptions())[PLUGIN_LIFECYCLE_CONFIG_KEY] === value,
     { timeout: 30000, timeoutMsg: "Plugin configuration did not persist" },
   );
+  if (fromStore) {
+    await clickPluginControl("plugin-settings-detail-back");
+    // 管理页「浏览全部」按钮已改为返回图标。
+    await clickPluginControl("plugin-store-manage-back");
+    await clickPluginControl("plugin-store-segment-personal");
+    await openPluginCard(PLUGIN_LIFECYCLE_ID);
+  }
 }
 
 export async function uninstallPluginThroughUi(pluginId: string, confirm: boolean): Promise<void> {
@@ -750,10 +815,26 @@ export async function assertPluginStoreFitsViewport(): Promise<void> {
       clientWidth: root?.clientWidth ?? 0,
       scrollWidth: root?.scrollWidth ?? 0,
       viewportWidth: window.innerWidth,
+      overflow: root
+        ? Array.from(root.querySelectorAll<HTMLElement>("*"))
+            .filter(
+              (element) =>
+                element.getBoundingClientRect().right > root.getBoundingClientRect().right + 1,
+            )
+            .map((element) => ({
+              tag: element.tagName,
+              testId: element.dataset.testid,
+              className: element.className,
+              text: element.textContent?.slice(0, 80),
+            }))
+            .slice(0, 10)
+        : [],
     };
   });
   expect(layout.clientWidth).toBeGreaterThan(0);
-  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  if (layout.scrollWidth > layout.clientWidth + 1) {
+    throw new Error(`Plugin store overflows: ${JSON.stringify(layout)}`);
+  }
   expect(layout.clientWidth).toBeLessThanOrEqual(layout.viewportWidth);
 }
 
@@ -891,37 +972,24 @@ export async function waitUntilPluginList(
   timeoutMsg: string,
   timeout = 30000,
 ): Promise<void> {
-  await browser.waitUntil(async () => predicate(await getPluginList()), {
-    timeout,
-    timeoutMsg,
-  });
-}
-
-export async function waitForPluginDraftRuntimeInvalidation(
-  workspacePath = DEFAULT_WORKSPACE,
-  timeout = 30000,
-): Promise<void> {
-  await browser.waitUntil(
-    () =>
-      browser.execute((path) => {
-        const store = (
-          window as typeof window & {
-            __zcodeSessionStoreE2E?: {
-              getState: () => {
-                getWorkspaceState: (workspacePath: string) => {
-                  draftSessionId: string | null;
-                };
-              };
-            };
-          }
-        ).__zcodeSessionStoreE2E;
-        return store?.getState().getWorkspaceState(path).draftSessionId === null;
-      }, workspacePath),
-    {
-      timeout,
-      timeoutMsg: "Plugin runtime refresh did not invalidate the deferred draft session",
-    },
-  );
+  let latest: ZCodePluginsListResult | undefined;
+  try {
+    await browser.waitUntil(
+      async () => {
+        latest = await getPluginList();
+        return predicate(latest);
+      },
+      { timeout, timeoutMsg },
+    );
+  } catch (error) {
+    // 只保留启停与来源事实，便于区分配置范围错误和保存失败，不输出插件 secret/options。
+    const plugins = latest?.plugins.map(({ id, enabled, enabledSource }) => ({
+      id,
+      enabled,
+      enabledSource,
+    }));
+    throw new Error(`${timeoutMsg}; latest=${JSON.stringify(plugins)}`, { cause: error });
+  }
 }
 
 export async function readPluginConfigOptions(): Promise<Record<string, unknown>> {
@@ -995,6 +1063,8 @@ async function callPluginTestAction<T>(
   actionName: PluginTestActionName,
   params: unknown,
 ): Promise<T> {
+  // 这些 action 随应用页面挂载，首次职业引导尚未退出时不存在。
+  await waitForPluginSettingsEntry();
   await browser.waitUntil(
     () =>
       browser.execute(
@@ -1129,10 +1199,14 @@ async function writeLifecyclePlugin(
   await writeText(join(pluginRoot, "server.mjs"), buildDependencyFreeMcpServer(version, withUi));
 }
 
-async function writeSimplePlugin(pluginRoot: string, index: number): Promise<void> {
+async function writeSimplePlugin(
+  pluginRoot: string,
+  index: number,
+  version = "1.0.0",
+): Promise<void> {
   await writeJson(join(pluginRoot, ".zcode-plugin", "plugin.json"), {
     name: `e2e-lifecycle-extra-${index}`,
-    version: "1.0.0",
+    version,
     description: `E2E lifecycle category expansion plugin ${index}`,
     skills: "skills",
   });

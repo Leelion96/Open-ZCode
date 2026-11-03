@@ -179,6 +179,9 @@ export function createPluginUiBridgeService(
         ...(meta?.heightHint !== undefined ? { heightHint: meta.heightHint } : {}),
         ...(meta?.minFrameHeight !== undefined ? { minFrameHeight: meta.minFrameHeight } : {}),
         ...(meta?.showInline !== undefined ? { showInline: meta.showInline } : {}),
+        ...(meta?.backgroundRetention !== undefined
+          ? { backgroundRetention: meta.backgroundRetention }
+          : {}),
       });
       log.info("prepareSandbox registered", {
         scopeId: params.scopeId,

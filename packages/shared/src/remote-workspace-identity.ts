@@ -130,7 +130,10 @@ export function parseRemoteWorkspaceIdentity(
   let cursor = kindEnd + 1;
   let sourceServerId: string | undefined;
   for (let i = 0; i < AUTHORITY_SEGMENTS[kind]; i++) {
-    const next = rest.indexOf(":", cursor);
+    // SSH 用户名可能含冒号；按单个冒号截断会让连接准入和目录状态读取误报身份非法。
+    // 第三段以绝对路径前的 ":/" 收口，保留原身份字符串及用户名，不改凭据或存量键。
+    const separator = kind === "ssh" && i === 2 ? ":/" : ":";
+    const next = rest.indexOf(separator, cursor);
     if (next <= cursor) {
       return null;
     }

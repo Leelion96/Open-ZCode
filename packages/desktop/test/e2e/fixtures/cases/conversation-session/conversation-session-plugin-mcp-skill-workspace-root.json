@@ -9,20 +9,19 @@
   "fileFixtures": [],
   "requests": [
     {
-      "id": "workspace-root-tool-call",
-      "description": "项目 Plugin root 直接激活后的 MCP tool_use。",
-      "kind": "main",
+      "id": "conversation-session-plugin-mcp-skill-workspace-root-title-sidecar",
+      "kind": "common",
       "source": "synthetic",
-      "timingPolicy": "tool-use",
-      "syntheticReason": "固定工具调用，证明项目 dirs discovery 进入 runtime。"
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
     },
     {
-      "id": "workspace-root-final",
-      "description": "项目 Plugin root MCP tool_result 后的最终响应。",
+      "id": "workspace-root-blocked",
+      "description": "项目目录插件被忽略，普通对话仍可完成。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定最终响应，闭合 project root runtime。"
+      "syntheticReason": "固定文本响应，验证模型请求没有工作区目录插件的 MCP 工具。"
     }
   ]
 }

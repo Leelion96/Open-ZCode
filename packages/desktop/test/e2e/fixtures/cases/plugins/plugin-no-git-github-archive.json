@@ -2,7 +2,10 @@
   "version": 1,
   "caseName": "plugin-no-git-github-archive",
   "spec": "./test/e2e/plugins/plugin-no-git-github-archive.test.ts",
-  "providerFixtures": [],
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/plugin-management/plugin-no-git-github-archive.json"
+  ],
   "providerRequestPolicy": "none",
   "fileFixtures": [
     "real Anthropic claude-plugins-official marketplace and Aikido plugin over GitHub Archive"

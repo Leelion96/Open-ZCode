@@ -8,12 +8,22 @@ import {
 describe("dynamic workflow E2E config fixture", () => {
   it.each([
     ["./test/e2e/automations-workflows-hub.test.ts", "alwaysOn"],
+    ["./test/e2e/conversation-session/conversation-session-plus-menu.test.ts", "alwaysOn"],
+    ["./test/e2e/conversation-session/conversation-session-plus-menu.test.ts", "alwaysOn"],
     [
-      "./test/e2e/conversation-session/manual-review/pending/conversation-session-dynamic-workflow-gray-always-on.test.ts",
+      "./test/e2e/conversation-session/conversation-session-dynamic-workflow-holes.test.ts",
       "alwaysOn",
     ],
     [
-      "./test/e2e/conversation-session/manual-review/pending/conversation-session-dynamic-workflow-gray-disabled.test.ts",
+      "./test/e2e/conversation-session/conversation-session-dynamic-workflow-holes.test.ts",
+      "alwaysOn",
+    ],
+    [
+      "./test/e2e/conversation-session/conversation-session-dynamic-workflow-gray-always-on.test.ts",
+      "alwaysOn",
+    ],
+    [
+      "./test/e2e/conversation-session/conversation-session-dynamic-workflow-gray-disabled.test.ts",
       "disabled",
     ],
     ["./test/e2e/automations-custom-monthly-interval.test.ts", null],
@@ -25,7 +35,7 @@ describe("dynamic workflow E2E config fixture", () => {
     expect(() =>
       resolveDynamicWorkflowConfigMockScenario([
         "./test/e2e/automations-workflows-hub.test.ts",
-        "./test/e2e/conversation-session/manual-review/pending/conversation-session-dynamic-workflow-gray-disabled.test.ts",
+        "./test/e2e/conversation-session/conversation-session-dynamic-workflow-gray-disabled.test.ts",
       ]),
     ).toThrow("必须分属不同 worker");
   });

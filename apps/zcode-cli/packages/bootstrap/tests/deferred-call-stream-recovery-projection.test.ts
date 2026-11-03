@@ -39,6 +39,7 @@ it.each([
     const registry = createToolRegistry();
     registry.register({
       ...toolSearchToolEntry,
+      aliases: undefined,
       metadata: {
         ...toolSearchToolEntry.metadata,
         name: TARGET,

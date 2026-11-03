@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
-import type { NodeReplCuaAppIdentity, NodeReplRequestMeta, NodeReplSession } from "@zcode/core";
-import { CUA_APP_ASSOCIATIONS_META_KEY } from "@zcode/zcode-cua/host-display-contract";
+import type { NodeReplRequestMeta, NodeReplSession } from "@zcode/core";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export const NODE_REPL_CUA_BRIDGE_SYMBOL = Symbol.for("zcode.node-repl.computer-use-bridge");
@@ -14,6 +13,7 @@ export interface ActiveCuaNodeReplCall {
   signal: AbortSignal;
 }
 
+/** Worker 连 CUA broker 用的地址和本次调用的 token（由主线程账本签发）。 */
 export interface NodeReplCuaBrokerConnection {
   socketPath: string;
   token: string;
@@ -58,22 +58,16 @@ export function createComputerUseBridgeGlobals(input: {
     },
     call: async (method, methodInput) => {
       const active = assertAvailable();
+      // 只发方法与参数：会话信息由主线程 broker 按本次调用的账本条目构造，目标应用身份也由 broker
+      // 记进账本（20-node-repl-call-ledger.md「CUA broker」）。修复原因（MR !3207 评审 CR-01）：原来
+      // 身份在这里记进 Worker 的运行状态，cell 能经 worker_threads 冒充 Worker 的结果消息伪造它。
       const result = await sendCuaBrokerRequest(
         input.broker!,
-        {
-          method,
-          input: methodInput,
-          context: requestContext(active.requestMeta),
-        },
+        { method, input: methodInput },
         active.signal,
       );
       assertActive();
       if (result.responseMeta) input.session().mergeResponseMeta(result.responseMeta);
-      // 目标应用身份必须在这里取：broker 响应是模型看不见也改不了的一跳。等到
-      // `projectToHost` 把 `_meta` 交给 `nodeRepl.emitStructuredResult` 就已经落在模型可写的
-      // sandbox 通道上，无法再区分「producer 给的」和「cell 里自己写的」。
-      const app = readPrimaryAppIdentity(result.result);
-      if (app) input.session().recordCuaAppIdentity(app);
       return result.result;
     },
   };
@@ -81,75 +75,9 @@ export function createComputerUseBridgeGlobals(input: {
   return { [NODE_REPL_CUA_BRIDGE_SYMBOL]: bridge };
 }
 
-/**
- * 从 producer 的 app-associations 元数据里取出单一目标应用。
- *
- * 只读 `primary`：`list_apps` 用的是 `items` 模式（按结果下标关联，node_repl 下没有逐条列表卡），
- * `request_access` / `stop_computer_control` 声明 `none`，这三者都不该覆盖同一 cell 里前面动作
- * 已经确立的身份。producer 自带的内联 icon PNG 刻意不取：会话协议不承载图标字节，UI 按
- * appKey 派生 locator 后交平台服务解析。
- */
-function readPrimaryAppIdentity(result: CallToolResult): NodeReplCuaAppIdentity | undefined {
-  const meta = result._meta;
-  if (!meta || typeof meta !== "object") return undefined;
-  const associations = (meta as Record<string, unknown>)[CUA_APP_ASSOCIATIONS_META_KEY];
-  if (!associations || typeof associations !== "object" || Array.isArray(associations)) {
-    return undefined;
-  }
-  const primary = (associations as { primary?: unknown }).primary;
-  if (!primary || typeof primary !== "object" || Array.isArray(primary)) return undefined;
-  const { appKey, displayName } = primary as { appKey?: unknown; displayName?: unknown };
-  if (typeof appKey !== "string" || !appKey.trim()) return undefined;
-  return {
-    appKey: appKey.trim(),
-    ...(typeof displayName === "string" && displayName.trim()
-      ? { displayName: displayName.trim() }
-      : {}),
-  };
-}
-
-function requestContext(meta: NodeReplRequestMeta): Record<string, unknown> {
-  const stringMeta = (key: string): string | undefined => {
-    const value = meta[key];
-    return typeof value === "string" && value.trim() ? value.trim() : undefined;
-  };
-  const sessionId = stringMeta("session_id");
-  if (!sessionId) throw new Error("node_repl CUA request is missing session_id metadata");
-  const workspacePath = stringMeta("workspace_path");
-  const workspaceIdentity = stringMeta("workspace_identity");
-  const workspaceKey = stringMeta("workspace_key") ?? workspaceIdentity ?? workspacePath;
-  if (!workspaceKey) throw new Error("node_repl CUA request is missing workspaceKey metadata");
-  const clientMode = stringMeta("client_mode") ?? "desktop-continuous";
-  const deliveryKind = stringMeta("delivery_kind") ?? clientMode;
-  return {
-    runtimeScope: meta.runtime_scope === "subagent" ? "subagent" : "main",
-    sessionId,
-    ...(workspacePath ? { workspacePath } : {}),
-    ...(workspaceIdentity ? { workspaceIdentity } : {}),
-    workspaceKey,
-    ...(stringMeta("remote_session_id")
-      ? { remoteSessionId: stringMeta("remote_session_id") }
-      : {}),
-    ...(stringMeta("turn_id") ? { turnId: stringMeta("turn_id") } : {}),
-    clientMode,
-    deliveryKind,
-    ...(stringMeta("trace_id")
-      ? {
-          trace: {
-            traceId: stringMeta("trace_id"),
-            ...(stringMeta("span_id") ? { spanId: stringMeta("span_id") } : {}),
-            ...(stringMeta("parent_span_id")
-              ? { parentSpanId: stringMeta("parent_span_id") }
-              : {}),
-          },
-        }
-      : {}),
-  };
-}
-
 async function sendCuaBrokerRequest(
   broker: NodeReplCuaBrokerConnection,
-  request: { method: string; input: unknown; context: Record<string, unknown> },
+  request: { method: string; input: unknown },
   signal: AbortSignal,
 ): Promise<{ result: CallToolResult; responseMeta?: Record<string, unknown> }> {
   const id = randomUUID();

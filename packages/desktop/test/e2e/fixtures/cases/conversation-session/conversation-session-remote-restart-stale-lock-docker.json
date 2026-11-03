@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-restart-stale-lock-docker",
+  "spec": "./test/e2e/conversation-session/conversation-session-remote-restart-stale-lock-docker.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-restart-stale-lock-docker.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "requests": []
+}

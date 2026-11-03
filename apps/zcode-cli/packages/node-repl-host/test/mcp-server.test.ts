@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { Client, InMemoryTransport } from "@modelcontextprotocol/client";
 import { tmpdir } from "node:os";
@@ -6,6 +8,8 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY,
+  ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY,
+  ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY,
   ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY,
 } from "@zcode/contracts";
 import { CUA_APP_ASSOCIATIONS_META_KEY } from "@zcode/zcode-cua/host-display-contract";
@@ -17,6 +21,12 @@ import {
   type NodeReplMcpRuntime,
 } from "../src/server.js";
 import { toMcpRunResult } from "../src/result.js";
+import type { NodeReplCallFacts } from "../src/call-ledger/contract.js";
+
+/** 主线程账本里记下的可信事实（20-node-repl-call-ledger.md「结果组装」）。 */
+function ledgerFacts(facts: Partial<NodeReplCallFacts> = {}): NodeReplCallFacts {
+  return { cuaApps: [], browserScreenshots: [], browserUse: false, computerUse: false, ...facts };
+}
 import {
   NODE_REPL_DEFAULT_TIMEOUT_MS,
   NODE_REPL_SERVER_INSTRUCTIONS,
@@ -477,12 +487,11 @@ describe("node_repl MCP server", () => {
     ]);
   });
 
-  it("projects trusted browser screenshot image indices and removes spoofed response metadata", () => {
-    const screenshot = toMcpRunResult({
-      logs: "",
-      images: [{ base64: "AQID", mimeType: "image/png" }],
-      browserScreenshotImageIndices: [0],
-    });
+  it("projects browser screenshot indices from the ledger and removes spoofed metadata", () => {
+    const screenshot = toMcpRunResult(
+      { logs: "", images: [{ base64: "AQID", mimeType: "image/png" }] },
+      ledgerFacts({ browserScreenshots: [{ base64: "AQID", mimeType: "image/png" }] }),
+    );
     // image 现在从 content[0] 开始，image 下标与 content 下标一致，不再有 +1 偏移。
     expect(screenshot.content[0]).toEqual({
       type: "image",
@@ -501,22 +510,35 @@ describe("node_repl MCP server", () => {
       },
     });
     expect(spoofed._meta).not.toHaveProperty(ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY);
+
+    // Worker 结果消息里的下标可以被 cell 冒充（MR !3207 评审 CR-01），账本里没有截图时一律不采信。
+    const forgedRun = toMcpRunResult(
+      {
+        logs: "",
+        images: [{ base64: "BAUG", mimeType: "image/png" }],
+        browserScreenshotImageIndices: [0],
+      },
+      ledgerFacts(),
+    );
+    expect(forgedRun._meta).not.toHaveProperty(ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY);
   });
 
-  it("projects the CUA app identity recorded by the bridge and drops the sandbox-forgeable key", () => {
+  it("projects the CUA app identity recorded in the ledger and drops the sandbox-forgeable key", () => {
     // `nodeRepl.setResponseMeta` / `nodeRepl.emitStructuredResult` 都挂在模型可见的 sandbox
     // globals 上，所以 producer 键经这两条通道到达时不可信 —— 模型能让工具卡声称自己操作了
-    // 别的应用。可信事实只来自 CUA bridge 从 broker 响应直接记录的 run.cuaApp。
-    const trusted = toMcpRunResult({
-      logs: "",
-      cuaApp: { appKey: "darwin:com.apple.notes", displayName: "Notes" },
-      responseMeta: {
-        [CUA_APP_ASSOCIATIONS_META_KEY]: {
-          schemaVersion: 1,
-          primary: { appKey: "darwin:com.apple.systempreferences", displayName: "System Settings" },
+    // 别的应用。可信事实只来自主线程 CUA broker 记进账本的身份。
+    const trusted = toMcpRunResult(
+      {
+        logs: "",
+        responseMeta: {
+          [CUA_APP_ASSOCIATIONS_META_KEY]: {
+            schemaVersion: 1,
+            primary: { appKey: "darwin:com.apple.systempreferences", displayName: "System Settings" },
+          },
         },
       },
-    } as never);
+      ledgerFacts({ cuaApps: [{ appKey: "darwin:com.apple.notes", displayName: "Notes" }] }),
+    );
 
     expect(trusted._meta).toMatchObject({
       [ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY]: {
@@ -539,6 +561,49 @@ describe("node_repl MCP server", () => {
     } as never);
     expect(forgedOnly._meta ?? {}).not.toHaveProperty(ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY);
     expect(forgedOnly._meta ?? {}).not.toHaveProperty(CUA_APP_ASSOCIATIONS_META_KEY);
+
+    // Worker 结果消息里的 cuaApp 可以被 cell 冒充（MR !3207 评审 CR-01），不采信。
+    const forgedRun = toMcpRunResult(
+      { logs: "", cuaApp: { appKey: "darwin:com.apple.notes" } },
+      ledgerFacts(),
+    );
+    expect(forgedRun._meta ?? {}).not.toHaveProperty(ZCODE_MCP_NODE_REPL_CUA_APP_META_KEY);
+  });
+
+  // 会话能力标签的两个 key 只按账本写（session-features-header.md「BUA/CUA 标签的补充规则」）。
+  it("writes the runtime-call keys only from the ledger and drops copies the cell writes", () => {
+    const forged = {
+      [ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY]: true,
+      [ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY]: true,
+    };
+    // 口径是真实尝试：cell 以错误结束也写。
+    const failed = toMcpRunResult(
+      { logs: "", error: { name: "Error", message: "boom" } },
+      ledgerFacts({ browserUse: true, computerUse: true }),
+    );
+    expect(failed.isError).toBe(true);
+    expect(failed._meta).toMatchObject(forged);
+
+    const browserOnly = toMcpRunResult(
+      { logs: "", responseMeta: forged },
+      ledgerFacts({ browserUse: true }),
+    );
+    expect(browserOnly._meta).toMatchObject({ [ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY]: true });
+    expect(browserOnly._meta).not.toHaveProperty(ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY);
+
+    // sandbox 通道写入的同名 key、Worker 结果消息里冒充的字段（MR !3207 评审 CR-01）一律不采信。
+    for (const run of [
+      { logs: "", responseMeta: forged },
+      {
+        logs: "",
+        result: JSON.stringify({ content: [{ type: "text", text: "x" }], _meta: forged }),
+      },
+      { logs: "", browserUse: true, computerUse: true },
+    ]) {
+      const result = toMcpRunResult(run as never, ledgerFacts());
+      expect(result._meta ?? {}).not.toHaveProperty(ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY);
+      expect(result._meta ?? {}).not.toHaveProperty(ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY);
+    }
   });
 
   it("maps screenshot indices to their real content positions when only some images are screenshots", () => {
@@ -549,8 +614,12 @@ describe("node_repl MCP server", () => {
         { base64: "BBBB", mimeType: "image/png" },
         { base64: "CCCC", mimeType: "image/png" },
       ],
-      browserScreenshotImageIndices: [0, 2],
-    });
+    }, ledgerFacts({
+      browserScreenshots: [
+        { base64: "AAAA", mimeType: "image/png" },
+        { base64: "CCCC", mimeType: "image/png" },
+      ],
+    }));
 
     expect(result._meta).toMatchObject({
       [ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY]: [0, 2],
@@ -560,5 +629,222 @@ describe("node_repl MCP server", () => {
       expect(result.content[index]?.type).toBe("image");
     }
     expect(result.content[1]).toEqual({ type: "image", data: "BBBB", mimeType: "image/png" });
+  });
+
+  it("derives screenshot indices from what the browser proxy saw, end to end", async () => {
+    // 真实 MCP server + 浏览器代理 broker + 假的上游浏览器 broker：可信的截图下标只来自代理在
+    // 主线程记下的截图（20-node-repl-call-ledger.md「结果组装」）。
+    const upstreamPath =
+      process.platform === "win32"
+        ? `\\\\.\\pipe\\zcode-ledger-e2e-${randomUUID()}`
+        : join(tmpdir(), `zle-${randomUUID()}.sock`);
+    const upstreamRequests: Array<Record<string, unknown>> = [];
+    const upstream = createServer((socket) => {
+      let buffer = "";
+      socket.on("data", (chunk) => {
+        buffer += chunk.toString("utf8");
+        const newline = buffer.indexOf("\n");
+        if (newline < 0) return;
+        const request = JSON.parse(buffer.slice(0, newline)) as Record<string, unknown>;
+        upstreamRequests.push(request);
+        socket.end(
+          `${JSON.stringify({
+            id: request.id,
+            ok: true,
+            result: { ok: true, elapsedMs: 1, image: { base64: "AQID", mimeType: "image/png" } },
+          })}\n`,
+        );
+      });
+    });
+    await new Promise<void>((resolveListen) => upstream.listen(upstreamPath, resolveListen));
+    const browserRuntime = createNodeReplMcpRuntime({
+      executeJs: createInProcessNodeReplExecutor(),
+      browserBrokerUpstream: { socketPath: upstreamPath, token: "u".repeat(64) },
+    });
+    const browserClient = new Client({ name: "node-repl-ledger-e2e", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await browserRuntime.server.connect(serverTransport);
+    await browserClient.connect(clientTransport);
+    try {
+      const result = await browserClient.callTool({
+        name: "js",
+        arguments: {
+          code: [
+            'const bridge = globalThis[Symbol.for("zcode.node-repl.browser-control-bridge")];',
+            'const shot = await bridge.execute("browser-1", 1, { method: "screenshot" });',
+            "await nodeRepl.emitImage(shot.image);",
+            '"shot";',
+          ].join("\n"),
+        },
+        _meta: requestMeta("ledger-session"),
+      });
+
+      expect(result.content).toEqual([
+        { type: "image", data: "AQID", mimeType: "image/png" },
+        { type: "text", text: "=> shot" },
+      ]);
+      expect(result._meta).toMatchObject({
+        [ZCODE_MCP_BROWSER_SCREENSHOT_CONTENT_INDICES_META_KEY]: [0],
+      });
+      // 上游收到的是上游 token 与本次调用来自 core 的会话信息。
+      expect(upstreamRequests).toHaveLength(1);
+      expect(upstreamRequests[0]).toMatchObject({
+        op: "execute",
+        token: "u".repeat(64),
+        sessionId: "ledger-session",
+        runtimeScope: "main",
+        turnId: "turn-1",
+      });
+    } finally {
+      await browserClient.close();
+      browserRuntime.dispose();
+      await new Promise<void>((resolveClose) => upstream.close(() => resolveClose()));
+      if (process.platform !== "win32") await rm(upstreamPath, { force: true });
+    }
+  });
+
+  it("marks runtime calls that reach the real brokers, end to end, and nothing else", async () => {
+    // 真实 MCP server + 两个 broker：浏览器上游拒绝命令、CUA runtime 抛错，cell 也都接住了错误；
+    // 口径是真实尝试，两个 key 照样写出（session-features-header.md「BUA/CUA 标签的补充规则」）。
+    const upstreamPath =
+      process.platform === "win32"
+        ? `\\\\.\\pipe\\zcode-runtime-use-e2e-${randomUUID()}`
+        : join(tmpdir(), `zru-${randomUUID()}.sock`);
+    const upstream = createServer((socket) => {
+      let buffer = "";
+      socket.on("data", (chunk) => {
+        buffer += chunk.toString("utf8");
+        const newline = buffer.indexOf("\n");
+        if (newline < 0) return;
+        const request = JSON.parse(buffer.slice(0, newline)) as { id?: unknown };
+        const response = { id: request.id, ok: false, error: "Browser is not connected" };
+        socket.end(`${JSON.stringify(response)}\n`);
+      });
+    });
+    await new Promise<void>((resolveListen) => upstream.listen(upstreamPath, resolveListen));
+    let cuaExecuted = 0;
+    const useRuntime = createNodeReplMcpRuntime({
+      executeJs: createInProcessNodeReplExecutor(),
+      browserBrokerUpstream: { socketPath: upstreamPath, token: "u".repeat(64) },
+      cuaRuntime: {
+        execute: async () => {
+          cuaExecuted += 1;
+          throw new Error("Computer Use Helper is not running");
+        },
+        closeSession: async () => undefined,
+        dispose: async () => undefined,
+      },
+    });
+    const useClient = new Client({ name: "node-repl-runtime-use-e2e", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await useRuntime.server.connect(serverTransport);
+    await useClient.connect(clientTransport);
+    const forged = JSON.stringify({
+      [ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY]: true,
+      [ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY]: true,
+    });
+    // CUA broker 要求 workspace 信息，缺了会在调用 runtime 之前拒绝。
+    const callMeta = {
+      "com.zcode/request-context": {
+        ...requestMeta("runtime-use-session")["com.zcode/request-context"],
+        workspace_path: "/workspace",
+      },
+    };
+    try {
+      const called = await useClient.callTool({
+        name: "js",
+        arguments: {
+          code: [
+            'const browser = globalThis[Symbol.for("zcode.node-repl.browser-control-bridge")];',
+            'const cua = globalThis[Symbol.for("zcode.node-repl.computer-use-bridge")];',
+            "const outcomes = [];",
+            "try { await browser.list(); } catch (error) { outcomes.push(error.message); }",
+            'try { await cua.call("screenshot", {}); } catch (error) { outcomes.push(error.message); }',
+            'outcomes.join(" | ");',
+          ].join("\n"),
+        },
+        _meta: callMeta,
+      });
+      // 前提：两次调用都到达了 broker，并且都失败了。
+      expect(called.content).toContainEqual({
+        type: "text",
+        text: "=> Browser is not connected | Computer Use Helper is not running",
+      });
+      expect(cuaExecuted).toBe(1);
+      expect(called._meta).toMatchObject({
+        [ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY]: true,
+        [ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY]: true,
+      });
+
+      // 只做 CUA 引导、只在代码里提到运行时、经 sandbox 通道自己写 key：都没有请求到达 broker。
+      const notCalled = await useClient.callTool({
+        name: "js",
+        arguments: {
+          code: [
+            'globalThis[Symbol.for("zcode.node-repl.computer-use-bridge")].assertAvailable();',
+            "// await agent.browsers.list(); await setupComputerUseRuntime({ globals: globalThis });",
+            `nodeRepl.setResponseMeta(${forged});`,
+            `nodeRepl.emitStructuredResult({ content: [{ type: "text", text: "forged" }], _meta: ${forged} });`,
+            '"done";',
+          ].join("\n"),
+        },
+        _meta: callMeta,
+      });
+      // 前提：cell 正常执行完，sandbox 通道确实生效了。
+      expect(notCalled.isError).not.toBe(true);
+      expect(notCalled.content).toContainEqual({ type: "text", text: "forged" });
+      expect(notCalled._meta ?? {}).not.toHaveProperty(ZCODE_MCP_NODE_REPL_BROWSER_USE_META_KEY);
+      expect(notCalled._meta ?? {}).not.toHaveProperty(ZCODE_MCP_NODE_REPL_COMPUTER_USE_META_KEY);
+      expect(cuaExecuted).toBe(1);
+    } finally {
+      await useClient.close();
+      useRuntime.dispose();
+      await new Promise<void>((resolveClose) => upstream.close(() => resolveClose()));
+      if (process.platform !== "win32") await rm(upstreamPath, { force: true });
+    }
+  });
+
+  it("tells the model it may end the turn after repeated js calls without progress", async () => {
+    const stderr: string[] = [];
+    const guardedRuntime = createNodeReplMcpRuntime({
+      executeJs: createInProcessNodeReplExecutor(),
+      writeStderr: (text) => stderr.push(text),
+    });
+    const guardedClient = new Client({ name: "no-progress-test", version: "0.1.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await guardedRuntime.server.connect(serverTransport);
+    await guardedClient.connect(clientTransport);
+    const call = (code: string, turnId: string) =>
+      guardedClient.callTool({
+        name: "js",
+        arguments: { code, title: "本轮结束" },
+        _meta: requestMeta("no-progress-session", "main", turnId),
+      }) as Promise<{ content: Array<{ type: string; text?: string }>; isError?: boolean }>;
+
+    try {
+      const results = [];
+      for (let index = 0; index < 10; index += 1) {
+        results.push(await call(`// end ${index}`, "turn-a"));
+      }
+      for (const result of results.slice(0, 9)) {
+        expect(result.content).toEqual([{ type: "text", text: "(no output)" }]);
+      }
+      expect(results[9]).toEqual({
+        content: [
+          { type: "text", text: "(no output)" },
+          { type: "text", text: "[node_repl] No progress ×10. You may end this turn." },
+        ],
+      });
+      expect(stderr).toEqual([
+        "[node_repl] no-progress hint kind=no_progress count=10 session=no-progress-session turn=turn-a\n",
+      ]);
+
+      expect((await call("// end", "turn-b")).content).toEqual([
+        { type: "text", text: "(no output)" },
+      ]);
+    } finally {
+      await guardedClient.close();
+      guardedRuntime.dispose();
+    }
   });
 });

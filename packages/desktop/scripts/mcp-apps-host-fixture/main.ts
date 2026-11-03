@@ -1,4 +1,13 @@
-import { app, BrowserWindow, ipcMain, protocol, session, webContents } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  nativeImage,
+  ipcMain,
+  protocol,
+  session,
+  webContents,
+} from "electron";
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -113,6 +122,38 @@ app
       .getAllWebContents()
       .find((contents) => contents.getType() === "webview")!;
     assert.ok(guest);
+    if (mode === "write") {
+      // 回归 Electron 44 的异步剪贴板：从受信 renderer 调用生产 IPC，再读回真实 PNG。
+      const viewportSize = await guest.executeJavaScript(
+        "({ width: innerWidth, height: innerHeight })",
+      );
+      const request = {
+        sandboxId: handle.sandboxId,
+        initId: handle.initId,
+        viewportSize,
+        captureRect: { x: 0, y: 0, width: 64, height: 64 },
+      };
+      await win.webContents.executeJavaScript(
+        `window.harness.copyImage(${JSON.stringify(request)})`,
+      );
+      const items = await clipboard.read();
+      const image = items.find((item) => item.types.includes("image/png"));
+      assert.ok(image, "clipboard must contain PNG after successful IPC");
+      const png = Buffer.from(await (await image.getType("image/png")).arrayBuffer());
+      assert.ok(png.length > 8);
+      const scale = await guest.executeJavaScript("devicePixelRatio");
+      assert.deepEqual(nativeImage.createFromBuffer(png).getSize(), {
+        width: Math.round(64 * scale),
+        height: Math.round(64 * scale),
+      });
+      await assert.rejects(
+        win.webContents.executeJavaScript(
+          `window.harness.copyImage(${JSON.stringify({ ...request, initId: handle.initId + 1 })})`,
+        ),
+        /no longer available/,
+      );
+      process.stdout.write("PASS E44-CLIP: native PNG round-trip and stale identity rejection\n");
+    }
     const frame = guest.mainFrame.frames.find((frame) => frame.url.includes("/instance/"))!;
     await frame.executeJavaScript("window.fixtureReady");
     const initialState =

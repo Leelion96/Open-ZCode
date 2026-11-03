@@ -9,6 +9,28 @@ import { createMcpConnectionPool } from "../src/mcp/pool.js";
 import { createMcpTelemetryTracker } from "../src/mcp/telemetry.js";
 
 describe("MCP connection pool isolation", () => {
+  it("closing a lease cancels its resource request without cancelling another session", async () => {
+    const adapter = createFakeAdapter("fixture");
+    const signals: AbortSignal[] = [];
+    adapter.readResource = vi.fn(async (_request, options) => {
+      signals.push(options!.signal!);
+      return { contents: [] };
+    });
+    const pool = createMcpConnectionPool({ createAdapter: () => adapter, idleGraceMs: 0 });
+    const a = pool.acquireLease(),
+      b = pool.acquireLease();
+    const config: McpServerConfig = { type: "stdio", command: "fixture", isolation: "workspace" };
+    await Promise.all([a.connectServer("fixture", config), b.connectServer("fixture", config)]);
+    await a.readResource!({ serverName: "fixture", uri: "test://a" });
+    await b.readResource!({ serverName: "fixture", uri: "test://b" });
+    await a.close();
+    expect(signals[0]?.aborted).toBe(true);
+    expect(signals[1]?.aborted).toBe(false);
+    expect(adapter.close).not.toHaveBeenCalled();
+    await b.close();
+    await pool.close();
+  });
+
   it("shares startup waiters and rejects a released lease while another owner connects", async () => {
     const ready = Promise.withResolvers<void>();
     let initialized = false;
@@ -27,7 +49,7 @@ describe("MCP connection pool isolation", () => {
     const a = pool.acquireLease({ sessionId: "a" });
     const b = pool.acquireLease({ sessionId: "b" });
     const config: McpServerConfig = { type: "stdio", command: "fixture", isolation: "workspace" };
-    const connecting = Promise.all([
+    const connecting = Promise.allSettled([
       a.connectServer("fixture", config),
       b.connectServer("fixture", config),
     ]);
@@ -35,7 +57,7 @@ describe("MCP connection pool isolation", () => {
     const opening = b.waitForAppConnection!("fixture");
     await a.close();
     ready.resolve();
-    await connecting;
+    expect((await connecting).map((result) => result.status)).toEqual(["rejected", "fulfilled"]);
     expect(await released).toBeNull();
     expect(await opening).toEqual(source);
     expect(connectServer).toHaveBeenCalledOnce();
@@ -626,3 +648,52 @@ function createFakeAdapterWithStatus(
     status: vi.fn(async () => ({ [serverName]: status })),
   };
 }
+
+it("cancels one session waiter without cancelling the pooled connection or another waiter", async () => {
+  const connected = Promise.withResolvers<McpServerStatus>();
+  let signal: AbortSignal | undefined;
+  const adapter = {
+    connectServer: vi.fn((_name, _config, options) => {
+      signal = options?.signal;
+      return connected.promise;
+    }),
+    close: vi.fn(async () => {}),
+  } as unknown as McpPort;
+  const pool = createMcpConnectionPool({ createAdapter: () => adapter, idleGraceMs: 0 });
+  const a = pool.acquireLease({ sessionId: "a" }),
+    b = pool.acquireLease({ sessionId: "b" });
+  const abort = new AbortController();
+  const config: McpServerConfig = { type: "stdio", command: "fixture", isolation: "workspace" };
+  const openingA = a.connectServer("fixture", config, { signal: abort.signal });
+  const checked = expect(openingA).rejects.toThrow();
+  const openingB = b.connectServer("fixture", config);
+  abort.abort(new Error("session closed"));
+  expect(signal?.aborted).not.toBe(true);
+  await checked;
+  await a.close();
+  connected.resolve({ status: "connected", transport: "stdio", toolCount: 0, updatedAt: "now" });
+  expect((await openingB).status).toBe("connected");
+  expect(adapter.close).not.toHaveBeenCalled();
+  await expect(a.connectServer("fixture", config)).rejects.toThrow();
+  await b.close();
+  await pool.close();
+});
+
+it("lease close interrupts an in-flight connection wait and forbids late reacquisition", async () => {
+  const connecting = Promise.withResolvers<McpServerStatus>();
+  const adapter = {
+    connectServer: () => connecting.promise,
+    close: async () => {},
+  } as unknown as McpPort;
+  const pool = createMcpConnectionPool({ createAdapter: () => adapter, idleGraceMs: 0 });
+  const lease = pool.acquireLease();
+  const pending = lease.connectServer("fixture", { type: "stdio", command: "fixture" });
+  const checked = expect(pending).rejects.toThrow();
+  await lease.close();
+  await checked;
+  connecting.resolve({ status: "connected", transport: "stdio", toolCount: 0, updatedAt: "now" });
+  await expect(
+    lease.connectServer("fixture", { type: "stdio", command: "fixture" }),
+  ).rejects.toThrow();
+  await pool.close();
+});

@@ -176,6 +176,7 @@ describe("main agent tool pool", () => {
             throw new Error("not called");
           },
           delete: async () => undefined,
+          pause: async () => false,
           list: async () => [],
         },
         eventStore: createTestSessionEventStore(),
@@ -207,6 +208,65 @@ describe("main agent tool pool", () => {
     );
   });
 
+  it("exposes CronPauseSelf only for a turn that carries the loop automationId", async () => {
+    const requests: any[] = [];
+    const runtime = createTestAgentRuntime(
+      createSessionId("runtime-main-pause-self-provider-tools"),
+      {
+        mode: "build",
+        toolAllowlist: ["CronCreate", "CronList", "CronUpdate", "CronDelete", "CronPauseSelf"],
+        workingDirectory: "/workspace/project",
+      },
+      {
+        automationPort: {
+          create: async () => {
+            throw new Error("not called");
+          },
+          update: async () => {
+            throw new Error("not called");
+          },
+          delete: async () => undefined,
+          pause: async () => false,
+          list: async () => [],
+        },
+        eventStore: createTestSessionEventStore(),
+        modelFactory: createTestModelFactory({
+          properties: { supportsNativeWebSearch: true },
+          async generateText(request: any) {
+            requests.push(request);
+            return {
+              finishReason: "stop",
+              providerMetadata: undefined,
+              text: "done",
+              usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+            };
+          },
+        } as never),
+      },
+    );
+
+    // Host admission 显式传入 automationId 的执行轮：只读 CronList + 本轮自暂停。
+    await runtime.executeTurn("Automation turn", undefined, {
+      automationId: "automation-1",
+      toolDisallowlist: ["CronCreate", "CronUpdate", "CronDelete"],
+    });
+    // 只有 denylist 兜底信号、没有 automationId 的轮：没有可暂停目标，必须隐藏 CronPauseSelf。
+    await runtime.executeTurn("Fallback automation turn", undefined, {
+      toolDisallowlist: ["CronCreate", "CronUpdate", "CronDelete"],
+    });
+    await runtime.executeTurn("Normal user turn");
+
+    const automationTurnTools = requests[0].tools.map((tool: any) => tool.name);
+    const fallbackTurnTools = requests[1].tools.map((tool: any) => tool.name);
+    const normalTurnTools = requests[2].tools.map((tool: any) => tool.name);
+    expect(automationTurnTools).toEqual(["CronList", "CronPauseSelf"]);
+    expect(fallbackTurnTools).toEqual(["CronList"]);
+    expect(normalTurnTools).toEqual(
+      expect.arrayContaining(["CronCreate", "CronList", "CronUpdate", "CronDelete"]),
+    );
+    expect(normalTurnTools).not.toContain("CronPauseSelf");
+  });
+
   it("hides automation mutation tools when automation queryId reaches provider", async () => {
     const requests: any[] = [];
     const runtime = createTestAgentRuntime(
@@ -225,6 +285,7 @@ describe("main agent tool pool", () => {
             throw new Error("not called");
           },
           delete: async () => undefined,
+          pause: async () => false,
           list: async () => [],
         },
         eventStore: createTestSessionEventStore(),

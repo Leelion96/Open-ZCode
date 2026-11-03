@@ -1,0 +1,16 @@
+phase unphased
+participant unphased:actor#1[0] member=0/2 steps=ask#1
+participant unphased:actor#1[1] member=1/2 steps=ask#1
+participant unphased:actor#2[0] member=0/2 steps=ask#2
+participant unphased:actor#2[1] member=1/2 steps=ask#2
+participant unphased:actor#3 "m0" steps=ask#3
+participant unphased:actor#4 "n1" steps=ask#4
+participant unphased:actor#5 "m1" steps=ask#5
+handoff unphased:actor#1[0] -> unphased:actor#2[0]
+handoff unphased:actor#1[0] -> unphased:actor#2[1]
+handoff unphased:actor#1[1] -> unphased:actor#2[0]
+handoff unphased:actor#1[1] -> unphased:actor#2[1]
+handoff unphased:actor#2[0] -> unphased:actor#3
+handoff unphased:actor#2[1] -> unphased:actor#3
+handoff unphased:actor#3 -> unphased:actor#4
+handoff unphased:actor#4 -> unphased:actor#5 types="string"

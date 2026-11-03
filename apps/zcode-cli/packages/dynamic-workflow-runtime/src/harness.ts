@@ -163,7 +163,8 @@ export interface RunWorkflowOptions {
   /**
    * 修订续跑（amend-resume）的一对入参，与其余元数据同规：**verbatim 转交 EngineConfig**，
    * harness 不读、不加工、不推断。`resumedFrom` 是落 `dwf_run.resumed_from` 的 lineage 指针，
-   * `importedCache` 是注入引擎的纯数据缓存表。
+   * 同时作为脚本可见的 `run.resumedFrom` 进 spawn payload（resume 时调用方应传 journal 里的值，
+   * 引擎命中既有行时不再落库，传它无害）；`importedCache` 是注入引擎的纯数据缓存表。
    *
    * 与 `scriptText`/`lowered` 那一对同样的分工：**两者的一致性归调用方所有**。harness 无从判断
    * 这张表是否真由那个前驱 run 构建而来（那要求它自己去读 journal，而本包连存储都不认识）。
@@ -260,6 +261,12 @@ export async function runWorkflowScript(options: RunWorkflowOptions): Promise<Ru
     lowered,
     // 实参只在启动时过界一次（run 生命周期内是常量）。
     ...(options.args === undefined ? {} : { args: options.args }),
+    // run 身份与实参同车。前驱 id 用的就是落库的那个 lineage 指针（resume 时调用方从 journal
+    // 读回再递进来），所以脚本在建 run 与续跑两世读到同一个值。
+    run: {
+      id: runId,
+      ...(options.resumedFrom === undefined ? {} : { resumedFrom: options.resumedFrom }),
+    },
     // 堆上限随 payload 进入口文件，只为 argsPrefix 路径服务：那条路上没有 Node 旗标可传，
     // 入口文件只能自己 best-effort 设。缺省路径由真旗标生效，入口文件看到旗标就跳过。
     maxOldSpaceSizeMb,

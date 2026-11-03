@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "marketing-touch-task-completion",
+  "spec": "./test/e2e/ui-shell/marketing-touch-task-completion.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/ui-shell/marketing-touch-task-completion.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "marketing-touch-task-completion-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "marketing-touch-task-completion",
+      "kind": "main",
+      "timingPolicy": "controlled-stream",
+      "source": "synthetic",
+      "syntheticReason": "延迟文本响应以观察 running 状态并在任务结束前重置轮询计时，排除定时刷新假阳性。"
+    }
+  ]
+}

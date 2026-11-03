@@ -62,7 +62,7 @@ export function Terminal({
       },
     };
   });
-  const closePanelAfterExitWorkspaceRef = useRef<string | null>(null);
+  const closePanelAfterSessionRemovalWorkspaceRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isVisible) {
@@ -82,13 +82,13 @@ export function Terminal({
   }, [cwd, isVisible, services, workspaceKey]);
 
   useEffect(() => {
-    const exitedWorkspaceKey = closePanelAfterExitWorkspaceRef.current;
-    if (!exitedWorkspaceKey) {
+    const removedWorkspaceKey = closePanelAfterSessionRemovalWorkspaceRef.current;
+    if (!removedWorkspaceKey) {
       return;
     }
 
-    closePanelAfterExitWorkspaceRef.current = null;
-    if (exitedWorkspaceKey === workspaceKey) {
+    closePanelAfterSessionRemovalWorkspaceRef.current = null;
+    if (removedWorkspaceKey === workspaceKey) {
       onClose();
     }
   }, [onClose, panelState, workspaceKey]);
@@ -187,40 +187,29 @@ export function Terminal({
     });
   }, [cwd, services, workspaceKey]);
 
-  const handleCloseSession = useCallback(
-    (sessionId: string) => {
-      const closeAction = getTerminalSessionCloseAction(panelState, sessionId);
+  const handleCloseSession = useCallback((sessionId: string) => {
+    setPanelState((current) => {
+      const session = current.sessions[sessionId];
+      const closeAction = getTerminalSessionCloseAction(current, sessionId);
+      const next = closeTerminalSession(current, sessionId);
+      if (!session || closeAction === "none" || next === current) {
+        return current;
+      }
+
+      // Bug 原因：单 tab 的关闭按钮过去只收起保活面板，没有删除 descriptor，
+      // TerminalSession 因此不会卸载，Windows PTY 也不会执行 dispose。
+      // 先删除唯一状态源中的 session，提交后再收起面板，让 TerminalSession 继续统一负责资源回收。
       if (closeAction === "close-panel") {
-        // 旧 UI 在只剩一个 tab 时直接隐藏关闭按钮，用户无法从 tab 完成关闭。
-        // 最后一个 tab 的关闭语义是收起整个面板并保活 session，与右上角关闭面板按钮保持一致。
-        logger.info("[Terminal] close terminal panel from last tab", {
-          terminalTabId: sessionId,
-          workspaceKey,
-        });
-        onClose();
-        return;
+        closePanelAfterSessionRemovalWorkspaceRef.current = session.workspaceKey;
       }
-
-      if (closeAction !== "close-session") {
-        return;
-      }
-
-      setPanelState((current) => {
-        const session = current.sessions[sessionId];
-        const next = closeTerminalSession(current, sessionId);
-        if (!session || next === current) {
-          return current;
-        }
-
-        logger.info("[Terminal] close terminal tab", {
-          terminalTabId: sessionId,
-          workspaceKey: session.workspaceKey,
-        });
-        return next;
+      logger.info("[Terminal] close terminal tab", {
+        action: closeAction,
+        terminalTabId: sessionId,
+        workspaceKey: session.workspaceKey,
       });
-    },
-    [onClose, panelState, workspaceKey],
-  );
+      return next;
+    });
+  }, []);
 
   const handleSessionExit = useCallback(
     (sessionId: string, exitCode: number) => {
@@ -240,7 +229,7 @@ export function Terminal({
           workspaceKey: exitedWorkspaceKey,
         });
         if (result.action === "close-panel") {
-          closePanelAfterExitWorkspaceRef.current = exitedWorkspaceKey ?? null;
+          closePanelAfterSessionRemovalWorkspaceRef.current = exitedWorkspaceKey ?? null;
         }
         return result.state;
       });
@@ -284,8 +273,8 @@ export function Terminal({
     null;
   const allSessions = Object.values(panelState.sessions);
 
-  // 修复说明：关闭面板只收起 UI，不 dispose tab。真正关闭某个终端由 tab 上的关闭按钮负责，
-  // 这样 workspace/task 切换或面板收起都不会中断正在运行的命令。
+  // 关闭面板只收起 UI，不 dispose tab；tab 上的关闭按钮始终删除对应 session。
+  // PTY 仍由 TerminalSession 统一持有，并在组件卸载时释放。
   return (
     <section
       data-testid={TID_TERMINAL}

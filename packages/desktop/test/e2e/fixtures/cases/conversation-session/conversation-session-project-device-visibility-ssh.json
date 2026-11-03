@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-project-device-visibility-ssh",
+  "spec": "./test/e2e/conversation-session/conversation-session-project-device-visibility-ssh.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-project-device-visibility-ssh.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "project-device-visibility-ssh-title",
+      "description": "真实 SSH 项目行设备名显示回归的标题响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "显示偏好回归只要求任务确定完成，真实 SSH、Host/CLI、历史及项目身份仍走产品链路。"
+    },
+    {
+      "id": "project-device-visibility-ssh-main",
+      "description": "真实 SSH 项目行设备名显示回归的任务首发和续发响应。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "显示偏好回归只要求任务确定完成，真实 SSH、Host/CLI、历史及项目身份仍走产品链路。"
+    }
+  ]
+}

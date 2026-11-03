@@ -1,16 +1,13 @@
 import { mkdir, readdir, readFile, rename } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import type {
-  SessionId,
-  SessionMailboxEnvelope,
-  SessionMailboxPort,
-} from "@zcode/contracts";
+import type { SessionId, SessionMailboxEnvelope, SessionMailboxPort } from "@zcode/contracts";
 
 export interface NodeSessionMailboxOptions {
   rootDir: string;
 }
 
-const SESSION_ID_PATTERN = /^sess_[A-Za-z0-9._-]+$/;
+// 兼容旧 Host 已落库的 session_，目录仍按完整原 ID 隔离，不能映射到同后缀的 sess_。
+const SESSION_ID_PATTERN = /^(?:sess|session)_[A-Za-z0-9._-]+$/;
 
 export class NodeSessionMailboxAdapter implements SessionMailboxPort {
   constructor(private readonly options: NodeSessionMailboxOptions) {}

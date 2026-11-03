@@ -15,29 +15,24 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/messages",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_SIDEBAR_STOP_STATUS_RACE"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_SIDEBAR_STOP_STATUS_RACE"]
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "sidebar-stop-status-race-title",
-          "inputTokens": 64,
-          "outputTokens": 8,
-          "text": "{\"title\":\"Sidebar Stop Race E2E\"}"
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"sidebar-stop-status-race-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"Sidebar Stop Race E2E\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":64,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":8,\"service_tier\":\"standard\"}}"
       }
     },
     {
       "id": "sidebar-stop-status-race-controlled-stream",
-      "description": "稳定制造 running spinner 与 Stop 窗口，membership 回包延迟由 renderer E2E gate 控制。",
+      "description": "稳定制造 running spinner 与 Stop 窗口；测试侧暂挂真实 project.readTree 回包。",
       "metadata": {
         "kind": "main",
         "timingPolicy": "controlled-stream",
         "source": "synthetic",
-        "syntheticReason": "TSL18 必须在 tasks-index membership refresh 在途时触发 Stop；真实 provider 可能过快完成。"
+        "syntheticReason": "TSL18 必须在项目目录读取在途时触发 Stop；用受控响应维持 running，Stop 取消流，不依赖固定延时。"
       },
       "maxMatches": 1,
       "match": {
@@ -45,10 +40,7 @@
         "pathIncludes": "/messages",
         "lastUserMessageIncludes": ["E2E_SIDEBAR_STOP_STATUS_RACE"],
         "bodyIncludes": ["E2E_SLOW_STREAM", "E2E_SIDEBAR_STOP_STATUS_RACE"],
-        "bodyExcludes": [
-          "Generate a concise title",
-          "CRITICAL: Respond with TEXT ONLY"
-        ]
+        "bodyExcludes": ["Generate a concise title", "CRITICAL: Respond with TEXT ONLY"]
       },
       "response": {
         "statusCode": 200,
@@ -57,40 +49,34 @@
           "cache-control": "no-cache",
           "content-type": "text/event-stream; charset=utf-8"
         },
-        "events": [
+        "releaseAfterChunks": 3,
+        "chunks": [
           {
-            "sequence": 0,
             "offsetMs": 0,
             "text": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"upstream-e2e-sidebar-stop-status-race\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[],\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":120,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"service_tier\":\"standard\"}}}\n\n"
           },
           {
-            "sequence": 1,
-            "offsetMs": 250,
+            "offsetMs": 0,
             "text": "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
           },
           {
-            "sequence": 2,
-            "offsetMs": 700,
+            "offsetMs": 0,
             "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"deep\"}}\n\n"
           },
           {
-            "sequence": 3,
-            "offsetMs": 60000,
+            "offsetMs": 0,
             "text": "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"seek-e2e-ok\"}}\n\n"
           },
           {
-            "sequence": 4,
-            "offsetMs": 60100,
+            "offsetMs": 0,
             "text": "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n"
           },
           {
-            "sequence": 5,
-            "offsetMs": 60200,
+            "offsetMs": 0,
             "text": "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":120,\"output_tokens\":12,\"service_tier\":\"standard\"}}\n\n"
           },
           {
-            "sequence": 6,
-            "offsetMs": 60300,
+            "offsetMs": 0,
             "text": "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
           }
         ]

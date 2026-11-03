@@ -40,6 +40,9 @@ import {
 } from "@/project-sidebar/grouped/drag.js";
 import { logger } from "@/logger.js";
 
+// 任务活动不能重建 sensor options，否则拖拽 Context 会唤醒全部未变化行。
+const pointerOptions = { activationConstraint: { distance: 6 } };
+
 /** 原 WorkspaceGroupedTasksSection 的手势生命周期；持久化替换为当前单节点命令。 */
 export function useGroupedDrag({
   authoritativeView,
@@ -65,7 +68,7 @@ export function useGroupedDrag({
   const collapsedSnapshot = useRef<Set<string> | null>(null);
   const animationFrame = useRef<number | null>(null);
   const pendingPreview = useRef<ZCodeGroupedTaskView | null>(null);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const sensors = useSensors(useSensor(PointerSensor, pointerOptions));
   const view = preview ?? authoritativeView;
   const animate = useCallback((next: ZCodeGroupedTaskView) => {
     const rects = collectGroupedTaskLayoutRects(root.current);

@@ -1,0 +1,48 @@
+node source
+node join#1 "join" @13:28 type="string[]"
+node fan-out#1 "fan-out" @13:32 type="string[]"
+node ask#1 "ask" @13:93 actors=actor#1 within=fan-out#1 type="string"
+node join#2 "join" @14:28 type="string[]"
+node fan-out#2 "fan-out" @14:32 type="string[]"
+node ask#2 "ask" @14:93 actors=actor#2 within=fan-out#2 type="string"
+node ask#3 "m0" @15:51 actors=actor#3 type="string"
+node ask#4 "n1" @18:60 actors=actor#4 type="string"
+node ask#5 "m1" @19:24 actors=actor#5 type="string"
+node sink
+actor actor#1 @13:76 within=fan-out#1
+actor actor#2 @14:76 within=fan-out#2
+actor actor#3 "m0" @15:39
+actor actor#4 "n1" @18:48
+actor actor#5 "m1" @19:12
+edge source -> fan-out#1 data exact
+edge source -> fan-out#2 data exact
+edge source -> ask#3 data exact
+edge source -> ask#4 data exact
+edge join#1 -> sink data exact type="string[]"
+edge fan-out#1 -> join#1 data exact type="string[]"
+edge fan-out#1 -> ask#1 data exact type="string[]"
+edge fan-out#1 -> sink data exact type="string[]"
+edge ask#1 -> join#1 data inexact type="string"
+edge ask#1 -> join#2 data inexact type="string"
+edge ask#1 -> ask#5 data inexact type="string"
+edge ask#1 -> sink data inexact type="string"
+edge join#2 -> sink data exact type="string[]"
+edge fan-out#2 -> join#2 data exact type="string[]"
+edge fan-out#2 -> ask#2 data exact type="string[]"
+edge fan-out#2 -> sink data exact type="string[]"
+edge ask#2 -> join#1 data inexact type="string"
+edge ask#2 -> join#2 data inexact type="string"
+edge ask#2 -> ask#5 data inexact type="string"
+edge ask#2 -> sink data inexact type="string"
+edge ask#3 -> join#1 data inexact type="string"
+edge ask#3 -> join#2 data inexact type="string"
+edge ask#3 -> ask#5 data inexact type="string"
+edge ask#3 -> sink data inexact type="string"
+edge ask#4 -> join#1 data inexact type="string"
+edge ask#4 -> join#2 data inexact type="string"
+edge ask#4 -> ask#5 data inexact type="string"
+edge ask#4 -> sink data inexact type="string"
+edge ask#5 -> join#1 data inexact type="string"
+edge ask#5 -> join#2 data inexact type="string"
+edge ask#5 -> ask#5 data inexact type="string"
+edge ask#5 -> sink data inexact type="string"

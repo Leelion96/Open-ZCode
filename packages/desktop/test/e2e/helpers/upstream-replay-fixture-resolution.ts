@@ -1,8 +1,38 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { readdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 export type UpstreamReplayFixtureMode = "compatible" | "strict-case-local";
 export type UpstreamE2EHttpMode = "capture" | "replay";
+
+export async function resolvePluginReplayFixturePaths({
+  fixtureRoot,
+  specs,
+}: {
+  fixtureRoot: string;
+  specs: readonly string[];
+}): Promise<string[]> {
+  // 原因：旧兼容入口返回目录，replay loader 按 JSON 文件读取时抛 EISDIR。
+  // 仅展开该领域的 JSON 文件；不递归加载子目录，也不改变 case-local 的优先顺序。
+  const directories = ["plugin-mcp-skill", "plugin-management"]
+    .filter((domain) => specs.some((spec) => spec.includes(`${domain}-`)))
+    .map((domain) => join(fixtureRoot, domain));
+  const files = await Promise.all(
+    directories.map(async (directory) => {
+      const entries = await readdir(directory, { withFileTypes: true }).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        },
+      );
+      return entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map((entry) => join(directory, entry.name))
+        .sort();
+    }),
+  );
+  return files.flat();
+}
 
 export function resolveUpstreamE2EHttpMode({
   explicitReplayFixture,
@@ -47,8 +77,7 @@ export function resolveUpstreamE2EHttpModeForWorker({
     specs.map((spec) => {
       const normalized = spec.replaceAll("\\", "/");
       return (
-        (normalized.includes("/manual-review/") &&
-          !caseLocalReplayFixtureAvailable) ||
+        (normalized.includes("/manual-review/") && !caseLocalReplayFixtureAvailable) ||
         normalized.endsWith("/upstream-provider.test.ts")
       );
     }),
@@ -125,10 +154,30 @@ export function resolveUpstreamReplayFixturePaths({
       .filter((caseName): caseName is string => Boolean(caseName)),
   );
   const caseFixturePaths = caseNames.map((caseName) => join(caseFixtureDir, `${caseName}.json`));
+  // 转正后不再显式指定 fixture；原解析器只识别 conversation，导致插件和 UI 用例丢失本例响应。
+  // 按已存在的领域 fixture 加载，避免把整个插件响应池带入单个用例。
+  const additionalCases = specs.flatMap((spec) => {
+    const relative = spec.replaceAll("\\", "/").split("/test/e2e/")[1];
+    if (!relative) return [];
+    const parts = relative.replace("manual-review/pending/", "").split("/");
+    const name = parts.at(-1)?.replace(/\.test\.ts$/, "");
+    const domain = parts.length === 1 ? "ui-shell" : parts[0];
+    if (!name || name.includes("*") || !domain || domain === "conversation-session") return [];
+    const fixturePath = join(
+      dirname(caseFixtureDir),
+      domain === "plugins" ? "plugin-management" : domain,
+      `${name}.json`,
+    );
+    if (!pathExists(fixturePath)) return [];
+    return [{ fixturePath, manifestPath: join(dirname(caseManifestDir), domain, `${name}.json`) }];
+  });
 
   if (mode === "strict-case-local") {
     const missingPaths = [
       ...(pathExists(commonFixturePath) ? [] : [`common fixture: ${commonFixturePath}`]),
+      ...additionalCases
+        .filter(({ manifestPath }) => !pathExists(manifestPath))
+        .map(({ manifestPath }) => `case manifest: ${manifestPath}`),
       ...caseNames.flatMap((caseName) => {
         const manifestPath = join(caseManifestDir, `${caseName}.json`);
         const fixturePath = join(caseFixtureDir, `${caseName}.json`);
@@ -150,6 +199,7 @@ export function resolveUpstreamReplayFixturePaths({
   return uniquePaths([
     ...(pathExists(commonFixturePath) ? [commonFixturePath] : []),
     ...caseFixturePaths.filter(pathExists),
+    ...additionalCases.map(({ fixturePath }) => fixturePath),
     ...(mode === "strict-case-local" ? [] : pluginFixturePaths),
     // 修复原因：formal CI 必须让缺失 matcher 直接失败，不能再由历史共享池替代 case-local fixture 假绿。
     ...(mode === "strict-case-local" ? [] : legacyFixturePaths),

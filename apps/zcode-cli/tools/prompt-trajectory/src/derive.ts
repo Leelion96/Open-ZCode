@@ -46,7 +46,6 @@ export async function deriveTrajectoriesFromJsonlFile(
 
 export async function writeDerivedTrajectories(
   input: TrajectoryDerivationOptions & {
-    ccRequestPath?: string;
     inputPath: string;
     outDir: string;
   },
@@ -73,16 +72,6 @@ export async function writeDerivedTrajectories(
     `${JSON.stringify(result.manifest, null, 2)}\n`,
     "utf8",
   );
-
-  if (input.ccRequestPath) {
-    const rawDir = join(input.outDir, "raw");
-    await mkdir(rawDir, { recursive: true });
-    const raw = await readFile(input.ccRequestPath, "utf8");
-    await writeFile(
-      join(rawDir, "cc-request-body.raw.json"),
-      raw.endsWith("\n") ? raw : `${raw}\n`,
-    );
-  }
 
   return result;
 }

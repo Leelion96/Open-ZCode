@@ -56,8 +56,9 @@ task 正在 streaming、没有附件且没有 stop 请求时尝试 turn steering
 product turn 的用户意图，不阻塞显式 guide 进入当前 active turn；两类输入按 delivery 分轨，普通
 queue 的相对顺序保持不变。
 guide 可以在 tool call 出现前提交并等待；只有当前 model step 的全部
-sibling tool results 已提交后，runtime 才最多消费一条 guide，并在同一 product turn 的下一次
-provider 请求中使用它。不能在单个 parallel tool 提前完成时消费，也不能一次消费多条 guide。
+sibling tool results 已提交后，runtime 才按 admission FIFO 一次消费全部已等待的 guide，并在同一
+product turn 的下一次 provider 请求中使用它们。不能在单个 parallel tool 提前完成时消费；同一边界取出
+多条时，最后一条带意图的 guide 决定 Selection、权限模式与 Plan 意图。
 
 guide 在等待合法 model-step 边界期间仍由 CLI `pendingInputs` / `TurnSteerQueued` 持久承载，
 但 renderer 不把 `admittedDelivery=guide` 展示成普通 future queue。它应立即在当前对话流末尾
@@ -126,8 +127,8 @@ queue 模式的 `startNow` 必须在 CLI 内原子取得 foreground promotion le
 guide admitted
   -> wait for next tool result batch
   -> commit every sibling ToolCallResult
-  -> drain exactly one guide inline
-  -> persist guided user fact
+  -> drain waiting guides inline (rule: turn-steering.md「Drain 边界」)
+  -> persist one guided user fact per guide
   -> start the next provider request in the same product turn
 ```
 

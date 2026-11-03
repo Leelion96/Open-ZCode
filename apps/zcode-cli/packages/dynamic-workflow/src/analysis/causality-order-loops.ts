@@ -3,6 +3,7 @@ import {
   innermost,
   issuesSince,
   locOf,
+  noteSiteVisit,
   openRegion,
   type TraceState,
 } from "./causality-order-state.js";
@@ -52,6 +53,13 @@ export function walkLoop(state: TraceState, node: ts.Node, chain: readonly strin
       entered: false,
       loc: locOf(state, node),
     });
+    // A `for...of` is an iteration candidate: its loop region stands for the fan-out it may
+    // promote to, and the statement is the site whose own `within` is noted here.
+    const cand = state.candByForOf.get(node);
+    if (cand !== undefined) {
+      state.candidateByRegion.set(id, cand.order);
+      noteSiteVisit(state, node, chain);
+    }
     const inside = [...chain, id];
     // `for await (… of …)` awaits every element, so each iteration opens with a
     // barrier over whatever the iterated expression issued — plus, from the oracle,

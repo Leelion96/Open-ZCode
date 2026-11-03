@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-model-config",
+  "spec": "./test/e2e/conversation-session/conversation-session-model-config.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-model-config.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "title-e2e_model_config_",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    },
+    {
+      "id": "upstream-model-config-auto-drain-running",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    },
+    {
+      "id": "reply-e2e_model_config_",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定上游完成标记与动作窗口；模型选择、思考档位、队列、Edit/Fork 和真实 Read 工具仍由应用执行并通过请求抓包校验。"
+    }
+  ]
+}

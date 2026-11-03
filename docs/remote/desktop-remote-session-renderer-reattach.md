@@ -25,6 +25,8 @@ Source 换代 → Registry 更换 session/generation → Main 换 route → 重�
 - 重挂更换端口与 attachment，不销毁共享 Window Host、物理 Source 或远端任务。
 - remote port 早于 base ServicePort 时先暂存，base ready 后 flush，不能丢弃端口。
 - 相同 workspace 的并发 connect 可返回同一 sessionId；Main join 既有 route/attachment，不覆盖健康 route。
+- route 的首连阶段（首次 Provisioning 未完成、首个 renderer attachment 尚未投递）也可被 join：
+  join 等待同一个首连结果，与发起者同成功、同失败；不得因“尚无 attachment”立即拒绝。
 - 迟到的 ready、port 或旧 timer 不能回收新 generation；失败精确释放本次 attachment。
 - Desktop 继续 continuous；手机继续共享已有 Host 的 replayable attachment，Main/relay 不持有业务 snapshot。
 
@@ -81,6 +83,7 @@ flight 获准后，failed open entry 只作为该 flight 的恢复成员。
 | DRS-RR-04/06/07 | 手机边界不变；不合格启动候选保持断连；主动断开不触发自恢复。                                                              |
 | DRS-RR-09       | 获准 Source flight 跳过已 live 成员并继续 siblings；当前 UI 只恢复项目。                                                  |
 | DRS-RR-10       | 重复 connect 的 route/attachment join；原 conversation 场景为 unit + real SSH pending。旧 UI 场景不作为当前导航通过证据。 |
+| DRS-RR-11       | 首连 Provisioning 期间的 join 等待同一首连结果、共享成败；unit + 本机 Docker 真实 SSH E2E covered（RPN-18 用例）。        |
 
 启动的 10 秒预算只属于 Host physical flight；超时先结算稳定错误，再 abort 并精确取消 transport。
 Renderer 不能抢先调用 connectProfile 扩大同一恢复 flight，迟到握手不得注册 online。

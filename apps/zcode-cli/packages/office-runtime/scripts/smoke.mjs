@@ -13,7 +13,7 @@ import { readPluginName } from "./plugin-name.mjs";
 const here = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const root = resolve(process.argv[2] ?? process.cwd());
 const name = await readPluginName(root);
-const { kinds } = JSON.parse(await readFile(join(root, "package.json"), "utf8")).office;
+const { kinds, title } = JSON.parse(await readFile(join(root, "package.json"), "utf8")).office;
 const has = (...wanted) => wanted.every((kind) => kinds.includes(kind));
 const ui = (path) => `ui://${name}/${path}`;
 const workspace = await mkdtemp(join(tmpdir(), `${name}-smoke-`));
@@ -77,6 +77,18 @@ try {
       has(kind),
       `open_document mentions .${kind}`,
     );
+  // read / search 服务面板中的讨论：描述点名本插件的面板与生产技能，并要求先打开文档。
+  for (const toolName of ["read_document", "search_document"]) {
+    const { description } = tools.find((tool) => tool.name === toolName);
+    assert.ok(description.includes(`${title.en} panel`), `${toolName} names the ${title.en} panel`);
+    assert.ok(description.includes("open_document first"), `${toolName} asks to open first`);
+    for (const kind of ["docx", "xlsx", "pptx", "pdf"])
+      assert.equal(
+        description.includes(`\`${kind}\``),
+        has(kind),
+        `${toolName} names the ${kind} skill`,
+      );
+  }
 
   // Panel resource and assets.
   const panel = await client.readResource({ uri: ui("panel.html") });
@@ -281,6 +293,20 @@ try {
     (await ok("check_document", { path: sample })).structuredContent.revision,
     loaded.info.revision,
   );
+
+  // One server serves every session of a workspace: the host names the session in _meta.
+  const inSession = (session, name, args = {}) =>
+    client.callTool({ name, arguments: args, _meta: { session_id: session } });
+  await inSession("s1", "open_document", { path: sample });
+  await inSession("s1", "report_view", { viewId: "w1", path: sample, at: selection.at, selection });
+  assert.equal((await inSession("s2", "get_viewer")).structuredContent.document, null);
+  assert.match(text(await inSession("s2", "get_view")), /no document open/);
+  assert.ok(text(await inSession("s1", "get_view")).includes(selection.text));
+  const other = (await inSession("s2", "load_document", { path: sample })).structuredContent;
+  const first = (await inSession("s1", "load_document", { path: sample })).structuredContent;
+  for (let i = 0; i < 6; i++) await inSession("s2", "load_document", { path: sample });
+  await assert.rejects(client.readResource({ uri: ui(`file/${other.file.token}/0`) }));
+  await client.readResource({ uri: ui(`file/${first.file.token}/0`) });
   process.stdout.write(`${name} smoke (${kinds.join(", ")}): ok\n`);
 } finally {
   await client.close();

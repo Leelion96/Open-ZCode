@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-unavailable-project-draft",
+  "spec": "./test/e2e/conversation-session/conversation-session-unavailable-project-draft.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-unavailable-project-draft.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

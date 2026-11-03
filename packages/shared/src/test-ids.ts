@@ -29,6 +29,8 @@ export const TID_LOGIN_API_KEY_ERROR = "login-api-key-error";
 export const TID_OAUTH_LOGIN_BUTTON = "oauth-login-button";
 /** OAuth 弹窗取消按钮 */
 export const TID_OAUTH_CANCEL = "oauth-cancel";
+/** OAuth 等待态复制登录链接按钮 */
+export const TID_OAUTH_COPY_LOGIN_LINK = "oauth-copy-login-link";
 /** OAuth 错误提示文本 */
 export const TID_OAUTH_ERROR = "oauth-error";
 
@@ -377,6 +379,14 @@ export const TID_SETTINGS_PAGE = "settings-page";
 export const TID_SETTINGS_BACK_BUTTON = "settings-back-button";
 /** 设置页左侧分区入口（动态后缀为 section id） */
 export const TID_SETTINGS_SECTION_NAV = "settings-section-nav";
+/** 个性化（用户自定义指令）编辑器 */
+export const TID_SETTINGS_PERSONALIZATION_EDITOR = "settings-personalization-editor";
+/** 个性化保存按钮 */
+export const TID_SETTINGS_PERSONALIZATION_SAVE = "settings-personalization-save";
+/** 个性化取消按钮 */
+export const TID_SETTINGS_PERSONALIZATION_CANCEL = "settings-personalization-cancel";
+/** 个性化内容超限提示 */
+export const TID_SETTINGS_PERSONALIZATION_SIZE_HINT = "settings-personalization-size-hint";
 /** 常规设置中的增强 Find/Grep 开关 */
 export const TID_SETTINGS_TOOL_SEARCH_SELECT = "settings-tool-search-select";
 export const TID_SETTINGS_TOOL_SEARCH_OPTION = "settings-tool-search-option";
@@ -573,12 +583,21 @@ export const TID_V4_SESSION_PANE = "v4-session-pane";
 export const TID_V4_TIMELINE = "v4-timeline";
 /** v4 投影行（动态后缀为 rowId） */
 export const TID_V4_ROW = "v4-row";
-/** v4 工作区 Hook 待审核提示条容器 */
-export const TID_V4_WORKSPACE_HOOK_PENDING_BANNER = "v4-workspace-hook-pending-banner";
-/** v4 工作区 Hook 待审核提示条「去审核」按钮 */
+/** v4 composer 工作区 Hook 待审核入口与未读点 */
+export const TID_V4_WORKSPACE_HOOK_PENDING_TRIGGER = "v4-workspace-hook-pending-trigger";
+export const TID_V4_WORKSPACE_HOOK_PENDING_UNREAD = "v4-workspace-hook-pending-unread";
+/** v4 工作区 Hook 待审核点击浮层 */
+export const TID_V4_WORKSPACE_HOOK_PENDING_POPOVER = "v4-workspace-hook-pending-popover";
+/** v4 工作区 Hook 待审核浮层「去审核」按钮 */
 export const TID_V4_WORKSPACE_HOOK_PENDING_REVIEW = "v4-workspace-hook-pending-review";
-/** v4 工作区 Hook 待审核提示条「忽略」按钮 */
+/** v4 工作区 Hook 待审核浮层「忽略」按钮 */
 export const TID_V4_WORKSPACE_HOOK_PENDING_DISMISS = "v4-workspace-hook-pending-dismiss";
+/** v4 composer 工作区 MCP 待审核入口、未读点与点击浮层 */
+export const TID_V4_WORKSPACE_MCP_PENDING_TRIGGER = "v4-workspace-mcp-pending-trigger";
+export const TID_V4_WORKSPACE_MCP_PENDING_UNREAD = "v4-workspace-mcp-pending-unread";
+export const TID_V4_WORKSPACE_MCP_PENDING_POPOVER = "v4-workspace-mcp-pending-popover";
+export const TID_V4_WORKSPACE_MCP_PENDING_REVIEW = "v4-workspace-mcp-pending-review";
+export const TID_V4_WORKSPACE_MCP_PENDING_DISMISS = "v4-workspace-mcp-pending-dismiss";
 /** v4 composer 容器 */
 export const TID_V4_COMPOSER = "v4-composer";
 /** v4 composer 文本输入 */

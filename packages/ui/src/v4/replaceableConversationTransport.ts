@@ -1,3 +1,4 @@
+import type { SessionLifecycleSnapshot } from "@zcode/shared";
 import { logger } from "@/logger.js";
 import type { ConversationTransport } from "@/v4/transport.js";
 
@@ -34,7 +35,44 @@ export class ReplaceableConversationTransport implements ConversationTransport {
   private readonly assemblyFaultListeners = new Set<AssemblyFaultListener>();
   private readonly runtimeRestartListeners = new Set<RuntimeRestartListener>();
   private readonly runtimeLifecycleListeners = new Set<RuntimeLifecycleListener>();
-  private readonly transportBySubscriptionId = new Map<string, ConversationTransport>();
+  private readonly transportBySubscriptionId = new Map<
+    string,
+    { owner: ConversationTransport; topic: string }
+  >();
+  private readonly sessionLifecycleListeners = new Set<
+    (snapshot: SessionLifecycleSnapshot) => void
+  >();
+  private offSessionLifecycle: (() => void) | null = null;
+  getSessionLifecycle(sessionId: string): Promise<SessionLifecycleSnapshot | null> {
+    if (!this.current.getSessionLifecycle) return Promise.resolve(null);
+    return this.current.getSessionLifecycle(sessionId);
+  }
+  onSessionLifecycle(listener: (snapshot: SessionLifecycleSnapshot) => void): () => void {
+    this.sessionLifecycleListeners.add(listener);
+    this.bindSessionLifecycleListener();
+    return () => {
+      this.sessionLifecycleListeners.delete(listener);
+      if (this.sessionLifecycleListeners.size === 0) {
+        this.offSessionLifecycle?.();
+        this.offSessionLifecycle = null;
+      }
+    };
+  }
+  private bindSessionLifecycleListener(): void {
+    if (this.offSessionLifecycle || this.sessionLifecycleListeners.size === 0) return;
+    this.offSessionLifecycle =
+      this.current.onSessionLifecycle?.((snapshot) => {
+        if (snapshot.state === "stopping") {
+          // 单任务重启已经废弃旧 publisher；Store 会丢弃旧订阅，代理也必须释放对应引用。
+          for (const [subscriptionId, subscription] of this.transportBySubscriptionId) {
+            if (subscription.topic === `conversation/${snapshot.sessionId}`) {
+              this.transportBySubscriptionId.delete(subscriptionId);
+            }
+          }
+        }
+        for (const listener of this.sessionLifecycleListeners) listener(snapshot);
+      }) ?? null;
+  }
   private offFrame: (() => void) | null = null;
   private offAssemblyFault: (() => void) | null = null;
   private offRuntimeRestart: (() => void) | null = null;
@@ -70,7 +108,7 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     this.detachCurrentListeners();
     // 旧 proxy 上的 active subscription 必须先释放，但断线 RPC 可能永久
     // pending；cleanup 只做 best-effort，不能阻塞新 proxy 的重订阅接管。
-    for (const [subscriptionId, owner] of this.transportBySubscriptionId) {
+    for (const [subscriptionId, { owner }] of this.transportBySubscriptionId) {
       if (owner !== previous) continue;
       this.transportBySubscriptionId.delete(subscriptionId);
       void unsubscribeIgnoringFailure(previous, subscriptionId);
@@ -93,24 +131,26 @@ export class ReplaceableConversationTransport implements ConversationTransport {
       void unsubscribeIgnoringFailure(owner, result.ack.subscriptionId);
       throw new Error("fault.subscription.transportReplaced");
     }
-    this.transportBySubscriptionId.set(result.ack.subscriptionId, owner);
+    this.transportBySubscriptionId.set(result.ack.subscriptionId, { owner, topic: params.topic });
     return result;
   }
 
   activate(subscriptionId: string): void {
-    (this.transportBySubscriptionId.get(subscriptionId) ?? this.current).activate(subscriptionId);
+    (this.transportBySubscriptionId.get(subscriptionId)?.owner ?? this.current).activate(
+      subscriptionId,
+    );
   }
 
   resync(
     params: Parameters<ConversationTransport["resync"]>[0],
   ): ReturnType<ConversationTransport["resync"]> {
-    return (this.transportBySubscriptionId.get(params.subscriptionId) ?? this.current).resync(
-      params,
-    );
+    return (
+      this.transportBySubscriptionId.get(params.subscriptionId)?.owner ?? this.current
+    ).resync(params);
   }
 
   unsubscribe(subscriptionId: string): ReturnType<ConversationTransport["unsubscribe"]> {
-    const owner = this.transportBySubscriptionId.get(subscriptionId) ?? this.current;
+    const owner = this.transportBySubscriptionId.get(subscriptionId)?.owner ?? this.current;
     this.transportBySubscriptionId.delete(subscriptionId);
     return owner.unsubscribe(subscriptionId);
   }
@@ -258,6 +298,7 @@ export class ReplaceableConversationTransport implements ConversationTransport {
   }
 
   private bindCurrentListeners(): void {
+    this.bindSessionLifecycleListener();
     this.bindFrameListener();
     this.bindAssemblyFaultListener();
     this.bindRuntimeRestartListener();
@@ -283,7 +324,7 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     const owner = this.current;
     this.offRuntimeRestart = owner.onRuntimeRestart(() => {
       for (const [subscriptionId, subscriptionOwner] of this.transportBySubscriptionId) {
-        if (subscriptionOwner === owner) {
+        if (subscriptionOwner.owner === owner) {
           this.transportBySubscriptionId.delete(subscriptionId);
         }
       }
@@ -300,6 +341,8 @@ export class ReplaceableConversationTransport implements ConversationTransport {
   }
 
   private detachCurrentListeners(): void {
+    this.offSessionLifecycle?.();
+    this.offSessionLifecycle = null;
     this.offFrame?.();
     this.offFrame = null;
     this.offAssemblyFault?.();

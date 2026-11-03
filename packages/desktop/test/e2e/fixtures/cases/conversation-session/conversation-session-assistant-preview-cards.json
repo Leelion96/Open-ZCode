@@ -20,7 +20,7 @@
     {
       "path": "assistant-preview-e2e/office/*.{docx,xlsx,pptx,pdf}",
       "source": "created-by-spec",
-      "description": "spec 从 case-local 最小有效二进制 fixture 复制到 workspace，验证真实 Host stat 过滤与 Desktop 完成态 PPTX 自动打开 renderer。"
+      "description": "spec 从 case-local 最小有效二进制 fixture 复制到 workspace，验证真实 Host stat 过滤与 Desktop 完成态 PPTX 自动打开 renderer；APC14 在隔离主进程以合成 0/1/3/10 个关联应用验证菜单与选择 IPC，不执行外部应用。"
     },
     {
       "path": "assistant-preview-e2e/media/*.{mp4,wav}",

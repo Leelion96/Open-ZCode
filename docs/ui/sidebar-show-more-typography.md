@@ -6,6 +6,8 @@
 
 ## 验收
 
+隔离索引夹具在 Host 停止后写入完整任务元数据，并在重启后验证项目内的任务数；不使用运行中写库加 Renderer 刷新来假设 Host 已重新加载历史。
+
 `VP-MORE-01`（accepted/pending）：隔离 HOME 的真实 Electron renderer 准备 6 条任务及空项目，比较入口、任务标题与“暂无任务”的 computed font-size，比较入口与空态的默认颜色；明暗主题、1200/390px、14/18px 界面字号均保持一致。真实鼠标 hover、键盘 focus-visible 有提亮反馈，点击从 5 条展开到 6 条并隐藏入口。保存截图和样式采样，不请求 provider；窄屏模拟不代表手机 shared-host 或 Windows/Linux 实机验证。
 
 ## 验证结果

@@ -1,6 +1,7 @@
+import { setRendererViewport } from "#e2e/helpers/renderer-viewport";
 import { startProjectPointerDrag } from "#e2e/helpers/project-sidebar";
 import { openWorkspaceDraftFromSidebar } from "#e2e/helpers/workspace-agent-warmup";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   TID_TASK_SETTINGS_BUTTON,
@@ -74,8 +75,8 @@ async function activate(selector: string, label?: string) {
   await browser.keys("Enter");
 }
 
-async function assertLogTimestampContrast() {
-  const ratios = await browser.execute(() => {
+async function assertLogTimestampContrast(captureName: string) {
+  const measurements = await browser.execute(() => {
     const context = document.createElement("canvas").getContext("2d")!;
     const color = (css: string) => {
       context.clearRect(0, 0, 1, 1);
@@ -93,21 +94,45 @@ async function assertLogTimestampContrast() {
       .filter((element) => element.getClientRects().length > 0)
       .map((element) => {
         const foreground = color(getComputedStyle(element).color);
-        const background = color(
-          getComputedStyle(element.closest("[data-source-server-log]")!).backgroundColor,
+        // 日志的 surface 可以半透明；必须叠加真实祖先背景，不能假设日志节点本身不透明。
+        const layers: Array<{ node: string; css: string; rgba: number[] }> = [];
+        for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+          const style = getComputedStyle(node);
+          if (Number(style.opacity) !== 1 || style.backgroundImage !== "none") {
+            throw new Error("Contrast probe requires solid backgrounds and element opacity 1");
+          }
+          const rgba = color(style.backgroundColor);
+          layers.push({ node: node.tagName, css: style.backgroundColor, rgba });
+          if (rgba[3] === 255) break;
+        }
+        if (layers.at(-1)?.rgba[3] !== 255) throw new Error("No opaque ancestor background");
+        const background = layers.toReversed().reduce(
+          (base, layer) => {
+            const alpha = layer.rgba[3]! / 255;
+            return base.map((channel, index) => layer.rgba[index]! * alpha + channel * (1 - alpha));
+          },
+          [0, 0, 0],
         );
-        if (background[3] !== 255) throw new Error("Expected opaque log background");
         const alpha = foreground[3]! / 255;
         const text = foreground.map(
           (value, index) => value * alpha + background[index]! * (1 - alpha),
         );
         const a = luminance(text);
         const b = luminance(background);
-        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+        return {
+          foreground,
+          background,
+          layers,
+          ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
+        };
       });
   });
-  expect(ratios.length).toBeGreaterThan(0);
-  for (const ratio of ratios) expect(ratio).toBeGreaterThanOrEqual(4.5);
+  await writeFile(
+    resolve(artifact, `contrast-${captureName}.json`),
+    JSON.stringify(measurements, null, 2),
+  );
+  expect(measurements.length).toBeGreaterThan(0);
+  for (const { ratio } of measurements) expect(ratio).toBeGreaterThanOrEqual(4.5);
 }
 
 async function capture(state: string) {
@@ -131,16 +156,8 @@ async function capture(state: string) {
         theme,
       );
       for (const width of [1400, 900]) {
-        // Electron 不提供 WebDriver 的 Browser.getWindowForTarget；使用原生 resize 并返回实际尺寸取证。
-        const bounds = await browser.electron.execute((electron, size) => {
-          const main = electron.BrowserWindow.getAllWindows().find(
-            (window) => !window.isDestroyed() && window.isVisible(),
-          );
-          if (!main) throw new Error("视觉采样没有可见 Electron 主窗口");
-          main.setSize(size, 1000);
-          return { windowId: main.id, size: main.getSize() };
-        }, width);
-        expect(bounds.size).toEqual([width, 1000]);
+        // macOS 限制原生窗口高度；响应式覆盖使用真实 renderer viewport。
+        await setRendererViewport(width, 1000);
         await browser.executeAsync((done) =>
           requestAnimationFrame(() => requestAnimationFrame(() => done())),
         );
@@ -151,7 +168,7 @@ async function capture(state: string) {
             : null;
         });
         expect(sidebarWidth).toBe("264px");
-        if (state === "settings") await assertLogTimestampContrast();
+        if (state === "settings") await assertLogTimestampContrast(`${locale}-${theme}-${width}`);
         await browser.saveScreenshot(resolve(artifact, `${state}-${locale}-${theme}-${width}.png`));
       }
     }
@@ -331,6 +348,7 @@ describe(`${marker}: 远程键盘与视觉矩阵`, () => {
     ).toBe(config.workspacePaths[0]);
     await capture("project-editor");
     await browser.keys("Escape");
+    // Escape 关闭失败即终止此路径；不能用取消按钮替代被测键盘行为。
     await projectEditor.waitForDisplayed({ reverse: true });
     await activate(`${row} button[aria-label="更多"]`);
     await $('[role="menu"]').waitForDisplayed();
@@ -382,6 +400,13 @@ describe(`${marker}: 远程键盘与视觉矩阵`, () => {
     );
     await browser.keys("Enter");
     await $("[data-source-server-card]").waitForDisplayed();
+    // RDUX-13：键盘展开设备行，详情（日志等）在展开区。
+    await activate("[data-source-server-card] [data-source-server-toggle]");
+    expect(
+      await $("[data-source-server-card] [data-source-server-toggle]").getAttribute(
+        "aria-expanded",
+      ),
+    ).toBe("true");
     await activate("[data-source-server-card] button", "更多");
     await $("[data-device-info]").waitForDisplayed();
     await browser.keys("Escape");
@@ -389,7 +414,17 @@ describe(`${marker}: 远程键盘与视觉矩阵`, () => {
     await activate("[data-source-server-card] [data-source-server-log-toggle]");
     await $("[data-source-server-log-timestamp]").waitForDisplayed();
     await capture("settings");
-    await activate("[data-source-server-card] button", "断开");
+    // 断开在「更多」菜单：键盘打开后焦点在首项「编辑」，下移到「断开」再确认。
+    await activate("[data-source-server-card] button", "更多");
+    await browser.keys("ArrowDown");
+    expect(
+      await browser.execute(
+        () =>
+          document.activeElement?.matches('[role="menuitem"]') &&
+          document.activeElement.textContent?.trim().startsWith("断开"),
+      ),
+    ).toBe(true);
+    await browser.keys("Enter");
     await $(
       '[data-source-server-card] [role="status"][data-remote-connection-status="offline"]',
     ).waitForDisplayed();

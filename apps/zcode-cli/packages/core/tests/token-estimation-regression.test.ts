@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ESTIMATED_TOKEN_CHAR_DIVISOR } from "@zcode/shared";
 import { estimateMessageTokens, shouldAutoCompact } from "../src/compact/index.js";
 import { estimateTokens } from "../src/context/utils.js";
-import { buildPostCompactReadStateReminderEntries } from "../src/runtime/helpers/compact-post-reminders.js";
-import { createReadFileStateKey } from "../src/tool/read-file-state.js";
+import { buildPostCompactFileRestore } from "../src/runtime/helpers/compact-post-reminders.js";
+import { createReadFileStatePathKey } from "../src/tool/read-file-state.js";
 import type { ReadFileStateMap } from "../src/tool/types.js";
 
 describe("token estimation regression", () => {
@@ -105,23 +105,35 @@ describe("token estimation regression", () => {
     });
   });
 
-  it("uses the shared divisor when deciding whether to inline post-compact read content", () => {
+  it("uses the shared divisor when deciding whether to inline post-compact read content", async () => {
     const filePath = "/tmp/zcode-compact-three-char-divisor.txt";
     const content = "x".repeat(31);
     const readFileState: ReadFileStateMap = new Map();
-    readFileState.set(createReadFileStateKey(filePath, 1, undefined), {
+    readFileState.set(createReadFileStatePathKey(filePath), {
       content,
       isPartialView: false,
       path: filePath,
       readAt: new Date(5_000),
+      sourceTool: "Read",
     });
 
-    const reminderText = JSON.stringify(
-      buildPostCompactReadStateReminderEntries({
-        maxFileApproxTokens: 10,
-        readFileState,
-      }),
-    );
+    const restore = await buildPostCompactFileRestore({
+      maxFileTokens: 10,
+      readFiles: async () => [
+        {
+          output: { content, filePath, numLines: 1, startLine: 1, totalLines: 1, type: "text" },
+          readFileStateEntry: {
+            content,
+            isPartialView: false,
+            path: filePath,
+            readAt: new Date(6_000),
+          },
+          type: "text",
+        },
+      ],
+      readFileState,
+    });
+    const reminderText = JSON.stringify(restore.entries);
 
     expect(reminderText).toContain(`Note: ${filePath} was read before`);
     expect(reminderText).not.toContain(content);

@@ -162,7 +162,7 @@ export function RowsFixture({ config, ready }: { config: any; ready: () => void 
                 <button id="close-sidebar" onClick={() => setTab(null)}>
                   Close sidebar
                 </button>
-                <PluginUiSidePane tab={tab} onCloseTab={() => setTab(null)} />
+                <PluginUiSidePane tab={tab} visible onCloseTab={() => setTab(null)} />
               </div>
             )}
           </PluginUiSessionProvider>

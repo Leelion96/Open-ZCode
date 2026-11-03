@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { IZCodeTaskService, ZCodeTaskListQuery, ZCodeTaskListResult } from "@zcode/services";
+import type {
+  IZCodeTaskService,
+  ZCodeTaskListQuery,
+  ZCodeTaskListResult,
+  ZCodeTaskListWorkspaceScope,
+} from "@zcode/services";
 import { logger } from "@/logger.js";
 import { useWorkspaceSessionsIndexItems } from "@/v4/useWorkspaceSessionsIndexItems.js";
 import { stabilizeTaskListItems } from "@/v4/taskListItemStabilization.js";
@@ -13,19 +18,41 @@ import {
 } from "@/lib/standaloneTaskList.js";
 
 const emptyResult: ZCodeTaskListResult = { items: [], total: 0, hasMore: false };
-const emptyScopes: ZCodeTaskListQuery["workspaceScopes"] = [];
+const emptyScopes: ZCodeTaskListWorkspaceScope[] = [];
 
 export function useStandaloneTaskList(
   service: IZCodeTaskService,
   query: ZCodeTaskListQuery | null,
   sourceVersion: string,
 ) {
-  // Controller 存在时传入 null，不启动独立 Web 的查询和订阅。
-  const scopes = query?.workspaceScopes ?? emptyScopes;
+  const [result, setResult] = useState(emptyResult);
+  // 修复原因：上游新增 host 查询，不能再对它执行数组方法。持久查询交给 Host，
+  // 实时订阅只从已返回任务派生明确目录，不为搜索扫描或拉起历史 Agent。
+  const scopeSignature =
+    query?.workspaceScopes === "host"
+      ? JSON.stringify(
+          Array.from(
+            new Map(
+              result.items.map((item) => [
+                item.workspaceIdentity?.trim() || item.workspacePath,
+                { workspacePath: item.workspacePath, workspaceIdentity: item.workspaceIdentity },
+              ]),
+            ).values(),
+          ),
+        )
+      : null;
+  const scopes = useMemo<ZCodeTaskListWorkspaceScope[]>(
+    () =>
+      !query
+        ? emptyScopes
+        : query.workspaceScopes === "host"
+          ? (JSON.parse(scopeSignature ?? "[]") as ZCodeTaskListWorkspaceScope[])
+          : query.workspaceScopes,
+    [query, scopeSignature],
+  );
   const { items: sessionItems } = useWorkspaceSessionsIndexItems(scopes);
   const membershipVersion = useTaskListMembershipVersion();
-  const [result, setResult] = useState(emptyResult);
-  const [loading, setLoading] = useState(scopes.length > 0);
+  const [loading, setLoading] = useState(Boolean(query));
   const requestSerialRef = useRef(0);
 
   useEffect(() => {
@@ -34,7 +61,15 @@ export function useStandaloneTaskList(
       service.onDynamicWorkspaceEvent(scope)((event) => {
         if (
           event.type === "workspace_task_list_changed" &&
-          ["task_archived", "task_unarchived", "task_pinned", "task_unpinned", "task_created", "task_meta_changed", "task_deleted"].includes(event.reason)
+          [
+            "task_archived",
+            "task_unarchived",
+            "task_pinned",
+            "task_unpinned",
+            "task_created",
+            "task_meta_changed",
+            "task_deleted",
+          ].includes(event.reason)
         ) {
           bumpTaskListMembershipVersionForWorkspaceEvent(event);
         }
@@ -47,7 +82,7 @@ export function useStandaloneTaskList(
 
   const refresh = useCallback(async () => {
     const requestSerial = ++requestSerialRef.current;
-    if (!query || scopes.length === 0) {
+    if (!query || (query.workspaceScopes !== "host" && query.workspaceScopes.length === 0)) {
       setResult(emptyResult);
       setLoading(false);
       return;
@@ -68,7 +103,7 @@ export function useStandaloneTaskList(
     } finally {
       if (requestSerialRef.current === requestSerial) setLoading(false);
     }
-  }, [service, query, scopes]);
+  }, [service, query]);
 
   useEffect(() => {
     void refresh();

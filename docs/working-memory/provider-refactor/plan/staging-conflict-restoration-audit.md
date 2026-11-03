@@ -287,7 +287,7 @@ Team 没有具体组织/项目身份时不得任选团队猜权益，保持未�
 | `docs/runtime-tools/mcp-status-list-control-plane.md`                                                     | R03         |
 | `docs/testing/plugin-management-lifecycle-e2e-coverage-matrix.md`                                         | R03         |
 | `packages/desktop/src/main/desktopStabilityTelemetry.ts`                                                  | R03         |
-| `packages/desktop/test/e2e/plugins/manual-review/pending/plugin-management-installed-menu-layout.test.ts` | R03         |
+| `packages/desktop/test/e2e/plugins/plugin-management-installed-menu-layout.test.ts` | R03         |
 | `packages/services/src/process/runtimeProcessLifecycle.ts`                                                | R03         |
 | `packages/services/src/zcode-agent/zcodeAgentProcessManager.ts`                                           | R03         |
 | `packages/services/src/zcode-agent/zcodeAgentService.ts`                                                  | R03         |

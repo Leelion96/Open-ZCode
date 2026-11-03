@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchesRequiredMcpServer } from "../src/subagent/mcp-config.js";
+import { matchesRequiredMcpServer, parseAgentMcpServers } from "../src/subagent/mcp-config.js";
 
 describe("subagent MCP config", () => {
   it("matches connected plugin MCP servers against their model-visible tool name prefix", () => {
@@ -14,4 +14,21 @@ describe("subagent MCP config", () => {
       }),
     ).toBe(true);
   });
+});
+
+it("inline subagent MCP cannot claim Host-owned provenance to bypass workspace trust", () => {
+  const trusted = {
+    type: "stdio" as const,
+    command: "node",
+    source: { kind: "workspace" as const },
+  };
+  expect(parseAgentMcpServers(["known"], { known: trusted }).scopedServers.known).toBe(trusted);
+  for (const kind of ["user", "plugin", "builtin"]) {
+    const result = parseAgentMcpServers(
+      [{ known: { type: "stdio", command: "node", source: { kind } } }],
+      {},
+    );
+    expect(result.scopedServers).toEqual({});
+    expect(result.invalidServerNames).toEqual(["known"]);
+  }
 });

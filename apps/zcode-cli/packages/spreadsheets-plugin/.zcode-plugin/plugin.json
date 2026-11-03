@@ -1,6 +1,6 @@
 {
   "name": "spreadsheets",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "XLSX spreadsheet production skills and an Excel viewer panel, published as an official ZCode plugin.",
   "description_i18n": {
     "en": "Spreadsheet skills for XLSX: create, edit, analyze, chart, and convert workbooks. View workbooks in a side panel: reference cells in chat, and the agent can read, search, point at and capture them.",
@@ -20,7 +20,8 @@
       "cwd": "${ZCODE_PROJECT_DIR}",
       "env": {
         "ZCODE_WORKSPACE_ROOT": "${ZCODE_PROJECT_DIR}"
-      }
+      },
+      "isolation": "workspace"
     }
   },
   "ui": {

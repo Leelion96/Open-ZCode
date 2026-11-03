@@ -15,7 +15,11 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
-import type { BrowserViewScreenshotSurfacePreparePayload, GitChangeSourceId } from "@zcode/shared";
+import {
+  isRemoteWorkspaceIdentity,
+  type BrowserViewScreenshotSurfacePreparePayload,
+  type GitChangeSourceId,
+} from "@zcode/shared";
 import { FileManagerPane } from "@/WorkspaceFileTree.js";
 import type { FileManagerTarget } from "@/lib/workspaceSidePane.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
@@ -60,6 +64,7 @@ import {
   PluginUiLauncherItems,
   PluginUiSidePane,
   SidePaneLauncherRow,
+  useMarketPluginUi,
   useOpenPluginUi,
 } from "@/plugin-ui/index.js";
 import { WorkflowRunSidePane } from "@/app-shell/WorkflowRunSidePane.js";
@@ -79,6 +84,7 @@ import {
 import {
   resolveAnimatedSidePanePanelLayout,
   resolveOpenTabLauncherItemIds,
+  SITES_PLUGIN_ID,
   shouldOfferSelectionSideConversation,
   shouldRenderPreviewPaneHeavyContent,
   type OpenTabLauncherItemId,
@@ -112,6 +118,7 @@ import {
   ChevronRightIcon,
   FileDiffIcon,
   FolderOpenIcon,
+  EarthIcon,
   GlobeIcon,
   MessageSquareTextIcon,
   PlusIcon,
@@ -534,6 +541,17 @@ export function AnimatedSidePanePanel({
     isMobileTextInputViewport,
     mobileOverlay,
   });
+  // Sites 面板是会话级 UI 插件，和辅助对话同样需要正式会话；远端工作区不支持插件面板。
+  const canOpenSites =
+    canOpenSelectionSideConversation &&
+    !workspaceRemoteSessionId &&
+    !isRemoteWorkspaceIdentity(workspaceIdentity ?? "");
+  const sitesPluginUi = useMarketPluginUi({
+    workspacePath: workspaceAbsPath,
+    workspaceIdentity,
+    remoteSessionId: workspaceRemoteSessionId ?? null,
+    sessionId: activeTaskId,
+  });
   const tabDragSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -779,6 +797,13 @@ export function AnimatedSidePanePanel({
     </Button>
   );
   const openTabLauncherItemById: Record<OpenTabLauncherItemId, OpenTabLauncherItem> = {
+    sites: {
+      id: "sites",
+      label: intl.formatMessage({ id: "sidePane.sites" }),
+      description: intl.formatMessage({ id: "sidePane.launcher.sites" }),
+      icon: EarthIcon,
+      onOpen: () => void sitesPluginUi.open(SITES_PLUGIN_ID),
+    },
     "selection-side-conversation": {
       id: "selection-side-conversation",
       label: intl.formatMessage({ id: "sidePane.selectionChat" }),
@@ -824,6 +849,7 @@ export function AnimatedSidePanePanel({
   };
   const openTabLauncherItems: OpenTabLauncherItem[] = resolveOpenTabLauncherItemIds({
     canOpenSelectionSideConversation,
+    canOpenSites,
     developerToolsEnabled,
     hasReviewTab,
     supportsEmbeddedBrowser,
@@ -981,6 +1007,7 @@ export function AnimatedSidePanePanel({
         // 独立外框放在内容层：关闭仍保留 Browser Guest 和 tab 实例，不改变面板持久化边界。
         "h-full overflow-hidden bg-background",
         !mobileOverlay && frameClassName,
+        !mobileOverlay && "border-[0.5px] shadow-xs",
         mobileStacked && "max-md:rounded-none max-md:border-0",
         mobileOverlay && "min-w-0",
         mobileStacked && "max-md:!w-full",
@@ -1451,6 +1478,9 @@ export function AnimatedSidePanePanel({
                             faviconUrl={tab.faviconUrl}
                             workspacePath={workspaceAbsPath}
                             workspaceIdentity={workspaceIdentity}
+                            // 切换 workspace 的那次 commit 里 props 已是新 workspace，tabs 仍是旧的；
+                            // 读当前 workspace 会以错误 scope attach，触发 workspace-mismatch。
+                            workspaceKey={tab.workspaceKey ?? workspaceKey}
                             remoteSessionId={tab.remoteSessionId ?? workspaceRemoteSessionId}
                             residencyGeneration={tab.residencyGeneration}
                             sessionId={tab.ownerTaskId ?? "unscoped"}
@@ -1510,6 +1540,7 @@ export function AnimatedSidePanePanel({
           data-workspace-side-pane-resize-handle="true"
           className={cn(
             WORKSPACE_VERTICAL_RESIZE_HANDLE_CLASS_NAME,
+            "aria-[orientation=vertical]:w-[3px] after:left-px",
             mobileStacked && "max-md:hidden",
           )}
         />

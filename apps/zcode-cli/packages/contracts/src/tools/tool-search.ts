@@ -1,11 +1,19 @@
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { JsonSchema } from "../model/index.js";
+import { toToolJsonSchema } from "./json-schema.js";
 
 export const TOOL_SEARCH_NAME = "ToolSearch";
+export const LOCAL_TOOL_SEARCH_NAME = "LocalToolSearch";
 export const ToolSearchModeSchema = z.enum(["auto", "native", "local", "off"]);
 export type ToolSearchMode = z.infer<typeof ToolSearchModeSchema>;
 export type ResolvedToolSearchMode = Exclude<ToolSearchMode, "auto">;
+export function toolSearchNameForMode(mode: ResolvedToolSearchMode): string {
+  return mode === "local" ? LOCAL_TOOL_SEARCH_NAME : TOOL_SEARCH_NAME;
+}
+export function isToolSearchName(name: string | undefined): boolean {
+  return name === TOOL_SEARCH_NAME || name === LOCAL_TOOL_SEARCH_NAME;
+}
 export const TOOL_SEARCH_DEFAULT_RESULTS = 5;
 export const TOOL_SEARCH_BETA = "advanced-tool-use-2025-11-20";
 export const ToolSearchAnnouncementSchema = z
@@ -37,7 +45,7 @@ export const ToolSearchInputSchema = z.object({
   query: z
     .string()
     .describe(
-      'Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search.',
+      'Query to find deferred tools. Use "select:<tool_name>" for direct selection, or keywords to search. Regular expressions are not supported.',
     ),
   max_results: z
     .number()
@@ -51,7 +59,7 @@ export const ToolSearchOutputSchema = z.object({
   total_deferred_tools: z.number(),
 });
 export const ToolSearchInputJsonSchema = {
-  ...(zodToJsonSchema(ToolSearchInputSchema) as JsonSchema),
+  ...toToolJsonSchema(ToolSearchInputSchema),
   // 转换器会把带默认值的字段视为可选；模型侧要求显式传入，执行侧仍先补默认值。
   required: ["query", "max_results"],
 };

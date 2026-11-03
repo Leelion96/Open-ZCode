@@ -1,3 +1,98 @@
+import type { Terminal } from "@xterm/xterm";
+
+/** 手机 229 输入由原生 input 事件提交，避免与 xterm 的定时 textarea 读取竞争。 */
+export function attachTerminalMobileInput(term: Terminal, isWindowsDesktop: boolean) {
+  const root = term.element;
+  const textarea = term.textarea;
+  const mobile =
+    /Android|iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (isWindowsDesktop || !mobile || !root || !textarea)
+    return { handleKeyEvent: () => true, dispose() {} };
+
+  let ownsInput = false;
+  let composition: "idle" | "active" | "committing" = "idle";
+  const reset = () => {
+    ownsInput = false;
+  };
+  const handleKeyEvent = (event: KeyboardEvent) => {
+    // 有字符的 keypress 会由 xterm 发送；交还事务，避免随后换行 input 再发一次回车。
+    if (event.type === "keypress" && (event.charCode || event.which)) reset();
+    if (event.type !== "keydown") return true;
+    ownsInput =
+      event.keyCode === 229 &&
+      !event.isComposing &&
+      composition === "idle" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey;
+    // 保留 xterm 的 keyDownSeen，供 compositionend 后的原 input 去重使用；
+    // 仅阻止 229 启动定时读取。对应普通 input 在下方 capture 中独占提交。
+    // 不 preventDefault，保留浏览器更新 textarea 的原生行为。
+    return !ownsInput;
+  };
+  const submit = (event: Event, text: string) => {
+    ownsInput = false;
+    event.stopPropagation();
+    textarea.value = "";
+    // 复用 onData 的唯一写入链路，保活重挂后仍使用当前 PTY 连接。
+    term.input(text, true);
+  };
+  const onInput = (event: Event) => {
+    const input = event as InputEvent;
+    if (event.target !== textarea || !ownsInput || composition !== "idle" || input.isComposing)
+      return;
+    if (input.inputType === "insertText" && input.data) submit(event, input.data);
+    // 手机回车可能只有 229 + insertLineBreak；接管 229 后必须在这里补全回车语义。
+    else if (input.inputType === "insertLineBreak") submit(event, "\r");
+    else if (input.inputType === "deleteContentBackward") submit(event, "\x7f");
+    else if (input.inputType === "deleteContentForward") submit(event, "\x1b[3~");
+    else reset();
+  };
+  const onBeforeInput = (event: Event) => {
+    const input = event as InputEvent;
+    if (event.target !== textarea || !ownsInput || composition !== "idle" || input.isComposing)
+      return;
+    // 已提交文字不留在隐藏 textarea；空 textarea 的原生删除可能没有 input，
+    // 因此在 beforeinput 消费删除，避免吞掉终端退格。
+    if (input.inputType === "deleteContentBackward" || input.inputType === "deleteContentForward") {
+      event.preventDefault();
+      submit(event, input.inputType === "deleteContentBackward" ? "\x7f" : "\x1b[3~");
+    }
+  };
+  const onCompositionStart = () => {
+    composition = "active";
+    reset();
+  };
+  const onCompositionEnd = (event: CompositionEvent) => {
+    // xterm 在 compositionend 的下一轮读取 textarea。它发出 onData 前仍由
+    // 原组合链路持有输入，避免紧接着的 229 字符清空尚未提交的中文。
+    composition = event.data ? "committing" : "idle";
+  };
+  const compositionCommit = term.onData((data) => {
+    // PTY 的状态查询也会经 onData 回答，不能把 ESC 控制响应当作中文提交。
+    if (composition === "committing" && getPlainTerminalInputText(data)) composition = "idle";
+  });
+  root.addEventListener("beforeinput", onBeforeInput, true);
+  root.addEventListener("input", onInput, true);
+  textarea.addEventListener("compositionstart", onCompositionStart);
+  textarea.addEventListener("compositionend", onCompositionEnd);
+  textarea.addEventListener("blur", reset);
+  textarea.addEventListener("paste", reset);
+  return {
+    handleKeyEvent,
+    dispose() {
+      compositionCommit.dispose();
+      root.removeEventListener("beforeinput", onBeforeInput, true);
+      root.removeEventListener("input", onInput, true);
+      textarea.removeEventListener("compositionstart", onCompositionStart);
+      textarea.removeEventListener("compositionend", onCompositionEnd);
+      textarea.removeEventListener("blur", reset);
+      textarea.removeEventListener("paste", reset);
+    },
+  };
+}
+
 export interface PendingTerminalInputFallback {
   handled: boolean;
   text: string;

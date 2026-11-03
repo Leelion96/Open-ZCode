@@ -8,11 +8,10 @@ import {
   createInitialFinishExecutionState,
   type FinishExecutionState,
 } from "@/onboarding/OnboardingFlowParts.js";
-import type { OnboardingView, OnboardingWizardStep } from "@/onboarding/OnboardingDialogParts.js";
+import type { OnboardingWizardStep } from "@/onboarding/OnboardingDialogParts.js";
 import type { OnboardingAgentsFileMigrationState } from "@/onboarding/useOnboardingAgentsFileMigration.js";
 
 export function shouldAutoScanOnboardingSessions(params: {
-  view: OnboardingView;
   wizardStep: OnboardingWizardStep;
   supported: boolean;
   isScanning: boolean;
@@ -21,7 +20,6 @@ export function shouldAutoScanOnboardingSessions(params: {
   hasAutoScannedInCurrentEntry: boolean;
 }): boolean {
   return (
-    params.view === "wizard" &&
     params.wizardStep === "session" &&
     params.supported &&
     !params.isScanning &&
@@ -52,7 +50,6 @@ function groupWorkspaceCandidates(
 }
 
 export function useOnboardingMigration(
-  view: OnboardingView,
   wizardStep: OnboardingWizardStep,
   selectedWorkspacePaths: string[],
   additionalSettingsSelections: SettingsSyncSelection[],
@@ -197,12 +194,12 @@ export function useOnboardingMigration(
   ]);
 
   useEffect(() => {
-    if (view !== "wizard" || wizardStep !== "migration" || finishExecution.started) {
+    if (wizardStep !== "migration" || finishExecution.started) {
       return;
     }
 
     void startUnifiedMigration();
-  }, [finishExecution.started, startUnifiedMigration, view, wizardStep]);
+  }, [finishExecution.started, startUnifiedMigration, wizardStep]);
 
   const resetFinishExecution = useCallback(() => {
     setFinishExecution(createInitialFinishExecutionState());

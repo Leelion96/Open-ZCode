@@ -110,9 +110,15 @@ export function usePluginUiSidePaneModel({
   const presentation = useMemo<PluginUiPresentation | null>(() => {
     if (scopeRef.kind === "toolCall") return rowPresentation;
     return tab.serverName
-      ? { serverName: tab.serverName, pluginId: tab.pluginId, resourceUri: tab.resourceUri }
+      ? {
+          serverName: tab.serverName,
+          pluginId: tab.pluginId,
+          resourceUri: tab.resourceUri,
+          // surface 的 tab 只有路由身份；展示选择沿用最后一次成功结果，不能在开侧栏时丢失。
+          preferredDisplayMode: feed.result?.presentation.preferredDisplayMode,
+        }
       : null;
-  }, [rowPresentation, scopeRef.kind, tab.pluginId, tab.resourceUri, tab.serverName]);
+  }, [rowPresentation, scopeRef.kind, tab.pluginId, tab.resourceUri, tab.serverName, feed.result]);
   const placementKey = buildPluginUiSurfaceKey(
     { ...tab, sessionId: tab.parentSessionId },
     resolvePluginUiLogicalScope(presentation ?? {}, scopeRef),

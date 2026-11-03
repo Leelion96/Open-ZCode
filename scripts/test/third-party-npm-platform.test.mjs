@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  assertInstalledLockfileSnapshot,
+  createPnpmLockfileOnlyEnv,
   createInstallablePackageFilter,
   productionPackages,
   readLockfilePlatformConstraints,
@@ -55,6 +57,25 @@ snapshots:
 `;
 
 const TARGETS = { os: ["darwin", "linux", "win32"], cpu: ["arm64", "x64"], libc: null };
+
+test("锁图查询强制使用 pnpm lockfile-only 模式", () => {
+  assert.equal(
+    createPnpmLockfileOnlyEnv({ NPM_CONFIG_LOCKFILE_ONLY: "false" }).NPM_CONFIG_LOCKFILE_ONLY,
+    "true",
+  );
+});
+
+test("安装快照与根 lockfile 内容一致即通过，换行风格差异不算漂移", () => {
+  assert.doesNotThrow(() => assertInstalledLockfileSnapshot("same", "same"));
+  // 评审 CR-03 回归：Windows autocrlf 工作区根 lockfile 为 CRLF、安装快照为 LF，
+  // 依赖图一致时必须通过。
+  assert.doesNotThrow(() => assertInstalledLockfileSnapshot("a\r\nb\r\n", "a\nb\n"));
+  // 真实内容差异（含归一化后仍不同）仍然严格失败。
+  assert.throws(
+    () => assertInstalledLockfileSnapshot("current\r\n", "stale\n"),
+    /pnpm install --frozen-lockfile/,
+  );
+});
 
 test("只读取 packages 段的 os/cpu/libc 约束，snapshots 段不参与", () => {
   const constraints = readLockfilePlatformConstraints(LOCKFILE);

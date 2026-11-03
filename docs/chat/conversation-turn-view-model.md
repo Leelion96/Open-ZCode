@@ -35,7 +35,8 @@ interface TurnView {
     | "manual_compact";
   status: "running" | "settling" | "completed" | "interrupted" | "failed";
   visibleInputs: ConversationInput[];
-  // 同一 product turn 内，原始输入与每条 accepted steer 分别开启一个视觉工作段。
+  // 同一 product turn 内，原始输入与每次 accepted steer 取出分别开启一个视觉工作段
+  // （同一次取出的多条 steer 共用一段）。边界由 CLI 判定，UI 按 triggerEntityId（guided user 的稳定实体 ID）切分。
   // 这不是 turn 边界；command target、fork/retry 仍锚定 product turn 的最终正文。
   workSegments: TurnWorkSegmentView[];
   modelOnlyInputs: RuntimeInput[];
@@ -47,7 +48,7 @@ interface TurnView {
 
 interface TurnWorkSegmentView {
   segmentId: string;
-  triggerInputId?: string;
+  triggerEntityId?: string;
   startedAt: number;
   endedAt?: number;
   activeMs?: number;
@@ -136,7 +137,7 @@ anchor 时可以由兼容层生成 fallback row，但 fallback 必须标记为 c
 - queued `/goal <objective>`：作为 queue item 保留；真正消费时落 visible user query 并更新 goal。
 - goal continuation reminder：属于 runtime `modelOnlyInputs`，不得渲染成用户气泡。
 - turn steering accepted：属于当前 turn 的 `visibleInputs`，显示为当前 turn 的用户补充。
-- 每条 turn steering accepted 同时开启新的 visual work segment；前一 segment 在注入边界收口，但两段仍共享同一 `turnId` / `productTurnId`。
+- 每条 turn steering accepted 同时开启新的 visual work segment；前一 segment 在注入边界收口，但两段仍共享同一 `turnId` / `productTurnId`。同一次取出的多条 guide 共用第一条开启的 segment，不产生没有工作内容的空段；两条 guide 之间有模型 step 时，即使这一步没有可见行，后一条也开启新 segment。
 - turn steering rejected 或 fallback queue：属于未来 turn 的 pending input，不提前写进当前 turn。
 - background result 回到 main session：属于新的 `origin=background_result` turn；provider 侧可表现为
   `role=user`，但产品层必须保留 `humanAuthored=false` 和 background source，不开放普通用户 edit 语义。

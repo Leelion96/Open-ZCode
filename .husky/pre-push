@@ -1,9 +1,8 @@
 #!/usr/bin/env sh
 
-# 推送前先跑 lint 再跑单测，先用更快的静态检查尽早拦住低成本问题，
-# 避免还没过代码质量门槛就进入更慢的测试阶段。
+# 推送前检查工作区、Lint、schema、架构与受影响工程测试；App 单测执行链已退役。
 # Git 会通过 stdin 传入本次 push 的 local/remote ref 与 sha；先缓存下来，后续
-# affected-test 脚本才能用远端当前 sha 作为 base，而不是误退回到默认分支。
+# 架构和工程测试才能用远端当前 sha 作为 base，而不是只检查未提交差异。
 # 手工执行 hook 时 stdin 可能是终端，避免直接 cat 卡住调试。
 pre_push_stdin=""
 if [ ! -t 0 ]; then

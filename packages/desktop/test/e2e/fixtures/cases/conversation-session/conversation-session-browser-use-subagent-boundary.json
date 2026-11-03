@@ -22,7 +22,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "必须用真实共享 Node REPL 与 IAB guest 建立主 Agent 的 Tab，供 child 列出并在 child 结束后复验。"
+      "syntheticReason": "通过真实 Node REPL 与 IAB guest 建立主 Agent 的 Tab，返回稳定 ID 供后续独立 Worker 找回同一页面。"
     },
     {
       "id": "browser-subagent-parent-agent",
@@ -30,7 +30,7 @@
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "稳定制造共享 Node REPL 内核中的 runtime_scope=subagent 请求。"
+      "syntheticReason": "显式传递页面 URL 和主 Tab ID，子代理在独立 Worker 中验证当前对话的浏览器归属。"
     },
     {
       "id": "browser-subagent-child-browse",

@@ -58,6 +58,7 @@ ZCode 为 `WebFetch` 提供完整的 tool prompt 语义，而不是只给模型�
   提取或分析的信息。
 - 如果 MCP 提供 web fetch tool，应优先用 MCP 版本，因为它可能有更少限制或认证能力。
 - URL 必须是完整合法 URL；`http:` 会按 provider-visible 约定先规范化为 `https:` 后抓取，`https:` 保持原协议。
+- 说明 `localhost` 等不含 `.` 的主机名会失败，本地服务改用 Bash 的 curl（与上文 host 形态校验一致）。
 - tool 是只读能力，不修改任何文件，但会执行网络 GET，并可能写入 session artifact/cache。
 - 大内容可能被摘要化；同一 URL 结果会进入自清理的 15 分钟、50 MB 内存 cache，重复访问更快。
 - ZCode 只自动跟随同 host/`www.` 级别的安全 redirect；跨 host redirect 不会自动抓取新主机，
@@ -241,7 +242,7 @@ ZCode 如果支持 WebFetch 摘要，也应把版权和引用限制放在 `WebFe
 - `packages/core/tests/permission-service.test.ts` 覆盖 WebFetch project rule 使用规范化 `domain:<hostname>` 匹配，以及 domain deny 覆盖完整 URL allow。
 - `packages/core/tests/tool-contracts.test.ts` 覆盖 WebFetch tool contract 声明为 `sideEffectScope: network` 且需要审批。
 - `packages/adapters/tests/http.test.ts` 覆盖 `HttpClientPort` trace header、`ZCODE_HTTP_PROXY`、runtime 封存代理、`network.noProxy`、`ZCODE_AGENT_CA_CERT`、标准代理/证书变量过滤、响应大小上限和 unsupported protocol；`packages/adapters/tests/http-response-status.test.ts` 覆盖走代理时上游回 `999` / `204` / `304` 原样带回、不打死进程。
-- `packages/desktop/test/e2e/conversation-session/manual-review/pending/conversation-session-webfetch.test.ts`
+- `packages/desktop/test/e2e/conversation-session/conversation-session-webfetch.test.ts`
   保留桌面会话 `WebFetch` 成功闭环用例，但当前位于 `manual-review/pending`，不能计入正式自动覆盖。
   fixture 仍位于 `packages/desktop/test/e2e/fixtures/cases/conversation-session/conversation-session-webfetch.json`。
 

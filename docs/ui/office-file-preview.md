@@ -24,6 +24,33 @@ URL 原样交给主 renderer 的 DOM 导航或脚本执行路径。
 - 未来若 renderer 需要保留文档内链接交互，应放入无 preload、无 Node、禁止导航/弹窗的 sandbox iframe；主 renderer 不得直接承载第三方文档脚本。
 - 外链打开必须走受控回调；不能把不可信 `href` 直接传给 `window.zcode` 或 `shell.openExternal`。
 
+### 内置预览的已知注入与外链绕过修复
+
+内置预览保持现有承载与只读行为。本次修复已知入口，不把主窗口声明为文档沙箱：
+
+- PPTX 气泡图 tooltip 的系列名和数值必须按文本转义后再插入 HTML；图例保留原始文本。依赖补丁覆盖应用使用的 browser 入口，预览与 PDF 打印共用该入口。
+- XLSX 的单元格、形状、图片外链必须共用 `onOpenLink` 回调，经 `sanitizeDocumentHref` 校验后调用现有 `onOpenBrowserUrl`。回调拒绝时不回落到 `window.open`。工作表内部定位继续由查看器处理。
+- Desktop 主窗口的原生 popup 一律拒绝创建；合法 HTTP(S) 请求转发到现有 Browser 打开事件，危险协议不转发。嵌入浏览器和 MCP App guest 保持各自现有策略。
+- 不修改文件读取、监听、保存权限或预览状态 owner；Desktop 和 Web 的 XLSX 复用同一受控回调。
+
+```text
+XLSX 单元格 / 形状 / 图片 → 同一外链回调 → URL 白名单 → 现有 Browser 打开入口
+主窗口原生 popup         → Main 拒绝建窗 → HTTP(S) 才转发 Browser 打开事件
+PPTX tooltip            → 动态字段转义 → HTML 只包含静态格式和文本
+```
+
+| Case  | 场景与断言                                                                                                                          | 状态             |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| OPS01 | 打开包含 HTML 系列名的真实 PPTX 并悬浮气泡；tooltip 显示字面文本，不生成攻击节点，不执行标记脚本；打印路径使用相同修复              | macOS 通过，待人工复核 |
+| OPS02 | 真实 XLSX 的单元格、形状、图片点击危险协议，既不调用原生 `window.open`，也不打开 Browser；合法 HTTP(S) 仍路由，内部工作表跳转仍可用 | macOS 通过，待人工复核 |
+| OPS03 | 主窗口直接请求危险协议 popup，主窗口地址与原生窗口数量不变；HTTP(S) 转入 Browser，仍不创建原生窗口                                  | macOS 通过，待人工复核 |
+
+候选 E2E：`packages/desktop/test/e2e/manual-review/pending/office-preview-security.test.ts`。
+2026-10-29：macOS Electron 候选回归 3/3 通过（包含真实 PDF 文件导出），运行 ID：
+`desktop-e2e-20261029052945936-p62112-8df77f872a16aa7f`。候选保持待人工复核，不自动转正或加入 CI。
+同一 XLSX 组件在浏览器宽屏 / 手机尺寸 × 深 / 浅主题下验收通过：每组 7 次危险链接均到达拦截入口，
+HTTP、HTTPS 和工作表内跳转正常；PPTX browser 入口与打印渲染也通过。未验证 Windows、Linux、实体手机或真实远控链路。
+
 安全回归必须覆盖协议白名单、编码/控制字符绕过、DOCX 真实 hyperlink relationship，以及 Desktop 主 renderer 点击后的人工验收。
 同时必须锁定 PDF annotation layer 关闭状态，并验证异步新增链接只净化变更子树而不重复扫描整个预览根节点。
 

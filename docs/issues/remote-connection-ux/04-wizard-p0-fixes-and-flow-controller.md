@@ -1,6 +1,6 @@
 # 04 — 向导止血与流程控制器抽取
 
-Status: done
+Status: needs-triage
 
 **父规格：** [远程连接交互与视觉体验优化](./01-remote-connection-ux-optimization.md)
 
@@ -42,3 +42,46 @@ Status: done
 - [x] **必跑检查**：`pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`、受影响的单测、受影响的 SSH E2E 全部通过后，本地提交。
 
 验收记录（2026-09-27）：`pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed`、`pnpm --filter @zcode/desktop typecheck:e2e` 通过；`pnpm test:unit --retry=1` 全量 2,028 文件、18,628 测试通过（既有 14 测试跳过），最后的流程收尾变更另经向导 DOM 34 用例验证。SSH CONN-01/02、CONN-03、CONN-06/07 对应三份 spec 实跑通过，artifact 见 [SSH P0 计划](../../testing/ssh-remote-p0-e2e-plan.md#rdux-04-向导回归)。Standards / Spec 两轴评审无未解决项；新 E2E 保留 pending，尚未人工转正。
+
+## 2026-10-20 新建表单漏掉在线复用提示
+
+本轮因这一项重开；以上勾选与验收记录属于 2026-09-27，不代表当前入口已通过。
+按用户要求只记录业务问题，不修改业务实现。
+
+staging `52cd1bc1d3`，运行 `r3-server-pending-52cd-b-pending-wizardcredentials`：
+
+1. 保存真实 SSH 设备，完全退出旧进程后删除密码值并保留引用。
+2. 从项目表单选择已保存设备、“连接并浏览”，密码框自动聚焦；回填密码后真实连接成功。
+3. 手动添加同一在线目标，填写另一密码。16:44:02.549 发起连接，16:44:02.577
+   renderer attachment ready，Host 仍只有一条物理连接，页面返回选中在线设备的项目表单。
+4. 从提交返回的 16:44:02.578 起连续观察 30 秒，没有出现“已直接使用现有连接”提示，
+   CONN-07 失败。失败录像和 runtime 日志位于上述 run 目录；未降低原有提示断言。
+
+此前 a 轮仅因测试在空白新建表单里查找旧设备卡而失败，已用现有
+`openSSHSourceDirectory` 修正；b 轮实际走通缺密码恢复后才暴露本问题。
+不能将这次失败归入旧 renderer attachment 竞态，也不能将 CONN-06 的通过写成整条通过。
+
+接线依据：[流程控制器](../../../packages/ui/src/remote-connection-flow/index.ts) 的
+`addingDevice` 直接显示 settings；新入口清空 `pendingCompletionIntentRef`。只有旧
+`selectionStep.onNewConnection` 会设置 `announceReusedConnection=true`，当前分类表单
+`settingsStep.onKindChange` 和提交路径没有补上该标志。
+[Root](../../../packages/ui/src/root/useRemoteWorkspaceHistory.ts) 的提示依赖
+`reusedConnectionTarget && feedback.announceReusedConnection`。
+这说明新入口遗漏了提示意图；本轮未直接抓取返回对象，未据此宣称已验证凭据保存边界。
+
+```mermaid
+sequenceDiagram
+    participant U as 新建连接表单
+    participant F as 连接流程
+    participant H as Host
+    participant R as Root 提示
+    U->>F: 添加同一在线目标
+    Note over F: 新入口没有设置 announceReusedConnection
+    F->>H: connect
+    H-->>F: 连接成功，复用现有连接
+    F-->>U: 返回项目表单
+    Note over R: 提示门禁缺少反馈标志
+```
+
+后续修复应在当前新建入口保留复用提示意图，并用真实当前入口验证提示及未使用密码不覆盖原凭据。
+不得改为接受静默复用，也不得点击已退役选择屏来使测试变绿。

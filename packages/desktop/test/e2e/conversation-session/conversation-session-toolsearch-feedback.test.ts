@@ -62,7 +62,11 @@ describe("ToolSearch 结果、纠错、提醒和 MCP 短名（真实 CLI / HTTP�
         ]);
         const cold = fixture.requests[before]!.body;
         expect(loadedCount(cold)).toBe(0);
-        expect(cold.tools?.some((tool) => tool.name === "ToolSearch")).toBe(true);
+        expect(
+          cold.tools?.some(
+            (tool) => tool.name === (mode === "local" ? "LocalToolSearch" : "ToolSearch"),
+          ),
+        ).toBe(true);
         for (const id of ["batch_one", "batch_two"]) {
           expect(contentText(resultFor(cold, id).content)).toContain("tools no longer available");
           expect(definitionsFor(cold, id)).toEqual([]);
@@ -126,7 +130,7 @@ describe("ToolSearch 结果、纠错、提醒和 MCP 短名（真实 CLI / HTTP�
         expect(unloaded.is_error).toBe(true);
         const error = contentText(unloaded.content);
         expect(error).toContain(
-          'Load the tool first: call ToolSearch with query "select:TodoWrite"',
+          `Load the tool first: call ${mode === "local" ? "LocalToolSearch" : "ToolSearch"} with query "select:TodoWrite"`,
         );
         expect(
           JSON.parse(
@@ -220,9 +224,16 @@ describe("ToolSearch 结果、纠错、提醒和 MCP 短名（真实 CLI / HTTP�
                       .map((block) => block.text ?? ""),
               )
               .filter((text) => text.includes(announcement));
-            expect(announcementBlocks).toEqual([
-              mcs ? announcement : `<system-reminder>\n${announcement}\n</system-reminder>`,
-            ]);
+            expect(announcementBlocks).toHaveLength(1);
+            if (mcs) {
+              // MCS 下同一段 user run 的 system 文本合成一条、以空行分隔（环境、模型、日期公告可能并入）；
+              // 公告必须是其中完整的一段。
+              expect(`\n\n${announcementBlocks[0]}\n\n`).toContain(`\n\n${announcement}\n\n`);
+            } else {
+              expect(announcementBlocks[0]).toBe(
+                `<system-reminder>\n${announcement}\n</system-reminder>`,
+              );
+            }
           }
           const readDb = new DatabaseSync(join(fixture.root, "session.sqlite"), { readOnly: true });
           try {

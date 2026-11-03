@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import type { E2ENetworkCaptureArtifact } from "./network-capture-proxy.js";
 
 export interface UpstreamRequestQuery {
+  includeTitle?: boolean;
   excludes?: string[];
   includes?: string[];
   lastUserMessageExcludes?: string[];
@@ -239,7 +240,7 @@ function matchesUpstreamRequest(
   return (
     record.method === "POST" &&
     isUpstreamModelRequestPath(record.path) &&
-    !captureContainsText(record.requestJson, "Generate a concise title") &&
+    (query.includeTitle || !captureContainsText(record.requestJson, "Generate a concise title")) &&
     (query.includes ?? []).every((text) => captureContainsText(record.requestJson, text)) &&
     !(query.excludes ?? []).some((text) => captureContainsText(record.requestJson, text)) &&
     (query.lastUserMessageIncludes ?? []).every((text) => latestUserMessageText.includes(text)) &&

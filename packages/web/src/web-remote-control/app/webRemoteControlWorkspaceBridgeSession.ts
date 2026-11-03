@@ -61,6 +61,7 @@ export async function connectWebRemoteControlWorkspaceBridgeServices(params: {
   try {
     const services = connectViaProtocol(params.relayProtocol.protocol, {
       windowProjectDirectory: params.windowProjectDirectory,
+      signal: params.relayProtocol.signal,
     });
     // 事件监听没有就绪回包。若先等待 RPC 再接入收帧，回复会落到旧 bridge 而永久等待。
     // 新导航或连接终止同时取消等待，迟到回复不能复活旧服务，也不回落 Source 目录。

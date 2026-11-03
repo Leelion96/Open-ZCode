@@ -75,3 +75,21 @@ export function createWorkspaceId(id?: string): WorkspaceId {
 function createSortableIdSegment(): string {
   return `${Date.now().toString(36)}_${crypto.randomUUID()}`;
 }
+
+// UTF-16 文本边界：按码元截取后不留下半个代理对。
+const HIGH_SURROGATE_FIRST = 0xd800;
+const HIGH_SURROGATE_LAST = 0xdbff;
+const LOW_SURROGATE_FIRST = 0xdc00;
+const LOW_SURROGATE_LAST = 0xdfff;
+
+/** 去掉末尾的孤立高位代理：按 UTF-16 码元截取开头后，不留下半个代理对。 */
+export function dropTrailingHighSurrogate(value: string): string {
+  const code = value.charCodeAt(value.length - 1);
+  return code >= HIGH_SURROGATE_FIRST && code <= HIGH_SURROGATE_LAST ? value.slice(0, -1) : value;
+}
+
+/** 去掉开头的孤立低位代理：按 UTF-16 码元截取结尾后，不留下半个代理对。 */
+export function dropLeadingLowSurrogate(value: string): string {
+  const code = value.charCodeAt(0);
+  return code >= LOW_SURROGATE_FIRST && code <= LOW_SURROGATE_LAST ? value.slice(1) : value;
+}

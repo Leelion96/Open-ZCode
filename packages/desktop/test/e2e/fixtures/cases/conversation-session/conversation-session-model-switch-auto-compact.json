@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-model-switch-auto-compact",
+  "spec": "./test/e2e/conversation-session/conversation-session-model-switch-auto-compact.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-model-switch-auto-compact.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "title-e2e_auto_actions_",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留旧回放中的工具、队列或压缩窗口；实际命令、会话状态和请求仍由真实 Agent 与 UI 产生。"
+    },
+    {
+      "id": "model-switch-guard-seed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留旧回放中的工具、队列或压缩窗口；实际命令、会话状态和请求仍由真实 Agent 与 UI 产生。"
+    },
+    {
+      "id": "upstream-auto-actions-context-seed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留旧回放中的工具、队列或压缩窗口；实际命令、会话状态和请求仍由真实 Agent 与 UI 产生。"
+    },
+    {
+      "id": "upstream-auto-actions-compact-slow",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "确定性覆盖压缩中的菜单操作，不依赖固定响应延时。"
+    },
+    {
+      "id": "upstream-auto-actions-pending-text",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "保留旧回放中的工具、队列或压缩窗口；实际命令、会话状态和请求仍由真实 Agent 与 UI 产生。"
+    }
+  ]
+}

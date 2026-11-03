@@ -9,12 +9,19 @@
   "fileFixtures": [],
   "requests": [
     {
+      "id": "conversation-session-plugin-mcp-skill-workspace-disabled-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
       "id": "workspace-disabled-noop",
       "description": "Workspace 显式 false 时不广告 Plugin MCP tool。",
       "kind": "main",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "固定普通文本响应，配合 tools 数组缺失断言证明 Plugin 被禁用。"
+      "syntheticReason": "固定普通文本响应，断言 disabled runtime 不进入工具注册。"
     }
   ]
 }

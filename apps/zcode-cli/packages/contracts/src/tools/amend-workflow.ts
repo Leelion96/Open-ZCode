@@ -20,7 +20,7 @@ import {
 export const AMEND_WORKFLOW_TOOL_NAME = "AmendWorkflow";
 
 /**
- * 「至多给一个修订脚本」的违规说明。与 `CREATE_WORKFLOW_SOURCE_ERROR` 同一个位置、同一种语气；
+ * 「至多给一个修订脚本」的违规说明。与 `CREATE_WORKFLOW_SOURCE_CONFLICT_ERROR` 同一个位置、同一种语气；
  * 与它不同的是两个都不给在这里**合法**——那是「沿用前驱的脚本」。
  */
 export const AMEND_WORKFLOW_SOURCE_ERROR =

@@ -2,32 +2,38 @@ import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { TID_CHAT_MESSAGE_FORK_BUTTON } from "@zcode/shared/test-ids";
+import { TID_V4_FORK } from "@zcode/shared/test-ids";
+import { clearAppData, DEFAULT_WORKSPACE, clickTestIdByDom } from "../../../helpers/desktop-app.js";
 import {
-  clearAppData,
-  clickTestIdByDom,
-} from "../../../helpers/desktop-app.js";
-import { waitForUpstreamNetworkCapture } from "../../../helpers/upstream-capture.js";
+  waitForUpstreamNetworkCapture,
+  waitForUpstreamNetworkRequestStarted,
+} from "#e2e/helpers/upstream-capture";
 import {
   E2E_REPLY_TOKEN,
-  assertVisibleUserMessagesNotContaining,
-  clickForkButtonForAssistantContaining,
-  editUserMessageContaining,
-  getChatRootSnapshot,
-  getForkButtonForUserContaining,
+  clickV4Stop,
+  assertVisibleV4UserMessagesNotContaining,
+  getV4ConversationState,
+  getV4Messages,
+  prepareV4ConversationE2E,
+  selectV4TaskById,
+  sendV4Prompt,
+  waitForV4AssistantMessageContaining,
+  waitForV4ConversationState,
+  waitForV4ComposerText,
+  waitForV4UserMessageContaining,
+  waitForLatestV4CommandAck,
+} from "#e2e/helpers/v4-conversation";
+import { forkV4AssistantContaining as clickForkButtonForAssistantContaining } from "#e2e/helpers/v4-message-actions";
+import { getV4MessageAction, waitForV4MessageAction } from "#e2e/helpers/v4-message-actions";
+import { editV4UserMessageContaining as editUserMessageContaining } from "#e2e/helpers/v4-message-actions";
+
+import {
   getQueueItems,
-  getMessages,
-  prepareConversationE2E,
-  selectTaskById,
-  sendPrompt,
-  waitForAssistantMessageContaining,
-  waitForChatState,
-  waitForComposerText,
-  waitForForkButtonForAssistantContaining,
   waitForQueueContaining,
   waitForQueueCount,
-  waitForUserMessageContaining,
-} from "../../../helpers/conversation-session.js";
+} from "#e2e/helpers/conversation-session-queue";
+
+import { restartIntoWorkspacePreservingProfile } from "#e2e/helpers/model-provider-restart-runtime";
 
 describe("会话区 Fork E2E", () => {
   after(async () => {
@@ -38,42 +44,38 @@ describe("会话区 Fork E2E", () => {
   it("完成后的 assistant 消息应允许 fork 并切换到派生 session", async function () {
     this.timeout(150000);
 
-    await prepareConversationE2E();
+    await prepareV4ConversationE2E();
 
     const runId = Date.now();
     // 修复原因：FK/E01 只验证 completed assistant 的 fork 边界。
     // 这里混入 Read 工具会触发 auto compact，让基础 fork case 被 compact 稳定性干扰。
     const prompt = buildReplyPrompt(`E2E_FORK_SOURCE_${runId}`);
-    await sendPrompt(prompt);
-    await waitForComposerText("", "首发后输入框没有清空");
-    await waitForUserMessageContaining(prompt);
-    const sourceSnapshot = await waitForChatState(
+    await sendV4Prompt(prompt);
+    await waitForV4ComposerText("", "首发后输入框没有清空");
+    await waitForV4UserMessageContaining(prompt);
+    const sourceSnapshot = await waitForV4ConversationState(
       (snapshot) => Boolean(snapshot.sessionId || snapshot.taskId),
       "首发后 chat-view 没有回填 session/task id",
       30000,
     );
     await waitForUpstreamNetworkCapture(`E2E_FORK_SOURCE_${runId}`);
-    await waitForAssistantMessageContaining(E2E_REPLY_TOKEN);
-    await waitForChatState(
+    await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN);
+    await waitForV4ConversationState(
       (snapshot) =>
-        snapshot.state === "idle" &&
-        isRuntimeCompleted(snapshot) &&
-        snapshot.queueCount === 0,
+        snapshot.state === "idle" && isRuntimeCompleted(snapshot) && snapshot.queueCount === 0,
       "fork 前会话没有回到 idle",
       90000,
     );
 
-    const userForkButton = await getForkButtonForUserContaining(prompt);
+    const userForkButton = await getV4MessageAction("user", "fork", prompt);
     expect(userForkButton?.exists).not.toBe(true);
 
-    const forkButton = await waitForForkButtonForAssistantContaining(
-      E2E_REPLY_TOKEN,
-    );
+    const forkButton = await waitForV4MessageAction("assistant", "fork", E2E_REPLY_TOKEN);
     expect(forkButton.exists).toBe(true);
     expect(forkButton.disabled || forkButton.ariaDisabled).toBe(false);
 
     await clickForkButtonForAssistantContaining(E2E_REPLY_TOKEN);
-    const forkedSnapshot = await waitForChatState(
+    const forkedSnapshot = await waitForV4ConversationState(
       (snapshot) =>
         Boolean(snapshot.sessionId || snapshot.taskId) &&
         (snapshot.sessionId || snapshot.taskId) !==
@@ -86,10 +88,10 @@ describe("会话区 Fork E2E", () => {
     expect(forkedSnapshot.sessionId || forkedSnapshot.taskId).not.toBe(
       sourceSnapshot.sessionId || sourceSnapshot.taskId,
     );
-    await waitForUserMessageContaining(prompt);
-    await waitForAssistantMessageContaining(E2E_REPLY_TOKEN);
+    await waitForV4UserMessageContaining(prompt);
+    await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN);
 
-    const finalSnapshot = await getChatRootSnapshot();
+    const finalSnapshot = await getV4ConversationState();
     expect(finalSnapshot.sessionId || finalSnapshot.taskId).toBe(
       forkedSnapshot.sessionId || forkedSnapshot.taskId,
     );
@@ -98,7 +100,7 @@ describe("会话区 Fork E2E", () => {
   it("父 session 有 goal 时 fork 已完成 assistant 应继承目标但不复制 queue", async function () {
     this.timeout(240000);
 
-    await prepareConversationE2E();
+    await prepareV4ConversationE2E();
 
     const runId = Date.now();
     const goalMarker = `E2E_FORK_GOAL_${runId}`;
@@ -106,12 +108,12 @@ describe("会话区 Fork E2E", () => {
 
     const seedMarker = `E2E_FORK_GOAL_SEED_${runId}`;
     const seedPrompt = buildReplyPrompt(seedMarker);
-    await sendPrompt(seedPrompt);
-    await waitForComposerText("", "goal fork seed 发送后输入框没有清空");
-    await waitForUserMessageContaining(seedPrompt);
+    await sendV4Prompt(seedPrompt);
+    await waitForV4ComposerText("", "goal fork seed 发送后输入框没有清空");
+    await waitForV4UserMessageContaining(seedPrompt);
     await waitForUpstreamNetworkCapture(seedMarker);
-    await waitForAssistantMessageContaining(E2E_REPLY_TOKEN);
-    const seededSnapshot = await waitForChatState(
+    await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN);
+    const seededSnapshot = await waitForV4ConversationState(
       (snapshot) =>
         Boolean(snapshot.sessionId || snapshot.taskId) &&
         snapshot.state === "idle" &&
@@ -122,24 +124,26 @@ describe("会话区 Fork E2E", () => {
     );
     const sourceSessionId = getSnapshotSessionId(seededSnapshot);
     expect(sourceSessionId).toBeTruthy();
-    const seedAssistantMessageId = await waitForAssistantMessageIdAfterUser(
-      seedMarker,
-      E2E_REPLY_TOKEN,
-    );
-    await setSessionTargetForE2E(sourceSessionId ?? "", goalObjective, "paused");
-    await assertVisibleUserMessagesNotContaining(goalMarker);
+    // V4 由 CLI snapshot 持有 target；旧 renderer store 注入不会进入真实 fork 状态。
+    // 在进程退出屏障后写入夹具，再冷启动读取，避免退出持久化覆盖新 target。
+    await restartIntoWorkspacePreservingProfile(DEFAULT_WORKSPACE, {
+      afterElectronProcessExit: () =>
+        setSessionTargetForE2E(sourceSessionId ?? "", goalObjective, "paused"),
+    });
+    await selectV4TaskById(sourceSessionId ?? "");
+    await assertVisibleV4UserMessagesNotContaining(goalMarker);
 
     const sourceMarker = `E2E_FORK_GOAL_SOURCE_${runId}`;
     const sourcePrompt = buildReplyPrompt(sourceMarker);
-    await sendPrompt(sourcePrompt);
-    await waitForComposerText("", "goal fork source 发送后输入框没有清空");
-    await waitForUserMessageContaining(sourcePrompt);
+    await sendV4Prompt(sourcePrompt);
+    await waitForV4ComposerText("", "goal fork source 发送后输入框没有清空");
+    await waitForV4UserMessageContaining(sourcePrompt);
     await waitForUpstreamNetworkCapture(sourceMarker);
-    await waitForAssistantMessageIdAfterUser(sourceMarker, E2E_REPLY_TOKEN);
-    // Bugfix: source turn 完成后的真实 session snapshot 会刷新 active task meta；
-    // DB 直写的 target 仍在，但 renderer E2E store 可能被覆盖成 null，fork 前需再次同步。
-    await upsertRendererSessionTargetForE2E(sourceSessionId ?? "", goalObjective, "paused");
-    await waitForChatState(
+    const sourceAssistantMessageId = await waitForAssistantMessageIdAfterUser(
+      sourceMarker,
+      E2E_REPLY_TOKEN,
+    );
+    await waitForV4ConversationState(
       (snapshot) =>
         getSnapshotSessionId(snapshot) === sourceSessionId &&
         snapshot.state === "idle" &&
@@ -147,54 +151,50 @@ describe("会话区 Fork E2E", () => {
         snapshot.queueCount === 0 &&
         snapshot.targetObjective?.includes(goalMarker) === true &&
         snapshot.targetStatus === "paused",
-      // 修复原因：target 直接写入 sqlite 后，renderer 需要一次完成态 session
-      // snapshot 才能稳定拿到目标；这里不使用 stop 造队列，避免残留不可 fork 状态。
       "fork goal source 完成后 renderer 没有同步父 target",
       90000,
     );
 
     const queuedMarker = `E2E_FORK_GOAL_HELD_QUEUE_${runId}`;
     const queuedPrompt = `${queuedMarker}: Reply with exactly "${E2E_REPLY_TOKEN}" and no other text.`;
-    const injectedQueue = await injectRendererQueuedPromptForE2E(
-      sourceSessionId ?? "",
-      queuedPrompt,
+    const runningMarker = `E2E_FORK_GOAL_RUNNING_${runId}`;
+    await sendV4Prompt(buildReplyPrompt(runningMarker));
+    // 这里需要保持运行态来建立真实队列；等待响应结束会耗尽受控流窗口。
+    await waitForUpstreamNetworkRequestStarted(runningMarker);
+    await waitForV4ConversationState(
+      // V4 的 Stop projection 与已捕获请求证明运行态；旧 store 的 activeInputId 不再同步。
+      (snapshot) => snapshot.state === "streaming",
+      "创建父队列前主轮没有处于实际运行中",
+      30000,
     );
+    await sendV4Prompt(queuedPrompt);
     await waitForQueueContaining(queuedMarker);
     const parentQueue = await waitForQueueCount(1);
     const parentQueueItemId = parentQueue[0]?.id;
     expect(parentQueueItemId).toBeTruthy();
-    expect(parentQueueItemId).toBe(injectedQueue.promptId);
-    await waitForChatState(
+    await clickV4Stop();
+    await waitForV4ConversationState(
       (snapshot) =>
         getSnapshotSessionId(snapshot) === sourceSessionId &&
         snapshot.state === "idle" &&
-        isRuntimeCompleted(snapshot) &&
+        snapshot.activeInputId === null &&
         snapshot.queueCount === 1 &&
+        !snapshot.stopRequested &&
         snapshot.targetObjective?.includes(goalMarker) === true &&
-        snapshot.targetStatus === "paused" &&
-        !snapshot.stopRequested,
-      // 修复原因：FK/E07 只验证 fork child 继承 target 且不复制父 queue；
-      // 旧 case 通过慢流 stop 构造 queue，会让 stopRequested 残留成 true，
-      // 导致 fork 按钮渲染但 React handler 被不可用态清空。
-      "fork goal 父会话没有进入可 fork 的 idle queue 状态",
+        snapshot.targetStatus === "paused",
+      "停止后父会话没有保留目标和 held queue",
       30000,
     );
-    // 修复原因：本 case 为避免额外可见 /goal query，target 通过 sqlite 直接注入。
-    // FK/E07 的父 target 前置条件以 session_target 持久化行作为 source of truth。
-    const parentTargetBeforeFork = readSessionTargetForE2E(
-      sourceSessionId ?? "",
-    );
+    const parentTargetBeforeFork = readSessionTargetForE2E(sourceSessionId ?? "");
     expect(parentTargetBeforeFork?.objective).toContain(goalMarker);
     expect(parentTargetBeforeFork?.status).toBe("paused");
 
-    const forkButton = await waitForForkButtonForAssistantMessageId(
-      seedAssistantMessageId,
-    );
+    const forkButton = await waitForForkButtonForAssistantMessageId(sourceAssistantMessageId);
     expect(forkButton.exists).toBe(true);
     expect(forkButton.disabled || forkButton.ariaDisabled).toBe(false);
 
-    await clickForkButtonForAssistantMessageId(seedAssistantMessageId);
-    const forkedSnapshot = await waitForChatState(
+    await clickForkButtonForAssistantMessageId(sourceAssistantMessageId);
+    const forkedSnapshot = await waitForV4ConversationState(
       (snapshot) =>
         Boolean(snapshot.sessionId || snapshot.taskId) &&
         (snapshot.sessionId || snapshot.taskId) !== sourceSessionId &&
@@ -205,16 +205,14 @@ describe("会话区 Fork E2E", () => {
       30000,
     );
 
-    expect(forkedSnapshot.sessionId || forkedSnapshot.taskId).not.toBe(
-      sourceSessionId,
-    );
+    expect(forkedSnapshot.sessionId || forkedSnapshot.taskId).not.toBe(sourceSessionId);
     expect(forkedSnapshot.queueCount).toBe(0);
     expect(await getQueueItems()).toHaveLength(0);
     expect(forkedSnapshot.targetObjective).toContain(goalMarker);
     expect(forkedSnapshot.targetStatus).toBe("paused");
 
-    await selectTaskById(sourceSessionId ?? "");
-    await waitForChatState(
+    await selectV4TaskById(sourceSessionId ?? "");
+    await waitForV4ConversationState(
       (snapshot) =>
         getSnapshotSessionId(snapshot) === sourceSessionId &&
         snapshot.targetObjective?.includes(goalMarker) === true &&
@@ -222,27 +220,23 @@ describe("会话区 Fork E2E", () => {
       "切回父 session 后 goal target 没有保留",
       30000,
     );
-    const restoredParentQueue = await getQueueItems();
-    if (restoredParentQueue.length > 0) {
-      // 修复原因：FK/E07 的 queue 是 renderer 注入的隔离夹具，只用于证明 child 不复制父 queue。
-      // 真实父 queue 的跨切换保留由 stop/running queue 专项覆盖；这里若注入项仍在，只校验它未被 fork 改写。
-      expect(restoredParentQueue[0]?.id).toBe(parentQueueItemId);
-      expect(restoredParentQueue[0]?.content).toContain(queuedMarker);
-    }
+    const restoredParentQueue = await waitForQueueCount(1);
+    expect(restoredParentQueue[0]?.id).toBe(parentQueueItemId);
+    expect(restoredParentQueue[0]?.content).toContain(queuedMarker);
   });
 
   it("edit 重跑后的 assistant fork 应只复制编辑后的 active branch", async function () {
     this.timeout(180000);
 
-    await prepareConversationE2E();
+    await prepareV4ConversationE2E();
 
     const runId = Date.now();
     const originalMarker = `E2E_FORK_EDIT_OLD_${runId}`;
     const originalPrompt = buildReplyPrompt(originalMarker);
-    await sendPrompt(originalPrompt);
-    await waitForComposerText("", "fork edit 原始消息发送后输入框没有清空");
-    await waitForUserMessageContaining(originalPrompt);
-    const originalSourceSnapshot = await waitForChatState(
+    await sendV4Prompt(originalPrompt);
+    await waitForV4ComposerText("", "fork edit 原始消息发送后输入框没有清空");
+    await waitForV4UserMessageContaining(originalPrompt);
+    const originalSourceSnapshot = await waitForV4ConversationState(
       (snapshot) => Boolean(snapshot.sessionId || snapshot.taskId),
       "fork edit 原始消息发送后没有绑定 source session",
       30000,
@@ -250,8 +244,8 @@ describe("会话区 Fork E2E", () => {
     const sourceSessionId = getSnapshotSessionId(originalSourceSnapshot);
     expect(sourceSessionId).toBeTruthy();
     await waitForUpstreamNetworkCapture(originalMarker);
-    await waitForAssistantMessageContaining(E2E_REPLY_TOKEN);
-    await waitForChatState(
+    await waitForV4AssistantMessageContaining(E2E_REPLY_TOKEN);
+    await waitForV4ConversationState(
       (snapshot) =>
         getSnapshotSessionId(snapshot) === sourceSessionId &&
         snapshot.state === "idle" &&
@@ -260,14 +254,20 @@ describe("会话区 Fork E2E", () => {
       "fork edit 原始消息完成后没有回到 idle",
       90000,
     );
-    await waitForUserMessageContaining(originalPrompt);
+    await waitForV4UserMessageContaining(originalPrompt);
 
     const editedMarker = `E2E_FORK_EDIT_ACTIVE_${runId}`;
     const editedPrompt = buildReplyPrompt(editedMarker);
     await editUserMessageContaining(originalMarker, editedPrompt);
+    // 失败现场已点击提交且 RPC 返回，但没有 Provider 请求；先保留命令拒绝原因，
+    // 避免仅等待网络后把 admission 失败误报为缺失模型响应，不重发编辑命令。
+    const editAck = await waitForLatestV4CommandAck("editUserQuery");
+    if (editAck.status !== "accepted") {
+      throw new Error(`fork edit 提交未接纳: ${JSON.stringify(editAck)}`);
+    }
     await waitForUpstreamNetworkCapture(editedMarker);
-    await waitForUserMessageContaining(editedPrompt);
-    await waitForChatState(
+    await waitForV4UserMessageContaining(editedPrompt);
+    await waitForV4ConversationState(
       (snapshot) =>
         getSnapshotSessionId(snapshot) === sourceSessionId &&
         snapshot.state === "idle" &&
@@ -285,7 +285,7 @@ describe("会话区 Fork E2E", () => {
     );
 
     await clickForkButtonForAssistantMessageId(assistantMessageId);
-    const forkedSnapshot = await waitForChatState(
+    const forkedSnapshot = await waitForV4ConversationState(
       (snapshot) =>
         Boolean(snapshot.sessionId || snapshot.taskId) &&
         getSnapshotSessionId(snapshot) !== sourceSessionId &&
@@ -295,24 +295,22 @@ describe("会话区 Fork E2E", () => {
     );
 
     expect(getSnapshotSessionId(forkedSnapshot)).not.toBe(sourceSessionId);
-    await waitForUserMessageContaining(editedPrompt);
-    await assertVisibleUserMessagesNotContaining(originalMarker);
-    expect(
-      (await getMessages()).map((message) => message.text).join("\n"),
-    ).toContain(editedMarker);
+    await waitForV4UserMessageContaining(editedPrompt);
+    await assertVisibleV4UserMessagesNotContaining(originalMarker);
+    expect((await getV4Messages()).map((message) => message.text).join("\n")).toContain(
+      editedMarker,
+    );
   });
 });
 
-type ChatSnapshot = Awaited<ReturnType<typeof getChatRootSnapshot>>;
+type ChatSnapshot = Awaited<ReturnType<typeof getV4ConversationState>>;
 
 function getSnapshotSessionId(snapshot: ChatSnapshot): string | null {
   return snapshot.sessionId || snapshot.taskId;
 }
 
 function isRuntimeCompleted(snapshot: ChatSnapshot): boolean {
-  return (
-    snapshot.runtimeStatus === "completed" && snapshot.activeInputId === null
-  );
+  return snapshot.state === "idle";
 }
 
 async function setSessionTargetForE2E(
@@ -349,240 +347,23 @@ async function setSessionTargetForE2E(
         time_updated = excluded.time_updated
       `,
     ).run(sessionId, targetId, objective, status, now, now);
-    db.prepare(
-      "update session set time_updated = max(time_updated, ?) where id = ?",
-    ).run(now, sessionId);
+    db.prepare("update session set time_updated = max(time_updated, ?) where id = ?").run(
+      now,
+      sessionId,
+    );
   } finally {
     db.close();
   }
-  await upsertRendererSessionTargetForE2E(sessionId, objective, status);
 }
 
-async function upsertRendererSessionTargetForE2E(
-  sessionId: string,
-  objective: string,
-  status: "active" | "paused" | "budget_limited" | "complete",
-) {
-  const result = (await browser.execute(
-    (taskIdArg, objectiveArg, statusArg) => {
-      type RendererTaskMeta = {
-        createdAt?: number;
-        status?: string;
-        target?: unknown;
-        taskId?: string;
-        title?: string;
-        updatedAt?: number;
-        workspaceIdentity?: string;
-        workspacePath?: string;
-      };
-      type RendererWorkspace = {
-        optimisticTaskListByTaskId?: Record<string, RendererTaskMeta>;
-        taskListCache?: RendererTaskMeta[];
-      };
-      type RendererStore = {
-        getState?: () => {
-          upsertOptimisticTaskListItem?: (
-            workspacePath: string,
-            task: RendererTaskMeta,
-            workspaceIdentity?: string,
-          ) => void;
-          workspaces?: Record<string, RendererWorkspace>;
-        };
-      };
-
-      const storeApi = (
-        window as Window & { __zcodeSessionStoreE2E?: RendererStore }
-      ).__zcodeSessionStoreE2E;
-      const state = storeApi?.getState?.();
-      if (!state?.upsertOptimisticTaskListItem) {
-        return { ok: false, reason: "store-api-missing" };
-      }
-
-      const workspaceEntry = Object.entries(state.workspaces ?? {}).find(
-        ([, workspace]) =>
-          Boolean(workspace.optimisticTaskListByTaskId?.[taskIdArg]) ||
-          Boolean(
-            workspace.taskListCache?.some((task) => task.taskId === taskIdArg),
-          ),
-      );
-      if (!workspaceEntry) {
-        return { ok: false, reason: "task-workspace-not-found" };
-      }
-
-      const [workspaceKey, workspace] = workspaceEntry;
-      const task =
-        workspace.optimisticTaskListByTaskId?.[taskIdArg] ??
-        workspace.taskListCache?.find((item) => item.taskId === taskIdArg);
-      if (!task) {
-        return { ok: false, reason: "task-meta-not-found" };
-      }
-
-      const now = Date.now();
-      const workspacePath = task.workspacePath ?? workspaceKey;
-      const workspaceIdentity = task.workspaceIdentity;
-      state.upsertOptimisticTaskListItem(
-        workspacePath,
-        {
-          ...task,
-          status: "completed",
-          target: {
-            objective: objectiveArg,
-            sessionID: taskIdArg,
-            status: statusArg,
-            summaryTitle: "E2E fork inherited goal",
-            targetID: `target_e2e_renderer_${now}`,
-            time: { created: now, updated: now },
-            timeUsedSeconds: 0,
-            tokenBudget: null,
-            tokensUsed: 0,
-          },
-          updatedAt: now,
-        },
-        workspaceIdentity,
-      );
-      return { ok: true, workspaceIdentity: workspaceIdentity ?? null, workspacePath };
-    },
-    sessionId,
-    objective,
-    status,
-  )) as { ok: boolean; reason?: string };
-
-  if (!result.ok) {
-    // 修复原因：本 case 的目标是验证 fork 是否继承父 target；DB 直写后 renderer
-    // 不一定马上刷新 task meta，必须把前置 target 同步到 E2E store 后再继续。
-    throw new Error(`fork goal renderer target 注入失败: ${JSON.stringify(result)}`);
-  }
-}
-
-interface RendererQueueInjectionResult {
-  ok: boolean;
-  promptId?: string;
-  reason?: string;
-  workspaceIdentity?: string | null;
-  workspacePath?: string | null;
-}
-
-async function injectRendererQueuedPromptForE2E(
-  taskId: string,
-  content: string,
-): Promise<RendererQueueInjectionResult & { promptId: string }> {
-  const result = (await browser.execute(
-    (taskIdArg, contentArg) => {
-      type RendererTaskMeta = {
-        taskId?: string;
-        workspaceIdentity?: string;
-        workspacePath?: string;
-      };
-      type RendererWorkspace = {
-        activeTaskId?: string | null;
-        optimisticTaskListByTaskId?: Record<string, RendererTaskMeta>;
-        taskListCache?: RendererTaskMeta[];
-      };
-      type RendererStore = {
-        getState?: () => {
-          enqueueTaskQueuedPrompt?: (
-            workspacePath: string,
-            taskId: string,
-            prompt: {
-              content: string;
-              id: string;
-              kind: "text";
-              prompt: string;
-              timestamp: number;
-            },
-            workspaceIdentity?: string,
-          ) => void;
-          setTaskStopRequested?: (
-            workspacePath: string,
-            taskId: string,
-            requested: boolean,
-            workspaceIdentity?: string,
-          ) => void;
-          workspaces?: Record<string, RendererWorkspace>;
-        };
-      };
-
-      const storeApi = (
-        window as Window & { __zcodeSessionStoreE2E?: RendererStore }
-      ).__zcodeSessionStoreE2E;
-      const state = storeApi?.getState?.();
-      if (!state?.enqueueTaskQueuedPrompt || !state.setTaskStopRequested) {
-        return { ok: false, reason: "store-api-missing" };
-      }
-
-      const workspaceEntry = Object.entries(state.workspaces ?? {}).find(
-        ([, workspace]) =>
-          workspace.activeTaskId === taskIdArg ||
-          Boolean(workspace.optimisticTaskListByTaskId?.[taskIdArg]) ||
-          Boolean(
-            workspace.taskListCache?.some((task) => task.taskId === taskIdArg),
-          ),
-      );
-      if (!workspaceEntry) {
-        return { ok: false, reason: "task-workspace-not-found" };
-      }
-
-      const [workspaceKey, workspace] = workspaceEntry;
-      const task =
-        workspace.optimisticTaskListByTaskId?.[taskIdArg] ??
-        workspace.taskListCache?.find((item) => item.taskId === taskIdArg);
-      const workspacePath = task?.workspacePath ?? workspaceKey;
-      const workspaceIdentity = task?.workspaceIdentity;
-      const promptId = `queued-e2e-fork-goal-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2, 6)}`;
-
-      state.enqueueTaskQueuedPrompt(
-        workspacePath,
-        taskIdArg,
-        {
-          content: contentArg,
-          id: promptId,
-          kind: "text",
-          prompt: contentArg,
-          timestamp: Date.now(),
-        },
-        workspaceIdentity,
-      );
-      state.setTaskStopRequested(
-        workspacePath,
-        taskIdArg,
-        false,
-        workspaceIdentity,
-      );
-
-      return {
-        ok: true,
-        promptId,
-        workspaceIdentity: workspaceIdentity ?? null,
-        workspacePath,
-      };
-    },
-    taskId,
-    content,
-  )) as RendererQueueInjectionResult;
-
-  if (!result.ok || !result.promptId) {
-    throw new Error(
-      `fork goal queue 注入失败: ${JSON.stringify(result)}`,
-    );
-  }
-  return result as RendererQueueInjectionResult & { promptId: string };
-}
-
-function readSessionTargetForE2E(
-  sessionId: string,
-): { objective: string; status: string } | null {
+function readSessionTargetForE2E(sessionId: string): { objective: string; status: string } | null {
   const dbPath = join(homedir(), ".zcode", "cli", "db", "db.sqlite");
   const db = new DatabaseSync(dbPath);
   try {
     return (
       (db
-        .prepare(
-          "select objective, status from session_target where session_id = ?",
-        )
-        .get(sessionId) as { objective: string; status: string } | undefined) ??
-      null
+        .prepare("select objective, status from session_target where session_id = ?")
+        .get(sessionId) as { objective: string; status: string } | undefined) ?? null
     );
   } finally {
     db.close();
@@ -597,11 +378,11 @@ async function waitForAssistantMessageIdAfterUser(
   userMarker: string,
   assistantText: string,
 ): Promise<string> {
-  let latestMessages: Awaited<ReturnType<typeof getMessages>> = [];
+  let latestMessages: Awaited<ReturnType<typeof getV4Messages>> = [];
   let matchedId: string | null = null;
   await browser.waitUntil(
     async () => {
-      latestMessages = await getMessages();
+      latestMessages = await getV4Messages();
       const userIndex = findLastMessageIndex(latestMessages, "user", userMarker);
       if (userIndex < 0) {
         return false;
@@ -612,10 +393,12 @@ async function waitForAssistantMessageIdAfterUser(
           (message) =>
             message.role === "assistant" &&
             message.text.includes(assistantText) &&
-            isStableMessageId(message.id),
+            Boolean(message.id),
         );
       matchedId = assistant?.id ?? null;
-      return Boolean(matchedId);
+      if (!matchedId) return false;
+      const action = await getForkButtonForAssistantMessageId(matchedId);
+      return action.exists && !action.disabled && !action.ariaDisabled;
     },
     {
       timeout: 90000,
@@ -630,30 +413,22 @@ async function waitForAssistantMessageIdAfterUser(
   return matchedId;
 }
 
-function isStableMessageId(messageId: string | null): messageId is string {
-  // 修复原因：流式过程中 assistant DOM 会先使用 stream-* 临时 id。
-  // fork 按钮绑定完成后落库的 msg_* 稳定 id，过早返回会导致按钮查找失败。
-  return Boolean(messageId?.startsWith("msg_"));
-}
-
 async function waitForVisibleUserMessagesNotContaining(text: string) {
-  let latestMessages: Awaited<ReturnType<typeof getMessages>> = [];
+  let latestMessages: Awaited<ReturnType<typeof getV4Messages>> = [];
   await browser.waitUntil(
     async () => {
-      latestMessages = await getMessages("user");
+      latestMessages = await getV4Messages("user");
       return !latestMessages.some((message) => message.text.includes(text));
     },
     {
       timeout: 30000,
-      timeoutMsg: `可见 user 消息仍包含 ${text}; latest=${JSON.stringify(
-        latestMessages,
-      )}`,
+      timeoutMsg: `可见 user 消息仍包含 ${text}; latest=${JSON.stringify(latestMessages)}`,
     },
   );
 }
 
 function findLastMessageIndex(
-  messages: Awaited<ReturnType<typeof getMessages>>,
+  messages: Awaited<ReturnType<typeof getV4Messages>>,
   role: string,
   text: string,
 ) {
@@ -684,9 +459,7 @@ async function waitForForkButtonForAssistantMessageId(messageId: string) {
   const button = await getForkButtonForAssistantMessageId(messageId);
   if (!button.exists || button.disabled || button.ariaDisabled) {
     throw new Error(
-      `assistant fork 按钮在等待后仍不可用: ${messageId}; latest=${JSON.stringify(
-        button,
-      )}`,
+      `assistant fork 按钮在等待后仍不可用: ${messageId}; latest=${JSON.stringify(button)}`,
     );
   }
   return button;
@@ -700,24 +473,18 @@ function getForkButtonForAssistantMessageId(messageId: string): Promise<{
 }> {
   return browser.execute(
     (forkButtonPrefix, targetMessageId) => {
-      const button = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          `[data-testid^="${forkButtonPrefix}-"]`,
-        ),
-      ).find(
-        (candidate) =>
-          candidate.getAttribute("data-message-id") === targetMessageId,
+      // V4 使用 canonical rowId 与 v4-fork 按钮；旧 msg_* 和 data-message-id 会漏掉已完成消息。
+      const button = document.querySelector<HTMLButtonElement>(
+        `[data-testid="v4-session-pane-workspace-main"] [data-testid="${forkButtonPrefix}-${targetMessageId}"]`,
       );
       return {
         ariaDisabled: button?.getAttribute("aria-disabled") === "true",
         disabled: button?.disabled ?? false,
         exists: Boolean(button),
-        testId:
-          button?.getAttribute("data-testid") ??
-          `${forkButtonPrefix}-${targetMessageId}`,
+        testId: button?.getAttribute("data-testid") ?? `${forkButtonPrefix}-${targetMessageId}`,
       };
     },
-    TID_CHAT_MESSAGE_FORK_BUTTON,
+    TID_V4_FORK,
     messageId,
   );
 }

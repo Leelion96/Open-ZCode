@@ -12,7 +12,35 @@ import type { TransportContext } from "@zcode/server/source-server";
 
 type Operation = { sequence: number; logs: SourceServerOperationLog[] };
 
-/** Host 内唯一日志历史；连接/更新共用，Renderer 的订阅仅作为查询失效通知。 */
+/** 每类设备操作的开始与成功文案；失败文案来自归一化错误。 */
+const OPERATION_MESSAGES: Record<
+  SourceServerOperationLog["operation"],
+  { phase: string; start: string; ready: string }
+> = {
+  connect: {
+    phase: "probe",
+    start: "Checking the remote device",
+    ready: "Remote connection ready",
+  },
+  update: {
+    phase: "probe",
+    start: "Checking the remote device",
+    ready: "Source Server update completed",
+  },
+  stop: { phase: "stop", start: "Stopping the remote service", ready: "Remote service stopped" },
+  // 耦合点：阶段名同时是错误归一化的阶段兜底键。`restart` 已被安装进度占用（CLI
+  // `source-server-install-progress` 的阶段，表示更新安装后重启 daemon）：`connectionErrors.ts`
+  // 的 phaseCodes 把它兜底为 `remote-install-failed`，更新进度 UI 也按它显示“重启中”。重启远端服务
+  // 若沿用 `restart`，未识别的失败会被误报为安装失败，所以用独立阶段名 `service-restart`。
+  // 改名或新增阶段前须同时核对 phaseCodes 与 SourceServerUpdateActivity 的阶段映射。
+  restart: {
+    phase: "service-restart",
+    start: "Restarting the remote service",
+    ready: "Remote service restarted and reconnected",
+  },
+};
+
+/** Host 内唯一日志历史；连接/更新/停止/重启共用，Renderer 的订阅仅作为查询失效通知。 */
 export class SourceServerOperationLogs {
   private sequence = 0;
   private readonly profileKeys = new Map<string, string>();
@@ -25,7 +53,9 @@ export class SourceServerOperationLogs {
   read(
     profile: Pick<ConnectionProfile, "profileId" | "sourceServerId">,
   ): SourceServerOperationLog[] {
-    const key = profile.sourceServerId ? `source:${profile.sourceServerId}` : this.profileKeys.get(profile.profileId);
+    const key = profile.sourceServerId
+      ? `source:${profile.sourceServerId}`
+      : this.profileKeys.get(profile.profileId);
     const operation = key ? this.operations.get(key) : undefined;
     return operation?.logs.map((entry) => ({ ...entry })) ?? [];
   }
@@ -44,7 +74,9 @@ export class SourceServerOperationLogs {
     task: (context: TransportContext) => Promise<T>,
   ): Promise<T> {
     const current: Operation = { sequence: ++this.sequence, logs: [] };
-    let key = profile.sourceServerId ? `source:${profile.sourceServerId}` : `profile:${profile.profileId}`;
+    let key = profile.sourceServerId
+      ? `source:${profile.sourceServerId}`
+      : `profile:${profile.profileId}`;
     let ownerProfileId = profile.profileId;
     const previous = this.operations.get(key);
     this.profileKeys.set(ownerProfileId, key);
@@ -55,7 +87,8 @@ export class SourceServerOperationLogs {
             (value): value is string => typeof value === "string",
           )
         : [];
-    let phase = "probe";
+    const messages = OPERATION_MESSAGES[operation];
+    let phase = messages.phase;
     let active = true;
     const emit = (
       event: { phase: string; message: string; progress?: number },
@@ -82,9 +115,10 @@ export class SourceServerOperationLogs {
       this.emitter.fire(entry);
       context?.onLog?.({ ...event, message, level });
     };
-    emit({ phase, message: "Checking the remote device" });
+    emit({ phase, message: messages.start });
     try {
-      const result = await task({ ...context, onLog: (event) => emit(event) });
+      // 原先默认 info 覆盖了环境探测的 warn，导致风险提示失去警告样式；保留生产者级别。
+      const result = await task({ ...context, onLog: (event) => emit(event, event.level) });
       const nextKey = `source:${result.sourceServerId}`;
       if (nextKey !== key && this.operations.get(key) === current) {
         // 身份换代生成新 Source/Profile；旧设备只保留换代前自己的历史。
@@ -96,12 +130,7 @@ export class SourceServerOperationLogs {
       this.profileKeys.set(ownerProfileId, key);
       const latest = this.operations.get(key);
       if (!latest || latest.sequence <= current.sequence) this.operations.set(key, current);
-      emit({
-        phase: "ready",
-        message:
-          operation === "update" ? "Source Server update completed" : "Remote connection ready",
-        progress: 1,
-      });
+      emit({ phase: "ready", message: messages.ready, progress: 1 });
       return result;
     } catch (error) {
       const failure = normalizeRemoteConnectionError(error, phase);

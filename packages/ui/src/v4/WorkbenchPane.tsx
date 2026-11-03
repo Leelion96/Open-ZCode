@@ -203,6 +203,7 @@ export interface WorkbenchShellBinding {
   /** Prompt 模板埋点当前仅覆盖 Desktop。 */
   isDesktop?: boolean;
   readOnly?: boolean;
+  readOnlyReason?: string;
   allowEscapeStopOutsidePane?: boolean;
   compactForRemoteControl?: boolean;
   sessionId: string | null;
@@ -408,6 +409,7 @@ export function WorkbenchLeafPane({
         <SessionPane
           paneId={paneId}
           readOnly={readOnly}
+          readOnlyReason={isShellWorkspace ? shell.readOnlyReason : undefined}
           sessionId={sessionId}
           openTrigger={isPrimary ? "sidebar" : "split"}
           activeSelectionSideChatSessionId={resolvePaneActiveSelectionSideChatSessionId(

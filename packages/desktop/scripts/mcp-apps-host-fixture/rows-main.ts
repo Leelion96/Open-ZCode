@@ -174,9 +174,24 @@ app
           assert.equal(s.opens, 21);
           assert.equal(s.placeholders, 1);
           assert.deepEqual(s.owners, ["row-10"]);
+          assert.deepEqual(await page("window.requestDisplayMode('inline')"), {
+            mode: "fullscreen",
+          });
+          assert.equal((await state()).sidebar, true);
           await ui("document.getElementById('close-sidebar').click()");
           await settle();
           assert.deepEqual((await state()).owners, ["row-10"]);
+          assert.equal((await state()).cards, 0);
+          assert.equal((await state()).placeholders, 1);
+          assert.equal(await ui("window.rowPageVisible()"), false);
+          assert.equal((await state()).views, 1);
+          assert.equal(await page("window.starts"), 1);
+          assert.equal(
+            await page(
+              "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve('running'))))",
+            ),
+            "running",
+          );
           assert.equal(env.guests.get(win.webContents.id)!.id, guestId);
           assert.equal(await page("document.getElementById('counter').textContent"), "1");
           assert.equal(env.agent.events.history.filter((e) => e.type === "read").length, 1);
@@ -191,6 +206,9 @@ app
           await ui("window.mountRows(true)");
           assert.equal((await state()).sidebar, false);
           assert.equal((await state()).opens, opens);
+          assert.equal((await state()).cards, 0);
+          assert.equal((await state()).placeholders, 1);
+          assert.equal(await ui("window.rowPageVisible()"), false);
           assert.equal(env.guests.get(win.webContents.id)!.id, guestId);
           await openRow();
           assert.equal((await state()).sidebar, true);
@@ -214,8 +232,151 @@ app
           await closeSidebar();
         },
       );
-      await showCard();
-      await writeFile(join(root, "rows-inline.png"), (await win.webContents.capturePage()).toPNG());
+      assert.equal((await state()).cards, 0);
+      assert.equal(await page("window.starts"), 1);
+      assert.equal(await page("document.getElementById('counter').textContent"), "1");
+      await writeFile(
+        join(root, "rows-fullscreen-preference.png"),
+        (await win.webContents.capturePage()).toPNG(),
+      );
+      for (const modes of ["fullscreen", "inline", "inline,fullscreen", "pip"]) {
+        await check(
+          `registered modes ${modes}: handshake, entry, requests and remount`,
+          async () => {
+            const nextScope = await env.agent.session(
+              join(root, `modes-${modes.replace(",", "-")}`),
+              "rows",
+            );
+            const next = await env.createWindow(
+              { ...nextScope, resourceUri: `ui://fixture/modes/${modes}` },
+              "rows",
+            );
+            const run = (code: string) => next.webContents.executeJavaScript(code);
+            const appPage = (code: string) => env.evalPage(next, code);
+            const layout = () =>
+              run("new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))");
+            const loaded = new Promise<void>((resolve) =>
+              next.webContents.once("did-attach-webview", (_event, guest) => {
+                const onLoad = (_event: unknown, isMainFrame: boolean) => {
+                  if (
+                    isMainFrame ||
+                    !guest.mainFrame.frames.some((frame) => frame.url.includes("/instance/"))
+                  )
+                    return;
+                  guest.removeListener("did-frame-finish-load", onLoad);
+                  resolve();
+                };
+                guest.on("did-frame-finish-load", onLoad);
+              }),
+            );
+            await run(`window.setRows([{id:1,fullscreen:${modes === "inline"}}])`);
+            await loaded;
+            // 页面有意延迟 initialize；真实 guest 已加载但不能先闪现 inline。
+            assert.equal(await run("window.rowPageVisible()"), false);
+            assert.equal((await run("window.rowsState()")).opens, 0);
+            await appPage("window.releaseFixtureConnect()");
+            await run("window.waitRowsRunning()");
+            await appPage("window.fixtureReady");
+            await layout();
+            const state = () => run("window.rowsState()");
+            const guest = env.guests.get(next.webContents.id)!.id;
+            if (modes === "fullscreen") {
+              assert.equal((await state()).cards, 0);
+              assert.equal((await state()).placeholders, 1);
+              assert.equal((await state()).sidebar, false);
+              assert.equal(await run("window.rowPageVisible()"), false);
+              assert.equal(
+                await run("document.querySelectorAll('[data-testid=plugin-ui-pin-toggle]').length"),
+                0,
+              );
+              await run("document.querySelector('[data-testid=plugin-ui-open-side-pane]').click()");
+              await layout();
+              assert.equal((await state()).sidebar, true);
+              assert.equal(await run("window.rowPageVisible()"), true);
+              assert.deepEqual((await appPage("window.displayContext()")).availableDisplayModes, [
+                "fullscreen",
+              ]);
+              assert.deepEqual(await appPage("window.requestDisplayMode('inline')"), {
+                mode: "fullscreen",
+              });
+              assert.equal((await state()).sidebar, true);
+              await run("document.getElementById('close-sidebar').click()");
+              await layout();
+              assert.equal((await state()).cards, 0);
+              assert.equal((await state()).placeholders, 1);
+              assert.equal(await run("window.rowPageVisible()"), false);
+              await run("window.mountRows(false)");
+              await run("window.mountRows(true)");
+              assert.equal((await state()).sidebar, false);
+              assert.equal((await state()).cards, 0);
+              await run("window.setRows([{id:1},{id:2,fullscreen:true}])");
+              await layout();
+              assert.equal((await state()).sidebar, true);
+              await run("document.getElementById('close-sidebar').click()");
+              await layout();
+              await run("window.mountRows(false)");
+              await run("window.mountRows(true)");
+              assert.equal((await state()).sidebar, false);
+              assert.equal((await state()).opens, 2);
+              assert.equal(env.guests.get(next.webContents.id)!.id, guest);
+              await writeFile(
+                join(root, "rows-fullscreen-card.png"),
+                (await next.webContents.capturePage()).toPNG(),
+              );
+            } else if (modes === "inline") {
+              assert.equal((await state()).cards, 1);
+              assert.equal(
+                await run(
+                  "document.querySelectorAll('[data-testid=plugin-ui-open-side-pane]').length",
+                ),
+                0,
+              );
+              assert.deepEqual(await appPage("window.requestDisplayMode('fullscreen')"), {
+                mode: "inline",
+              });
+              await run("window.setRows([{id:1},{id:2,fullscreen:true}])");
+              await layout();
+              assert.equal((await state()).opens, 0);
+              assert.equal((await state()).cards, 1);
+            } else if (modes === "pip") {
+              assert.equal((await state()).cards, 0);
+              assert.equal((await state()).placeholders, 0);
+              assert.equal(await run("window.rowPageVisible()"), false);
+            } else {
+              assert.equal((await state()).cards, 1);
+              await run("document.querySelector('[data-testid=plugin-ui-open-side-pane]').click()");
+              await layout();
+              assert.equal((await state()).sidebar, true);
+              await run("document.getElementById('close-sidebar').click()");
+              await layout();
+              assert.equal((await state()).cards, 1);
+              await run("window.setRows([{id:1},{id:2,fullscreen:true}])");
+              await layout();
+              assert.equal((await state()).sidebar, true);
+              await run("document.getElementById('close-sidebar').click()");
+              await layout();
+              assert.equal((await state()).cards, 0);
+              assert.equal((await state()).placeholders, 1);
+              assert.equal(await run("window.rowPageVisible()"), false);
+              assert.deepEqual((await appPage("window.displayContext()")).availableDisplayModes, [
+                "fullscreen",
+              ]);
+              await run("window.mountRows(false)");
+              await run("window.mountRows(true)");
+              assert.equal((await state()).cards, 0);
+              assert.equal((await state()).sidebar, false);
+              assert.equal(env.guests.get(next.webContents.id)!.id, guest);
+              assert.equal(await appPage("window.starts"), 1);
+              // 后续成功调用显式改回 inline，必须复用原 guest，不能被最初的 fullscreen 选择锁死。
+              await run("window.setRows([{id:3}])");
+              await layout();
+              assert.equal((await state()).cards, 1);
+              assert.equal(env.guests.get(next.webContents.id)!.id, guest);
+            }
+            next.destroy();
+          },
+        );
+      }
       await writeFile(
         join(root, "rows-results.json"),
         JSON.stringify({ checks, switchesMs, guestId, state: await state() }, null, 2),

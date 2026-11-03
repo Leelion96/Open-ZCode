@@ -12,12 +12,13 @@ export {
   type PluginUiRowPinResolver,
 } from "./domain/pluginUiRowPolicy.js";
 export {
+  createLogicalUiInstancesSelector,
   deriveLogicalUiInstances,
   type PluginUiInstanceDerivation,
 } from "./domain/pluginUiInstancePolicy.js";
 export {
   getPluginUiManualPin,
-  getPluginUiDisclosureVersion,
+  getPluginUiDisclosureSnapshot,
   subscribePluginUiDisclosure,
 } from "./app/pluginUiDisclosureStore.js";
 export { setPluginUiInstanceDerivation } from "./app/pluginUiInstanceStore.js";

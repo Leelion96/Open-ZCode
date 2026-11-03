@@ -1,5 +1,19 @@
 # Onboarding Migration Flow
 
+## Entry Points
+
+The migration wizard has no welcome view. Every entry opens the first step `Sessions` directly:
+
+- Settings → Data & Stats → Data Sync → `Migrate` (desktop only).
+- First run: when the settings-sync detection finds importable content, the wizard opens automatically.
+- The occupation onboarding, when the user opts in to migration.
+
+The first step's bottom-left button is `Cancel`; it closes the dialog and marks the first-run prompt as handled. The other steps keep `Back` / `Continue` / `Begin migration` / `Finish`.
+
+The settings sidebar has no separate Onboarding entry. `General` → `Open onboarding` opens the occupation onboarding, not this wizard.
+
+All entries go through the store request `requestOnboardingDialog()`; the dialog is mounted once in `Root.tsx`.
+
 ## Current Flow
 
 Onboarding now uses a multi-step wizard:
@@ -69,9 +83,12 @@ Claude Code 原生 `.jsonl` 与 ZCode 协议 snapshot **不是同一格式**，�
 
 ## UX Rules
 
+- 首启检查和手动打开共用同一个向导，但异步结果只属于发起它的那次请求。手动打开、关闭、切换工作区（含 identity）或卸载都会使旧请求失效；旧成功和旧失败都不得再开关窗口、重置选择或覆盖迁移结果。
+- 手动打开接管仍在进行的首启检查，并自行完成检测与 loading 收尾。不能仅保留 `open` 而留下永久 loading，也不能在 React 状态 updater 中发起检测。
+- 没有手动接管时，已处理的首启提示和空检测结果仍保持关闭；首启提示的持久化含义不变。开始导入后，迟到的检测不得覆盖导入进度或结果。
+
 - Selection steps never trigger import immediately.
 - Import only starts after entering `Migration`.
 - The `AGENTS.md` step is also a selection step. It must not copy files until the user starts migration and confirms the overwrite dialog.
 - The `Migration` step owns both the running state and the completed result state.
-- The settings page can reopen the same onboarding flow from `General`.
-- The welcome view reuses the same theme-aware hero visual as the `Open Workspace` screen, and adds lightweight migration copy on top so the right side still communicates purpose instead of being purely decorative.
+- The settings page reopens the wizard from Data Sync → `Migrate`, always at the `Sessions` step.

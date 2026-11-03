@@ -397,6 +397,13 @@ private toScheduleState(schedule: ToolSchedule): ToolScheduleState {
 2. 每个 parallel group 开始时只把该组对应的持久化 tool part 标记为 running；组完成后写入 `tool_batch_complete`。
 3. `TurnMachine` phase 真实驱动 loop：`ProcessingInput -> AwaitingModelResponse -> Streaming -> SchedulingTools -> ExecutingTools -> AggregatingResults -> AwaitingModelResponse/Completing`。
 4. `executeTurn(..., { abortSignal })` 必须把同一个 signal 传给 model adapter、tool executor 和每个 `ToolExecutionContext`；任何一层取消都应向上归属到同一 `traceId`。
+5. 中断标记：轮次被停止（`TurnCancelled`），或被宿主外部故障中止（例如投影超限，本轮记为 TurnError）后，在已提交的 assistant / tool result 之后追加一条普通 user 文本，下一次请求的模型可以看到。
+   - 工具批次结算时已停止（包括结算中 checkpoint 被取消）：`[Request interrupted by user for tool use]`；其他时候（模型请求、等待首 token、流式输出中）：`[Request interrupted by user]`。
+   - send-now 抢占（`preserveQueueAutoDrainOnCancel`）是为了交付下一条输入，不加标记；轮次循环开始前取消（例如排队中的 prompt 被取消）也不加。
+   - 标记是 runtime source `interrupt_marker` 的 message entry：不冒泡、MCS 下不转 system；附件冒泡越过它；按用户输入参与相邻 user 的换行规则（只在 Anthropic 协议上：前一条 user 文本补 `\n`，后面接用户输入时标记自身补 `\n`）。
+   - 与其他动态公告一样按隐藏提醒持久化：model-only synthetic user 消息，不写顶层 `source`（App 按封闭列表校验这个字段，新值会让旧版本拒绝整个会话），类型记在 `runtimeMessage.source = "interrupt_marker"`；冷恢复还原同一条 entry，旧版本不认识这个类型时也不报错。写入失败只记 warn，不替换取消结果。
+   - 冷恢复的轮次结果以标记为准：本轮有标记时按 cancelled 收口（已有持久化错误时仍显示该错误）。场景：最终文本已完整输出后再停止，assistant 记录是 `finish=stop`、没有 error；live 显示 cancelled，冷恢复也必须是 cancelled。
+   - 工具取消结果的文字：被停止或被宿主故障中止的批次里，被取消的工具（`ToolCancelled`：未开始、执行中、等待权限）给模型的 tool_result 统一为 `The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). STOP what you are doing and wait for the user to tell you how to proceed.`，`is_error: true`。只换 `modelContent`（冷恢复从 part metadata 重放）；`error.message` 不变，工具卡片仍显示各工具自己的取消原因。停止前已完成的结果、超时等其他错误不变。send-now 抢占的取消结果不换。
 
 ---
 

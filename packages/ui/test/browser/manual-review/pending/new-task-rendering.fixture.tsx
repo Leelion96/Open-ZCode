@@ -9,6 +9,8 @@ import {
   ProjectDirectoryProvider,
   ProjectSidebar,
   useOptionalProjectDirectory,
+  useOptionalProjectDirectoryActions,
+  ProjectComposerMenu,
 } from "@/project-sidebar/index.js";
 import { useRootWorkspaceActions } from "@/root/useRootWorkspaceActions.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
@@ -21,6 +23,7 @@ const params = new URLSearchParams(location.search);
 const theme = params.get("theme") === "dark" ? "dark" : "light";
 const mobile = params.get("mobile") === "1";
 const activity = params.get("activity") === "1";
+const boundaries = params.get("boundaries") === "1";
 const tooltips = params.get("tooltips") === "1";
 document.documentElement.className = `${theme} theme-zai-${theme}`;
 const noop = () => {};
@@ -55,6 +58,15 @@ const tree: ProjectTree = {
       ]
     : [],
 };
+if (boundaries)
+  tree.tasks.push(
+    ...Array.from({ length: 8 }, (_, index) => ({
+      ...tree.tasks[0]!,
+      taskId: `unrelated-${index}`,
+      title: `Unrelated ${index}`,
+      projectId: null,
+    })),
+  );
 let activitySnapshot = {
   items: activity
     ? [
@@ -121,7 +133,7 @@ const common = {
   theme,
   isDesktop: !mobile,
   isWebRemoteControl: mobile,
-  onSelectTask: noop,
+  onSelectTask: (...args: unknown[]) => Object.assign(window, { __selectedTask: args }),
   onStartDraftInWorkspace: noop,
   onOpenFolderFromWorkspaceMenu: noop,
   onConnectRemote: async () => "remote",
@@ -173,6 +185,14 @@ function Controls() {
             data-testid="fixture-chat-loading"
             loading={taskActivity?.phase === "running"}
           />
+          <button
+            data-testid="activate-task"
+            onClick={() =>
+              useZCodeSessionStore.getState().setActiveTaskId("/example", "running-task")
+            }
+          >
+            Activate task
+          </button>
           <button data-testid="activity-tick" onClick={() => activityStore.update()}>
             Tick
           </button>
@@ -218,6 +238,10 @@ function Controls() {
     </>
   );
 }
+function DirectoryCommandConsumer() {
+  useOptionalProjectDirectoryActions();
+  return null;
+}
 function Fixture() {
   const [revision, setRevision] = useState(0);
   const task = useZCodeSessionStore((state) => state.workspaces["/example"]?.activeTaskId);
@@ -255,6 +279,16 @@ function Fixture() {
             Update {revision}
           </button>
           <Controls />
+          {boundaries && (
+            <>
+              <DirectoryCommandConsumer />
+              <ProjectComposerMenu
+                workspacePath="/example"
+                onCreateTask={noop}
+                onSelectConversationWorkspace={noop}
+              />
+            </>
+          )}
         </main>
       </div>
     </ProjectDirectoryProvider>

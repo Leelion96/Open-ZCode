@@ -22,6 +22,8 @@ import { prepareV4ConversationE2E, selectV4TaskById } from "../../../helpers/v4-
 const CASE_MARKER = "E2E_WPL_010_REMOTE_IDENTITY";
 const PLUGIN_NAME = "wpl-remote-identity";
 const PLUGIN_ID = `${PLUGIN_NAME}@inline`;
+// 服务器队列沿用 /workspace；本机非 root Docker 用户必须显式提供本轮专用目录。
+const ALLOWED_REMOTE_WORKSPACE = process.env.ZCODE_E2E_WPL010_WORKSPACE?.trim() || "/workspace";
 
 describe("WPL-010 remote Workspace Plugin identity/path authority E2E", () => {
   let providerA: SSHLifecycleProvider | null = null;
@@ -239,7 +241,7 @@ async function cleanupRemoteFixture(
   target: SSHConnectionConfig,
   workspacePath: string,
 ): Promise<void> {
-  if (workspacePath !== "/workspace") {
+  if (workspacePath !== ALLOWED_REMOTE_WORKSPACE) {
     throw new Error(`${CASE_MARKER}: refusing to clean unexpected remote path ${workspacePath}`);
   }
   await runSSHCommand(target, `rm -rf -- ${quoteShell(workspacePath)}`);

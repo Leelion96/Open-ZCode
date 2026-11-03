@@ -193,7 +193,8 @@ async function setMode(mode: AppToolSearchMode, sessionId: string) {
 }
 
 function expectLocal(record: ToolSearchRecord) {
-  expect(record.requestJson.tools?.some((tool) => tool.name === "ToolSearch")).toBe(true);
+  expect(record.requestJson.tools?.some((tool) => tool.name === "LocalToolSearch")).toBe(true);
+  expect(record.requestJson.tools?.some((tool) => tool.name === "ToolSearch")).toBe(false);
   expect(record.requestJson.tools?.some((tool) => tool.name === "DeferredToolCall")).toBe(true);
   expect(record.requestJson.tools?.some((tool) => tool.name === "TodoWrite")).toBe(false);
   expect(record.requestJson.tools?.some((tool) => "defer_loading" in tool)).toBe(false);

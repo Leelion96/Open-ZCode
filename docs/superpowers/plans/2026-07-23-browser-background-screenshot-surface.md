@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- 设计事实以 `docs/superpowers/specs/2026-07-23-browser-background-screenshot-surface-design.md` 为准；先更新 `docs/testing/browser-use-codex-parity-coverage-matrix.md` 的 BCP-213，再修改实现。BCP-209 已由最新 `release/v3.5.0` 用于“显式截图绝对路径”，本修复顺延到下一个未占用编号。
+- 设计事实以 `docs/superpowers/specs/2026-07-23-browser-background-screenshot-surface-design.md` 为准；先更新 `docs/testing/browser-use-coverage-matrix.md` 的 BCP-213，再修改实现。BCP-209 已由最新 `release/v3.5.0` 用于“显式截图绝对路径”，本修复顺延到下一个未占用编号。
 - 当前工作树存在另一个 browser guest crash-recovery 任务对
   `browserGuestManager.ts`、`browserGuestManager.test.ts`、`AnimatedSidePanePanel.tsx`、
   `UnifiedBrowserView.tsx`、`BrowserViewportSurface.tsx`、`electron-webview.d.ts` 及其测试的
@@ -51,7 +51,7 @@
 
 ### Modified files
 
-- `docs/testing/browser-use-codex-parity-coverage-matrix.md`
+- `docs/testing/browser-use-coverage-matrix.md`
   - 新增 BCP-213，固定本次修复的验收边界。
 - `packages/shared/src/platform.ts`
   - 定义三个严格 payload，并扩展 `IPlatformService`。
@@ -89,7 +89,7 @@
 ### Task 1: 冻结 BCP-213 与跨进程平台合同
 
 **Files:**
-- Modify: `docs/testing/browser-use-codex-parity-coverage-matrix.md:108-111`
+- Modify: `docs/testing/browser-use-coverage-matrix.md:108-111`
 - Modify: `packages/shared/src/platform.ts:52-68`
 - Modify: `packages/shared/src/platform.ts:535-566`
 - Modify: `packages/shared/src/channels.ts:202-212`
@@ -137,7 +137,7 @@ browserViewScreenshotSurfaceReady?(
 
 - [ ] **Step 1: 先在覆盖矩阵写入失败前的产品合同**
 
-在 `docs/testing/browser-use-codex-parity-coverage-matrix.md` 的 BCP-208 后加入：
+在 `docs/testing/browser-use-coverage-matrix.md` 的 BCP-208 后加入：
 
 ```markdown
 | BCP-213 | 后台 browser-use 截图合成表面 | inactive `<webview>` 截图前必须在 owner renderer 的后台 capture layer 完成当前 CSS viewport 合成；不切 tab、不抢焦点；ready 前和 prepare 失败后禁止 `Page.captureScreenshot`；成功、异常、取消和 late settle 均幂等 release；四角 sentinel 不得出现旧 `800 × 450` surface 的周期重复 | 自动化：shared/preload/main IPC + coordinator/manager/UI component；真实 Electron compositor smoke |
@@ -289,7 +289,7 @@ Expected: preload suite PASS；TypeScript 不再报告新频道或 `window.zcode
 - [ ] **Step 7: 提交平台合同**
 
 ```powershell
-git add docs/testing/browser-use-codex-parity-coverage-matrix.md packages/shared/src/platform.ts packages/shared/src/channels.ts packages/desktop/src/preload/index.ts packages/desktop/src/renderer/src/main.tsx packages/desktop/test/preloadDisposer.test.ts
+git add docs/testing/browser-use-coverage-matrix.md packages/shared/src/platform.ts packages/shared/src/channels.ts packages/desktop/src/preload/index.ts packages/desktop/src/renderer/src/main.tsx packages/desktop/test/preloadDisposer.test.ts
 git commit -m "feat(browser-use): add screenshot surface IPC contract"
 ```
 
@@ -1443,7 +1443,7 @@ git commit -m "test(browser-use): cover background screenshot compositor"
 **Files:**
 - Modify only if evidence requires: files already listed in Tasks 1-5
 - Verify: `docs/superpowers/specs/2026-07-23-browser-background-screenshot-surface-design.md`
-- Verify: `docs/testing/browser-use-codex-parity-coverage-matrix.md`
+- Verify: `docs/testing/browser-use-coverage-matrix.md`
 
 **Interfaces:**
 - Consumes: Tasks 1-5 的完整实现和 smoke 命令。

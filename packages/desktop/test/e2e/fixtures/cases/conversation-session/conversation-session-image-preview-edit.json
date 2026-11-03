@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-image-preview-edit",
+  "spec": "./test/e2e/conversation-session/conversation-session-image-preview-edit.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-image-preview-edit.json"
+  ],
+  "providerRequestPolicy": "none",
+  "fileFixtures": [],
+  "requests": []
+}

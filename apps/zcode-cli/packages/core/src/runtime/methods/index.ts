@@ -1,3 +1,4 @@
+import type { AgentRuntimeInternal } from "../internal.js";
 import { sampleModel } from "./sample-model.js";
 import { grantPermissionFullAccess } from "../permission-full-access.js";
 import {
@@ -26,6 +27,7 @@ import { recordUserInputAutoResolutionUpdate } from "./interaction-auto-resoluti
 import { recordDynamicWorkflowRunProgress } from "./dynamic-workflow-run-progress.js";
 import { trackResumedDynamicWorkflowRun } from "./dynamic-workflow-run-track.js";
 import { activateDynamicWorkflowTools } from "./dynamic-workflow-activation.js";
+import { recordSessionFeature } from "../session-features/contract.js";
 import { startSavedWorkflowRun } from "./dynamic-workflow-run-start.js";
 import { amendWorkflowRunSettings } from "./dynamic-workflow-run-settings.js";
 import { getProjection } from "./config.js";
@@ -233,6 +235,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.recordDynamicWorkflowRunProgress = recordDynamicWorkflowRunProgress;
   proto.trackResumedDynamicWorkflowRun = trackResumedDynamicWorkflowRun;
   proto.activateDynamicWorkflowTools = activateDynamicWorkflowTools;
+  proto.recordSessionFeature = recordSessionFeature;
   proto.startSavedWorkflowRun = startSavedWorkflowRun;
   proto.amendWorkflowRunSettings = amendWorkflowRunSettings;
   proto.getProjection = getProjection;
@@ -332,7 +335,12 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.shouldContinueAfterStopHooks = shouldContinueAfterStopHooks;
   proto.executeTurn = executeTurn;
   proto.admitPrompt = admitPrompt;
-  proto.executeTurnCommand = executeTurnCommand;
+  proto.executeTurnCommand = function (
+    this: AgentRuntimeInternal,
+    ...args: Parameters<typeof executeTurnCommand>
+  ) {
+    return this.trackResidencyBlockingWork(executeTurnCommand.apply(this, args));
+  };
   proto.executeManualCompact = executeManualCompact;
   proto.autoCompactIfNeeded = autoCompactIfNeeded;
   proto.microcompactIfNeeded = microcompactIfNeeded;

@@ -81,7 +81,7 @@ export function useRootPlatformEffects({
   ) => void;
   startNewTaskFromActiveWorkspace: (source: string) => void;
   openWorkspace: () => void;
-  openWorkspacePath: (workspacePath: string) => void;
+  openWorkspacePath: (workspacePath: string, activateOtherWindow?: boolean) => void | Promise<void>;
   setWorkspaceActionError: (message: string | null) => void;
   allowOpenWorkspace?: boolean;
   isDesktop?: boolean;
@@ -114,6 +114,23 @@ export function useRootPlatformEffects({
     }
 
     didBootstrapInitialWorkspaceRef.current = true;
+    if (
+      isDesktop &&
+      initialWorkspaceAbsPath &&
+      initialWorkspacePurpose === "project" &&
+      clientMode === "desktop-continuous" &&
+      !initialWorkspaceIdentity &&
+      !initialTaskId &&
+      !initialTaskDraft &&
+      !isRendererReloadNavigation()
+    ) {
+      // 冷启动的 project 标记只描述 tab，不能代替草稿 projectId；与运行中系统目录
+      // 入口共用 Host 项目接纳，完成前保留启动屏障，避免空归属草稿先被预热。
+      void Promise.resolve(openWorkspacePath(initialWorkspaceAbsPath)).finally(() => {
+        setIsBootstrappingInitialWorkspace(false);
+      });
+      return;
+    }
     if (initialWorkspaceAbsPath) {
       const savedScope = readComposerWorkspaceScope(
         initialWorkspaceAbsPath,
@@ -165,6 +182,8 @@ export function useRootPlatformEffects({
     setIsBootstrappingInitialWorkspace(false);
   }, [
     addTab,
+    openWorkspacePath,
+    isDesktop,
     canBootstrapInitialWorkspace,
     initialTaskId,
     initialTaskDraft,
@@ -180,11 +199,8 @@ export function useRootPlatformEffects({
   useEffect(() => {
     const disposeFocusTab = platform.onFocusTab((path: string) => {
       logger.info("[Root] onFocusTab:", path);
-      if (activateTabByPath(path)) {
-        // 系统 workspace focus 是 workspace-only 导航；任务通知另有
-        // 显式 taskId 路径，不能在这里隐式恢复这个 workspace 上次选中的 session。
-        startDraftInWorkspace(path);
-      }
+      // 跨窗口打开由目标窗口完成项目接纳，避免只激活目录后留下未归类草稿。
+      void openWorkspacePath(path, false);
     });
     const disposeNewTab = platform.onNewTab(() => {
       logger.info("[Root] onNewTab");
@@ -193,6 +209,7 @@ export function useRootPlatformEffects({
       // 现在新标签语义收敛为“打开工作区”动作，由 Root 决定目录选择或默认 workspace 兜底。
       openWorkspace();
     });
+    // 新建回调包含当前语言；同步更新订阅，避免快捷键展示切换语言前的错误提示。
     const disposeNewTask = platform.onNewTask(() => {
       startNewTaskFromActiveWorkspace("onNewTask");
     });
@@ -324,7 +341,13 @@ export function useRootPlatformEffects({
       disposeNotificationClick();
       disposeUpdateCheckResult();
     };
-  }, [activeWorkspaceIdentity, activeWorkspacePath, platform, tabs]);
+  }, [
+    activeWorkspaceIdentity,
+    activeWorkspacePath,
+    platform,
+    startNewTaskFromActiveWorkspace,
+    tabs,
+  ]);
 
   useEffect(() => {
     const pending = pendingShareImportRef.current;

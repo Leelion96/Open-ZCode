@@ -8,6 +8,7 @@ import {
   cleanupLogRetention,
   createNodeLoggerFactory,
   formatLocalLogDate,
+  flushLocalTtftLogs,
 } from "../src/logging/index.js";
 import {
   createStorageFsFaultInjector,
@@ -16,6 +17,26 @@ import {
 } from "../src/storage/fs-fault-injection.js";
 
 describe("Node logging adapter", () => {
+  it("生产等级保留 TTFT，使用异步写入并沿用脱敏", async () => {
+    const logDir = await mkdtemp(join(tmpdir(), "zcode-ttft-"));
+    try {
+      const logger = createNodeLoggerFactory({ logDir, minLevel: LogLevel.Info }).createLogger(
+        "model",
+      );
+      logger.info("model first content", {
+        event: "ttft.model.first_content",
+        requestId: "request",
+        apiKey: "secret",
+      });
+      await flushLocalTtftLogs();
+      const [file] = await readdir(logDir);
+      const content = await readFile(join(logDir, file!), "utf8");
+      expect(content).toContain("ttft.model.first_content");
+      expect(content).not.toContain("secret");
+    } finally {
+      await rm(logDir, { recursive: true, force: true });
+    }
+  });
   afterEach(() => {
     resetStorageFsFaultInjectorForTests();
   });

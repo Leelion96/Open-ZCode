@@ -1,3 +1,8 @@
+import { createWorkspaceMcpTrust } from "../workspace-mcp-trust/index.js";
+import {
+  zcodeWorkspaceMcpTrustParamsSchema,
+  type ZCodeWorkspaceMcpTrustResult,
+} from "@zcode/shared";
 import { createConfig, resolvePath } from "@zcode/adapters/config";
 import type { Logger, McpConnectionSnapshot, McpPort, McpServerStatus } from "@zcode/contracts";
 import {
@@ -71,21 +76,75 @@ export async function listMcpServers(
     configuredMcpServers,
     pluginOutcome.mcpServers,
   );
-  // 产品决定 workspace MCP 开箱即用：project 作用域 MCP 默认 trusted，并自动连接。
-  const untrustedProjectMcpServers = new Set<string>();
-  const mcpPort = context.deps.mcpPort;
-  if (mcpPort) {
-    if (params.mode === "status") {
-      // OAuth 轮询只需要读取当前运行态。传入 pending 子集会落到
-      // connectConfiguredServers 的 replace 语义，导致未列出的 MCP 被断开。
-      const statuses = await listMcpServerStatuses(
-        mcpPort,
+  const authority = createWorkspaceMcpTrust({
+    workingDirectory,
+    workspaceIdentity: params.workspace.workspaceIdentity,
+    env: context.deps.env,
+  });
+  const reviews = await authority.inspect();
+  const untrustedProjectMcpServers = new Set(
+    Object.entries(reviews)
+      .filter(([, review]) => !review.trusted)
+      .map(([name]) => name),
+  );
+  for (const [name, config] of Object.entries(configuredMcpServers)) {
+    if (!config.source && configResult.sources.mcp.serverSources[name] === "project") {
+      configuredMcpServers[name] = { ...config, source: { kind: "workspace" } };
+    } else if (!config.source && configResult.sources.mcp.serverSources[name] === "user") {
+      configuredMcpServers[name] = { ...config, source: { kind: "user" } };
+    }
+  }
+  const withReviews = async (statuses: Record<string, McpServerStatus>) => {
+    for (const [name, review] of Object.entries(await authority.inspect())) {
+      const config = configuredMcpServers[name];
+      if (
+        config?.source?.kind === "user" ||
+        config?.source?.kind === "plugin" ||
+        config?.source?.kind === "builtin"
+      )
+        continue;
+      statuses[name] = {
+        ...(statuses[name] ?? {
+          status: "disconnected",
+          transport: review.transport,
+          toolCount: 0,
+          updatedAt: new Date().toISOString(),
+        }),
+        ...(!review.configuredEnabled
+          ? { status: "disabled" as const, toolCount: 0 }
+          : !review.trusted
+            ? { status: "untrusted" as const, toolCount: 0 }
+            : {}),
+        workspaceTrust: review,
+      };
+    }
+    return statuses;
+  };
+  if (params.mode === "status") {
+    // 只读轮询曾接管共享 lease，取消其他工作区的 OAuth；仅显式连接允许切换 owner。
+    const cached = context.deps.mcpPort && settingsPorts.get(context.deps.mcpPort);
+    const current = cached?.workspaceKey === params.workspace.workspaceKey ? cached : undefined;
+    await current?.ready;
+    let statuses = await listMcpServerStatuses(
+      current && !current.controller.signal.aborted ? current.port : undefined,
+      configuredMcpServers,
+      untrustedProjectMcpServers,
+    );
+    // 读取期间被显式切换时，丢弃共享 lease 的迟到快照，避免串入新 owner 的状态。
+    if (current?.controller.signal.aborted) {
+      statuses = await listMcpServerStatuses(
+        undefined,
         configuredMcpServers,
         untrustedProjectMcpServers,
       );
-      return zcodeMcpListResultSchema.parse({ statuses });
     }
+    return zcodeMcpListResultSchema.parse({ statuses: await withReviews(statuses) });
+  }
 
+  const mcpPort = context.deps.mcpPort
+    ? await settingsPort(context.deps.mcpPort, params.workspace.workspaceKey, authority)
+    : undefined;
+  if (mcpPort) {
     // OAuth 轮询已由 mode=status 隔离；默认/connect 必须继续执行 replace 收敛，
     // 否则任一 server 待授权时，配置新增/删除和 stale MCP 清理都会被跳过。
     // 默认/connect 模式服务的是设置页刷新这类"重新探测"诉求，而 mcpPort 是进程级
@@ -100,6 +159,7 @@ export async function listMcpServers(
       {
         revalidate: true,
         workingDirectory,
+        workspaceIdentity: params.workspace.workspaceIdentity,
       },
     );
     const pendingAuthorizationSnapshot = await waitForOAuthAuthorizationSnapshot(
@@ -116,7 +176,7 @@ export async function listMcpServers(
         });
       });
       return zcodeMcpListResultSchema.parse({
-        statuses: pendingAuthorizationSnapshot.statuses,
+        statuses: await withReviews(pendingAuthorizationSnapshot.statuses),
       });
     }
 
@@ -127,7 +187,7 @@ export async function listMcpServers(
     configuredMcpServers,
     untrustedProjectMcpServers,
   );
-  return zcodeMcpListResultSchema.parse({ statuses });
+  return zcodeMcpListResultSchema.parse({ statuses: await withReviews(statuses) });
 }
 
 async function waitForOAuthAuthorizationSnapshot(
@@ -169,4 +229,78 @@ function hasPendingOAuthAuthorization(statuses: Record<string, McpServerStatus>)
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const settingsPorts = new WeakMap<
+  McpPort,
+  { workspaceKey: string; port: McpPort; controller: AbortController; ready: Promise<void> }
+>();
+async function settingsPort(
+  raw: McpPort,
+  workspaceKey: string,
+  authority: ReturnType<typeof createWorkspaceMcpTrust>,
+): Promise<McpPort> {
+  const previous = settingsPorts.get(raw);
+  if (previous?.workspaceKey === workspaceKey) {
+    await previous.ready;
+    return previous.port;
+  }
+  // 旧 OAuth 可在切换后才完成；先使旧 gate 失效，禁止它继续向共享 lease 写入连接。
+  previous?.controller.abort();
+  const controller = new AbortController();
+  const port = authority.guard(raw, controller.signal);
+  // 清理只串行等待前次清理，不等待 OAuth；并发切换不能迟到断开新 workspace 的连接。
+  const ready = (previous?.ready ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(async () => {
+      for (const name of Object.keys(await raw.status())) {
+        if (controller.signal.aborted) return;
+        await raw.disconnectServer(name);
+      }
+    });
+  settingsPorts.set(raw, { workspaceKey, port, controller, ready });
+  try {
+    await ready;
+  } catch (error) {
+    // 清理失败不缓存永久 rejected 的 gate；只撤销自己，不能删除已接管的新目标。
+    controller.abort();
+    if (settingsPorts.get(raw)?.port === port) settingsPorts.delete(raw);
+    throw error;
+  }
+  return port;
+}
+
+export async function setWorkspaceMcpTrust(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+): Promise<ZCodeWorkspaceMcpTrustResult> {
+  const params = parseParams(zcodeWorkspaceMcpTrustParamsSchema, rawParams);
+  try {
+    await createWorkspaceMcpTrust({
+      workingDirectory: params.workspace.workspacePath,
+      workspaceIdentity: params.workspace.workspaceIdentity,
+      env: context.deps.env,
+    }).decide(params.serverName, params.declarationDigest, params.trusted);
+    // 与 Hooks 一样按 workspace 通知活跃会话；不能把已落盘的决定误报为授权失败。
+    const refreshes = await Promise.allSettled(
+      [...context.sessions.values()]
+        .filter((record) => record.workspace.workspaceKey === params.workspace.workspaceKey)
+        .map((record) => record.app.reloadWorkspaceMcpTrust?.()),
+    );
+    if (refreshes.some((result) => result.status === "rejected")) {
+      context.logger?.warn("MCP trust admission refresh failed", {
+        event: "mcp.trust.admission.refresh.failed",
+        workspaceKey: params.workspace.workspaceKey,
+      });
+    }
+    return { accepted: true };
+  } catch (error) {
+    return {
+      accepted: false,
+      reasonCode:
+        error instanceof Error && error.message === "workspace_mcp_declaration_changed"
+          ? "workspace_mcp_declaration_changed"
+          : "workspace_mcp_trust_unavailable",
+    };
+  }
 }

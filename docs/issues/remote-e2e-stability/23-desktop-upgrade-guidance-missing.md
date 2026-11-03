@@ -31,3 +31,7 @@ Host 正确拒绝旧 Desktop → 主界面要求查看详情
 
 证据：补丁 07 的 `version-controller-required` Desktop 日志；补丁 08 同名用例的
 `version-policy.json`、失败录像和日志。
+
+## Comments
+
+2026-10-17 转正回放 `r3-server-promotion-20261016-shape-current-version-controller` 使用 Desktop 3.16.0、合成 Server/minimum 3.17.0。先关闭手动连接的阻塞向导，再真实点击横幅“详细信息”，已排除遮罩拦截点击。详情现在增加“远程设备与当前 ZCode Desktop 版本不兼容，需要先升级”，但仍未指明应升级桌面端，也没有最低版本和对应动作。与旧证据相比文案已有变化，尚不能据此关闭本问题。最终远端版本仍为 3.17.0，归档 SHA 断言在详情失败之后，未计为本轮通过；可选更新分支在独立回放中通过。

@@ -1,7 +1,8 @@
+import * as childFactory from "../src/app/script-workflow-child-runtime.js";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createNodeFileSystemAdapter } from "@zcode/adapters/fs";
 import { createSqliteSessionStore } from "@zcode/adapters/storage";
 import { createRootTraceContext, createSessionId, type Model } from "@zcode/contracts";
@@ -332,6 +333,61 @@ describe("script workflow runtime", () => {
     }
   });
 
+  it("App.close cancels a legacy workflow and waits for its real child turn", async () => {
+    const tempRoot = await mkdtemp(join(tmpdir(), "zcode-workflow-owned-close-"));
+    const scriptPath = join(tempRoot, "owned.workflow.js");
+    const store = await createSqliteSessionStore({ dbPath: ":memory:" });
+    const started = deferred<void>();
+    const cancelled = deferred<void>();
+    const cleanup = deferred<void>();
+    await writeFile(
+      scriptPath,
+      `export const meta = { name: "owned", description: "Close owned child" }; return await agent("Wait for cancellation");`,
+    );
+    const app = await createZCodeApp({
+      modelExecutor: {
+        setModelIoFullRetentionEnabled() {},
+        async generateText(request: { abortSignal?: AbortSignal }) {
+          started.resolve();
+          await new Promise<void>((resolve) => {
+            if (request.abortSignal?.aborted) resolve();
+            else request.abortSignal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+          cancelled.resolve();
+          await cleanup.promise;
+          throw request.abortSignal?.reason;
+        },
+      } as never,
+      runtimeConfig: { workingDirectory: tempRoot },
+      sessionStore: store,
+      skipUserConfig: true,
+    });
+    try {
+      const running = app.runWorkflowScript!({ scriptPath });
+      await started.promise;
+      let closed = false;
+      const closing = app.close!().then(() => {
+        closed = true;
+      });
+      await cancelled.promise;
+      expect(closed).toBe(false);
+      cleanup.resolve();
+      await closing;
+      const result = await running;
+      expect(result.status).toBe("cancelled");
+      const activities = await store.listScriptWorkflowActivities({ runId: result.runId });
+      expect(activities).toHaveLength(1);
+      expect(activities[0]?.status).toBe("cancelled");
+      expect(await store.getSession(activities[0]!.childSessionId!)).toBeTruthy();
+      await expect(app.runWorkflowScript!({ scriptPath })).rejects.toThrow(/closed/);
+    } finally {
+      cleanup.resolve();
+      await app.close?.();
+      store.close();
+      await rm(tempRoot, { force: true, recursive: true });
+    }
+  });
+
   it("Script Workflow 子 Runtime 继续使用进程 Registry 的 ModelFactory", async () => {
     const tempRoot = await mkdtemp(join(tmpdir(), "zcode-workflow-provider-registry-"));
     const scriptPath = join(tempRoot, "registry.workflow.js");
@@ -503,3 +559,107 @@ function deferred<T>() {
   });
   return { promise, reject, resolve };
 }
+
+it("workflow child shutdown waits for in-flight agent request cleanup", async () => {
+  const root = await mkdtemp(join(tmpdir(), "workflow-close-"));
+  const scriptPath = join(root, "close.workflow.js");
+  await writeFile(
+    scriptPath,
+    'export const meta = { name: "close", description: "shutdown test" }; return await agent("work");',
+  );
+  const controller = new AbortController();
+  let started!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let finish!: () => void;
+  const cleanup = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const document = await readWorkflowScriptDocument({
+    fileSystemPort: createNodeFileSystemAdapter(),
+    scriptPath,
+    traceContext: createRootTraceContext({ sessionId: createSessionId("workflow-close") }),
+  });
+  let settled = false;
+  const running = runScriptWorkflowChild({
+    document,
+    signal: controller.signal,
+    workingDirectory: root,
+    handleEvent() {},
+    handleRequest: async () => {
+      started();
+      await cleanup;
+      return {};
+    },
+  });
+  void running.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  try {
+    await ready;
+    controller.abort(new Error("session closed"));
+    // 等待进程退出这一真实边界；child activity 的清理由独立 barrier 控制。
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(settled).toBe(false);
+    finish();
+    await expect(running).rejects.toThrow("session closed");
+  } finally {
+    finish();
+    await running.catch(() => undefined);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("legacy workflow keeps a successful activity when child cleanup fails, then retries at close", async () => {
+  const root = await mkdtemp(join(tmpdir(), "workflow-release-"));
+  const scriptPath = join(root, "success.workflow.js");
+  await writeFile(
+    scriptPath,
+    'export const meta = { name: "success", description: "test" }; return await agent("Say done");',
+  );
+  const store = await createSqliteSessionStore({ dbPath: ":memory:" });
+  const original = childFactory.createScriptWorkflowAgentRuntime;
+  let attempts = 0;
+  const spy = vi
+    .spyOn(childFactory, "createScriptWorkflowAgentRuntime")
+    .mockImplementation((input) => {
+      const child = original(input);
+      const close = child.closeBrowserSession.bind(child);
+      child.closeBrowserSession = async () => {
+        if (++attempts === 1) throw new Error("transient release failure");
+        await close();
+      };
+      return child;
+    });
+  const app = await createZCodeApp({
+    skipUserConfig: true,
+    sessionStore: store,
+    runtimeConfig: { workingDirectory: root },
+    modelExecutor: {
+      setModelIoFullRetentionEnabled() {},
+      async generateText() {
+        return {
+          text: "done",
+          finishReason: "stop",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    } as never,
+  });
+  try {
+    const result = await app.runWorkflowScript!({ scriptPath });
+    expect(result.status).toBe("completed");
+    await expect(app.close!()).resolves.toBeUndefined();
+    expect(attempts).toBe(2);
+  } finally {
+    spy.mockRestore();
+    store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

@@ -208,9 +208,9 @@ describe(`${CASE}: 实际 Web 查看与桌面唯一未读写者`, () => {
     await prepareSSHConnectionPage(CASE);
     await ensureUpstreamProviderForE2E({ skipToolbarSelection: true });
     await startNewV4Draft();
-    // 回放模型只提供 disabled；用例不依赖通用 helper 的 high 默认档位。
+    // 回放种子声明 high/max；未读断言不依赖档位，显式选目录中的 high。
     await selectUpstreamModel();
-    await selectUpstreamThoughtLevelValue("disabled");
+    await selectUpstreamThoughtLevelValue("high");
     await installHandoffRpcProbe();
     webBrowser = await chromium.launch({
       ...(process.env.ZCODE_E2E_MOBILE_BROWSER_EXECUTABLE || process.env.R3_MOBILE_CHROME
@@ -225,7 +225,7 @@ describe(`${CASE}: 实际 Web 查看与桌面唯一未读写者`, () => {
       if (width === 390) {
         await startNewV4Draft();
         await selectUpstreamModel();
-        await selectUpstreamThoughtLevelValue("disabled");
+        await selectUpstreamThoughtLevelValue("high");
       }
       await sendV4Prompt(`${CASE}_SEED: 只回复 MRO03_SEED_DONE`);
       await waitForV4AssistantMessageContaining("MRO03_SEED_DONE", 90_000);
@@ -375,7 +375,7 @@ describe(`${CASE}: 实际 Web 查看与桌面唯一未读写者`, () => {
       await ensureUpstreamProviderForE2E({ skipToolbarSelection: true });
       await startNewV4Draft();
       await selectUpstreamModel();
-      await selectUpstreamThoughtLevelValue("disabled");
+      await selectUpstreamThoughtLevelValue("high");
       await installHandoffRpcProbe();
       await sendV4Prompt(`${CASE}_SEED: 只回复 MRO03_SEED_DONE`);
       await waitForV4AssistantMessageContaining("MRO03_SEED_DONE", 90_000);

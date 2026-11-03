@@ -11,9 +11,16 @@ export function buildConversationShareItems(
   options: BuildConversationTurnNavigatorItemsOptions,
 ): ConversationTurnNavigatorItem[] {
   const queries = buildConversationTurnNavigatorItems(units, options);
+  // 长会话中逐回合 filter 全部 query 会形成平方级开销；一次分组仍保留原 query 顺序。
+  const queriesByUnit = new Map<number, ConversationTurnNavigatorItem[]>();
+  for (const query of queries) {
+    const group = queriesByUnit.get(query.unitIndex);
+    if (group) group.push(query);
+    else queriesByUnit.set(query.unitIndex, [query]);
+  }
   return units.flatMap((unit, unitIndex) => {
-    const existing = queries.filter((item) => item.unitIndex === unitIndex);
-    if (existing.length) return existing;
+    const existing = queriesByUnit.get(unitIndex);
+    if (existing) return existing;
     if (
       !unit.header ||
       unit.timelineOnly ||

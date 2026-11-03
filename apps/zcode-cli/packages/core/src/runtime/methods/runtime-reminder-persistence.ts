@@ -7,10 +7,12 @@ import {
   traceContextToLogContext,
   type MessageId,
   type MessageProjectionAnchor,
+  type MessageWithParts,
   type Model,
   type TraceContext,
 } from "@zcode/contracts";
 import {
+  INTERRUPT_MARKER_SOURCE,
   isRuntimeAttachmentEntry,
   type RuntimeMessageEntry,
   type RuntimeMessageMetadata,
@@ -22,48 +24,70 @@ export async function persistRuntimeReminderMessage(
   this: AgentRuntimeInternal,
   entry: RuntimeMessageEntry,
   traceContext: TraceContext,
-  options: { created?: number; model?: Model; anchor?: MessageProjectionAnchor } = {},
+  options: RuntimeReminderMessageOptions = {},
 ): Promise<MessageId | undefined> {
-  if (!this.sessionStore || !entry.metadata) return;
+  if (!this.sessionStore) return;
+  const record = buildRuntimeReminderMessage(this, entry, options);
+  if (!record) return;
+  try {
+    await this.persistMessage(record.info, traceContext);
+    for (const part of record.parts) await this.persistPart(part, traceContext);
+    return record.info.id;
+  } catch (error) {
+    await removeRuntimePersistenceMessagesBestEffort.call(this, [record.info.id], traceContext);
+    throw error;
+  }
+}
+
+interface RuntimeReminderMessageOptions {
+  created?: number;
+  model?: Model;
+  anchor?: MessageProjectionAnchor;
+}
+
+/** 只构建隐藏提醒记录，不写入；compact 用它把整组记录交给同一事务。 */
+export function buildRuntimeReminderMessage(
+  runtime: AgentRuntimeInternal,
+  entry: RuntimeMessageEntry,
+  options: RuntimeReminderMessageOptions = {},
+): MessageWithParts | undefined {
+  if (!entry.metadata) return;
+  // 中断标记是普通 user 文本，不是 system-reminder 附件，正文取消息文本。
   const content = isRuntimeAttachmentEntry(entry)
     ? entry.content
-    : entry.metadata.toolSearchAnnouncement
+    : entry.metadata.toolSearchAnnouncement || entry.metadata.source === INTERRUPT_MARKER_SOURCE
       ? modelMessageContentToText(entry.message.content)
       : undefined;
   if (content === undefined) return;
 
   const created = options.created ?? Date.now();
   const messageID = createMessageId();
-  try {
-    await this.persistMessage(
-      {
-        id: messageID,
-        sessionID: this.sessionId,
-        role: "user",
-        time: { created },
-        agent: this.config.agentName ?? "zcode-agent",
-        metadata: reminderPartMetadata(entry.metadata),
-        modelSelection: resolvePersistedReminderModel(this, options.model),
-        ...(options.anchor ? { anchor: options.anchor } : {}),
-        semantics: {
-          origin: "agent_runtime",
-          kind: "system_reminder",
-          source: entry.metadata.source,
-          uiVisibility: "hidden",
-          providerVisibility: "visible",
-          transcriptVisibility: "hidden",
-        },
-        system: this.config.systemPrompt,
-        synthetic: true,
-        tools: Object.fromEntries(this.getTools().map((tool) => [tool.name, true])),
-        visibility: "model-only",
+  return {
+    info: {
+      id: messageID,
+      sessionID: runtime.sessionId,
+      role: "user",
+      time: { created },
+      agent: runtime.config.agentName ?? "zcode-agent",
+      metadata: reminderPartMetadata(entry.metadata),
+      modelSelection: resolvePersistedReminderModel(runtime, options.model),
+      ...(options.anchor ? { anchor: options.anchor } : {}),
+      semantics: {
+        origin: "agent_runtime",
+        kind: "system_reminder",
+        source: entry.metadata.source,
+        uiVisibility: "hidden",
+        providerVisibility: "visible",
+        transcriptVisibility: "hidden",
       },
-      traceContext,
-    );
-    await this.persistPart(
+      synthetic: true,
+      // 工具名单与 system prompt 只写在用户输入记录上：隐藏提醒条数多，每条都存一份会让数据库重复膨胀。
+      visibility: "model-only",
+    },
+    parts: [
       {
         id: createPartId(),
-        sessionID: this.sessionId,
+        sessionID: runtime.sessionId,
         messageID,
         type: "text",
         text: content,
@@ -71,13 +95,8 @@ export async function persistRuntimeReminderMessage(
         time: { start: created, end: created },
         metadata: reminderPartMetadata(entry.metadata),
       },
-      traceContext,
-    );
-    return messageID;
-  } catch (error) {
-    await removeRuntimePersistenceMessagesBestEffort.call(this, [messageID], traceContext);
-    throw error;
-  }
+    ],
+  };
 }
 
 export function resolvePersistedReminderModel(runtime: AgentRuntimeInternal, model?: Model) {

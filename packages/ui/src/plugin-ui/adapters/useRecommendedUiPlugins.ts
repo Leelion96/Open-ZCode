@@ -77,6 +77,8 @@ export function useRecommendedUiPlugins(target: {
       return [];
     return [{ ...entry, item }];
   });
+  // 已安装插件优先展示；稳定排序保留各组原有的推荐顺序，暂停的插件仍算已安装。
+  entries.sort((a, b) => Number(b.item.installed) - Number(a.item.installed));
   const isCurrent = () => current.current === context;
   const prepare = async (item: StorePluginItem) => {
     // 读取 store 的即时状态，同插件重复点击被拦截，其他插件不受影响。

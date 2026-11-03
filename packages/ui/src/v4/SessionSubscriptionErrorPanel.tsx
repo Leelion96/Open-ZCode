@@ -12,6 +12,7 @@ export interface SessionSubscriptionErrorPanelProps {
   sessionId: string;
   workspacePath: string;
   onReconnect: () => void;
+  reconnectLabel?: string;
 }
 
 export function SessionSubscriptionErrorPanel({
@@ -19,6 +20,7 @@ export function SessionSubscriptionErrorPanel({
   sessionId,
   workspacePath,
   onReconnect,
+  reconnectLabel,
 }: SessionSubscriptionErrorPanelProps) {
   const { intl } = useZCodeIntl();
   // 已知回收标识沿用现有本地化，其它错误原样展示。
@@ -60,7 +62,7 @@ export function SessionSubscriptionErrorPanel({
           {intl.formatMessage({ id: "chat.error.feedback" })}
         </Button>
         <Button type="button" data-testid={TID_V4_RETRY_SUBSCRIBE} onClick={onReconnect}>
-          {intl.formatMessage({ id: "workspaceSidebar.reconnect" })}
+          {reconnectLabel ?? intl.formatMessage({ id: "workspaceSidebar.reconnect" })}
         </Button>
       </div>
     </div>

@@ -16,17 +16,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "bodyIncludes": [
-          "Generate a concise title",
-          "E2E_SSH_P0_SETTINGS_OVERLAY_SIDEBAR"
-        ]
+        "bodyIncludes": ["Generate a concise title", "E2E_SSH_P0_SETTINGS_OVERLAY_SIDEBAR"]
       },
       "response": {
         "statusCode": 200,
         "headers": {
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"ssh-settings-overlay-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"SSH settings overlay\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"ssh-settings-overlay-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"ssh-settings-overlay-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"e2e-ssh-remote-lifecycle-model\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"SSH settings overlay\\\"}\"},\"finish_reason\":\"stop\"}]}"
       }
     },
     {
@@ -41,12 +38,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": [
-          "E2E_SSH_P0_SETTINGS_OVERLAY_SIDEBAR_A_FIRST_PROMPT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "lastUserMessageIncludes": ["E2E_SSH_P0_SETTINGS_OVERLAY_SIDEBAR_A_FIRST_PROMPT"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -69,12 +62,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": [
-          "E2E_SSH_P0_SETTINGS_OVERLAY_SIDEBAR_A_FOLLOW_PROMPT"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "lastUserMessageIncludes": ["E2E_SSH_P0_SETTINGS_OVERLAY_SIDEBAR_A_FOLLOW_PROMPT"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,

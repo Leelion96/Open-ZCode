@@ -10,21 +10,25 @@
         "kind": "common",
         "timingPolicy": "fast-text",
         "source": "synthetic",
-        "syntheticReason": "固定响应同时守住 title sidecar 的 GLM-5.2 关闭思考请求字段，防止重新继承 max。"
+        "syntheticReason": "真实标题请求通过 thinking.type=disabled 与 reasoning_effort=none 明确关闭思考；旧 matcher 禁止整个 thinking 字段导致 Missing Fixture 500。"
       },
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "bodyIncludes": ["Generate a concise title", "\"reasoning_effort\":\"none\""],
-        "bodyExcludes": ["extra_body", "chat_template_kwargs", "\"thinking\""]
+        "bodyIncludes": [
+          "Generate a concise title",
+          "\"reasoning_effort\":\"none\"",
+          "\"thinking\":{\"type\":\"disabled\"}"
+        ],
+        "bodyExcludes": ["extra_body", "chat_template_kwargs"]
       },
       "response": {
         "statusCode": 200,
         "statusMessage": "OK",
         "headers": {
-          "content-type": "text/event-stream; charset=utf-8"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"chatcmpl-glm52-reasoning-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-glm52-reasoning-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"title\\\":\\\"GLM Reasoning\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-glm52-reasoning-title\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"chatcmpl-glm52-reasoning-title\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"GLM-5.2\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"GLM Reasoning\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":64,\"completion_tokens\":8,\"total_tokens\":72}}"
       }
     },
     {

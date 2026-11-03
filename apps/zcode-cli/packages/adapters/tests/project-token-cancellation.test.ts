@@ -213,7 +213,7 @@ it.each([false, true])(
     // 让已取消等待对应的 owner 链继续完成/失败；测试框架也会捕获任何未处理拒绝。
     await new Promise<void>((resolve) => setImmediate(resolve));
     if (failure)
-      await expect(f.resolver.resolve(f.input)).rejects.toThrow("project_token_request_failed");
+      await expect(f.resolver.resolve(f.input)).rejects.toThrow("project_token_network_error");
     else await expect(f.resolver.resolve(f.input)).resolves.toBe("pat-1");
   },
 );

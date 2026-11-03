@@ -15,16 +15,14 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "bodyIncludes": [
-          "Generate a concise title"
-        ]
+        "bodyIncludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
         "headers": {
-          "content-type": "text/event-stream"
+          "content-type": "application/json; charset=utf-8"
         },
-        "body": "data: {\"id\":\"active-model\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Active Model\\\"}\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"active-model\",\"object\":\"chat.completion.chunk\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10,\"total_tokens\":110}}\n\ndata: [DONE]\n\n"
+        "body": "{\"id\":\"active-model\",\"object\":\"chat.completion\",\"created\":0,\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"{\\\"title\\\":\\\"Active Model\\\"}\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":10,\"total_tokens\":110}}"
       }
     },
     {
@@ -40,12 +38,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": [
-          "E2E_ACTIVE_MODEL_CONTEXT_STEP_0"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "lastUserMessageIncludes": ["E2E_ACTIVE_MODEL_CONTEXT_STEP_0"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -68,12 +62,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": [
-          "E2E_ACTIVE_MODEL_CONTEXT_STEP_1"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "lastUserMessageIncludes": ["E2E_ACTIVE_MODEL_CONTEXT_STEP_1"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -96,12 +86,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": [
-          "E2E_ACTIVE_MODEL_CONTEXT_STEP_2"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "lastUserMessageIncludes": ["E2E_ACTIVE_MODEL_CONTEXT_STEP_2"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,
@@ -124,12 +110,8 @@
       "match": {
         "method": "POST",
         "pathIncludes": "/chat/completions",
-        "lastUserMessageIncludes": [
-          "E2E_ACTIVE_MODEL_CONTEXT_STEP_3"
-        ],
-        "bodyExcludes": [
-          "Generate a concise title"
-        ]
+        "lastUserMessageIncludes": ["E2E_ACTIVE_MODEL_CONTEXT_STEP_3"],
+        "bodyExcludes": ["Generate a concise title"]
       },
       "response": {
         "statusCode": 200,

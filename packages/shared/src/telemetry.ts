@@ -112,7 +112,16 @@ export const mobilePluginDiscoveryTelemetrySchema = z
   .strict();
 export type MobilePluginDiscoveryTelemetry = z.infer<typeof mobilePluginDiscoveryTelemetrySchema>;
 
+export const telemetryUiModeSchema = z.enum(["work", "code", "unknown"]);
+export type TelemetryUiMode = z.infer<typeof telemetryUiModeSchema>;
+
+export function normalizeTelemetryUiMode(value: unknown): TelemetryUiMode {
+  return value === "work" || value === "code" ? value : "unknown";
+}
+
 export interface TelemetryRendererContext {
+  /** UI 当前界面模式；旧 renderer 缺失时由上报边界归为 unknown。 */
+  uiMode?: TelemetryUiMode;
   clientTimezone: string;
   clientLanguage: string;
   screenResolution: string;
@@ -220,7 +229,13 @@ export function sanitizeTelemetryEventDetail(
   if ((PLUGIN_TELEMETRY_EVENTS as readonly string[]).includes(elementName))
     return sanitizePluginTelemetryDetail(detail);
   return Object.fromEntries(
-    Object.entries(detail)
+    Object.entries(
+      ["app_launch", "app_daily_active", "send_btn", "message_completion", "agent_step"].includes(
+        elementName,
+      )
+        ? { ...detail, ui_mode: normalizeTelemetryUiMode(detail.ui_mode) }
+        : detail,
+    )
       .filter(
         ([key, value]) =>
           elementName !== "agent_step" ||

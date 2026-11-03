@@ -88,7 +88,7 @@ pnpm --filter @zcode/prompt-trajectory model-io -- --input /absolute/path/to/mod
 
 本次对当前源码生成的默认日志执行上述命令，得到 `model-io request.body must contain a messages array.`：记录中的 `request.body.messages` 已被裁掉，转换器要求该字段。此路径未通过实际转换验收，不能直接用作训练数据流水线。保留原始日志和错误；不要把内部 `request.messages` 强行填回 provider 请求体来伪造完整记录。默认日志在本次运行中位于隔离数据目录的 `.zcode/cli/rollout/`。
 
-同一辅助包的 `record:prompt` 在本次源码基线上也未通过：启动时报 `createModelAdapter requires executionConfig`，尚未发出模型请求。它需要单独修复后再验收，不能作为当前可用的采集命令交付。
+同一辅助包的 `record:prompt` 已在 2026-10-21 修复，并用本地模拟上游验证可以录制。每次录制使用临时 home 与 `ZCODE_STORAGE_DIR`，不读取用户的 skill、插件和会话库；用真实模型录制前，仍需按[轨迹工具](../../tools/prompt-trajectory/README.md)提供 `--model` 与 `--upstream-base-url`。
 
 需要训练数据时，明确采集层、协议、消息顺序、tool call 与 tool result 对应关系、失败样本策略以及隐私处理。使用受控 provider 记录完整请求/响应，并验证与 CLI 工具事件一致；不要只收集最终答案或让模型转述轨迹。
 
@@ -96,6 +96,6 @@ pnpm --filter @zcode/prompt-trajectory model-io -- --input /absolute/path/to/mod
 
 ## 验证范围
 
-本指南在 2026-10-14 对照当前源码核对。已在 macOS arm64 构建 CLI，并用本地模拟 Chat Completions 服务验证个人 provider 配置、普通 JSON、stream-json、显式会话恢复、Bash 执行、plan 拒绝及同步 Hook 拒绝。还验证了本地插件结构、技能与命令发现、项目 Hook 信任的 review/grant/revoke。模拟服务验证接线与格式，不代表真实模型效果。默认 model-io 日志转换和辅助包 record:prompt 未通过，原因见上文。
+本指南在 2026-10-14 对照当前源码核对。已在 macOS arm64 构建 CLI，并用本地模拟 Chat Completions 服务验证个人 provider 配置、普通 JSON、stream-json、显式会话恢复、Bash 执行、plan 拒绝及同步 Hook 拒绝。还验证了本地插件结构、技能与命令发现、项目 Hook 信任的 review/grant/revoke。模拟服务验证接线与格式，不代表真实模型效果。默认 model-io 日志转换未通过，原因见上文；辅助包 record:prompt 于 2026-10-21 修复后用本地模拟上游验证。
 
 本次验证在源码工作区执行，未另行构建完整开源导出树。Windows、Linux、全部 SEA 目标、真实 provider、MCP 远程授权和完整 benchmark 评分未在本次文档更新中逐项验收。使用前按目标环境执行最小任务；不要将本指南理解为所有平台与扩展均已实测的声明。

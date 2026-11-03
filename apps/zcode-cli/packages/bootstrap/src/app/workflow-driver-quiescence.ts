@@ -35,7 +35,8 @@
 //   2. `abandon()` 自己只等 250ms（core/src/runtime/methods/streaming-tool-coordinator.ts:38、:121）。
 // 两条都让一个已经落库的 assistant 消息在本闸门放行之后**再长出一个 part**
 // （同上 :253 的 pending part、:294 的 running part）。等不到它：那些句柄与我们 await 的 promise
-// 已经脱钩，没有东西可等——这不是闸门宽严的问题。
+// 已经脱钩。session 关闭现在另由 runtime.closeOwnedWork 等待工具执行 ledger；
+// amend 的条数优化仍只等待 turn，不把资源清理混入其有界查询。
 //
 // 为什么可以接受：**数条数在 amend 时，抄消息在后继子代理首次派发时**
 // （workflow-actor-transcript.ts 的 seedActorTranscript 按 `messageCount` 连 part 一起读）。
@@ -77,6 +78,8 @@ export interface ActorSessionQuiescence {
    * 保守读成不静默即可（代价是少一次接续，而反过来是拿一个没人为其负责的条数去截断转录）。
    */
   quietSessions(): Promise<ReadonlySet<string>>;
+  /** 关闭必须等待完整清理，不能用 amend 的有界静默查询代替。 */
+  drain(): Promise<void>;
 }
 
 /** driver 侧的写面：{@link ActorSessionQuiescence} 加一个 dispose 时的登记口。 */
@@ -89,6 +92,8 @@ export interface ActorSessionQuiescenceLedger extends ActorSessionQuiescence {
    * turn 会被发起」的时刻（dispose 之后 `sessions` 就被清空了）。
    */
   noteDisposed(sessionId: string, pendingTurn: Promise<unknown> | undefined): void;
+  /** 登记实际释放链，供 session 关闭等待并接收清理失败。 */
+  trackRelease(work: Promise<unknown>, retry?: () => Promise<unknown>): void;
 }
 
 /**
@@ -107,7 +112,36 @@ export function createActorSessionQuiescence(options?: {
   const schedule = options?.clock?.schedule ?? defaultSchedule;
   const quiesceMs = options?.quiesceMs ?? AMEND_TRANSCRIPT_QUIESCE_MS;
 
+  const releases = new Set<Promise<unknown>>();
+  const failed = new Map<Promise<unknown>, { error: unknown; retry?: () => Promise<unknown> }>();
   return {
+    trackRelease(work, retry) {
+      releases.add(work);
+      void work.then(
+        () => releases.delete(work),
+        (error: unknown) => {
+          releases.delete(work);
+          failed.set(work, { error, retry });
+        },
+      );
+    },
+    async drain() {
+      while (releases.size > 0) await Promise.allSettled(releases);
+      // 只重试明确持有的幂等释放句柄；失败历史不是当前资源状态。
+      const retries = [...failed.entries()];
+      await Promise.all(
+        retries.map(async ([work, failure]) => {
+          if (!failure.retry) return;
+          try {
+            await failure.retry();
+            failed.delete(work);
+          } catch (error) {
+            failure.error = error;
+          }
+        }),
+      );
+      if (failed.size) throw failed.values().next().value!.error;
+    },
     noteDisposed(sessionId, pendingTurn) {
       disposed.set(sessionId, pendingTurn);
     },
@@ -140,41 +174,47 @@ export function createActorSessionQuiescence(options?: {
  * dispose 的每会话释放：退订活动观察、撤掉退避重驱、**登记静默**，再等在飞 turn 落地后关
  * actor runtime。
  *
- * 对每个 runtime 跑 app 关会话的**同一条**链——`closeBrowserSession` 内部依次 beginShutdown、
- * node_repl 会话释放、浏览器会话关闭；不另造一套子代理关闭链，那会漂移。关闭失败只 warn，
- * 结算不因它抛。
+ * runtime.close 先取消并等完子代理、工具与辅助任务，再释放 node_repl 和浏览器资源。
+ * dispose 仍同步返回，关闭失败记日志并保留在 ledger；App.close 的 drain 必须接收失败。
  *
- * 登记必须在 `state.turn.then(...)` **之前**：此刻 `state.turn` 就是要等的那条链，而 then 会把
- * 它换成另一个 promise。整个函数同步返回（关闭挂在 then 上），dispose 因此一如既往不阻塞。
+ * 登记使用此刻的 state.turn；dispose 同步返回，真实释放 Promise 留给 owner drain。
  */
 export function releaseActorSessions(
   deps: AgentRuntimeWorkflowDriverDeps,
   sessions: Iterable<SessionState>,
   ledger: ActorSessionQuiescenceLedger,
-): void {
+): Promise<void> {
+  const releases: Promise<void>[] = [];
   for (const state of sessions) {
     state.modelActivity.unsubscribe();
     state.cancelRedrive?.();
     state.cancelRedrive = undefined;
     ledger.noteDisposed(state.sessionId, state.turn);
-    const close = (): void => closeActorRuntime(deps, state);
-    if (state.turn === undefined) close();
-    else state.turn.then(close, close);
-  }
-}
-
-function closeActorRuntime(deps: AgentRuntimeWorkflowDriverDeps, state: SessionState): void {
-  // Promise.resolve().then(...)：把同步抛出也归到同一条 warn 路径（最小 stub runtime 没有这个方法）。
-  void Promise.resolve()
-    .then(() => state.runtime.closeBrowserSession())
-    .catch((error: unknown) => {
-      deps.logger?.warn?.("Dynamic workflow actor runtime close failed", {
-        errorMessage: error instanceof Error ? error.message : String(error),
+    // 先关闭每个 actor 的准入并发出取消，再等待；不能让第一个慢 turn 阻止其余 actor 停止。
+    state.runtime.beginShutdown?.();
+    const owned = state.runtime.close();
+    const release = (async () => {
+      const results = await Promise.allSettled([state.turn, owned]);
+      const ownedResult = results[1];
+      if (ownedResult?.status === "rejected") throw ownedResult.reason;
+    })();
+    void release.catch((error: unknown) =>
+      deps.logger?.warn?.("Workflow actor cleanup failed", {
         event: "dynamic_workflow.actor_runtime.close_failed",
-        module: "bootstrap.app",
         sessionId: state.sessionId,
-      });
-    });
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    ledger.trackRelease(release, () => state.runtime.close());
+    releases.push(release);
+  }
+  const completion = Promise.allSettled(releases).then((results) => {
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
+  });
+  // 同步 dispose 的调用方不必等待；失败留在 ledger，App.close 必须消费它。
+  void completion.catch(() => undefined);
+  return completion;
 }
 
 /** 等 `work` 落地，最多等 `delayMs`。到点即返回（不抛），闹钟在任一分支后都撤掉。 */

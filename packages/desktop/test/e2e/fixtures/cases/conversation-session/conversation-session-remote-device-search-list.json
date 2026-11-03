@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-remote-device-search-list",
+  "spec": "./test/e2e/conversation-session/conversation-session-remote-device-search-list.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-remote-device-search-list.json"
+  ],
+  "fileFixtures": [],
+  "requests": [],
+  "noProviderRequests": true,
+  "providerRequestPolicy": "none",
+  "notes": "Real desktop settings UI, persisted records prepared while processes are stopped, and one actual SSH connection. No model requests."
+}

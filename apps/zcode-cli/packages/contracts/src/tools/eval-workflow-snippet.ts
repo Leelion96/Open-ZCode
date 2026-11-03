@@ -5,7 +5,7 @@
 // 同一条编译 / lowering / 沙箱 / world-read 执行面，内存 journal，完全瞬态。
 
 import { z } from "zod";
-import { CreateWorkflowDiagnosticSchema } from "./create-workflow.js";
+import { CreateWorkflowDiagnosticSchema, WORKFLOW_SOURCE_MISSING_HINT } from "./create-workflow.js";
 import { toToolJsonSchema } from "./json-schema.js";
 
 export const EVAL_WORKFLOW_SNIPPET_TOOL_NAME = "EvalWorkflowSnippet";
@@ -15,11 +15,14 @@ export const EVAL_WORKFLOW_SNIPPET_DEFAULT_TIMEOUT_MS = 60_000;
 export const EVAL_WORKFLOW_SNIPPET_MAX_TIMEOUT_MS = 600_000;
 export const EVAL_WORKFLOW_SNIPPET_MIN_TIMEOUT_MS = 1_000;
 
-/** 「恰好给一段片段」的违规说明（与另外三个工具同一种语气）。 */
-export const EVAL_WORKFLOW_SNIPPET_SOURCE_ERROR =
-  "Provide exactly one snippet source: `code` for the snippet inline, or `path` for a file holding it. Passing both, or neither, is ambiguous.";
+/** 两条来源都给了（与另外三个工具同一种语气）。 */
+export const EVAL_WORKFLOW_SNIPPET_SOURCE_CONFLICT_ERROR =
+  "Provide exactly one snippet source: `code` for the snippet inline, or `path` for a file holding it. Passing both is ambiguous.";
 
-export const EvalWorkflowSnippetInputSchema = z
+/** 一条都没有：多半是参数没解析出来，原因见 {@link WORKFLOW_SOURCE_MISSING_HINT}。 */
+export const EVAL_WORKFLOW_SNIPPET_SOURCE_MISSING_ERROR = `No snippet source arrived. Pass \`code\` for the snippet inline, or \`path\` for a file holding it. ${WORKFLOW_SOURCE_MISSING_HINT}`;
+
+const EvalWorkflowSnippetModelInputSchema = z
   .object({
     code: z
       .string()
@@ -45,9 +48,25 @@ export const EvalWorkflowSnippetInputSchema = z
   })
   .strict();
 
+/**
+ * 运行时入参：模型面那些字段 + `resolveInput` 回填的 `script`。
+ *
+ * `script` 恒等于归一化后的 `code`。另外三个提交脚本的工具（CreateWorkflow / AmendWorkflow /
+ * FillWorkflowHole）字段都叫 `script`，只读 `tool_input.script` 的 PreToolUse hook 原先在片段上
+ * 读不到任何东西、静默放行（2026-10 用户回归实测）。`code` 保留：UI 渲染与已有 hook 读它。
+ * 与 `CreateWorkflow.script_line_offset` 同一个姿态——解析结果，模型的 JSON schema 不列它；
+ * 模型若硬填，归一化会无条件覆盖。
+ */
+export const EvalWorkflowSnippetInputSchema = EvalWorkflowSnippetModelInputSchema.extend({
+  script: z.string().min(1).optional(),
+}).strict();
+
 export type EvalWorkflowSnippetInput = z.infer<typeof EvalWorkflowSnippetInputSchema>;
 
-export const EvalWorkflowSnippetInputJsonSchema = toToolJsonSchema(EvalWorkflowSnippetInputSchema);
+/** 交给模型的 JSON schema：不含 `script`。 */
+export const EvalWorkflowSnippetInputJsonSchema = toToolJsonSchema(
+  EvalWorkflowSnippetModelInputSchema,
+);
 
 // logs 的界（协议边界上的所有载荷有界）：条数 × 单条长度，超出在 service 侧截断并标注。
 export const EVAL_WORKFLOW_SNIPPET_MAX_LOGS = 100;

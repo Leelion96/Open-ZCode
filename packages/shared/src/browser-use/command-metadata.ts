@@ -114,6 +114,8 @@ export const browserCommandMethodSchema = z.enum([
   "markDeliverable",
   "markHandoff",
   "nameSession",
+  "openScope",
+  "releaseScope",
   "turnEnded",
   "closeSession",
   "cancelRequest",

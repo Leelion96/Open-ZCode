@@ -11,7 +11,7 @@ import type {
   FileTextSlice,
   WorkspaceFileEntry,
 } from "@zcode/shared";
-import { getMediaPreviewFormat } from "@zcode/shared";
+import { getMediaPreviewFormat, REMOTE_WORKSPACE_PREPARATION_TIMEOUT_MS } from "@zcode/shared";
 import { packWorkspaceFileEntries } from "@zcode/shared/workspaceFileEntriesCodec";
 import type { IFileService, WorkspaceFileSearchParams } from "./file.js";
 import { WORKSPACE_FILE_SEARCH_DISPLAY_CAP } from "@zcode/shared/workspaceFileSearch";
@@ -226,6 +226,28 @@ async function statWorkspaceFileSearchIgnoreFingerprint(rootPath: string): Promi
   }
 }
 
+// Bug 原因（ZCT-2113660144497782784）：目录的 readdir 可能永久不返回（例如 macOS 等待文件夹访问授权、
+// 网络盘无响应），且无法取消，每次调用都占住一个 libuv 线程。Desktop 重启、重连或手机端再次打开同一项目时
+// 会再读一次，线程池（默认 4 个）占满后，本进程所有文件操作都不再返回。
+// 修复：同一路径已有读取超过无响应阈值仍未返回时，复用它，不再占新线程；返回后立即删除，不缓存结果。
+// 阈值沿用 R8 的目录无响应判定；健康目录的读取到不了阈值，行为与过去相同。
+const inFlightDirectoryReads = new Map<string, { startedAt: number; entries: Promise<Dirent[]> }>();
+
+function readDirectoryEntries(path: string): Promise<Dirent[]> {
+  const pending = inFlightDirectoryReads.get(path);
+  if (pending && Date.now() - pending.startedAt >= REMOTE_WORKSPACE_PREPARATION_TIMEOUT_MS)
+    return pending.entries;
+  const read = { startedAt: Date.now(), entries: readdir(path, { withFileTypes: true }) };
+  if (!pending) {
+    const clear = () => {
+      if (inFlightDirectoryReads.get(path) === read) inFlightDirectoryReads.delete(path);
+    };
+    read.entries.then(clear, clear);
+    inFlightDirectoryReads.set(path, read);
+  }
+  return read.entries;
+}
+
 export function createFileService(options: CreateFileServiceOptions = {}): IFileService {
   const workspaceFileSearchFilter =
     options.workspaceFileSearchFilter ?? defaultWorkspaceFileSearchFilter;
@@ -370,7 +392,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
 
   return {
     async readdir(params: { path: string; includeHidden?: boolean }): Promise<FileEntry[]> {
-      const entries = await readdir(params.path, { withFileTypes: true });
+      const entries = await readDirectoryEntries(params.path);
       const visibleEntries = await Promise.all(
         entries
           .filter((e) => {

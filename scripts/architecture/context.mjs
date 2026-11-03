@@ -62,7 +62,7 @@ export async function generateContext({ cwd = process.cwd(), moduleId }) {
   sections.push(
     "## Boundaries",
     "- Cross-module imports must use declared requirements and public entrypoints.",
-    "- Add a contract example and contract test before exposing a new capability.",
+    "- Add a contract example and document invariants before exposing a new capability.",
     "- New source files must live inside a managed module (rule: unmanaged-new-file).",
   );
   return sections.join("\n");

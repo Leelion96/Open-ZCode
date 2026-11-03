@@ -15,7 +15,7 @@
 - 展开态只显示 `PanelLeftClose`；收起态显示 `PanelLeftOpen` 和 `MessageCirclePlus`，后者直接触发新建 task。
 - `WorkspaceSidebar` 的默认宽度和可拖拽最小宽度均为 `264px`，即 256px 内容宽度加 8px 安全余量；拖拽、键盘 Home 和 `aria-valuemin` 必须共享这一边界。
 - 全局 Pinned 区只在有置顶任务或正在加载置顶任务时显示，并在列表上方使用 `taskList.pinnedSection` 作为独立标题。
-- `WorkspaceSidebar` 在每个 workspace 行右侧操作区提供文件树入口，位置在更多菜单和新建任务之间；点击后任务列表整体向左滑动，右侧滑入 `WorkspaceFileTree`。文件树实现细节见 `docs/ui/workspace-file-tree.md`。
+- 项目行操作区提供文件树入口；点击后在右侧打开独立文件标签，左侧任务列表保持可用。文件树实现细节见 `docs/ui/workspace-file-tree.md`。
 
 主内容区再拆成上下两层：
 

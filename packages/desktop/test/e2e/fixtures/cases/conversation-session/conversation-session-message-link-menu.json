@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-message-link-menu",
+  "spec": "./test/e2e/conversation-session/conversation-session-message-link-menu.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-message-link-menu.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "message-link-menu",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定正文链接用于验证菜单、剪贴板和打开入口，不评估模型生成质量。"
+    },
+    {
+      "id": "message-link-menu-title",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于链接菜单产品语义，只需避免 sidecar 请求误命中业务 fixture。"
+    }
+  ]
+}

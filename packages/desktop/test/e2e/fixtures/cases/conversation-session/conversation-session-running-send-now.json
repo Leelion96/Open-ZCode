@@ -77,6 +77,27 @@
       "source": "synthetic",
       "timingPolicy": "controlled-stream",
       "syntheticReason": "maxMatches=1 将重复 provider 请求直接视为 replay 失败，并保留 streaming 断言窗口。"
+    },
+    {
+      "id": "upstream-running-send-now-segment-read",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "当前轮必须先有工具工作，才能观察立即发送后工作段归属哪一轮。"
+    },
+    {
+      "id": "upstream-running-send-now-segment-hold",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定 Read 结果后的 running 窗口，让普通 queue 项在同一轮内入队并被立即发送抢占。"
+    },
+    {
+      "id": "upstream-running-send-now-segment-selected",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "只在请求同时带原轮 Read 结果和被点项时返回回复，证明抢占后才消费被点项。"
     }
   ]
 }

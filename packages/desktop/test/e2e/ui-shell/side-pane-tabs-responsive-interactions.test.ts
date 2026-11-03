@@ -7,6 +7,7 @@ import {
   TID_WORKSPACE_TITLE,
 } from "@zcode/shared/test-ids";
 import { clearAppData } from "../helpers/desktop-app.js";
+import { listSystemProcesses } from "../helpers/e2e-process-cleanup.js";
 import { prepareV4ConversationE2E } from "../helpers/v4-conversation.js";
 
 const TAB_SELECTOR = "[data-side-pane-tab-id]";
@@ -15,6 +16,40 @@ const CONTENT_SELECTOR = "[data-side-pane-tabs-content]";
 const ADD_TRIGGER_SELECTOR = "[data-side-pane-add-tab-trigger]";
 const TOOLTIP_SELECTOR = '[data-slot="tooltip-content"]';
 const DRAFT_SUGGESTED_PROMPTS_SLOT_SELECTOR = '[data-v4-draft-suggested-prompts-slot="true"]';
+
+async function bottomTerminalText(): Promise<string> {
+  return browser.execute(() => {
+    const rows = Array.from(document.querySelectorAll<HTMLElement>("#terminal .xterm-rows")).filter(
+      (row) => row.offsetParent !== null,
+    );
+    return Array.from(rows.at(-1)?.children ?? [])
+      .map((row) => (row.textContent ?? "").replace(/\u00a0/gu, " ").trimEnd())
+      .join("\n");
+  });
+}
+
+async function typeInBottomTerminal(command: string): Promise<void> {
+  await browser.waitUntil(async () => /(?:>|[$#%])\s*$/u.test(await bottomTerminalText()), {
+    timeout: 30_000,
+    timeoutMsg: "底部终端提示符未就绪",
+  });
+  expect(
+    await browser.execute((text) => {
+      const input = Array.from(
+        document.querySelectorAll<HTMLTextAreaElement>("#terminal .xterm-helper-textarea"),
+      ).find((candidate) => candidate.closest<HTMLElement>(".xterm")?.offsetParent !== null);
+      if (!input) return false;
+      input.focus();
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", text);
+      input.dispatchEvent(
+        new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData }),
+      );
+      return document.activeElement === input;
+    }, command),
+  ).toBe(true);
+  await browser.keys("Enter");
+}
 
 function expectedWorkspacePanelRadiusPx(): number {
   if (process.platform === "win32") return 6;
@@ -85,12 +120,12 @@ describe("Side Pane Tab responsive interactions", () => {
         const metrics = await readIndependentPanelMetrics();
         return Boolean(
           metrics &&
-          Math.abs(metrics.gap - 4) < 1 &&
+          Math.abs(metrics.gap - 3) < 1 &&
           Math.abs(metrics.topDelta) < 1 &&
           Math.abs(metrics.bottomDelta) < 1,
         );
       },
-      { timeout: 5000, timeoutMsg: "独立面板未形成上下对齐的 4px 间距" },
+      { timeout: 5000, timeoutMsg: "独立面板未形成上下对齐的 3px 间距" },
     );
     const panels = await readIndependentPanelMetrics();
     if (process.platform === "win32" || process.platform === "linux")
@@ -280,7 +315,7 @@ describe("Side Pane Tab responsive interactions", () => {
     ).toMatchObject({
       hasExtendedIndicatorLine: true,
       indicatorOpacity: "0",
-      handleWidth: 4,
+      handleWidth: 3,
     });
     await hoverResizeHandle('[data-workspace-side-pane-resize-handle="true"]');
     await assertResizeHandleVisible('[data-workspace-side-pane-resize-handle="true"]');
@@ -315,7 +350,7 @@ describe("Side Pane Tab responsive interactions", () => {
       },
       { timeout: 5000, timeoutMsg: "独立面板间距无法拖动调整宽度" },
     );
-    expect((await readIndependentPanelMetrics())?.gap).toBeCloseTo(4, 0);
+    expect((await readIndependentPanelMetrics())?.gap).toBeCloseTo(3, 0);
     const terminalToggle = await $(`[data-testid="${TID_TERMINAL_TOGGLE}"]`);
     await terminalToggle.click();
     await browser.waitUntil(
@@ -457,6 +492,109 @@ describe("Side Pane Tab responsive interactions", () => {
     });
     if (expectedPanelRadiusPx === 6) expect(closedFrame.usesRadiusToken).toBe(true);
     expect(closedFrame.leftRadius).toBe(`${expectedPanelRadiusPx}px`);
+  });
+
+  it("TERM-TAB-05 closes the sole terminal session and creates a fresh one on reopen", async () => {
+    const terminalToggle = await $(`[data-testid="${TID_TERMINAL_TOGGLE}"]`);
+    const processMarker = `E2E_TERMINAL_CLOSE_${Date.now().toString(36)}`;
+    let terminalProcessPid = 0;
+
+    try {
+      await terminalToggle.click();
+      await browser.waitUntil(
+        async () =>
+          browser.execute(() =>
+            Boolean(
+              document.querySelector<HTMLElement>("#terminal .xterm")?.getBoundingClientRect()
+                .height,
+            ),
+          ),
+        { timeout: 15_000, timeoutMsg: "唯一终端没有打开" },
+      );
+
+      const originalTerminalMarker = `terminal-${Date.now().toString(36)}`;
+      const command = `node -e "setInterval(() => {}, 1000)" ${processMarker}`;
+      await typeInBottomTerminal(command);
+      await browser.waitUntil(
+        async () => {
+          const terminalProcess = (await listSystemProcesses()).find(
+            (item) => item.command.includes(processMarker) && item.command.includes("node"),
+          );
+          terminalProcessPid = terminalProcess?.pid ?? 0;
+          return terminalProcessPid > 0;
+        },
+        { timeout: 15_000, interval: 200, timeoutMsg: "唯一终端没有启动进程探针" },
+      );
+      expect(
+        await browser.execute((marker) => {
+          const terminal = document.querySelector<HTMLElement>("#terminal .xterm");
+          terminal?.setAttribute("data-terminal-e2e-marker", marker);
+          return Boolean(terminal);
+        }, originalTerminalMarker),
+      ).toBe(true);
+      expect(
+        await browser.execute(() => {
+          const activeTab = document.querySelector<HTMLElement>(
+            '#terminal [role="tab"][data-active]',
+          );
+          const close = activeTab?.querySelector<HTMLButtonElement>("button");
+          close?.click();
+          return Boolean(close);
+        }),
+      ).toBe(true);
+
+      await browser.waitUntil(
+        async () =>
+          browser.execute((marker) => {
+            const oldTerminal = document.querySelector(`[data-terminal-e2e-marker="${marker}"]`);
+            const terminal = document.querySelector<HTMLElement>("#terminal");
+            const panel = terminal?.closest<HTMLElement>("[data-panel]");
+            return !oldTerminal && Boolean(panel && panel.getBoundingClientRect().height <= 1);
+          }, originalTerminalMarker),
+        { timeout: 15_000, timeoutMsg: "关闭唯一终端 tab 后旧 session 未卸载或面板未收起" },
+      );
+      await browser.waitUntil(
+        async () => {
+          const oldProcess = (await listSystemProcesses()).find(
+            (item) => item.pid === terminalProcessPid && item.command.includes(processMarker),
+          );
+          return !oldProcess;
+        },
+        {
+          timeout: 15_000,
+          interval: 200,
+          timeoutMsg: "关闭唯一终端 tab 后运行中的命令仍存活",
+        },
+      );
+
+      await terminalToggle.click();
+      await browser.waitUntil(
+        async () =>
+          browser.execute((marker) => {
+            const terminal = document.querySelector<HTMLElement>("#terminal .xterm");
+            return Boolean(
+              terminal &&
+              terminal.getAttribute("data-terminal-e2e-marker") !== marker &&
+              terminal.getBoundingClientRect().height > 20,
+            );
+          }, originalTerminalMarker),
+        { timeout: 15_000, timeoutMsg: "重新打开终端后没有创建新 session" },
+      );
+      await terminalToggle.click();
+    } finally {
+      if (terminalProcessPid > 0) {
+        const probeStillExists = (await listSystemProcesses()).some(
+          (item) => item.pid === terminalProcessPid && item.command.includes(processMarker),
+        );
+        if (probeStillExists) {
+          try {
+            process.kill(terminalProcessPid, "SIGKILL");
+          } catch {
+            // 进程可能在扫描后、清理前已经退出。
+          }
+        }
+      }
+    }
   });
 
   it("SPT-E2E-001 keeps one tab at 156px and the add button beside it", async () => {
@@ -739,7 +877,7 @@ describe("Side Pane Tab responsive interactions", () => {
           return (
             bounds.width === normalBounds.width &&
             bounds.height === normalBounds.height &&
-            Math.abs((await readIndependentPanelMetrics())!.gap - 4) < 1
+            Math.abs((await readIndependentPanelMetrics())!.gap - 3) < 1
           );
         });
       }

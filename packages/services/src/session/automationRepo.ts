@@ -602,6 +602,28 @@ export class AutomationRepo {
       });
   }
 
+  /**
+   * 执行轮自暂停（CronPauseSelf）：只有 active 且 enabled 的任务才转 paused，返回是否真的改了状态。
+   * paused / completed / failed / 已删除都返回 false，避免把终态任务改写成 paused。
+   * 保留 next_run_at / run_count，恢复仍走 setEnabled(true)。
+   */
+  async pause(automationId: string, workspaceKey?: string): Promise<boolean> {
+    await this.ensureReady();
+    const result = this.getDatabase()
+      .prepare(
+        `UPDATE automations
+        SET enabled = 0,
+            lifecycle_status = 'paused',
+            updated_at = @now
+        WHERE automation_id = @id
+          AND (@workspace_key IS NULL OR workspace_key = @workspace_key)
+          AND lifecycle_status = 'active'
+          AND enabled = 1`,
+      )
+      .run({ id: automationId, now: Date.now(), workspace_key: workspaceKey ?? null });
+    return result.changes > 0;
+  }
+
   /** 终态任务手动重跑：回 active、清计数与重试态，nextRunAt 由调用方重算传入。 */
   async restart(
     automationId: string,
@@ -959,7 +981,8 @@ export class AutomationRepo {
   /**
    * 派发成功结算：展示总数与定时派发数各 +1、写 last_run_at、清重试态、复位 running；
    * 循环任务回 active（nextRunAt 由调用方按实际派发时间重算传入）；
-   * 有限次任务达 max_runs 转 completed（enabled=0、next_run_at=NULL）。
+   * 有限次任务达 max_runs 转 completed（enabled=0、next_run_at=NULL）；
+   * 派发窗口内已被暂停（CronPauseSelf / UI 暂停）的任务保持 paused，只记录本次派发。
    */
   async markDispatched(
     automationId: string,
@@ -975,6 +998,12 @@ export class AutomationRepo {
     // scheduled_run_count；run_count 还包含 manual run，只能用于 Card 累计展示。
     const reachedMax = row.recurring === 0 && scheduledRunCount >= (row.max_runs ?? 1);
     const reachedEnd = row.end_at !== null && (options.nextRunAt ?? Infinity) > row.end_at;
+    const completed = reachedMax || reachedEnd ? 1 : 0;
+    // 修复原因：scheduler 回写与 Host 侧暂停（CronPauseSelf / UI setEnabled(false)）跑在两个
+    // 独立连接上，旧实现在这里无条件写 lifecycle_status='active'、enabled=1，会把派发窗口内
+    // 刚落下的 paused 复活成 active。改为在同一条 UPDATE 里按行的当前值判定（SQLite SET 表达式
+    // 读取的是更新前的旧值）：completed 优先收口；否则 enabled=0 的行保持原 lifecycle / enabled，
+    // 只记录本次派发；其余仍回 active。不引入二次读取或重试，避免再开新的竞态窗口。
     this.getDatabase()
       .prepare(
         `UPDATE automations
@@ -987,9 +1016,13 @@ export class AutomationRepo {
             last_error = NULL,
             running = 0,
             claimed_at = NULL,
-            lifecycle_status = @lifecycle_status,
-            enabled = @enabled,
-            next_run_at = @next_run_at,
+            lifecycle_status = CASE
+              WHEN @completed = 1 THEN 'completed'
+              WHEN enabled = 0 THEN lifecycle_status
+              ELSE 'active'
+            END,
+            enabled = CASE WHEN @completed = 1 THEN 0 ELSE enabled END,
+            next_run_at = CASE WHEN @completed = 1 THEN NULL ELSE @next_run_at END,
             updated_at = @now
         WHERE automation_id = @id`,
       )
@@ -998,9 +1031,8 @@ export class AutomationRepo {
         run_count: runCount,
         scheduled_run_count: scheduledRunCount,
         dispatched_at: options.dispatchedAt,
-        lifecycle_status: reachedMax || reachedEnd ? "completed" : "active",
-        enabled: reachedMax || reachedEnd ? 0 : 1,
-        next_run_at: reachedMax || reachedEnd ? null : options.nextRunAt,
+        completed,
+        next_run_at: options.nextRunAt,
         now: options.dispatchedAt,
       });
   }

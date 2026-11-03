@@ -1,6 +1,9 @@
 import { TID_V4_SUBAGENT_OPEN_SIDE_PANE } from "@zcode/shared/test-ids";
 import { clearAppData } from "../helpers/desktop-app.js";
-import { waitForUpstreamRequest } from "../helpers/conversation-session-network.js";
+import {
+  getUpstreamRequestEvidence,
+  waitForUpstreamRequest,
+} from "../helpers/conversation-session-network.js";
 import {
   expandAssistantHistoriesWithContent,
   waitForToolCallBlockByToolCallId,
@@ -26,8 +29,30 @@ const PARENT_MARKER = "E2E_BACKGROUND_SUBAGENT_RATE_LIMIT_PARENT";
 const PARENT_DONE = "E2E_BACKGROUND_SUBAGENT_RATE_LIMIT_PARENT_DONE";
 const CHILD_MARKER = "E2E_BACKGROUND_SUBAGENT_RATE_LIMIT_CHILD";
 const TOOL_CALL_ID = "toolu_e2e_background_subagent_rate_limit_agent";
-const PROVIDER_ERROR =
-  "Requests are too frequent. Please reduce your request frequency, wait a short moment, and retry your request. Request id: e2e-background-subagent-rate-limit";
+const RATE_LIMIT_ERROR_PREFIX =
+  "Requests are too frequent. Please reduce your request frequency, wait a short moment, and retry your request. Request id: ";
+const PROVIDER_ERROR = `${RATE_LIMIT_ERROR_PREFIX}e2e-background-subagent-rate-limit`;
+const MERGED_PARENT_MARKER = "E2E_BG26_MERGED_PARENT";
+const MERGED_PARENT_DONE = "E2E_BG26_MERGED_PARENT_DONE";
+const MERGED_COMPLETED_RESULT = "E2E_BG26_MERGED_COMPLETED_RESULT";
+const MERGED_COMPLETED_TOOL_CALL_ID = "toolu_e2e_bg26_merged_completing_agent";
+const MERGED_FIRST_FAILED_AGENT = {
+  toolCallId: "toolu_e2e_bg26_merged_first_failing_agent",
+  providerError: `${RATE_LIMIT_ERROR_PREFIX}e2e-bg26-merged-first-failure`,
+};
+const MERGED_LAST_FAILED_AGENT = {
+  toolCallId: "toolu_e2e_bg26_merged_last_failing_agent",
+  providerError: `${RATE_LIMIT_ERROR_PREFIX}e2e-bg26-merged-last-failure`,
+};
+
+interface FailedAgentExpectation {
+  toolCallId: string;
+  providerError: string;
+  /** 同批其他通知的结果或原因，不能出现在这张卡的失败 hover 里。 */
+  foreignTexts?: readonly string[];
+  /** 单条通知的轮次：hover 只显示 provider 原文，不带 `Agent "…" failed:` 前缀。 */
+  exactTooltip?: boolean;
+}
 
 describe("会话区 background subagent 429 错误展示 E2E", () => {
   before(async function () {
@@ -64,13 +89,22 @@ describe("会话区 background subagent 429 错误展示 E2E", () => {
         includes: [
           `<tool-use-id>${TOOL_CALL_ID}</tool-use-id>`,
           "<status>failed</status>",
-          `<error>${PROVIDER_ERROR}</error>`,
-          `failed. ${PROVIDER_ERROR}`,
+          // 失败原因只在 summary 的 "failed: " 后面，不再有 <error>。
+          `failed: ${PROVIDER_ERROR}</summary>`,
         ],
       },
       "background subagent failed notification 没有透传 provider 原始错误",
       90000,
     );
+    // 本任务的通知块不再带 <error>；请求其他位置的同名标签不影响判断。
+    const [notificationRequest] = await getUpstreamRequestEvidence({
+      includes: [`<tool-use-id>${TOOL_CALL_ID}</tool-use-id>`, "<status>failed</status>"],
+    });
+    const notificationBlock = taskNotificationBlocks(notificationRequest!.requestJson).find(
+      (block) => block.includes(`<tool-use-id>${TOOL_CALL_ID}</tool-use-id>`),
+    );
+    expect(notificationBlock).toContain(`failed: ${PROVIDER_ERROR}</summary>`);
+    expect(notificationBlock).not.toContain("<error>");
     await waitForV4TimelineContaining(PARENT_DONE, 90000);
     await waitForConversationReportInventory(telemetryCapture, {
       message_completion: 2,
@@ -123,25 +157,91 @@ describe("会话区 background subagent 429 错误展示 E2E", () => {
     }
 
     const sourceTaskId = idleSnapshot.sessionId;
-    await assertFailedAgentSurface("live");
+    const failedAgent = {
+      toolCallId: TOOL_CALL_ID,
+      providerError: PROVIDER_ERROR,
+      exactTooltip: true,
+    };
+    await assertFailedAgentSurface("live", failedAgent);
+
+    await switchAwayAndBack(sourceTaskId, PARENT_DONE);
+
+    await assertFailedAgentSurface("restored", failedAgent);
+  });
+
+  it("BG26 合并通知：失败、完成、失败三条通知同批回传，各卡显示自己的终态", async function () {
+    this.timeout(BG26_TIMEOUT_MS);
 
     await startNewV4Draft();
-    await selectV4TaskById(sourceTaskId);
-    await waitForV4Pane(
-      (snapshot) => snapshot.sessionId === sourceTaskId && !snapshot.canStop,
-      "background subagent 429 case 切回后没有完成原 task snapshot restore",
-      30000,
+    await sendV4Prompt(
+      `${MERGED_PARENT_MARKER}: launch three background Agents and finish after their task notifications with ${MERGED_PARENT_DONE}.`,
     );
-    await waitForV4TimelineContaining(PARENT_DONE, 60000);
+    await waitForV4TimelineContaining(MERGED_PARENT_MARKER, 60000);
+    for (const toolCallId of [
+      MERGED_FIRST_FAILED_AGENT.toolCallId,
+      MERGED_COMPLETED_TOOL_CALL_ID,
+      MERGED_LAST_FAILED_AGENT.toolCallId,
+    ]) {
+      await waitForToolCallBlockByToolCallId(toolCallId, 60000);
+    }
+    // 三条通知必须进入同一个 provider request，否则测不到合并通知的投影。
+    await waitForUpstreamRequest(
+      {
+        lastUserMessageIncludes: [
+          `failed: ${MERGED_FIRST_FAILED_AGENT.providerError}</summary>`,
+          MERGED_COMPLETED_RESULT,
+          `failed: ${MERGED_LAST_FAILED_AGENT.providerError}</summary>`,
+        ],
+      },
+      "三条 background Agent notification 没有合并到同一个 provider request",
+      90000,
+    );
+    await waitForV4TimelineContaining(MERGED_PARENT_DONE, 90000);
+    const idleSnapshot = await waitForV4Pane(
+      (snapshot) =>
+        snapshot.sessionId !== null && snapshot.sessionId !== "draft" && !snapshot.canStop,
+      "合并通知消费后父会话没有回到 idle",
+      60000,
+    );
+    if (!idleSnapshot.sessionId || idleSnapshot.sessionId === "draft") {
+      throw new Error(`合并通知 case 缺少 taskId: ${JSON.stringify(idleSnapshot)}`);
+    }
 
-    await assertFailedAgentSurface("restored");
+    const sourceTaskId = idleSnapshot.sessionId;
+    await assertMergedAgentSurfaces("merged live");
+
+    await switchAwayAndBack(sourceTaskId, MERGED_PARENT_DONE);
+
+    await assertMergedAgentSurfaces("merged restored");
   });
 });
 
-async function assertFailedAgentSurface(stage: "live" | "restored") {
-  // Bug 原因：child 429 与 parent failed notification 已持久化成功，但 v4 Agent
-  // 卡片投影仍保留 completed。这里直接约束用户可见状态，避免继续依赖已删除的
-  // legacy renderer store 投影而掩盖真实产品回归。
+async function switchAwayAndBack(sourceTaskId: string, doneMarker: string) {
+  await startNewV4Draft();
+  await selectV4TaskById(sourceTaskId);
+  await waitForV4Pane(
+    (snapshot) => snapshot.sessionId === sourceTaskId && !snapshot.canStop,
+    "background subagent 429 case 切回后没有完成原 task snapshot restore",
+    30000,
+  );
+  await waitForV4TimelineContaining(doneMarker, 60000);
+}
+
+async function assertMergedAgentSurfaces(stage: string) {
+  // Bug 原因：合并通知曾跨块读取标签。第一张失败卡的原因取到同批完成任务的 <result>；
+  // 后面的通知块不更新卡片，最后一张失败卡停在 launch ACK 的 completed。
+  await assertFailedAgentSurface(stage, {
+    ...MERGED_FIRST_FAILED_AGENT,
+    foreignTexts: [MERGED_COMPLETED_RESULT, MERGED_LAST_FAILED_AGENT.providerError],
+  });
+  await assertFailedAgentSurface(stage, {
+    ...MERGED_LAST_FAILED_AGENT,
+    foreignTexts: [MERGED_COMPLETED_RESULT, MERGED_FIRST_FAILED_AGENT.providerError],
+  });
+  await waitForAgentCardStatus(MERGED_COMPLETED_TOOL_CALL_ID, "completed", stage);
+}
+
+async function waitForAgentCardStatus(toolCallId: string, status: string, stage: string) {
   let latestDiagnostics: Awaited<ReturnType<typeof getToolCallDiagnostics>> | null = null;
   try {
     await browser.waitUntil(
@@ -151,23 +251,30 @@ async function assertFailedAgentSurface(stage: "live" | "restored") {
         await expandAssistantHistoriesWithContent();
         latestDiagnostics = await getToolCallDiagnostics({
           type: "toolCallId",
-          value: TOOL_CALL_ID,
+          value: toolCallId,
         });
-        return latestDiagnostics.matchedBlock?.status === "failed";
+        return latestDiagnostics.matchedBlock?.status === status;
       },
       {
         timeout: 30000,
-        timeoutMsg: `${stage} Agent 卡没有进入 failed`,
+        timeoutMsg: `${stage} Agent 卡没有进入 ${status}: ${toolCallId}`,
       },
     );
   } catch (error) {
     throw new Error(
-      `${stage} Agent 卡没有进入 failed; latest=${JSON.stringify(latestDiagnostics)}`,
+      `${stage} Agent 卡没有进入 ${status}: ${toolCallId}; latest=${JSON.stringify(latestDiagnostics)}`,
       { cause: error },
     );
   }
+}
 
-  const blockSnapshot = await waitForToolCallBlockByToolCallId(TOOL_CALL_ID, 30000);
+async function assertFailedAgentSurface(stage: string, agent: FailedAgentExpectation) {
+  // Bug 原因：child 429 与 parent failed notification 已持久化成功，但 v4 Agent
+  // 卡片投影仍保留 completed。这里直接约束用户可见状态，避免继续依赖已删除的
+  // legacy renderer store 投影而掩盖真实产品回归。
+  await waitForAgentCardStatus(agent.toolCallId, "failed", stage);
+
+  const blockSnapshot = await waitForToolCallBlockByToolCallId(agent.toolCallId, 30000);
   // Bug 根因：Agent 卡产品合同已改成“父对话单行摘要 + 右侧 child session”，
   // canToggle=false，不再渲染可展开的 tool-summary-trigger。旧 E2E 继续展开必然
   // 假失败；429 原始错误由 provider request 与失败状态 tooltip 两层证据约束。
@@ -187,7 +294,7 @@ async function assertFailedAgentSurface(stage: "live" | "restored") {
     timeoutMsg: `${stage} Agent 卡没有失败 tooltip trigger`,
   });
   // E2E 的系统语言跟随 runner；两种受支持语言都必须保留既有失败文案与同一 hover 交互。
-  await hoverFailedAgentStatus(blockSnapshot.testId, stage);
+  await hoverFailedAgentStatus(blockSnapshot.testId, stage, agent);
   await $('[data-testid^="v4-session-pane-"]').moveTo({
     xOffset: 20,
     yOffset: 20,
@@ -199,7 +306,8 @@ async function assertFailedAgentSurface(stage: "live" | "restored") {
 
 async function hoverFailedAgentStatus(
   blockTestId: string,
-  stage: "live" | "restored",
+  stage: string,
+  agent: FailedAgentExpectation,
   attempt = 1,
 ): Promise<void> {
   // Bug 根因：卡片展开和流式收口会让 Radix trigger 重挂载；长批次里单次 moveTo
@@ -232,7 +340,7 @@ async function hoverFailedAgentStatus(
         });
         // Radix 会同时维护展示内容和可访问性镜像，innerText 在部分 Chromium
         // 时序下会返回两份相同文案；产品约束是可见 tooltip 完整包含原始错误。
-        return normalizeText(latestTooltipText ?? "").includes(normalizeText(PROVIDER_ERROR));
+        return normalizeText(latestTooltipText ?? "").includes(normalizeText(agent.providerError));
       },
       {
         interval: 100,
@@ -243,6 +351,14 @@ async function hoverFailedAgentStatus(
     .then(() => true)
     .catch(() => false);
   if (opened) {
+    for (const foreignText of agent.foreignTexts ?? []) {
+      expect(normalizeText(latestTooltipText ?? "")).not.toContain(normalizeText(foreignText));
+    }
+    if (agent.exactTooltip) {
+      expect(collapseMirroredText(normalizeText(latestTooltipText ?? ""))).toBe(
+        normalizeText(agent.providerError),
+      );
+    }
     return;
   }
   if (attempt >= 3) {
@@ -250,7 +366,32 @@ async function hoverFailedAgentStatus(
       `${stage} 执行失败 hover 没有显示可见 tooltip; latest=${JSON.stringify(latestTooltipText)}`,
     );
   }
-  await hoverFailedAgentStatus(blockTestId, stage, attempt + 1);
+  await hoverFailedAgentStatus(blockTestId, stage, agent, attempt + 1);
+}
+
+// Radix 的可访问性镜像会让 innerText 返回两份相同文案；精确比较前合成一份。
+function collapseMirroredText(value: string) {
+  const half = value.slice(0, Math.floor((value.length - 1) / 2));
+  return value === `${half} ${half}` ? half : value;
+}
+
+// 按 <task-notification> 块拆出请求里的通知，只看文本块。
+function taskNotificationBlocks(requestJson: unknown): string[] {
+  const messages = (requestJson as { messages?: Array<{ content?: unknown }> }).messages ?? [];
+  const text = messages
+    .flatMap((message) =>
+      typeof message.content === "string"
+        ? [message.content]
+        : Array.isArray(message.content)
+          ? message.content.flatMap((block) => {
+              const item = block as { text?: unknown; content?: unknown };
+              if (typeof item.text === "string") return [item.text];
+              return typeof item.content === "string" ? [item.content] : [];
+            })
+          : [],
+    )
+    .join("\n");
+  return text.match(/<task-notification>[\s\S]*?<\/task-notification>/g) ?? [];
 }
 
 function normalizeText(value: string) {

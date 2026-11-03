@@ -166,12 +166,17 @@ async function run(options: {
 }
 
 describe("CreateWorkflow — source XOR and args", () => {
+  // 「没给」单独成句（参数 JSON 没解析出来时 adapter 恢复成的就是 `{}`），「多给」保持原句。
   it.each([
-    ["all three", { script: "return 1;", saved: { name: "x" }, path: "a.dwf.ts" }],
-    ["script and path", { script: "return 1;", path: "a.dwf.ts" }],
-    ["saved and path", { saved: { name: "x" }, path: "a.dwf.ts" }],
-    ["none", {}],
-  ])("refuses a %s call before the gate", async (label, input) => {
+    [
+      "all three",
+      { script: "return 1;", saved: { name: "x" }, path: "a.dwf.ts" },
+      "exactly one workflow source",
+    ],
+    ["script and path", { script: "return 1;", path: "a.dwf.ts" }, "exactly one workflow source"],
+    ["saved and path", { saved: { name: "x" }, path: "a.dwf.ts" }, "exactly one workflow source"],
+    ["none", {}, "No workflow source arrived"],
+  ])("refuses a %s call before the gate", async (label, input, message) => {
     const outcome = await run({
       input,
       name: `xor-${label.replace(/\s/gu, "-")}`,
@@ -180,7 +185,7 @@ describe("CreateWorkflow — source XOR and args", () => {
     });
     expect(outcome.permissionRequested).toHaveLength(0);
     expect(outcome.result.success).toBe(false);
-    expect(outcome.result.error?.message ?? "").toContain("exactly one workflow source");
+    expect(outcome.result.error?.message ?? "").toContain(message);
   });
 
   it("refuses `args` without `path`: a saved call has `saved.args`, an inline script has none", async () => {

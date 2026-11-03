@@ -1,7 +1,11 @@
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { DEFAULT_WORKSPACE, waitForDefaultWorkspaceReady } from "../../../helpers/desktop-app.js";
-import { selectNativeProjectDirectories } from "../../../helpers/project-sidebar.js";
+import {
+  DEFAULT_WORKSPACE,
+  waitForDefaultWorkspaceReady,
+  waitForWorkspaceApp,
+} from "#e2e/helpers/desktop-app";
+import { selectNativeProjectDirectories } from "#e2e/helpers/project-sidebar";
 import { ServiceChannels } from "@zcode/shared";
 import type { VirtualProject } from "@zcode/services";
 import {
@@ -105,6 +109,7 @@ describe("本地项目原生多目录选择", () => {
       const appWindow = electron.BrowserWindow.getAllWindows()[0]!;
       return { bounds: appWindow.getBounds(), minimum: appWindow.getMinimumSize() };
     });
+    const trustViewport = await browser.execute(() => ({ width: innerWidth, height: innerHeight }));
     const trustTheme = await browser.execute(() =>
       (window as ThemeWindow).__testActions!.getTheme(),
     );
@@ -133,11 +138,7 @@ describe("本地项目原生多目录选择", () => {
             (value) => (window as ThemeWindow).__testActions!.setTheme(value),
             theme,
           );
-          await browser.execute(async () => {
-            await new Promise<void>((resolve) =>
-              requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-            );
-          });
+          await waitForTrustLayout({ width, height: 844 });
           const geometry = await browser.execute(() => {
             const button = document.querySelector('[data-testid="project-folder-trust-confirm"]')!;
             const box = button.getBoundingClientRect();
@@ -176,6 +177,27 @@ describe("本地项目原生多目录选择", () => {
         trustLocale,
       );
     }
+    // 原生 resize 返回时弹窗尺寸过渡仍会移动按钮；等待实际布局收口，避免单次点击落空。
+    await waitForTrustLayout(trustViewport);
+    expect(
+      await browser.execute(() =>
+        document
+          .getAnimations()
+          .filter((animation) => {
+            const dialog = document.querySelector('[data-testid="project-folder-trust-dialog"]');
+            const target = (animation.effect as KeyframeEffect | null)?.target;
+            return (
+              animation.playState === "running" &&
+              animation instanceof CSSTransition &&
+              /^(max-)?(width|height)$|^transform$/.test(animation.transitionProperty) &&
+              target instanceof Element &&
+              dialog &&
+              (dialog.contains(target) || target.contains(dialog))
+            );
+          })
+          .map((animation) => (animation as CSSTransition).transitionProperty),
+      ),
+    ).toEqual([]);
     await $('[data-testid="project-folder-trust-confirm"]').click();
     await $('[data-testid="virtual-project-name"]').waitForExist({ reverse: true });
     expect(
@@ -190,7 +212,8 @@ describe("本地项目原生多目录选择", () => {
     await $(project).waitForDisplayed();
     expect(await readProjectOrder()).toEqual(["E2E_NATIVE_PROJECT_PICKER", ...previousOrder]);
     await browser.refresh();
-    await waitForDefaultWorkspaceReady(30_000);
+    // 创建项目已激活所选主要目录；刷新仍等待旧夹具目录会把正确恢复误报成导航失败。
+    await waitForWorkspaceApp(paths[1]!, 30_000);
     await $(project).waitForDisplayed();
     expect(await readProjectOrder()).toEqual(["E2E_NATIVE_PROJECT_PICKER", ...previousOrder]);
     await $(project).$('[data-testid="virtual-project-menu"]').click();
@@ -235,3 +258,25 @@ describe("本地项目原生多目录选择", () => {
     await $(project).waitForExist({ reverse: true });
   });
 });
+
+async function waitForTrustLayout(viewport: { width: number; height: number }): Promise<void> {
+  await browser.waitUntil(
+    () =>
+      browser.execute((expected) => {
+        const dialog = document.querySelector('[data-testid="project-folder-trust-dialog"]');
+        if (!dialog || innerWidth !== expected.width || innerHeight !== expected.height)
+          return false;
+        return !document.getAnimations().some((animation) => {
+          const target = (animation.effect as KeyframeEffect | null)?.target;
+          return (
+            animation.playState === "running" &&
+            animation instanceof CSSTransition &&
+            /^(max-)?(width|height)$|^transform$/.test(animation.transitionProperty) &&
+            target instanceof Element &&
+            (dialog.contains(target) || target.contains(dialog))
+          );
+        });
+      }, viewport),
+    { timeout: 10_000, timeoutMsg: "信任弹窗视口或布局过渡尚未完成" },
+  );
+}

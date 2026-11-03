@@ -161,6 +161,7 @@ export const SessionEventType = {
   WorkspaceHookReviewSuperseded: "workspace_hook_review_superseded",
   // 软门禁:准入状态变化时发射,pendingCount=0 时投影层清空 snapshot 字段。
   WorkspaceHookAdmissionUpdated: "workspace_hook_admission_updated",
+  WorkspaceMcpAdmissionUpdated: "workspace_mcp_admission_updated",
   HookRunStarted: "hook_run_started",
   HookRunProgress: "hook_run_progress",
   HookRunCompleted: "hook_run_completed",
@@ -329,6 +330,12 @@ export interface WorkflowBlockedMeta {
   sinceMs: number;
 }
 
+/** 后台 Agent 的终态；产品状态读它，不解析通知文本。error 只在 failed 时出现，与 summary 里的原因相同。 */
+export interface SubagentResultMeta {
+  status: "completed" | "failed" | "killed";
+  error?: string;
+}
+
 /** 独立后台结果轮的展示元信息；批量轮可复用代表任务身份并合成 title，不从通知文本反向解析。 */
 export interface BackgroundResultOriginMeta {
   /** `workflow` 是 dynamic-workflow run（workId ≡ runId），复用整条后台通知管线。 */
@@ -339,6 +346,8 @@ export interface BackgroundResultOriginMeta {
   workflowNotification?: WorkflowNotificationMeta;
   /** 空闲提醒的载荷；与 workflowNotification 至多在场一个。 */
   workflowBlocked?: WorkflowBlockedMeta;
+  /** 只在 backgroundSource === "subagent" 的单条通知轮上在场；合并轮不带。 */
+  subagentResult?: SubagentResultMeta;
 }
 
 /**
@@ -480,6 +489,8 @@ export function boundWorkflowLaunchMeta(input: WorkflowLaunchMeta): WorkflowLaun
 }
 
 export interface TurnStartedPayloadBase {
+  /** 当前输入/后台因果链的客户端来源，仅用于统计。 */
+  inputOrigin?: "desktop" | "mobile";
   /** 执行入口的单调 epoch 毫秒；hooks/持久化发生在 TurnStarted 发布前，不能据发布时间反推执行开始。 */
   executionStartedAt?: number;
   turnNumber: number;
@@ -537,6 +548,8 @@ export interface TurnSteerQueuedPayload {
   commandKind?: TurnSteerCommandKind;
   source?: TurnSteerSource;
   inputPresentation?: RuntimeInputPresentation;
+  /** Host 准入注入的可信 automation 身份；禁止从追踪字段恢复。 */
+  automationId?: string;
   /** 当前排队输入消费时不向 provider 暴露的工具名。 */
   toolDisallowlist?: readonly string[];
   /** 投递语义：queue=消费时切新 product turn；guide=内联当前轮。 */
@@ -1138,6 +1151,13 @@ export interface WorkspaceHookAdmissionUpdatedPayload {
   workspaceIdentity?: string;
 }
 
+/** MCP 的声明集合摘要仅供提示去重；逐条授权仍使用各自的 declarationDigest。 */
+export interface WorkspaceMcpAdmissionUpdatedPayload {
+  pendingCount: number;
+  bundleDigest: string;
+  workspaceIdentity?: string;
+}
+
 export type PermissionDecision = "allow" | "deny" | "escalate" | "modify";
 
 export type TargetChangedAction =
@@ -1355,6 +1375,7 @@ export type SessionEventPayload =
   | WorkspaceHookReviewSettledPayload
   | WorkspaceHookReviewSupersededPayload
   | WorkspaceHookAdmissionUpdatedPayload
+  | WorkspaceMcpAdmissionUpdatedPayload
   | HookRunLifecyclePayload
   | CompactLifecyclePayload
   | MicrocompactBoundaryEventPayload

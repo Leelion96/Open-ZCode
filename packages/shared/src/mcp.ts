@@ -4,7 +4,7 @@
  */
 
 import type { SettingsDirectoryLocation } from "./settings-source.js";
-import type { McpServerFailureKind } from "./zcode-protocol/index.js";
+import type { McpServerFailureKind, WorkspaceMcpTrustReview } from "./zcode-protocol/index.js";
 
 // CUA official plugin 身份常量（port 自 feat；UI 设置面板 + bootstrap 复用以避免字面量漂移）。
 export const ZCODE_CUA_OFFICIAL_PLUGIN_ID = "computer-use@zcode-plugins-official";
@@ -33,6 +33,7 @@ export interface McpServerConfig {
   command?: string; // stdio server command
   args?: string[]; // stdio server arguments
   env?: Record<string, string>; // stdio server environment variables
+  environment?: Record<string, string>; // 兼容导入配置；执行时统一为 env
   headers?: Record<string, string>; // HTTP/SSE server request headers
   http_headers?: Record<string, string>; // 兼容旧配置字段，历史 BigModel MCP 配置会把鉴权头写在这里
   oauth?: McpOAuthConfig; // HTTP/SSE OAuth 机器凭据配置
@@ -53,7 +54,13 @@ export interface McpServerConfig {
   [key: string]: any;
 }
 
-export type McpServerStatus = "connected" | "disconnected" | "error" | "connecting" | "unknown";
+export type McpServerStatus =
+  | "connected"
+  | "disconnected"
+  | "error"
+  | "connecting"
+  | "unknown"
+  | "untrusted";
 
 export interface CliMcpConfig {
   mcpServers: Record<string, McpServerConfig>;
@@ -132,6 +139,7 @@ export interface ZCodeMcpServer {
   failureKind?: McpServerFailureKind;
   serverRequestId?: string;
   toolCount?: number;
+  workspaceTrust?: WorkspaceMcpTrustReview;
   authorization?: {
     type: "oauth_authorization_code";
     authorizationUrl: string;
@@ -173,12 +181,13 @@ export interface McpTestResult {
   response_time?: number;
 }
 
-export type ZCodeAgentMcpServer =
+export type ZCodeAgentMcpServer = { scope?: "user" | "workspace" } & (
   | {
       name: string;
       command: string;
       args: string[];
       env: Array<{ name: string; value: string }>;
+      cwd?: string;
       alwaysLoad?: boolean;
       isolation?: "session" | "workspace";
       protocolVersion?: "legacy" | "auto" | "2026-07-28";
@@ -194,7 +203,8 @@ export type ZCodeAgentMcpServer =
       headers: Array<{ name: string; value: string }>;
       oauth?: McpOAuthConfig;
       timeoutMs?: number;
-    };
+    }
+);
 
 export interface McpClientCredentialsOAuthConfig {
   type: "client_credentials";
@@ -269,9 +279,28 @@ export function isZCodeCuaMcpPackageArg(value: string): boolean {
   return matchesZCodeCuaSpec(value) || matchesZCodeCuaSpec(zcodeCuaArgLeaf(value));
 }
 
+/** 审核摘要与 Host DTO 共用 Windows 命令归一化，避免批准 cmd /c 后执行 npx 被误拒绝。 */
+export function normalizeMcpStdioCommand(command: string, args: string[] = []) {
+  const isWin32 =
+    (typeof process !== "undefined" && process.platform === "win32") ||
+    (typeof navigator !== "undefined" && /win/i.test(navigator.platform));
+  const lowerCmd = command.toLowerCase();
+  const unwrappedCommand = args[1];
+  if (
+    isWin32 &&
+    (lowerCmd === "cmd" || lowerCmd === "cmd.exe") &&
+    args[0] === "/c" &&
+    unwrappedCommand
+  ) {
+    return { command: unwrappedCommand, args: args.slice(2) };
+  }
+  return { command, args };
+}
+
 export function convertToZCodeAgentMcpServer(
   name: string,
   config: McpServerConfig,
+  scope?: "user" | "workspace",
 ): ZCodeAgentMcpServer | null {
   let inferredType = config.type;
   if (!inferredType) {
@@ -284,28 +313,17 @@ export function convertToZCodeAgentMcpServer(
     // Windows 上 agent 通常用 shell: true 启动子进程，
     // "cmd /c npx ..." 会被双重包裹成 "cmd.exe /c cmd /c npx ..." 导致连接失败。
     // 这里把 cmd /c 包衣拆掉，直接使用内部命令。
-    let command = config.command;
-    let args = config.args || [];
-    // 自动检测平台：Node.js 用 process.platform，浏览器用 navigator.platform
-    const isWin32 =
-      (typeof process !== "undefined" && process.platform === "win32") ||
-      (typeof navigator !== "undefined" && /win/i.test(navigator.platform));
-    if (isWin32) {
-      const lowerCmd = command.toLowerCase();
-      const unwrappedCommand = args[1];
-      if ((lowerCmd === "cmd" || lowerCmd === "cmd.exe") && args[0] === "/c" && unwrappedCommand) {
-        // noUncheckedIndexedAccess 下 args[1] 即使经过 length 判断也仍是 string | undefined。
-        // 先显式取值并判空，既满足类型收窄，也避免把空命令传给 ZCode Agent。
-        command = unwrappedCommand;
-        args = args.slice(2);
-      }
-    }
+    const { command, args } = normalizeMcpStdioCommand(config.command, config.args);
+    // 文件解析支持 environment；DTO 不能漏掉它，否则审核与实际 env 不同。
+    const env = config.env ?? config.environment;
     return {
       name,
+      ...(scope ? { scope } : {}),
       command,
       args,
-      env: config.env
-        ? Object.entries(config.env).map(([key, value]) => ({
+      ...(typeof config.cwd === "string" ? { cwd: config.cwd } : {}),
+      env: env
+        ? Object.entries(env).map(([key, value]) => ({
             name: key,
             value,
           }))
@@ -325,6 +343,7 @@ export function convertToZCodeAgentMcpServer(
     const headers = getMcpServerRequestHeaders(config);
     return {
       name,
+      ...(scope ? { scope } : {}),
       type: normalizedType,
       url: config.url,
       headers: headers
@@ -387,4 +406,12 @@ function isValidMcpOAuthConfig(value: unknown): value is McpOAuthConfig {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export interface WorkspaceMcpTrustDecision {
+  workspacePath: string;
+  workspaceIdentity?: string;
+  serverName: string;
+  declarationDigest: string;
+  trusted: boolean;
 }

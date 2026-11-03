@@ -62,7 +62,16 @@ describe(`${CASE_MARKER}: 同一 Source 经两条线路/alias 与 symlink 打开
     this.timeout(25 * 60_000);
     const config = readSSHRuntimeConfig(CASE_MARKER);
     const workspaceA = config.workspacePaths[0];
-    await runSSHCommand(config, `ln -sfn "${workspaceA}" "${SYMLINK_PATH}"`);
+    const linkCreated = await runSSHCommand(config, `ln -sfn "${workspaceA}" "${SYMLINK_PATH}"`);
+    expect(linkCreated.code).toBe(0);
+    // 先确认夹具确为符号链接且指向目标，不能把目录准备失败误报为 canonical 身份缺陷。
+    const resolvedLink = await runSSHCommand(
+      config,
+      `test -L "${SYMLINK_PATH}" && cd -P "${SYMLINK_PATH}" && pwd -P`,
+    );
+    facts.symlinkFixture = { code: resolvedLink.code, realpath: resolvedLink.stdout.trim() };
+    expect(resolvedLink.code).toBe(0);
+    expect(resolvedLink.stdout.trim()).toBe(workspaceA);
     await prepareV4ConversationE2E({ skipProvider: true });
     const initialHosts = await readHostProcesses();
 
@@ -79,6 +88,7 @@ describe(`${CASE_MARKER}: 同一 Source 经两条线路/alias 与 symlink 打开
     await openSSHSourceDirectory(config, CASE_MARKER);
     await waitForSSHDirectoryStep(CASE_MARKER);
     await selectSSHRemoteDirectory(SYMLINK_PATH, CASE_MARKER);
+    facts.activeTabAfterSymlinkOpen = await readRemoteTabSnapshot();
     const viaLink = await waitForRemoteTab({
       caseMarker: CASE_MARKER,
       expectedPath: workspaceA,

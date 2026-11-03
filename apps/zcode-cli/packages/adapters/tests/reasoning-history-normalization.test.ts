@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ModelInputMessage } from "@zcode/contracts";
+import type { ModelInputMessage, ModelMessageContentBlock } from "@zcode/contracts";
 import {
   isThinkingSignatureRejection,
   normalizeReasoningHistory,
@@ -210,18 +210,53 @@ describe("reasoning history normalization", () => {
     expect(normalizeReasoningHistory(messages, modelIdentity("provider-b/model-b"))).toBe(messages);
   });
 
-  it("removes orphan reasoning-only assistant messages", () => {
+  it("removes orphan reasoning-only assistant messages and merges adjacent users", () => {
     const messages: ModelInputMessage[] = [
       { role: "user", content: "first" },
       { role: "assistant", content: [reasoning("orphan")] },
       { role: "user", content: "second" },
     ];
 
+    // 与删除空白 assistant 相同：相邻 user 合并，前一条文本末尾补 "\n"。
     expect(normalizeReasoningHistory(messages)).toEqual([
-      { role: "user", content: "first" },
-      { role: "user", content: "second" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "first\n" },
+          { type: "text", text: "second" },
+        ],
+      },
     ]);
   });
+
+  it.each([
+    ["reasoning-only", [reasoning("orphan")]],
+    ["whitespace-only", [{ type: "text", text: "  " }]],
+  ] satisfies [string, ModelMessageContentBlock[]][])(
+    "merges only the pair that %s assistant removal made adjacent",
+    (_kind, removedContent) => {
+      const messages: ModelInputMessage[] = [
+        { role: "user", content: "context" },
+        { role: "user", content: "first" },
+        { role: "assistant", content: removedContent },
+        { role: "user", content: "second" },
+        { role: "user", content: "third" },
+      ];
+
+      // 只合并删除点两侧的一对：请求层已拼好其他相邻 user，再合并会给每对多补一个 "\n"。
+      expect(normalizeReasoningHistory(messages)).toEqual([
+        { role: "user", content: "context" },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "first\n" },
+            { type: "text", text: "second" },
+          ],
+        },
+        { role: "user", content: "third" },
+      ]);
+    },
+  );
 
   it("removes a final reasoning-only assistant before trailing cleanup", () => {
     const messages: ModelInputMessage[] = [

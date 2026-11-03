@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-subagent-side-tabs",
+  "spec": "./test/e2e/conversation-session/conversation-session-subagent-side-tabs.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-subagent-side-tabs.json"
+  ],
+  "fileFixtures": [
+    {
+      "path": ".zcode-e2e/shared/readonly-tool.txt",
+      "source": "created-by-helper",
+      "description": "六个 child 与后台 child 分别执行真实 Read 的输入文件。"
+    }
+  ],
+  "requests": [
+    {
+      "id": "side-tabs-title",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tabs-parent-spawn",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tabs-parent-final",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tab-child-1",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tab-child-2",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tab-child-3",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tab-child-4",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tab-child-5",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tab-child-6",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tabs-background-spawn",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tabs-background-launched",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tab-child-background",
+      "kind": "subagent",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "side-tabs-background-completed",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "固定 Agent 调用和上游流分块；每个 child 执行真实 Read，测试打开侧栏并观察运行态后才释放响应，不依赖固定睡眠。"
+    },
+    {
+      "id": "upstream-conversation-readonly-tool-call",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "只读工具首段用于构造稳定 tool_use/tool_result 历史；工具业务由本地文件 fixture 决定，不依赖真实模型选择。"
+    }
+  ]
+}

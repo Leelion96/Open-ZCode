@@ -7,7 +7,9 @@ export type PersistedStatusRead =
   | { state: "missing"; status: null }
   | { state: "invalid" | "unreadable"; status: null; error: unknown };
 
-export async function readPersistedStatusDetailed(layout: ServerLayout): Promise<PersistedStatusRead> {
+export async function readPersistedStatusDetailed(
+  layout: ServerLayout,
+): Promise<PersistedStatusRead> {
   // Bug 原因：文件缺失表示离线，JSON/schema 损坏表示观测不可信；两者不能再折叠成同一个 null，
   // 否则 uninstall/stop 会把“无法确认已停止”误判成“已经停止”。
   let raw: string;
@@ -26,7 +28,9 @@ export async function readPersistedStatusDetailed(layout: ServerLayout): Promise
   }
 }
 
-export async function readPersistedStatus(layout = resolveServerLayout()): Promise<ServerStatus | null> {
+export async function readPersistedStatus(
+  layout = resolveServerLayout(),
+): Promise<ServerStatus | null> {
   return (await readPersistedStatusDetailed(layout)).status;
 }
 
@@ -34,6 +38,8 @@ export function createStatusPersister<T>(
   statusFile: string,
   getStatus: () => T,
   onError: (error: unknown) => void,
+  /** status.json 只能由持有 data-root lock 的 Supervisor 写；返回 false 时跳过本次写入。 */
+  canWrite: () => Promise<boolean>,
 ): () => Promise<void> {
   let inFlight: Promise<void> = Promise.resolve();
   return async () => {
@@ -41,8 +47,12 @@ export function createStatusPersister<T>(
     // 会全部丢失；status.json 只是观测快照，失败时记录告警并继续服务生命周期。
     inFlight = inFlight
       .then(async () => {
+        if (!(await canWrite())) return;
         const temporary = `${statusFile}.${process.pid}.tmp`;
-        await writeFile(temporary, `${JSON.stringify(getStatus(), null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+        await writeFile(temporary, `${JSON.stringify(getStatus(), null, 2)}\n`, {
+          encoding: "utf8",
+          mode: 0o600,
+        });
         await rename(temporary, statusFile);
       })
       .catch((error: unknown) => onError(error));

@@ -2,6 +2,7 @@ import type { IPlatformService } from "@zcode/shared";
 
 type DesktopBrowserPlatformBridge = Pick<
   IPlatformService,
+  | "onBrowserViewDownloadStarted"
   | "onBrowserViewReady"
   | "onBrowserViewOperation"
   | "onBrowserViewViewportChanged"
@@ -32,6 +33,8 @@ export const desktopBrowserPlatformBridge = {
     window.zcode.saveFile?.(payload) ?? Promise.resolve({ success: false, error: "not_supported" }),
   // 条件定义而非兜底返回失败：UI 靠方法是否存在做能力检测，旧 preload 下必须保持 undefined
   printPageToPdf: window.zcode.printPageToPdf ? () => window.zcode.printPageToPdf!() : undefined,
+  onBrowserViewDownloadStarted: (handler) =>
+    window.zcode.onBrowserViewDownloadStarted?.(handler) ?? (() => {}),
   onBrowserViewReady: (handler) => window.zcode.onBrowserViewReady?.(handler) ?? (() => {}),
   onBrowserViewOperation: (handler) => window.zcode.onBrowserViewOperation?.(handler) ?? (() => {}),
   onBrowserViewViewportChanged: (handler) =>

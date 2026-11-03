@@ -199,6 +199,9 @@ function seedBundledOfficialPlugins(input: {
         // 删不掉的遗留锁 + PID 复用会让接管长期不触发）。seeding 只是刷新缓存，超时必须
         // 走既有降级协议回退到可用缓存并告警，不能把会话恢复整体炸成 resumeFailed。
         isOfficialPluginSeedLockTimeoutError(error) ||
+        // overlay 下层目录的 EXDEV 不会因重试消失（不进重试集合）。删除后替换仍失败时，
+        // 这次只是没能刷新缓存，必须降级回退到可用缓存，不能让会话恢复整体 resumeFailed。
+        isCrossDeviceFsError(error) ||
         // 多个 workspace app 会并发 seed 同一份官方插件缓存。当前进程
         // 写 runtime manifest 时，并发赢家可能已经原子替换整个 targetRoot，连同本进程
         // 的临时文件一起移走，rename 因此返回 ENOENT。只在新 target 已由 marker 证明
@@ -541,10 +544,21 @@ function replaceSeedRoot(
       renameOfficialPluginCachePath(targetRoot, backupRoot, retryBudget);
       movedTargetToBackup = true;
     } catch (error) {
-      // 官方插件缓存由桌面窗口、协议与 CLI 入口共享。existsSync 之后，
-      // 另一个进程可能先移走 target；此处只收敛这个 TOCTOU 的 ENOENT，随后继续
-      // promote 或由 isSeedCurrent 识别并发赢家，其他缺失错误仍保持原有 fatal 语义。
-      if (!isNotFoundFsError(error)) throw error;
+      if (isCrossDeviceFsError(error)) {
+        // Bug 原因：容器镜像若已带有插件缓存，旧 target 位于 overlayfs 下层；未启用
+        // redirect_dir 时内核拒绝 rename 下层目录，同一父目录内也返回 EXDEV。旧逻辑把它
+        // 当作致命错误上抛，每次启动/会话恢复都失败。下层目录只能删除不能改名，因此在
+        // seed lock 内改为「先删 target 再 promote temp」；这条路径没有 backup 可回滚，
+        // promote 失败时由降级协议回退到可用旧版本。先删 marker：删除中途退出时，
+        // 残缺目录不会带着当前 hash 被下次启动当成完整缓存。
+        removeOfficialPluginCacheDirectory(join(targetRoot, SEED_MARKER_FILE), retryBudget);
+        removeOfficialPluginCacheDirectory(targetRoot, retryBudget);
+      } else if (!isNotFoundFsError(error)) {
+        // 官方插件缓存由桌面窗口、协议与 CLI 入口共享。existsSync 之后，
+        // 另一个进程可能先移走 target；此处只收敛这个 TOCTOU 的 ENOENT，随后继续
+        // promote 或由 isSeedCurrent 识别并发赢家，其他缺失错误仍保持原有 fatal 语义。
+        throw error;
+      }
     }
   }
 
@@ -594,6 +608,14 @@ function isNotFoundFsError(error: unknown): error is NodeJS.ErrnoException {
     typeof error === "object" &&
     error !== null &&
     String((error as NodeJS.ErrnoException).code) === "ENOENT"
+  );
+}
+
+function isCrossDeviceFsError(error: unknown): error is NodeJS.ErrnoException {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    String((error as NodeJS.ErrnoException).code) === "EXDEV"
   );
 }
 
@@ -648,9 +670,12 @@ export function candidateBaseDirs(): string[] {
   // 修复原因：Electron app-server 运行在 resources/glm/zcode.cjs，官方插件资源也随桌面包
   // stage 到同级 packages/*-plugin。候选目录必须优先看入口文件目录，避免生产态退回到
   // monorepo-only 的 __dirname 查找假设。
-  return [entrypointDir(), runtimeDir(), process.cwd()].filter(
-    (dir): dir is string => typeof dir === "string",
-  );
+  return [...bundleBaseDirs(), process.cwd()];
+}
+
+/** 入口文件目录与 bundle 自身目录，不含 cwd：随包运行时资产（如 npm）不能被工作区同名目录顶替。 */
+export function bundleBaseDirs(): string[] {
+  return [entrypointDir(), runtimeDir()].filter((dir): dir is string => typeof dir === "string");
 }
 
 function runtimeDir(): string | undefined {

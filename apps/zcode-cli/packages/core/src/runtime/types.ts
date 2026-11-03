@@ -26,6 +26,7 @@ import type {
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
+import type { ProviderToolRound } from "./provider-tool-rounds/contract.js";
 import type {
   CompactPhase,
   CompactReason,
@@ -259,7 +260,11 @@ export interface AgentRuntimeConfig {
   /** 仅用于持久化隔离；文件与命令执行仍使用 workingDirectory。 */
   workspaceIdentity?: WorkspaceId;
   envInfo?: EnvInfo; // Optional, will be auto-detected if not provided
-  currentDate?: string; // YYYY-MM-DD, resolved by adapter when omitted
+  /**
+   * YYYY-MM-DD，缺省由 adapter 解析。只用于 ContextBuilder 日期段的用量统计；
+   * 模型看到的日期公告一律取运行时时钟（固定日期请注入 `now`）。
+   */
+  currentDate?: string;
   userInstructions?: UserInstructionsOptions; // P1: AGENTS.md
   projectContext?: ProjectContext; // P2: auto-detected if not provided
   skillMetadataBudget?: number;
@@ -378,6 +383,12 @@ export interface AgentRuntimeDeps {
    * 包装（受闸门约束），主 runtime 拿治理器的 observer（只喂信号）；缺席即不设闸门。
    */
   modelRequestAdmission?: ModelRequestAdmission;
+  /**
+   * 主代理 subagent（`Agent` 工具）的准入端口工厂：派生 subagent 时以**当前**父 sessionId 调用，
+   * 结果作为子 runtime 的 `modelRequestAdmission`（受闸门约束，同一父会话的 subagent 共用一条队列）。
+   * 缺席时子 runtime 沿用父的 `modelRequestAdmission`。
+   */
+  subagentModelRequestAdmission?: (parentSessionId: string) => ModelRequestAdmission;
   onOffPeakLifecycleEvent?: (
     event: import("./off-peak/lifecycle.js").OffPeakLifecycleEvent,
   ) => void;
@@ -764,7 +775,6 @@ export interface ResumeSessionResult extends SessionHistoryHydrationResult {
   /** resume 是否写回了当前 materialization 无法完整反映的 compact 修补事实。 */
   persistedMessagesReloadRequired: boolean;
   readFileStateRestoredCount: number;
-  readFileStateSkippedRangeReadCount: number;
   readFileStateSkippedUnreadableEditCount: number;
   traceId: TraceId;
 }
@@ -779,6 +789,7 @@ export interface PermissionDecisionResult {
 export interface ExecuteToolsOptions {
   toolSearch?: ToolSearchExecutionContext;
   automationTurn?: boolean;
+  automationId?: string;
   offPeakTurn?: boolean;
   signal?: AbortSignal;
   traceContext?: TraceContext;
@@ -886,8 +897,10 @@ export interface RunModelTextRequestOptions {
 }
 
 export interface RuntimeModelStreamSnapshot {
+  /** 当前轮（最后一个服务端内置工具之后）的内容；之前的轮在 providerToolRounds。 */
   reasoning: ModelReasoningContentBlock[];
   text: string;
+  providerToolRounds?: readonly ProviderToolRound[];
 }
 
 export interface StreamedToolExecutionResult {
@@ -905,6 +918,8 @@ export interface RuntimeModelTextResult {
   reasoning?: ModelReasoningContentBlock[];
   text: string;
   toolCalls?: ModelToolCall[];
+  /** 服务端内置工具切出的前序轮次；text/reasoning 只保留最后一轮。 */
+  providerToolRounds?: ProviderToolRound[];
   usage: ModelUsage;
 }
 

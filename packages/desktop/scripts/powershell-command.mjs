@@ -1,6 +1,10 @@
+import childProcess from "node:child_process";
+
 const POWERSHELL_COMMON_ARGS = ["-NoLogo", "-NoProfile", "-NonInteractive"];
 
 const WINDOWS_POWERSHELL_SECURITY_BOOTSTRAP = [
+  // 首次模块导入会向 stderr 写进度 CLIXML；只静默进度，实际错误仍须拒绝更新。
+  "$ProgressPreference='SilentlyContinue';",
   "$ErrorActionPreference='Stop';",
   "try{",
   "$zcodeSecurityModule=[IO.Path]::Combine($PSHOME,'Modules','Microsoft.PowerShell.Security','Microsoft.PowerShell.Security.psd1');",
@@ -34,4 +38,38 @@ export function createWindowsPowerShellSecurityArgs(script, values = []) {
   // Windows PowerShell 5.1 时可能错误发现不兼容的 Security 模块。直接从当前
   // powershell.exe 的 PSHOME 加载系统模块，避免把外部环境变量当作模块信任根。
   return createEncodedPowerShellArgs(`${WINDOWS_POWERSHELL_SECURITY_BOOTSTRAP}${script}`, values);
+}
+
+export async function readWindowsAuthenticodeSignature(filePath) {
+  const script = [
+    "[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);",
+    "$signature=Get-AuthenticodeSignature -LiteralPath $zcodeArg0;",
+    "@{status=[int]$signature.Status;subject=$signature.SignerCertificate.Subject}|ConvertTo-Json -Compress;",
+  ].join("");
+  const stdout = await new Promise((resolve, reject) => {
+    childProcess.execFile(
+      "powershell.exe",
+      createWindowsPowerShellSecurityArgs(script, [filePath]),
+      { encoding: "utf8", timeout: 30_000, windowsHide: true },
+      (error, output, stderr) => {
+        if (error || stderr) reject(error ?? new Error(stderr));
+        else resolve(output);
+      },
+    );
+  });
+  return JSON.parse(stdout.replace(/^\uFEFF/u, "").trim());
+}
+
+export async function verifyWindowsAuthenticodeSignature(filePath) {
+  const signature = await readWindowsAuthenticodeSignature(filePath);
+  // 官方 HTTPS 清单与文件哈希决定发布授权；这里只检查 Windows 签名有效性。
+  // 不固定证书 DN，避免换证后长期未升级的客户端只能依赖过渡版本。
+  if (
+    signature.status !== 0 ||
+    typeof signature.subject !== "string" ||
+    !signature.subject.trim()
+  ) {
+    return "Windows update requires a valid Authenticode signature";
+  }
+  return null;
 }

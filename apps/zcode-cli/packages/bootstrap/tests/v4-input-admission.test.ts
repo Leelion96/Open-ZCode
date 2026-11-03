@@ -18,6 +18,19 @@ function envelope(type: CommandEnvelope["type"], payload: unknown): CommandEnvel
 }
 
 describe("v4 input admission canonical intent", () => {
+  it("在写接纳账本前分离旧尾块，并保存新快照字段", () => {
+    const genUiContext = [{ path: "/project/example.html", state: { stage: "entry" } }];
+    for (const payload of [
+      { text: "question", genUiContext },
+      {
+        text: `question\n\n<untrusted_gen_ui_state>\n${JSON.stringify(genUiContext)}\n</untrusted_gen_ui_state>`,
+      },
+    ]) {
+      expect(
+        resolveInputCommandForAdmission(envelope("sendText", payload), "s-parent", vi.fn()),
+      ).toMatchObject({ text: "question", genUiContext });
+    }
+  });
   it("gateway admission 接线包含 compact/edit/retry，排除非输入命令", () => {
     expect(isConversationInputAdmissionCommand("compact")).toBe(true);
     expect(isConversationInputAdmissionCommand("editUserQuery")).toBe(true);

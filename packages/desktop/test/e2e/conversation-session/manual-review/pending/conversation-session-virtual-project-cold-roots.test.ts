@@ -1,3 +1,4 @@
+// 统一 runner 与旧手工入口均使用隔离 HOME；不能因 runId 前缀不同拒绝安全夹具。
 import { selectNativeProjectDirectories } from "../../../helpers/project-sidebar.js";
 import { basename, join } from "node:path";
 import { copyFile, mkdir, writeFile } from "node:fs/promises";
@@ -27,7 +28,12 @@ describe("虚拟项目多目录冷恢复", () => {
   it("VP16：运行实例保持旧 roots，完整进程重建才采用新 roots，cwd 与主目录配置链不变", async function () {
     await waitForWorkspaceApp(DEFAULT_WORKSPACE, 45_000);
     const home = process.env.ZCODE_E2E_HOME_DIR!;
-    if (!home || !basename(home).startsWith("zcode-virtual-project-e2e-"))
+    if (
+      !home ||
+      ![".e2e-home-", "zcode-virtual-project-e2e-"].some((prefix) =>
+        basename(home).startsWith(prefix),
+      )
+    )
       throw new Error("隔离 HOME required");
     const roots = ["A", "B", "C"].map((name) => join(home, `E2E_VP16_${name}`));
     for (const [i, root] of roots.entries()) {
@@ -81,16 +87,20 @@ describe("虚拟项目多目录冷恢复", () => {
       });
       const capture = await waitForUpstreamNetworkCapture(marker);
       const body = JSON.stringify(capture.requestJson);
-      const expectedRoot = roots[expectedExtra === "B" ? 1 : 2]!;
-      const previousRoot = roots[expectedExtra === "B" ? 2 : 1]!;
-      expect(body).toContain(
-        JSON.stringify(
-          `- Primary working directory: ${roots[0]}\n- Additional directories:\n  - ${expectedRoot}`,
-        ).slice(1, -1),
-      );
-      expect(body).not.toContain(
-        JSON.stringify(`- Additional directories:\n  - ${previousRoot}`).slice(1, -1),
-      );
+      const wire = (text: string) => JSON.stringify(text).slice(1, -1);
+      // 首个完整环境块列出本次运行的附加目录 B；冷恢复后原块不改写（保持缓存前缀），
+      // 只追加目录增量。
+      expect(body).toContain(wire(` - Primary working directory: ${roots[0]}\n`));
+      expect(body).toContain(wire(` - Additional working directories:\n  - ${roots[1]}\n`));
+      if (expectedExtra === "B") {
+        expect(body).not.toContain("Additional working directories added");
+      } else {
+        expect(body).toContain(
+          wire(
+            `# Environment update\n - Additional working directories added:\n  - ${roots[2]}\n - Additional working directories removed:\n  - ${roots[1]}`,
+          ),
+        );
+      }
       expect(body).toContain("E2E_VP16_SKILL_A");
       expect(body).toContain(`E2E_VP16_SKILL_${expectedExtra}`);
       expect(body).toContain("E2E_VP16_SUBAGENT_A");

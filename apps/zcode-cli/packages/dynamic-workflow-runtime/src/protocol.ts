@@ -198,6 +198,12 @@ export interface ChildPayload {
    */
   args?: Record<string, unknown>;
   /**
+   * 本次 run 的身份，注入沙箱成为**冻结**的 `run` 全局（lowering 把脚本里的 `run` 读改写成
+   * `__host.run`）。`resumedFrom` 是修订的前驱 run id：resume 时由调用方从 journal 读回，
+   * 两世同值——脚本若把它拼进 ask 指令，换了值就会让同一个 run 的重放哈希对不上。
+   */
+  run: { id: string; resumedFrom?: string };
+  /**
    * 堆上限（MB）。**只在 argsPrefix（SEA 自 re-exec）路径生效**：那条路上传不了
    * `--max-old-space-size`，入口文件在 `execArgv` 里看不到旗标时自己 `v8.setFlagsFromString`
    * best-effort。缺省路径由真正的 Node 旗标生效，入口文件看到旗标就跳过本字段。

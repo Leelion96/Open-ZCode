@@ -80,13 +80,21 @@ export function RemoteConnectionStatusTag({
   status,
   presentation: supplied,
   className,
+  compact = false,
+  progressPercent,
 }: {
   status?: RemoteConnectionDisplayStatus;
   presentation?: RemoteConnectionPresentation;
   className?: string;
+  /** 设置页设备行只显示短状态（RDUX-13）；自动恢复次数仍保留，其他位置显示完整标签。 */
+  compact?: boolean;
+  /** 进行中操作的已知百分比，追加在状态文字后。 */
+  progressPercent?: number;
 }) {
   const { intl } = useZCodeIntl();
   const presentation = supplied ?? resolveRemoteConnectionPresentation({ state: status });
+  const primaryMessageId =
+    compact && !presentation.recovery ? presentation.shortMessageId : presentation.messageId;
   return (
     <span
       role="status"
@@ -101,7 +109,7 @@ export function RemoteConnectionStatusTag({
       )}
     >
       <span aria-hidden="true" className={cn("size-1.5 rounded-full", presentation.dot)} />
-      {intl.formatMessage({ id: presentation.messageId })}
+      {intl.formatMessage({ id: primaryMessageId })}
       {presentation.recovery ? (
         <>
           {" · "}
@@ -112,10 +120,16 @@ export function RemoteConnectionStatusTag({
             )}
           </span>
         </>
-      ) : presentation.shortMessageId !== presentation.messageId ? (
+      ) : !compact && presentation.shortMessageId !== presentation.messageId ? (
         <>
           {" "}
           · <span>{intl.formatMessage({ id: presentation.shortMessageId })}</span>
+        </>
+      ) : null}
+      {progressPercent !== undefined ? (
+        <>
+          {" "}
+          <span className="tabular-nums">{progressPercent}%</span>
         </>
       ) : null}
     </span>

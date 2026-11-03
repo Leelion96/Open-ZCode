@@ -1,5 +1,5 @@
 import { workflowRunStepCounts, type WorkflowRunState } from "@zcode/shared/zcode-protocol-v4";
-import type { ConversationRow } from "@zcode/shared/zcode-protocol-v4";
+import type { ConversationRow, ConversationRowsPartition } from "@zcode/shared/zcode-protocol-v4";
 import {
   ZCODE_WORKFLOWS_FOR_RUN_MAX_CANDIDATES,
   type ZCodeWorkflowsForRunCandidate,
@@ -7,7 +7,12 @@ import {
 import type { WorkflowCausalityGraphData } from "@/components/workflow-graph/types.js";
 import type { WorkflowRunCardSummary } from "@/ToolCallBlocks/shared.js";
 import { readWorkflowHoleTarget } from "@/ToolCallBlocks/renderers/createWorkflowHoleInput.js";
-import { isFillWorkflowHoleToolCall } from "@/lib/workflowToolNames.js";
+import { memoizeByRows } from "@/v4/conversationProjectionStore.js";
+import {
+  isFillWorkflowHoleToolCall,
+  isCreateWorkflowToolCall,
+  isAmendWorkflowToolCall,
+} from "@/lib/workflowToolNames.js";
 
 /**
  * 工具卡 → dwf run 的联接（docs/dynamic-workflow/presentation.md「The tool row」）。
@@ -302,4 +307,51 @@ export function buildWorkflowSaveCandidatesByRunId(
     byRunId.set(found.runId, list);
   }
   return byRunId;
+}
+
+/**
+ * Bug 根因：SessionPane 每次 snapshot 变化（流式时每帧）都调用 selectWorkflowJoinRows。按名识别对每个
+ * 工具行跑多次正则归一，约 8000 行的会话每帧要花约 1ms，且随历史长度增长。协议行不可变，内容变化
+ * 一定产生新对象，所以按行对象缓存判定结果不需要失效逻辑；WeakMap 也不会延长行的寿命。
+ * 分区后尾段每帧都要重新过滤，这一层缓存让尾段里未变的工具行也不必重复做正则归一。
+ */
+const workflowJoinToolRowVerdicts = new WeakMap<ConversationRow, boolean>();
+
+function isWorkflowJoinToolRow(row: Extract<ConversationRow, { kind: "toolCall" }>): boolean {
+  const cached = workflowJoinToolRowVerdicts.get(row);
+  if (cached !== undefined) return cached;
+  const verdict =
+    row.display?.kind === "create_workflow" ||
+    isCreateWorkflowToolCall(row) ||
+    isAmendWorkflowToolCall(row) ||
+    isFillWorkflowHoleToolCall(row) ||
+    row.toolName === "SaveWorkflow";
+  workflowJoinToolRowVerdicts.set(row, verdict);
+  return verdict;
+}
+
+/** 普通消息帧不影响 Workflow 联接；保留相关原始行，由调用方浅比较后复用依赖。 */
+export function selectWorkflowJoinRows(
+  rows: readonly ConversationRow[] | undefined,
+): ConversationRow[] {
+  return (rows ?? []).filter((row) => {
+    if (row.kind === "turnHeader" || row.kind === "userInput")
+      return row.workflowLaunch !== undefined;
+    return row.kind === "toolCall" && isWorkflowJoinToolRow(row);
+  });
+}
+
+const workflowJoinRowsByRows = memoizeByRows(selectWorkflowJoinRows);
+
+/**
+ * 与 selectWorkflowJoinRows(history ++ tail) 结果相同；历史段结果按引用缓存，每帧只过滤尾轮。
+ * 尾轮没有相关行时直接返回历史段数组，调用方的浅比较也不必逐项比较。
+ */
+export function selectWorkflowJoinRowsInPartition(
+  partition: ConversationRowsPartition | null,
+): ConversationRow[] {
+  if (!partition) return [];
+  const history = workflowJoinRowsByRows(partition.history);
+  const tail = workflowJoinRowsByRows(partition.tail);
+  return tail.length === 0 ? history : [...history, ...tail];
 }

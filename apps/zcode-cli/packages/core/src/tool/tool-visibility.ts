@@ -1,4 +1,7 @@
+import { LOCAL_TOOL_SEARCH_NAME, TOOL_SEARCH_NAME } from "@zcode/contracts";
+
 export function normalizeToolNameAlias(toolName: string): string {
+  if (toolName === LOCAL_TOOL_SEARCH_NAME) return TOOL_SEARCH_NAME;
   return toolName === "web_search" ? "WebSearch" : toolName;
 }
 

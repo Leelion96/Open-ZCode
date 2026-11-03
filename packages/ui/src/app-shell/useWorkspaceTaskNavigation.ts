@@ -25,6 +25,7 @@ import { getRemoteWorkspaceSession } from "@/store/remoteWorkspaceSessionStore.j
 import { useTabStoreApi } from "@/store/TabStoreProvider.js";
 import { isWorkspaceTab } from "@/store/tabStore.js";
 import { bumpTaskListMembershipVersion } from "@/v4/taskListMembershipVersion.js";
+import { ensureTaskNavigationWorkspace } from "@/app-shell/taskNavigationWorkspace.js";
 
 export interface AutomationsNavigationTarget {
   workspacePath: string;
@@ -93,12 +94,19 @@ export function useWorkspaceTaskNavigation({
       // 当同一窗口里存在相同路径的多个 remote tab 时，路径映射会命中旧 session，
       // 导致“点开这个任务”却把已读状态写到另一条远端连接上。
       // 这里先激活目标 tab，再从当前激活 tab 上读取更精确的 remoteSessionId。
-      activateTabByPath(
-        targetWorkspacePath,
-        targetWorkspaceIdentityHint
-          ? { workspaceIdentity: targetWorkspaceIdentityHint }
-          : undefined,
-      );
+      // 全局搜索可返回尚未打开的目录；仅 activate 会失败并把用户留在原任务。
+      const workspaceResult = ensureTaskNavigationWorkspace({
+        workspacePath: targetWorkspacePath,
+        workspaceIdentity: targetWorkspaceIdentityHint,
+        activateTabByPath,
+        addLocalWorkspaceTab: (path) => {
+          tabStoreApi.getState().addTab(path);
+        },
+      });
+      if (!workspaceResult.accepted) {
+        toast(intl.formatMessage({ id: "automations.runs.openSessionFailed" }));
+        return;
+      }
       const activeTab = tabStoreApi
         .getState()
         .tabs.find((tab) => tab.id === tabStoreApi.getState().activeTabId);

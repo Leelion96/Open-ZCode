@@ -18,12 +18,10 @@
       },
       "response": {
         "statusCode": 200,
-        "text": {
-          "id": "diag-title",
-          "text": "{\"title\":\"TTFT diagnostics\"}",
-          "inputTokens": 30,
-          "outputTokens": 10
-        }
+        "headers": {
+          "content-type": "application/json; charset=utf-8"
+        },
+        "body": "{\"id\":\"diag-title\",\"type\":\"message\",\"role\":\"assistant\",\"model\":\"deepseek-v4-flash\",\"content\":[{\"type\":\"text\",\"text\":\"{\\\"title\\\":\\\"TTFT diagnostics\\\"}\"}],\"stop_reason\":\"end_turn\",\"stop_sequence\":null,\"usage\":{\"input_tokens\":30,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":10,\"service_tier\":\"standard\"}}"
       }
     },
     {

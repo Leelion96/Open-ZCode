@@ -1,7 +1,9 @@
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { parseRemoteWorkspaceIdentity } from "@zcode/shared";
 import {
   TID_SETTINGS_PAGE,
+  TID_SETTINGS_BACK_BUTTON,
   TID_SETTINGS_SECTION_NAV,
   TID_TASK_SETTINGS_BUTTON,
   testId,
@@ -115,8 +117,29 @@ describe(`${CASE_MARKER}: 设置防护、连接编辑与机器标注`, () => {
     this.timeout(15 * 60_000);
     const config = readSSHRuntimeConfig(CASE_MARKER);
     const path = config.workspacePaths[0];
+    // 前项截图停在窄屏设置页，项目侧栏处于响应式隐藏态；独立操作场景恢复桌面视口。
+    await browser.electron.execute((electron) =>
+      electron.BrowserWindow.getAllWindows()
+        .find((window) => !window.isDestroyed())
+        ?.setSize(1400, 900),
+    );
+    await browser.waitUntil(() => browser.execute(() => innerWidth === 1400));
     await prepareSSHConnectionPage(CASE_MARKER);
     await prepareV4ConversationE2E({ skipProvider: true });
+    if (await $(`[data-testid="${TID_SETTINGS_PAGE}"]`).isDisplayed())
+      await clickTestIdByDom(TID_SETTINGS_BACK_BUTTON);
+    // 失败录像确认扩宽窗口后仍保留窄屏的侧栏折叠选择；仅恢复尺寸不会自动展开。
+    if (!(await $('[data-testid="project-section"]').isDisplayed())) {
+      const toggles = await $$(
+        'button[aria-label="切换侧边栏"], button[aria-label="Toggle sidebar"]',
+      );
+      for (const toggle of toggles) {
+        if (!(await toggle.isDisplayed())) continue;
+        await toggle.click();
+        break;
+      }
+      await $('[data-testid="project-section"]').waitForDisplayed();
+    }
     await openSSHRemoteDialog(CASE_MARKER);
     await fillSSHPasswordSettings(config);
     await clickLastEnabledSSHDialogButton(CASE_MARKER);
@@ -132,7 +155,9 @@ describe(`${CASE_MARKER}: 设置防护、连接编辑与机器标注`, () => {
     });
     await section("remoteDevices");
     await $('[data-remote-connection-status="online"]').waitForDisplayed();
-    await clickButton("编辑");
+    // RDUX-13：编辑在设备行「更多」菜单里。
+    await more();
+    await clickButton("编辑", '[role="menu"]');
     await $("#edit-connection-name").setValue(connectionName);
     await $("#edit-device-name").setValue(deviceName);
     expect(await $('[role="dialog"]').getText()).toContain("下次连接时生效");
@@ -142,7 +167,8 @@ describe(`${CASE_MARKER}: 设置防护、连接编辑与机器标注`, () => {
       async () => (await $("[data-settings-content-frame]").getText()).includes(deviceName),
       { timeout: 10_000 },
     );
-    await clickButton("编辑");
+    await more();
+    await clickButton("编辑", '[role="menu"]');
     expect(await $("#edit-connection-name").getValue()).toBe(connectionName);
     expect(await $("#edit-device-name").getValue()).toBe(deviceName);
     expect(await $('[data-testid="ssh-auth-password"]').getAttribute("aria-pressed")).toBe("true");
@@ -201,7 +227,11 @@ describe(`${CASE_MARKER}: 设置防护、连接编辑与机器标注`, () => {
         /正在编辑：|Editing:/u,
       );
       const trigger = $('[data-plugin-scope-trigger="true"]');
-      expect(await trigger.getText()).toContain(name === "subagents" ? "本机" : deviceName);
+      // 数据同步已统一各资源的 Scope；子智能体不再有“用户永远是本机”的旧例外。
+      expect(await trigger.getText()).toContain(deviceName);
+      const sourceId = parseRemoteWorkspaceIdentity(tab.workspaceIdentity!)?.sourceServerId;
+      expect(sourceId).toBeTruthy();
+      expect(await trigger.getAttribute("data-plugin-scope-key")).toBe(`source-user:${sourceId}`);
     }
     await section("general");
     expect(await $("[data-settings-machine]").isExisting()).toBe(false);
@@ -228,16 +258,18 @@ describe(`${CASE_MARKER}: 设置防护、连接编辑与机器标注`, () => {
     await browser.keys("Enter");
     await $('[role="dialog"]').waitForDisplayed({ reverse: true });
     expect(await $("[data-settings-content-frame]").getText()).toContain(deviceName);
-    // 任务继续提示只放在断开按钮说明上，不再常驻成一行。
-    expect(
-      await browser.execute(
-        () =>
-          [...document.querySelectorAll<HTMLButtonElement>("[data-source-server-card] button")]
-            .find((button) => button.textContent?.trim() === "断开")
-            ?.getAttribute("title") ?? null,
-      ),
-    ).toContain("远端任务会继续运行");
-    await clickButton("断开");
+    // RDUX-13：断开在「更多」菜单里，任务继续提示常驻在菜单项内，不占设备行。
+    expect(await $("[data-settings-content-frame]").getText()).not.toContain("远端任务会继续运行");
+    await more();
+    const disconnectItem = await browser.execute(() => {
+      const item = [
+        ...document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]'),
+      ].find((candidate) => candidate.textContent?.trim().startsWith("断开"));
+      const text = item?.textContent ?? null;
+      item?.click();
+      return text;
+    });
+    expect(disconnectItem).toContain("远端任务会继续运行");
     await $('[data-remote-connection-status="offline"]').waitForDisplayed({ timeout: 20_000 });
     expect(await $('[role="dialog"]').isDisplayed()).toBe(false);
     await browser.waitUntil(

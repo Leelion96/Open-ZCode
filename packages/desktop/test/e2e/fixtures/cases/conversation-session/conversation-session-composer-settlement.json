@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-composer-settlement",
+  "spec": "./test/e2e/conversation-session/conversation-session-composer-settlement.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-composer-settlement.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "conversation-session-composer-settlement-title-sidecar",
+      "kind": "common",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
+    },
+    {
+      "id": "composer-settlement",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "fast-text",
+      "syntheticReason": "只控制真实发送 RPC 与查询的先后顺序，验证草稿结算和 placeholder；固定模型响应完成真实会话。"
+    }
+  ]
+}

@@ -1,14 +1,18 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { TID_CHAT_MESSAGES, TID_GIT_PANE } from "@zcode/shared/test-ids";
+import { TID_V4_TIMELINE, TID_GIT_PANE } from "@zcode/shared/test-ids";
 import { Key } from "webdriverio";
+import { DEFAULT_WORKSPACE, clearAppData } from "../../../helpers/desktop-app.js";
 import {
-  DEFAULT_WORKSPACE,
-  clearAppData,
-} from "../../../helpers/desktop-app.js";
-import { prepareConversationE2E } from "../../../helpers/conversation-session.js";
+  prepareV4ConversationE2E,
+  sendV4Prompt,
+  waitForV4TimelineContaining,
+  waitForV4Pane,
+} from "#e2e/helpers/v4-conversation";
 
+const runGit = promisify(execFile);
 const FIND_MARKER = "E2E_CHAT_FIND_REFOCUS_NEEDLE";
 const FILE_CHANGE_FIND_MARKER = "E2E_FILE_CHANGE_FIND_REFOCUS_NEEDLE";
 const FILE_CHANGE_FIXTURE_NAME = "chat-find-refocus.txt";
@@ -16,10 +20,7 @@ const FILE_CHANGE_FIXTURE_PATH = join(DEFAULT_WORKSPACE, FILE_CHANGE_FIXTURE_NAM
 const GIT_BINARY = process.env.ZCODE_GIT_BINARY?.trim() || "git";
 const CONVERSATION_FIND_PLACEHOLDERS = ["Search messages...", "搜索消息..."];
 const FILE_CHANGE_FIND_PLACEHOLDERS = ["Search file changes...", "搜索文件变更..."];
-const FIND_PLACEHOLDERS = [
-  ...CONVERSATION_FIND_PLACEHOLDERS,
-  ...FILE_CHANGE_FIND_PLACEHOLDERS,
-];
+const FIND_PLACEHOLDERS = [...CONVERSATION_FIND_PLACEHOLDERS, ...FILE_CHANGE_FIND_PLACEHOLDERS];
 const PREVIOUS_LABELS = ["Previous result", "上一个结果"];
 const NEXT_LABELS = ["Next result", "下一个结果"];
 const FILE_CHANGE_SCOPE_LABELS = ["Search file changes", "搜索文件变更"];
@@ -37,8 +38,8 @@ describe("会话区单命中重复查找重新聚焦 E2E", () => {
     this.timeout(120000);
 
     await prepareFileChangeFindFixture();
-    await prepareConversationE2E({ skipProvider: true });
-    await injectLongCompletedConversation();
+    await prepareV4ConversationE2E();
+    await prepareLongCompletedConversation();
     await openConversationFind();
     await setFindQuery(CONVERSATION_FIND_PLACEHOLDERS, FIND_MARKER);
     await waitForFindCentered("首次搜索没有把唯一命中居中");
@@ -56,9 +57,7 @@ describe("会话区单命中重复查找重新聚焦 E2E", () => {
     for (const action of ["next", "previous", "enter", "shift-enter"] as const) {
       await scrollFileChangeFindMatchAway();
       await triggerFindNavigation(action);
-      await waitForFileChangeFindCentered(
-        `文件变更 ${action} 没有把唯一命中重新居中`,
-      );
+      await waitForFileChangeFindCentered(`文件变更 ${action} 没有把唯一命中重新居中`);
     }
   });
 });
@@ -67,43 +66,39 @@ async function prepareFileChangeFindFixture() {
   await mkdir(DEFAULT_WORKSPACE, { recursive: true });
   let repositoryRoot = "";
   try {
-    repositoryRoot = execFileSync(GIT_BINARY, ["rev-parse", "--show-toplevel"], {
-      cwd: DEFAULT_WORKSPACE,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
+    repositoryRoot = (
+      await runGit(GIT_BINARY, ["rev-parse", "--show-toplevel"], {
+        cwd: DEFAULT_WORKSPACE,
+        encoding: "utf8",
+      })
+    ).stdout.trim();
   } catch {
     repositoryRoot = "";
   }
 
   if (resolve(repositoryRoot) !== resolve(DEFAULT_WORKSPACE)) {
-    execFileSync(GIT_BINARY, ["init"], {
+    await runGit(GIT_BINARY, ["init"], {
       cwd: DEFAULT_WORKSPACE,
-      stdio: "ignore",
     });
     createdFixtureRepository = true;
   }
 
-  execFileSync(GIT_BINARY, ["config", "user.name", "ZCode E2E"], {
+  await runGit(GIT_BINARY, ["config", "user.name", "ZCode E2E"], {
     cwd: DEFAULT_WORKSPACE,
-    stdio: "ignore",
   });
-  execFileSync(GIT_BINARY, ["config", "user.email", "zcode-e2e@example.com"], {
+  await runGit(GIT_BINARY, ["config", "user.email", "zcode-e2e@example.com"], {
     cwd: DEFAULT_WORKSPACE,
-    stdio: "ignore",
   });
 
   await writeFile(FILE_CHANGE_FIXTURE_PATH, "", "utf8");
-  execFileSync(GIT_BINARY, ["add", "--", FILE_CHANGE_FIXTURE_NAME], {
+  await runGit(GIT_BINARY, ["add", "--", FILE_CHANGE_FIXTURE_NAME], {
     cwd: DEFAULT_WORKSPACE,
-    stdio: "ignore",
   });
-  execFileSync(
+  await runGit(
     GIT_BINARY,
     ["-c", "commit.gpgsign=false", "commit", "-m", "test: seed chat find fixture"],
     {
       cwd: DEFAULT_WORKSPACE,
-      stdio: "ignore",
     },
   );
 
@@ -122,123 +117,16 @@ async function cleanupFileChangeFindFixture() {
   }
 }
 
-async function injectLongCompletedConversation() {
-  const before = Array.from(
-    { length: 70 },
-    (_, index) => `查找回归前置段落 ${index + 1}：用于撑开已完成任务的滚动区域。`,
-  );
-  const after = Array.from(
-    { length: 70 },
-    (_, index) => `查找回归后置段落 ${index + 1}：用于确认命中远离滚动边界。`,
-  );
-  const content = [...before, FIND_MARKER, ...after].join("\n\n");
-
-  const taskId = "e2e-chat-find-refocus-task";
-  const injected = await browser.execute(
-    (workspacePath, injectedTaskId, assistantContent) => {
-      const store = (
-        window as Window & {
-          __zcodeSessionStoreE2E?: {
-            getState?: () => {
-              setActiveTaskId?: (workspacePath: string, taskId: string) => void;
-              setTaskMessages?: (
-                workspacePath: string,
-                taskId: string,
-                messages: Array<Record<string, unknown>>,
-              ) => void;
-              setTaskRuntimeState?: (
-                workspacePath: string,
-                taskId: string,
-                status: string,
-                activeInputId: null,
-                workspaceIdentity?: undefined,
-                provider?: string,
-              ) => void;
-              upsertOptimisticTaskListItem?: (
-                workspacePath: string,
-                task: Record<string, unknown>,
-              ) => void;
-            };
-          };
-        }
-      ).__zcodeSessionStoreE2E?.getState?.();
-      if (
-        !store?.setActiveTaskId ||
-        !store.setTaskMessages ||
-        !store.setTaskRuntimeState ||
-        !store.upsertOptimisticTaskListItem
-      ) {
-        return false;
-      }
-
-      const now = Date.now();
-      store.upsertOptimisticTaskListItem(workspacePath, {
-        createdAt: now,
-        mode: "default",
-        provider: "glm",
-        status: "completed",
-        taskId: injectedTaskId,
-        title: "会话查找重新聚焦 E2E",
-        traceId: `${injectedTaskId}-trace`,
-        updatedAt: now,
-        workspacePath,
-      });
-      store.setTaskRuntimeState(
-        workspacePath,
-        injectedTaskId,
-        "idle",
-        null,
-        undefined,
-        "glm",
-      );
-      store.setTaskMessages(workspacePath, injectedTaskId, [
-        {
-          id: "e2e-chat-find-user",
-          role: "user",
-          content: "验证单命中重复查找重新聚焦",
-          timestamp: now,
-          turnIndex: 0,
-        },
-        {
-          id: "e2e-chat-find-assistant",
-          role: "assistant",
-          content: assistantContent,
-          timestamp: now + 1,
-          turnIndex: 0,
-          streaming: false,
-        },
-      ]);
-      store.setActiveTaskId(workspacePath, injectedTaskId);
-      return true;
-    },
-    DEFAULT_WORKSPACE,
-    taskId,
-    content,
-  );
-  expect(injected).toBe(true);
-
-  await browser.waitUntil(
-    () =>
-      browser.execute(
-        (messagesTestId, marker) =>
-          document
-            .querySelector<HTMLElement>(`[data-testid="${messagesTestId}"]`)
-            ?.innerText.includes(marker) === true,
-        TID_CHAT_MESSAGES,
-        FIND_MARKER,
-      ),
-    {
-      timeout: 10000,
-      timeoutMsg: "测试消息没有注入会话区",
-    },
-  );
+async function prepareLongCompletedConversation() {
+  // 旧 setter 已随 V4 状态归属收口移除；通过真实发送建立可查找的长消息。
+  await sendV4Prompt("E2E_CHAT_FIND_REFOCUS_SETUP 请返回查找回归长正文。");
+  await waitForV4TimelineContaining(FIND_MARKER);
+  await waitForV4Pane((state) => Boolean(state.sessionId) && !state.canStop, "长正文未完成");
 }
 
 async function openConversationFind() {
   await browser.execute(() => {
-    const isApple = /Mac|iPhone|iPad|iPod/.test(
-      `${navigator.platform} ${navigator.userAgent}`,
-    );
+    const isApple = /Mac|iPhone|iPad|iPod/.test(`${navigator.platform} ${navigator.userAgent}`);
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
         bubbles: true,
@@ -255,8 +143,8 @@ async function openConversationFind() {
     () =>
       browser.execute(
         (placeholders) =>
-          Array.from(document.querySelectorAll<HTMLInputElement>("input")).some(
-            (input) => placeholders.includes(input.placeholder),
+          Array.from(document.querySelectorAll<HTMLInputElement>("input")).some((input) =>
+            placeholders.includes(input.placeholder),
           ),
         FIND_PLACEHOLDERS,
       ),
@@ -270,17 +158,14 @@ async function openConversationFind() {
 async function setFindQuery(placeholders: readonly string[], query: string) {
   const updated = await browser.execute(
     (placeholders, nextQuery) => {
-      const input = Array.from(
-        document.querySelectorAll<HTMLInputElement>("input"),
-      ).find((candidate) => placeholders.includes(candidate.placeholder));
+      const input = Array.from(document.querySelectorAll<HTMLInputElement>("input")).find(
+        (candidate) => placeholders.includes(candidate.placeholder),
+      );
       if (!input) {
         return false;
       }
 
-      const valueSetter = Object.getOwnPropertyDescriptor(
-        HTMLInputElement.prototype,
-        "value",
-      )?.set;
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
       input.focus();
       valueSetter?.call(input, nextQuery);
       input.dispatchEvent(
@@ -311,8 +196,7 @@ async function switchFindScopeToFileChanges() {
   await browser.waitUntil(
     () =>
       browser.execute(
-        (gitPaneTestId) =>
-          Boolean(document.querySelector(`[data-testid="${gitPaneTestId}"]`)),
+        (gitPaneTestId) => Boolean(document.querySelector(`[data-testid="${gitPaneTestId}"]`)),
         TID_GIT_PANE,
       ),
     {
@@ -325,9 +209,7 @@ async function switchFindScopeToFileChanges() {
     () =>
       browser.execute(
         (gitPaneTestId, refreshLabels) => {
-          const pane = document.querySelector<HTMLElement>(
-            `[data-testid="${gitPaneTestId}"]`,
-          );
+          const pane = document.querySelector<HTMLElement>(`[data-testid="${gitPaneTestId}"]`);
           const refreshButton = Array.from(
             pane?.querySelectorAll<HTMLButtonElement>("button") ?? [],
           ).find((button) => refreshLabels.includes(button.textContent?.trim() ?? ""));
@@ -373,9 +255,7 @@ async function switchFindScopeToFileChanges() {
 
 function getGitPaneDiagnostics() {
   return browser.execute((gitPaneTestId) => {
-    const pane = document.querySelector<HTMLElement>(
-      `[data-testid="${gitPaneTestId}"]`,
-    );
+    const pane = document.querySelector<HTMLElement>(`[data-testid="${gitPaneTestId}"]`);
     return {
       buttons: Array.from(pane?.querySelectorAll<HTMLButtonElement>("button") ?? []).map(
         (button) => ({
@@ -384,8 +264,7 @@ function getGitPaneDiagnostics() {
           text: button.textContent?.trim() ?? "",
         }),
       ),
-      rowCount:
-        pane?.querySelectorAll("[data-git-pane-change-virtual-row]").length ?? 0,
+      rowCount: pane?.querySelectorAll("[data-git-pane-change-virtual-row]").length ?? 0,
       text: pane?.innerText ?? "",
     };
   }, TID_GIT_PANE);
@@ -393,20 +272,15 @@ function getGitPaneDiagnostics() {
 
 async function scrollFindMatchAway() {
   const scrolled = await browser.execute((messagesTestId) => {
-    const root = document.querySelector<HTMLElement>(
-      `[data-testid="${messagesTestId}"]`,
-    );
-    const viewport =
-      root?.firstElementChild instanceof HTMLElement
-        ? root.firstElementChild
-        : null;
+    const root = document.querySelector<HTMLElement>(`[data-testid="${messagesTestId}"]`);
+    const viewport = root;
     if (!viewport) {
       return false;
     }
     viewport.scrollTop = 0;
     viewport.dispatchEvent(new Event("scroll", { bubbles: true }));
     return true;
-  }, TID_CHAT_MESSAGES);
+  }, TID_V4_TIMELINE);
   expect(scrolled).toBe(true);
 
   await browser.waitUntil(
@@ -421,9 +295,7 @@ async function scrollFindMatchAway() {
   );
 }
 
-async function triggerFindNavigation(
-  action: "next" | "previous" | "enter" | "shift-enter",
-) {
+async function triggerFindNavigation(action: "next" | "previous" | "enter" | "shift-enter") {
   if (action === "next" || action === "previous") {
     const labels = action === "previous" ? PREVIOUS_LABELS : NEXT_LABELS;
     for (const label of labels) {
@@ -487,21 +359,23 @@ async function waitForFindCentered(timeoutMsg: string) {
 }
 
 async function scrollFileChangeFindMatchAway() {
-  const scrolled = await browser.execute((gitPaneTestId, fixtureName) => {
-    const pane = document.querySelector<HTMLElement>(
-      `[data-testid="${gitPaneTestId}"]`,
-    );
-    const row = Array.from(
-      pane?.querySelectorAll<HTMLElement>("[data-git-pane-change-virtual-row]") ?? [],
-    ).find((candidate) => candidate.innerText.includes(fixtureName));
-    const viewport = row?.parentElement?.parentElement;
-    if (!(viewport instanceof HTMLElement)) {
-      return false;
-    }
-    viewport.scrollTop = 0;
-    viewport.dispatchEvent(new Event("scroll", { bubbles: true }));
-    return true;
-  }, TID_GIT_PANE, FILE_CHANGE_FIXTURE_NAME);
+  const scrolled = await browser.execute(
+    (gitPaneTestId, fixtureName) => {
+      const pane = document.querySelector<HTMLElement>(`[data-testid="${gitPaneTestId}"]`);
+      const row = Array.from(
+        pane?.querySelectorAll<HTMLElement>("[data-git-pane-change-virtual-row]") ?? [],
+      ).find((candidate) => candidate.innerText.includes(fixtureName));
+      const viewport = row?.parentElement?.parentElement;
+      if (!(viewport instanceof HTMLElement)) {
+        return false;
+      }
+      viewport.scrollTop = 0;
+      viewport.dispatchEvent(new Event("scroll", { bubbles: true }));
+      return true;
+    },
+    TID_GIT_PANE,
+    FILE_CHANGE_FIXTURE_NAME,
+  );
   expect(scrolled).toBe(true);
 
   await browser.waitUntil(
@@ -556,12 +430,10 @@ interface FileChangeFindSnapshot extends FindSnapshot {
 function getFileChangeFindSnapshot(): Promise<FileChangeFindSnapshot> {
   return browser.execute(
     (gitPaneTestId, placeholders, fixtureName, marker) => {
-      const pane = document.querySelector<HTMLElement>(
-        `[data-testid="${gitPaneTestId}"]`,
+      const pane = document.querySelector<HTMLElement>(`[data-testid="${gitPaneTestId}"]`);
+      const input = Array.from(document.querySelectorAll<HTMLInputElement>("input")).find(
+        (candidate) => placeholders.includes(candidate.placeholder),
       );
-      const input = Array.from(
-        document.querySelectorAll<HTMLInputElement>("input"),
-      ).find((candidate) => placeholders.includes(candidate.placeholder));
       const row = Array.from(
         pane?.querySelectorAll<HTMLElement>("[data-git-pane-change-virtual-row]") ?? [],
       ).find((candidate) => candidate.innerText.includes(fixtureName));
@@ -614,16 +486,11 @@ function getFileChangeFindSnapshot(): Promise<FileChangeFindSnapshot> {
 function getFindSnapshot(): Promise<FindSnapshot> {
   return browser.execute(
     (messagesTestId, placeholders, marker) => {
-      const root = document.querySelector<HTMLElement>(
-        `[data-testid="${messagesTestId}"]`,
+      const root = document.querySelector<HTMLElement>(`[data-testid="${messagesTestId}"]`);
+      const input = Array.from(document.querySelectorAll<HTMLInputElement>("input")).find(
+        (candidate) => placeholders.includes(candidate.placeholder),
       );
-      const input = Array.from(
-        document.querySelectorAll<HTMLInputElement>("input"),
-      ).find((candidate) => placeholders.includes(candidate.placeholder));
-      const viewport =
-        root?.firstElementChild instanceof HTMLElement
-          ? root.firstElementChild
-          : null;
+      const viewport = root;
       if (!input || !viewport || !root) {
         return {
           counter: "",
@@ -660,7 +527,7 @@ function getFindSnapshot(): Promise<FindSnapshot> {
         viewportHeight: viewport.clientHeight,
       };
     },
-    TID_CHAT_MESSAGES,
+    TID_V4_TIMELINE,
     FIND_PLACEHOLDERS,
     FIND_MARKER,
   );

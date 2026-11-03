@@ -1,4 +1,4 @@
-import { localTtftFactsSchema } from "../localTtft.js";
+import { localTtftFactsSchema } from "../local-ttft/contract.js";
 /* eslint-disable max-lines -- 三个 topic 的 logical/physical/candidate schema 必须共享同一通用传输声明，避免跨文件分叉。 */
 // 传输外壳：连接握手 / 订阅 / 帧信封。
 // 阶段为类型占位（后半接通道层时启用），数据形状已按规范定稿。
@@ -29,6 +29,7 @@ export const hostCapabilitiesSchema = z.object({
   // Wire-compatible：旧 Host 缺失等价于 false；调用方必须用 === true 判断。
   workspaceHookReview: z.boolean().optional(),
   independentPlanState: z.boolean().optional(),
+  genUiContext: z.boolean().optional(),
   /**
    * 本 Host 会发 `workflowRun.*` 键级增量（delta.ts 的两条 op），因而 `workflowRuns` 的
    * actors / nodes 可以到 1024 而不是旧界的 256。没有这个位的消费者收到的仍是整键
@@ -36,6 +37,13 @@ export const hostCapabilitiesSchema = z.object({
    */
   workflowRunDeltas: z.boolean().optional(),
   historyFirst: z.boolean().optional(),
+  /**
+   * 本 Host 开启并转发 `v4/conversation/inputPrediction`。旧 Host 缺失等价于 false，
+   * 手机必须用 === true 判断，否则不发预测请求。
+   */
+  inputPrediction: z.boolean().optional(),
+  /** 本 Host 支持 rowsRange 的 `residency: "resident-only"`；缺失等价于 false，手机不得预加载。 */
+  residentRowsRange: z.boolean().optional(),
 });
 export type HostCapabilities = z.infer<typeof hostCapabilitiesSchema>;
 
@@ -345,6 +353,8 @@ export const V4_METHODS = {
   conversationUnsubscribe: "v4/conversation/unsubscribe",
   // 行分页 query（rows/range）：只读、无状态、超时重发安全。
   conversationRowsRange: "v4/conversation/rowsRange",
+  // 手机输入预测（input-prediction.ts）：只读查询；旧 CLI 不认识时手机静默无 hint。
+  conversationInputPrediction: "v4/conversation/inputPrediction",
   // 当前有效分支的终态 ExitPlanMode 目录；只读、无状态、超时重发安全。
   conversationPlans: "v4/conversation/plans",
   conversationFileChanges: "v4/conversation/fileChanges",
@@ -372,6 +382,10 @@ export const V4_METHODS = {
   // 故收敛为 v4 query 而非 host 直连；旧词 usage/stats、session/usage 就此消费清零。
   usageStats: "v4/usage/stats",
   conversationUsage: "v4/conversation/usage",
+  // 项目数据彻底删除（schema 在 session-data.ts）：measure 只读；purge 幂等，已不存在的会话按 0 字节成功。
+  // 新方法偏斜安全：旧 CLI 返回 method-not-found，Host 据此不显示「删除数据」选项。
+  sessionDataMeasure: "v4/storage/sessionData/measure",
+  sessionDataPurge: "v4/storage/sessionData/purge",
   // 附件事务：禁止 full-data RPC。每个 chunk 的 decoded bytes <=512KiB，
   // renderer->host Channel 与 host->CLI NDJSON 都必须逐 request 证明 <=1MiB。
   attachmentBegin: "v4/attachment/begin",
@@ -526,6 +540,11 @@ export const v4ConversationRowsRangeParamsSchema = z.object({
   // 取 rowId < beforeRowId 的行；缺省 = 从当前尾部向前。
   beforeRowId: z.number().optional(),
   limit: z.number().min(1).max(PROTOCOL_V4_LIMITS.rowsRangeMaxLimit),
+  /**
+   * 手机预加载只读热会话：会话不在内存就报 proto.sessionNotResident，不冷恢复、不重建投影；
+   * Host 同时只复用已运行的工作区 CLI，不为它拉起进程。缺省 = 现有行为（按需冷恢复）。
+   */
+  residency: z.literal("resident-only").optional(),
 });
 export type V4ConversationRowsRangeParams = z.infer<typeof v4ConversationRowsRangeParamsSchema>;
 

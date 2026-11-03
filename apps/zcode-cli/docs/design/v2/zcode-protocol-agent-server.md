@@ -116,3 +116,10 @@ stateDiagram-v2
 - CLI protocol 入口测试覆盖三方代码调用 `console.debug` 时 stdout 仍为空且日志进入 stderr，并验证命令结束后 console 恢复。
 - 真实子进程回归使用不声明 `tools` capability 的 MCP server，约束 `mcp/list` 返回合法 JSON 且 transport 不出现 `protocol_parse_error`。
 - app 联调烟测覆盖 `IZCodeAgentService.initialize()` 启动 stdio agent、`session/create` 返回 snapshot、`session/read` 读取同一 session。
+
+### 扫码远控执行遥测来源
+
+Host 在 V4 command envelope 注入可选 `inputOrigin=desktop|mobile`，CLI 复用 input intent
+保存到各类新输入（首发、goal、edit/retry）；queue promotion 保留原 intent 来源。TurnStarted
+遥测仅投影来源和无正文的运行配置，不传输入正文。历史 hydration/recovery 不生成遥测。
+执行服务消费 live fact 收口远控 completion/step；手机 replayable 和桌面 continuous 的交付不变。

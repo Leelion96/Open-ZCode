@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Emitter, type Event } from "@zcode/rpc";
 import {
   buildServerRemoteWorkspaceIdentity,
+  isCredentialDecryptError,
   isValidWslUser,
   parseRemoteWorkspaceIdentity,
   type AppSettings,
@@ -39,6 +40,8 @@ export interface SourceServerDirectoryOptions {
   }) => Promise<ControllerRemoteIdentityMigrationReport>;
   /** 远端 identity 被 canonical 覆盖等非错误诊断信息；生产环境应注入 no-op。 */
   logDebug?: (message: string) => void;
+  /** 可恢复的降级（如凭据无法解密被跳过）；生产环境保留。 */
+  logWarn?: (message: string) => void;
 }
 
 export interface SourceServerHandshakeRecord {
@@ -322,21 +325,8 @@ export class SourceServerDirectory {
       (left, right) => (right.lastOnlineAt ?? 0) - (left.lastOnlineAt ?? 0),
     );
     for (const server of serversByRecentActivity) {
-      const profiles = snapshot.profiles
-        .filter(
-          (profile) => isActiveProfile(profile) && profile.sourceServerId === server.sourceServerId,
-        )
-        .sort((left, right) => {
-          if (left.profileId === server.preferredProfileId) return -1;
-          if (right.profileId === server.preferredProfileId) return 1;
-          return (right.lastConnectedAt ?? 0) - (left.lastConnectedAt ?? 0);
-        });
-      for (const profile of profiles) {
-        const target = await this.resolveSilentTarget(profile);
-        if (!target) continue;
-        candidates.push({ profile, target });
-        break;
-      }
+      const candidate = await this.resolveSilentSourceRoute(snapshot, server);
+      if (candidate) candidates.push(candidate);
     }
     // 首次握手失败的已保存 Profile 仍是有效连接；是否保留由 Host 的 SQLite 成员表筛选。
     for (const profile of snapshot.profiles) {
@@ -345,6 +335,45 @@ export class SourceServerDirectory {
       if (target) candidates.push({ profile, target });
     }
     return candidates;
+  }
+
+  /**
+   * 设备级生命周期操作（停止远端服务等）在设备离线时的路由：与启动静默重连候选同一排序，
+   * 默认连接优先、再按最近连接时间，取第一条能静默取得凭据的连接；都取不到时返回
+   * `credentials-required`。在线连接由连接管理器优先使用，不经过这里。
+   */
+  public async resolveSourceLifecycleRoute(
+    sourceServerId: string,
+  ): Promise<SourceServerReconnectCandidate> {
+    const snapshot = await this.snapshot();
+    const server = snapshot.servers.find((entry) => entry.sourceServerId === sourceServerId);
+    if (!server) throw new Error(`Unknown Source Server: ${sourceServerId}`);
+    const route = await this.resolveSilentSourceRoute(snapshot, server);
+    if (route) return route;
+    throw Object.assign(
+      new Error(`Source Server requires interactive credentials: ${sourceServerId}`),
+      { code: "credentials-required" },
+    );
+  }
+
+  private async resolveSilentSourceRoute(
+    snapshot: SourceServerDirectorySnapshot,
+    server: SourceServerRecord,
+  ): Promise<SourceServerReconnectCandidate | undefined> {
+    const profiles = snapshot.profiles
+      .filter(
+        (profile) => isActiveProfile(profile) && profile.sourceServerId === server.sourceServerId,
+      )
+      .sort((left, right) => {
+        if (left.profileId === server.preferredProfileId) return -1;
+        if (right.profileId === server.preferredProfileId) return 1;
+        return (right.lastConnectedAt ?? 0) - (left.lastConnectedAt ?? 0);
+      });
+    for (const profile of profiles) {
+      const target = await this.resolveSilentTarget(profile);
+      if (target) return { profile, target };
+    }
+    return undefined;
   }
 
   public async recordLastOnline(sourceServerId: string, timestamp: number): Promise<void> {
@@ -644,7 +673,7 @@ export class SourceServerDirectory {
       const previousCredentials = new Map<string, string | null>();
       const rememberCredential = async (key: string) => {
         if (previousCredentials.has(key)) return;
-        previousCredentials.set(key, await this.options.credentialService.load(key));
+        previousCredentials.set(key, await this.loadUsableCredential(key));
       };
       const saveCredential = async (key: string, value: string) => {
         await rememberCredential(key);
@@ -673,9 +702,7 @@ export class SourceServerDirectory {
               newCredentialKey(input.profileId, "password");
             const password = input.target.password?.trim();
             const savedPassword = currentProfile.target.passwordCredentialKey
-              ? await this.options.credentialService.load(
-                  currentProfile.target.passwordCredentialKey,
-                )
+              ? await this.loadUsableCredential(currentProfile.target.passwordCredentialKey)
               : null;
             if (!password && !savedPassword) {
               throw new Error("SSH password is required");
@@ -811,7 +838,7 @@ export class SourceServerDirectory {
       const previousCredentials = new Map<string, string | null>();
       try {
         for (const key of credentialKeys) {
-          previousCredentials.set(key, await this.options.credentialService.load(key));
+          previousCredentials.set(key, await this.loadUsableCredential(key));
           await this.options.credentialService.delete(key);
         }
         const remainingProfiles = profiles.filter((candidate) => candidate.profileId !== profileId);
@@ -871,7 +898,7 @@ export class SourceServerDirectory {
       const previousCredentials = new Map<string, string | null>();
       try {
         for (const key of credentialKeys) {
-          previousCredentials.set(key, await this.options.credentialService.load(key));
+          previousCredentials.set(key, await this.loadUsableCredential(key));
           await this.options.credentialService.delete(key);
         }
         await this.persistSettings({
@@ -932,12 +959,10 @@ export class SourceServerDirectory {
     try {
       if (input.currentProfile.target.kind === "ssh") {
         const password = input.currentProfile.target.passwordCredentialKey
-          ? await this.options.credentialService.load(
-              input.currentProfile.target.passwordCredentialKey,
-            )
+          ? await this.loadUsableCredential(input.currentProfile.target.passwordCredentialKey)
           : null;
         const passphrase = input.currentProfile.target.privateKeyPassphraseCredentialKey
-          ? await this.options.credentialService.load(
+          ? await this.loadUsableCredential(
               input.currentProfile.target.privateKeyPassphraseCredentialKey,
             )
           : null;
@@ -1160,7 +1185,7 @@ export class SourceServerDirectory {
       const passwordCredentialKey = profile.target.passwordCredentialKey;
       if (
         passwordCredentialKey &&
-        (await this.options.credentialService.load(passwordCredentialKey)) === null
+        (await this.loadUsableCredential(passwordCredentialKey)) === null
       ) {
         await this.copyFirstAvailableCredential(
           entries.flatMap((entry) =>
@@ -1176,7 +1201,7 @@ export class SourceServerDirectory {
         profile.target.privateKeyPath && profile.target.privateKeyPassphraseCredentialKey;
       if (
         privateKeyPassphraseCredentialKey &&
-        (await this.options.credentialService.load(privateKeyPassphraseCredentialKey)) === null
+        (await this.loadUsableCredential(privateKeyPassphraseCredentialKey)) === null
       ) {
         await this.copyFirstAvailableCredential(
           entries.flatMap((entry) =>
@@ -1281,21 +1306,39 @@ export class SourceServerDirectory {
     return { kind: "docker", container: target.container.trim() };
   }
 
+  /** Directory 内全部凭据读取的唯一入口：本机无法解密的记录视为“无可用值”。 */
+  private async loadUsableCredential(key: string): Promise<string | null> {
+    try {
+      return await this.options.credentialService.load(key);
+    } catch (error) {
+      // Bug 原因：3.15 凭据文件里可能残留本机密钥无法解密的旧远程密码。这里曾把解密错误
+      // 一路上抛，legacy 迁移回滚且版本号不落盘，每次启动重败，Source Directory 整体不可用，
+      // 侧栏连同本地项目一起为空。不可解密与缺失对连接的含义相同：都需要交互凭据。
+      // 所以只跳过该来源，原记录不删除；文件损坏、IO 等其他错误仍让迁移失败回滚。
+      // Bug 原因：~/.zcode 换机/换用户后，已有 Profile 的密码同样解不开；连接、启动重连、
+      // 补充凭据、编辑和删除曾直接读取并上抛，一个坏 Profile 卡住整批启动重连，用户也无法
+      // 自助修复。所以这些读取也走这里：连接得到 credentials-required；回滚快照记为无值，
+      // 回滚时删除本机无法解密的密文而不是恢复它。
+      if (!isCredentialDecryptError(error)) throw error;
+      this.options.logWarn?.(
+        "Source Directory skipped an undecryptable credential; treating it as unavailable",
+      );
+      return null;
+    }
+  }
+
   private async copyFirstAvailableCredential(
     sourceKeys: readonly string[],
     destinationKey: string,
     previousCredentials?: Map<string, string | null>,
   ): Promise<boolean> {
     for (const sourceKey of sourceKeys) {
-      const value = await this.options.credentialService.load(sourceKey);
+      const value = await this.loadUsableCredential(sourceKey);
       if (value === null) continue;
       // Bug 原因：旧迁移只看最新 workspace 的 key，源值为空时仍生成新的 Profile ref。
       // 同 route 按 lastOpenedAt 顺序寻找首个真实值，且只有复制成功才允许调用方写引用。
       if (previousCredentials && !previousCredentials.has(destinationKey)) {
-        previousCredentials.set(
-          destinationKey,
-          await this.options.credentialService.load(destinationKey),
-        );
+        previousCredentials.set(destinationKey, await this.loadUsableCredential(destinationKey));
       }
       await this.options.credentialService.save(destinationKey, value);
       return true;
@@ -1337,7 +1380,7 @@ export class SourceServerDirectory {
     const previous = new Map<string, string | null>();
     try {
       for (const write of writes) {
-        previous.set(write.key, await this.options.credentialService.load(write.key));
+        previous.set(write.key, await this.loadUsableCredential(write.key));
         await this.options.credentialService.save(write.key, write.value);
       }
     } catch (error) {
@@ -1375,13 +1418,11 @@ export class SourceServerDirectory {
       return profile.target;
     }
     const password = profile.target.passwordCredentialKey
-      ? await this.options.credentialService.load(profile.target.passwordCredentialKey)
+      ? await this.loadUsableCredential(profile.target.passwordCredentialKey)
       : null;
     const privateKeyPassphrase =
       profile.target.privateKeyPath && profile.target.privateKeyPassphraseCredentialKey
-        ? await this.options.credentialService.load(
-            profile.target.privateKeyPassphraseCredentialKey,
-          )
+        ? await this.loadUsableCredential(profile.target.privateKeyPassphraseCredentialKey)
         : null;
     // Bug 原因：legacy workspace 迁移可能留下没有 privateKeyPath 的私钥口令引用。
     // 旧逻辑要求所有引用都有值，把已完整的密码认证也误判为需要交互凭据。

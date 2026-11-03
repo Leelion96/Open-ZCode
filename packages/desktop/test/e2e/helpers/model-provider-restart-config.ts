@@ -36,6 +36,7 @@ export type SeedReplayProviderModel =
     };
 
 export interface PersonalModelConfigSeed {
+  readonly enabled?: boolean;
   readonly reasoningLevel?: NonNullable<
     ConstructorParameters<typeof ModelOptionSpecsConfig>[0]
   >["reasoningLevel"];
@@ -124,7 +125,8 @@ function modelConfigFromSeed(
   const maxOutputTokens = model.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
   return new ModelConfig({
     // SSH 目标保留自己的 Built-in；通用 fixture 必须自行提供完整执行事实，不能靠本机补全。
-    enabled,
+    // 模型禁用必须写正式 enabled；旧 visibility 字段会被 schema 丢弃，让过滤用例误测可用模型。
+    enabled: enabled && model.enabled !== false,
     properties: new ModelPropertiesConfig({
       requiresMfjsToolSchema: false,
       contextWindow: model.contextWindow ?? DEFAULT_CONTEXT_WINDOW,

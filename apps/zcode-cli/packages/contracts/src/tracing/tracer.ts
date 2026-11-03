@@ -18,6 +18,11 @@ export interface TraceContext {
   parentSpanId?: string;
   parentId?: string;
   sessionId?: SessionId;
+  /**
+   * Top-level session that spawned this one (subagent, workflow actor); absent on a top-level
+   * session. Set where a child session is spawned and inherited by every child context below it.
+   */
+  rootSessionId?: SessionId;
   turnId?: TurnId;
   attributes?: Record<string, string | number | boolean>;
 }
@@ -214,6 +219,7 @@ export function createChildTraceContext(
   options: {
     queryId?: QueryId;
     sessionId?: SessionId;
+    rootSessionId?: SessionId;
     turnId?: TurnId;
     attributes?: Record<string, string | number | boolean>;
   } = {},
@@ -225,6 +231,9 @@ export function createChildTraceContext(
     parentSpanId: parent.spanId,
     parentId: parent.spanId,
     sessionId: options.sessionId ?? parent.sessionId,
+    ...((options.rootSessionId ?? parent.rootSessionId)
+      ? { rootSessionId: options.rootSessionId ?? parent.rootSessionId }
+      : {}),
     turnId: options.turnId ?? parent.turnId,
     attributes: {
       ...parent.attributes,

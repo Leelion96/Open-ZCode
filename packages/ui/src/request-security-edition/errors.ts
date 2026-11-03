@@ -19,3 +19,15 @@ export const requestVerificationActionMessages = {};
 export const requestVerificationErrorAttribution = {};
 export const requestVerificationClaimFailureMessageId = "manualClaimPlan.claim.failure.generic";
 export const additionalRequestModalSelectors: readonly string[] = [];
+
+export function resolveRequestSecurityErrorMessageId(_error: {
+  code?: string;
+  message?: string;
+}): string | undefined {
+  return undefined;
+}
+export function isRequestVerificationConfigNetworkError(
+  _error: { code?: string; message?: string } | null | undefined,
+): boolean {
+  return false;
+}

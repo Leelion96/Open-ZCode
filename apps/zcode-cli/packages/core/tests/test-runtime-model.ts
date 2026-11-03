@@ -101,7 +101,9 @@ export function createTestModelFactory(implementation: {
   ) => Promise<ModelResult>;
   onCreate?: (input: RuntimeModelFactoryInput) => void;
   maxOutputTokens?: number | ((input: RuntimeModelFactoryInput) => number);
-  properties?: Partial<ModelProperties>;
+  properties?:
+    | Partial<ModelProperties>
+    | ((input: RuntimeModelFactoryInput) => Partial<ModelProperties>);
   reasoningLevels?: readonly string[] | null;
   streamText?: (
     request: ModelRequest,
@@ -123,6 +125,10 @@ export function createTestModelFactory(implementation: {
       typeof implementation.maxOutputTokens === "function"
         ? implementation.maxOutputTokens(input)
         : (implementation.maxOutputTokens ?? 32_000);
+    const properties =
+      typeof implementation.properties === "function"
+        ? implementation.properties(input)
+        : implementation.properties;
     const createModel = (options: ModelOptions): Model => {
       const generateText =
         implementation.generateText === undefined
@@ -137,7 +143,7 @@ export function createTestModelFactory(implementation: {
         options,
         propertyOverrides: {
           supportsMidConversationSystem: false,
-          ...implementation.properties,
+          ...properties,
         },
         providerId: input.selection.providerId,
       });

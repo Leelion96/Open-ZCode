@@ -151,14 +151,18 @@ export function lowerWorkflow(workflow: WorkflowProgram, table: SiteTable): Lowe
     const siteArg = (id: string): ts.Expression => factory.createStringLiteral(id);
 
     const visit: ts.Visitor = (node) => {
-      // `args` 是 facade 里唯一一个**值**而不是可调用物，所以它是唯一走标识符级改写的
-      // 符号：读它不是一个等待点，没有站点、不进因果图。判定按 checker 解析结果（与站点
-      // 身份同一机制），所以脚本自己声明的局部 `args` 解析到脚本文件的符号，原样保留。
+      // `args` 与 `run` 是 facade 里仅有的**值**而不是可调用物，所以只有它们走标识符级改写：
+      // 读它们不是一个等待点，没有站点、不进因果图。判定按 checker 解析结果（与站点
+      // 身份同一机制），所以脚本自己声明的局部 `args` / `run` 解析到脚本文件的符号，原样保留。
       //
       // 刻意**不**改用「在包装函数体里注入 `const args = ...`」：用户脚本里再声明一个
       // `args` 会变成重复声明的运行期 SyntaxError，而编译期完全看不出来。
-      if (ts.isIdentifier(node) && node.text === "args" && isFacadeArgsRead(node, checker)) {
-        return hostMember("args");
+      if (
+        ts.isIdentifier(node) &&
+        FACADE_VALUE_NAMES.has(node.text) &&
+        isFacadeValueRead(node, checker)
+      ) {
+        return hostMember(node.text);
       }
       if (ts.isCallExpression(node)) {
         const emit = siteMap.get(node);
@@ -375,17 +379,21 @@ function workflowBody(sourceFile: ts.SourceFile): ts.NodeArray<ts.Statement> {
  * 本模块只用它认 log：站点类 facade 调用已先在 siteMap 命中并返回，不会走到这里。
  */
 
+/** facade 里的值（非可调用物）：沙箱把它们挂在 `__host` 上同名的成员里。 */
+const FACADE_VALUE_NAMES: ReadonlySet<string> = new Set(["args", "run"]);
+
 /**
- * True iff this `args` identifier is a READ of the facade global (not a shadowing local,
- * not a property name, not a declaration site).
+ * True iff this `args` / `run` identifier is a READ of the facade global (not a shadowing
+ * local, not a property name, not a declaration site).
  *
  * Identity comes from the checker, exactly as facade call sites do: a script that writes
  * its own `const args = ...` resolves to a symbol declared in the script file, so it is
  * left alone and keeps shadowing benignly. The syntactic guards below are for positions
- * where an identifier is not a value read at all — `x.args`, `{ args: 1 }`, and the name
- * in `const args = ...` — where rewriting would produce nonsense like `{ __host.args: 1 }`.
+ * where an identifier is not a value read at all — `x.args`, `{ args: 1 }`, the `run` in
+ * `world.run`, and the name in `const args = ...` — where rewriting would produce nonsense
+ * like `{ __host.args: 1 }`.
  */
-function isFacadeArgsRead(node: ts.Identifier, checker: ts.TypeChecker): boolean {
+function isFacadeValueRead(node: ts.Identifier, checker: ts.TypeChecker): boolean {
   const parent = node.parent as ts.Node | undefined;
   if (parent !== undefined) {
     if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;

@@ -7,6 +7,8 @@ import {
 } from "@zcode/contracts";
 import {
   ProjectAccessTokenClient,
+  ProjectAccessTokenError,
+  ProjectAccessTokenHttpStatusError,
   ProjectAccessTokenTransientError,
   resolveBigModelApiOrigin,
   type ProjectAccessTokenMaterial,
@@ -81,11 +83,10 @@ export function createCodingPlanApiKeyResolver(
         { context: execution.getStore()?.context },
       )
       .catch((error: unknown) => {
-        if (
-          isHttpClientPortError(error) &&
-          (error.code === "network_error" || error.code === "timeout")
-        )
-          throw new ProjectAccessTokenTransientError();
+        if (isHttpClientPortError(error) && error.code === "network_error")
+          throw new ProjectAccessTokenTransientError({ kind: "network" });
+        if (isHttpClientPortError(error) && error.code === "timeout")
+          throw new ProjectAccessTokenTransientError({ kind: "timeout" });
         throw error;
       });
     if (response.status === 401 && new URL(url).pathname.startsWith("/api/biz/")) {
@@ -98,10 +99,16 @@ export function createCodingPlanApiKeyResolver(
     }
     if (response.status === 404) return { code: 404 };
     if (response.status === 429 || (response.status >= 500 && response.status < 600))
-      throw new ProjectAccessTokenTransientError();
+      throw new ProjectAccessTokenTransientError({ kind: "http", status: response.status });
+    // Bug 原因（ZCT-2111046389485834240）：非临时状态与 2xx 非 JSON 过去都落成
+    // project_token_request_failed，无法区分鉴权拒绝与响应损坏。只保留状态码/固定码，不带响应体。
     if (response.status < 200 || response.status >= 300)
-      throw new CodingPlanApiKeyError("project_token_request_failed");
-    return JSON.parse(new TextDecoder().decode(response.body)) as unknown;
+      throw new ProjectAccessTokenHttpStatusError(response.status);
+    try {
+      return JSON.parse(new TextDecoder().decode(response.body)) as unknown;
+    } catch {
+      throw new ProjectAccessTokenError("project_token_invalid_response");
+    }
   };
   const client = new ProjectAccessTokenClient({
     request,

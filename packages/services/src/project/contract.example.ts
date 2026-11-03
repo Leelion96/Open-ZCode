@@ -10,3 +10,7 @@ export async function projectExample(service: IProjectService): Promise<string> 
   const execution = await service.prepareSession({ projectId: project.id });
   return execution.workspacePath;
 }
+
+export async function openFolderExample(service: IProjectService, path: string): Promise<string> {
+  return (await service.saveProject({ roots: [path], reuseExistingRoot: true })).id;
+}

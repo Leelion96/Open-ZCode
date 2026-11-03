@@ -41,6 +41,31 @@ live         calls [Bash, Read] -> results [Bash, Read]
 - fork 沿用已有 part 复制和 ID 重映射；数字序号无跨消息 ID 引用，无需新增 fork 逻辑。
 - 旧版可以忽略该 JSON 字段。旧版重写同一 part 后可能丢字段，新版按旧记录规则兼容。
 
+### 文件读取状态的写入顺序 `snapshotIndex`（2026-10-22 补充）
+
+part 在工具开始前就按声明顺序落盘，完成时原地更新、位置不变，所以 part 顺序和 `declarationIndex`
+都不是 live 写入文件读取状态的顺序；工具结果返回的先后也不是（handler 写入之后还有序列化、
+PostToolUse hook、结果事件等异步步骤）。冷恢复需要 live 的写入顺序（见
+[Read File State Resume](../../../../apps/zcode-cli/docs/design/v2/tool/17-read-file-state-resume.md)）。
+
+```text
+声明         完整 Read A(0) ──┐ 并行
+             范围 Read B(1) ──┘
+写入并记录快照 B 先写 → snapshotIndex 0；A 后写 → snapshotIndex 1（与谁先返回无关）
+模型历史     按 declarationIndex：A, B（不变，前缀缓存不受影响）
+读取状态恢复 按 snapshotIndex：B, A（与 live 最后写入的 A 一致）
+```
+
+- 文件读取快照（completed tool part 的 `metadata.readFileState`）新增可选 `snapshotIndex`。Read、
+  Write、Edit 和工作流草稿写入 live 状态之后，同步调用 `recordReadFileStateMetadata` 记录快照，中间
+  没有 await；执行器在这个回调里取号，所以序号就是 live 的写入顺序。ToolPart 不新增字段。
+- 只用于同一 assistant 内比较，绝对值没有含义。计数器属于执行器，一个 runtime 一个，
+  只增不减；文件读取状态的删除、清空不影响它。只有带快照的结果有序号。
+- 返回 `file_unchanged` 的 Read 不写 live 状态，也不记录快照；冷恢复跳过这类结果，由之前那次真实读取恢复同一个视图。
+- 模型 hydration 不使用它。文件读取状态恢复：同一 assistant 内的快照都带 `snapshotIndex` 时按它
+  重放，否则（旧数据）保持原始顺序。
+- 快照在 `state.metadata` 里，fork、checkpoint 和 workflow 转录按 `...part` 复制，原样保留。
+
 ## 验证
 
 - core `tests/tool-history-order.test.ts`：有效排序、legacy/部分缺失、同调用多次尝试、
@@ -73,7 +98,7 @@ ZCODE_E2E_DEEPSEEK_CONTEXT_WINDOW=128000 \
 ZCODE_E2E_DEEPSEEK_MAX_OUTPUT_TOKENS=32768 \
 E2E_PROVIDER_HTTP_MODE=replay \
 E2E_PROVIDER_REPLAY_FIXTURE_PATH="$PWD/packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-tool-history-order.json" \
-pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/manual-review/pending/conversation-session-tool-history-order.test.ts
+pnpm --filter @zcode/desktop test:e2e -- --spec ./test/e2e/conversation-session/conversation-session-tool-history-order.test.ts
 ```
 
 ### 2026-09-11：按调用选择最新尝试

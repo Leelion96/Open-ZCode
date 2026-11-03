@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
@@ -149,6 +149,51 @@ test("ordinary audit CLI rejects the formal root override as test-only", async (
     assert.match(run.stderr, /ZCODE_CONVERSATION_SESSION_FORMAL_ADMISSION_ROOT is test-only/);
   } finally {
     await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("current coverage audit stays consistent after App unit evidence retirement", async () => {
+  const env = { ...process.env };
+  delete env.ZCODE_CONVERSATION_SESSION_FORMAL_ADMISSION_ROOT;
+  const run = await runAudit(["--check", "--json"], env);
+  assert.equal(run.exitCode, 0, run.stderr);
+  const report = JSON.parse(run.stdout);
+  assert.deepEqual(report.errors, []);
+
+  const matrix = await readFile(
+    join(REPO_ROOT, "docs/testing/conversation-session-e2e-coverage-matrix.md"),
+    "utf8",
+  );
+  // 修复原因：顶部退役说明不影响机器索引；按主路径审计的两字母缩写检查路径，避免已删业务单测仍被计数。
+  const indexedSpecs = [...matrix.matchAll(/^\|\s*`[A-Z]{2}`\s*\|([^|]+)\|/gm)]
+    .flatMap((row) => [
+      ...row[1].matchAll(/`((?:packages|apps)\/[^`]+\.(?:test|spec)\.[cm]?[jt]sx?)`/g),
+    ])
+    .map((match) => match[1]);
+  assert.ok(indexedSpecs.length > 0);
+  for (const spec of indexedSpecs) {
+    assert.ok(
+      spec.startsWith("packages/desktop/test/e2e/") || spec.startsWith("apps/zcode-cli/"),
+      `retired App unit evidence remains in the automation index: ${spec}`,
+    );
+    await readFile(join(REPO_ROOT, spec));
+  }
+});
+
+test("VI03 keeps its retained CLI unit evidence with unambiguous full paths", async () => {
+  const matrix = await readFile(
+    join(REPO_ROOT, "docs/testing/conversation-session-e2e-coverage-matrix.md"),
+    "utf8",
+  );
+  const row = matrix.split("\n").find((line) => /^\|\s*VI03\s*\|/.test(line));
+  assert.ok(row, "VI03 is missing from the coverage matrix");
+  assert.equal(row.split("|")[2].trim(), "covered-unit");
+  for (const spec of [
+    "apps/zcode-cli/packages/core/tests/read-tool-contract.test.ts",
+    "apps/zcode-cli/packages/adapters/tests/fs-context.test.ts",
+  ]) {
+    assert.ok(row.includes(`\`${spec}\``), `VI03 must identify its CLI evidence: ${spec}`);
+    await readFile(join(REPO_ROOT, spec));
   }
 });
 

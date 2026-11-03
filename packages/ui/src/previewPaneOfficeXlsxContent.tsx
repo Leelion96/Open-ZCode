@@ -3,7 +3,7 @@ import { XlsxViewer, setWasmSource, type XlsxViewerController } from "@extend-ai
 import xlsxWasmUrl from "@extend-ai/react-xlsx/duke_sheets_wasm_bg.wasm?url";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { installDocumentLinkSafety } from "@/lib/officeFilePreview.js";
+import { installDocumentLinkSafety, sanitizeDocumentHref } from "@/lib/officeFilePreview.js";
 import { logger } from "@/logger.js";
 
 setWasmSource(xlsxWasmUrl);
@@ -139,6 +139,17 @@ export function PreviewPaneOfficeXlsxContent({
   const viewerRef = useRef<HTMLDivElement | null>(null);
   const { intl } = useZCodeIntl();
   const sheetTabsLabel = intl.formatMessage({ id: "codeViewer.excel.sheetTabs" });
+  const handleOpenLink = useCallback(
+    (href: string) => {
+      const safeHref = sanitizeDocumentHref(href);
+      if (!safeHref || safeHref.startsWith("#")) {
+        logger.warn("[PreviewPane] 已阻断 Excel 不安全外链", { path: sourcePath });
+        return;
+      }
+      onOpenBrowserUrl?.(safeHref);
+    },
+    [onOpenBrowserUrl, sourcePath],
+  );
   // react-xlsx 的默认工具栏同时承载编辑动作和 sheet tabs。
   // 预览关闭默认工具栏后会丢失多表导航，因此只通过 toolbar render prop 补回只读 sheet tabs。
   const renderSheetTabs = useCallback(
@@ -161,6 +172,8 @@ export function PreviewPaneOfficeXlsxContent({
       <XlsxViewer
         file={buffer}
         fileName={sourcePath}
+        // Canvas 单元格及形状/图片曾直接 window.open，绕过 <a> 检查；共同出口交由宿主校验。
+        onOpenLink={handleOpenLink}
         height="100%"
         isDark={isDark}
         readOnly

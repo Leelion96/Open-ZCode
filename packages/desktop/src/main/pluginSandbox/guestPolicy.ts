@@ -170,11 +170,13 @@ export function attachPluginSandboxGuest(input: AttachPluginSandboxGuestInput): 
       input.registry.markUserGesture(input.sandboxId);
     }
   });
-  // 页面主动重载不能继承上一文档的浏览器授权或 MessagePort。
+  // 页面主动重载不能继承上一文档的浏览器授权或 MessagePort。插件文档内部的子 frame（srcdoc / about:blank
+  // 预览等）导航不触碰端口或授权，只有 shell 的直接子 frame（插件 frame 本身）的重新导航才撤销登记。
   input.guest.on("did-start-navigation", (event) => {
     if (
       !event.isSameDocument &&
-      ((initialized && event.isMainFrame) || (pluginLoaded && !event.isMainFrame))
+      ((initialized && event.isMainFrame) ||
+        (pluginLoaded && !event.isMainFrame && isPluginFrameNavigation(event)))
     ) {
       input.registry.dispose(record.sandboxId, record.initId);
     }
@@ -203,6 +205,17 @@ export function attachPluginSandboxGuest(input: AttachPluginSandboxGuestInput): 
     for (const port of openPorts) port.close();
     openPorts.length = 0;
   };
+}
+
+/**
+ * 非主 frame 的导航是否发生在插件 frame 本身（shell 主 frame 的直接子 frame）。
+ * Electron 在 frame 已导航走或销毁后可能给出 null frame；无法判定层级时按插件 frame 处理，保持撤销语义。
+ */
+export function isPluginFrameNavigation(event: {
+  frame?: { parent: { parent: unknown } | null } | null;
+}): boolean {
+  const parent = event.frame?.parent;
+  return !parent || parent.parent === null;
 }
 
 function isAllowedNavigation(url: string, allowedOrigins: Set<string>): boolean {

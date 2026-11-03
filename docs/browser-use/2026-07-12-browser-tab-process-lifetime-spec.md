@@ -96,7 +96,7 @@
 
 ## Coverage and E2E handoff
 
-- 更新 `docs/testing/browser-use-codex-parity-coverage-matrix.md` 的 BCP-044/046/047/049/052。
+- 更新 `docs/testing/browser-use-coverage-matrix.md` 的 BCP-044/046/047/049/052。
 - turn/session lifecycle 仍由 `BrowserGuestManager` 单元测试覆盖；residency 另补 pure policy、repository、
   manager/UI unit 与真实 Electron 33+ tab E2E。
 - 真实 UI E2E 继续复现“图灵社区 → turn 完成 → 百度 → turn 完成”；未触发上限时两个原 guest 都存在；

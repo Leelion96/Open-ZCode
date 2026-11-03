@@ -11,10 +11,7 @@ import { hasRequiredSshE2EEnvironment } from "./e2e-formal-spec-selection.mjs";
 const DESKTOP_DIR = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const REPO_ROOT = resolve(DESKTOP_DIR, "../..");
 const UPSTREAM_PROVIDER_SPEC = "./test/e2e/upstream-provider.test.ts";
-const ALL_E2E_SPECS = [
-  "./test/e2e/**/*.test.ts",
-  "./test/e2e/conversation-session/manual-review/pending/conversation-session-turn-steer-probe.test.ts",
-];
+const ALL_E2E_SPECS = ["./test/e2e/**/*.test.ts"];
 const SSH_E2E_EXCLUDES = [
   "./test/e2e/conversation-session/conversation-session-ssh-remote*.test.ts",
   "./test/e2e/conversation-session/manual-review/**/conversation-session-ssh-remote*.test.ts",

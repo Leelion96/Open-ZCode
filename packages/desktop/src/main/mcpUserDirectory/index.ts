@@ -16,9 +16,11 @@ import type {
   NativeMcpServerRecord,
   SaveCliMcpToUserDirectoryRequest,
 } from "@zcode/shared";
+import { readJsonObjectFileForUpdate, updateJsonObjectFile } from "@zcode/services/node";
 import type { McpConfigKeyName } from "./types.js";
-import { isRecord, readJsonObject, writeTextAtomic } from "./utils.js";
+import { isRecord } from "./utils.js";
 import { migrateLegacyCommonMcp } from "./legacy.js";
+import { logger } from "../logger.js";
 
 // 重新导出类型和函数
 export type { McpConfigKeyName, OpenCodeMcpServerConfig, McpSourceDescriptor } from "./types.js";
@@ -77,9 +79,12 @@ function buildDirectoryConfigPath(
 ): string {
   const baseDir = scope === "user" ? resolveUserHomeDir() : workspacePath;
   if (!baseDir) {
-    throw new Error(`Missing workspace path for ${descriptor.directorySource} workspace MCP config`);
+    throw new Error(
+      `Missing workspace path for ${descriptor.directorySource} workspace MCP config`,
+    );
   }
-  const segments = scope === "user" ? descriptor.userConfigDirSegments : descriptor.workspaceConfigDirSegments;
+  const segments =
+    scope === "user" ? descriptor.userConfigDirSegments : descriptor.workspaceConfigDirSegments;
   return join(baseDir, ...segments, descriptor.fileName);
 }
 
@@ -112,13 +117,13 @@ function readServerMapFromJson(
     }
     const servers = (mcp as Record<string, unknown>).servers;
     return servers && typeof servers === "object" && !Array.isArray(servers)
-      ? servers as Record<string, Record<string, unknown>>
+      ? (servers as Record<string, Record<string, unknown>>)
       : {};
   }
 
   const rawServerMap = parsed[configKeyName];
   return rawServerMap && typeof rawServerMap === "object" && !Array.isArray(rawServerMap)
-    ? rawServerMap as Record<string, Record<string, unknown>>
+    ? (rawServerMap as Record<string, Record<string, unknown>>)
     : {};
 }
 
@@ -134,9 +139,10 @@ function writeServerMapToJson(
     };
   }
 
-  const currentMcp = current.mcp && typeof current.mcp === "object" && !Array.isArray(current.mcp)
-    ? current.mcp as Record<string, unknown>
-    : {};
+  const currentMcp =
+    current.mcp && typeof current.mcp === "object" && !Array.isArray(current.mcp)
+      ? (current.mcp as Record<string, unknown>)
+      : {};
   return {
     ...current,
     mcp: {
@@ -146,19 +152,14 @@ function writeServerMapToJson(
   };
 }
 
-async function readUserCliConfig(): Promise<Record<string, unknown>> {
-  return (await readJsonObject(getUserCliConfigPath())) ?? {};
-}
-
-async function writeUserCliConfig(config: Record<string, unknown>): Promise<void> {
-  await writeTextAtomic(getUserCliConfigPath(), `${JSON.stringify(config, null, 2)}\n`);
-}
-
 function readServerEnabled(config: Record<string, unknown>): boolean {
   return config[ENABLED_KEY] !== false;
 }
 
-function setServerEnabled(config: Record<string, unknown>, enabled: boolean): Record<string, unknown> {
+function setServerEnabled(
+  config: Record<string, unknown>,
+  enabled: boolean,
+): Record<string, unknown> {
   // 启用是默认态，不落盘冗余字段；同时清掉可能残留的 legacy enable，
   // 避免再产出 enable:false + enabled:true 这类自相矛盾的配置。
   const { [LEGACY_ENABLE_KEY]: _legacyEnable, [ENABLED_KEY]: _enabled, ...rest } = config;
@@ -168,9 +169,10 @@ function setServerEnabled(config: Record<string, unknown>, enabled: boolean): Re
   return { ...rest, [ENABLED_KEY]: false };
 }
 
-function migrateLegacyEnableFlag(
-  serverMap: Record<string, Record<string, unknown>>,
-): { servers: Record<string, Record<string, unknown>>; changed: boolean } {
+function migrateLegacyEnableFlag(serverMap: Record<string, Record<string, unknown>>): {
+  servers: Record<string, Record<string, unknown>>;
+  changed: boolean;
+} {
   let changed = false;
   const migrated: Record<string, Record<string, unknown>> = {};
 
@@ -224,22 +226,34 @@ function removeLegacyMcpEnabledOverride(
 }
 
 function findDescriptorByLocation(location: SettingsDirectoryLocation): DirectoryMcpDescriptor {
-  const descriptor = DIRECTORY_MCP_DESCRIPTORS.find((item) => item.directorySource === location.source);
+  const descriptor = DIRECTORY_MCP_DESCRIPTORS.find(
+    (item) => item.directorySource === location.source,
+  );
   if (!descriptor) {
     throw new Error(`Unsupported MCP settings directory source: ${location.source}`);
   }
   return descriptor;
 }
 
+// 修复：设置页的三个写入方原来用宽松读取（读失败、JSON 损坏或根节点不是对象都当作空对象），
+// 再用不设权限的原子写落盘，会把整份 config.json（provider、MCP secret）冲成只剩 MCP 字段，且权限跟随 umask。
+// 现在统一走 updateJsonObjectFile：严格读取（损坏时抛错、字节不变）+ 写前重读 + 原子替换（0600）。
+// 没有改动时先用严格读取判断并直接返回，不新建或重写文件。
 async function cleanupLegacyMcpEnabledOverride(
   location: SettingsDirectoryLocation,
   name: string,
 ): Promise<void> {
-  const userConfig = await readUserCliConfig();
-  const result = removeLegacyMcpEnabledOverride(userConfig, location, name);
-  if (result.changed) {
-    await writeUserCliConfig(result.config);
+  const filePath = getUserCliConfigPath();
+  if (
+    !removeLegacyMcpEnabledOverride(await readJsonObjectFileForUpdate(filePath), location, name)
+      .changed
+  ) {
+    return;
   }
+  await updateJsonObjectFile(
+    filePath,
+    (current) => removeLegacyMcpEnabledOverride(current, location, name).config,
+  );
 }
 
 async function writeServerEnabledToFile(
@@ -251,25 +265,26 @@ async function writeServerEnabledToFile(
   const scope: Exclude<McpScope, "common"> = location.scope === "project" ? "workspace" : "user";
   const workspacePath = scope === "workspace" ? location.projectPath : undefined;
   const filePath = buildDirectoryConfigPath(descriptor, scope, workspacePath);
-  const current = (await readJsonObject(filePath)) ?? {};
-  const serverMap = readServerMapFromJson(current, descriptor.configKeyName);
-  const currentServer = serverMap[name];
-  if (!isRecord(currentServer)) {
+  const hasServer = (current: Record<string, unknown>) =>
+    isRecord(readServerMapFromJson(current, descriptor.configKeyName)[name]);
+  if (!hasServer(await readJsonObjectFileForUpdate(filePath))) {
     return;
   }
 
-  // MCP 自身已有 mcp.servers/mcpServers 结构；禁用状态写在 server 配置对象内，
-  // 避免把目录路径写到 mcp 顶层后和真实 MCP 配置混在一起。
-  const nextServerMap = {
-    ...serverMap,
-    [name]: setServerEnabled(currentServer, enabled),
-  };
-  let next = writeServerMapToJson(current, descriptor.configKeyName, nextServerMap);
-  const legacyCleanup = removeLegacyMcpEnabledOverride(next, location, name);
-  if (legacyCleanup.changed) {
-    next = legacyCleanup.config;
-  }
-  await writeTextAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+  await updateJsonObjectFile(filePath, (current) => {
+    if (!hasServer(current)) {
+      return current;
+    }
+    const serverMap = readServerMapFromJson(current, descriptor.configKeyName);
+    // MCP 自身已有 mcp.servers/mcpServers 结构；禁用状态写在 server 配置对象内，
+    // 避免把目录路径写到 mcp 顶层后和真实 MCP 配置混在一起。
+    const nextServerMap = {
+      ...serverMap,
+      [name]: setServerEnabled(serverMap[name]!, enabled),
+    };
+    const next = writeServerMapToJson(current, descriptor.configKeyName, nextServerMap);
+    return removeLegacyMcpEnabledOverride(next, location, name).config;
+  });
 }
 
 async function readDirectoryServersFromFile(
@@ -282,17 +297,25 @@ async function readDirectoryServersFromFile(
   try {
     const raw = await readFile(filePath, "utf-8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const migration = migrateLegacyEnableFlag(readServerMapFromJson(parsed, descriptor.configKeyName));
+    const migration = migrateLegacyEnableFlag(
+      readServerMapFromJson(parsed, descriptor.configKeyName),
+    );
     const serverMap = migration.servers;
 
     if (migration.changed) {
       // 就地把存量 enable 折叠成 enabled 并落盘，用户无感；没有残留时不写文件，保证幂等。
       // 写盘失败（只读目录、权限不足等）不应阻断加载：内存结果已是正确口径，下次加载会重试。
       try {
-        const next = writeServerMapToJson(parsed, descriptor.configKeyName, serverMap);
-        await writeTextAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+        await updateJsonObjectFile(filePath, (current) =>
+          writeServerMapToJson(
+            current,
+            descriptor.configKeyName,
+            migrateLegacyEnableFlag(readServerMapFromJson(current, descriptor.configKeyName))
+              .servers,
+          ),
+        );
       } catch (error) {
-        console.warn("[mcp-user-directory] legacy enable migration failed:", filePath, error);
+        logger.warn("[mcp-user-directory] legacy enable migration failed:", filePath, error);
       }
     }
 
@@ -311,12 +334,7 @@ async function readDirectoryServersFromFile(
       },
     }));
   } catch (error) {
-    if (
-      error &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
+    if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
       return [];
     }
     // 解析/权限失败不等于没有 MCP 配置；吞掉异常会让 renderer 把空列表
@@ -329,7 +347,11 @@ async function readDirectoryServersFromPreferredSources(
   scope: Exclude<McpScope, "common">,
   workspacePath?: string,
 ): Promise<NativeMcpServerRecord[]> {
-  const zcodeServers = await readDirectoryServersFromFile(ZCODE_MCP_DESCRIPTOR, scope, workspacePath);
+  const zcodeServers = await readDirectoryServersFromFile(
+    ZCODE_MCP_DESCRIPTOR,
+    scope,
+    workspacePath,
+  );
   // `.zcode` 是强优先级来源；只要读到 MCP server，同 scope 的 `.agents` 就不再参与。
   if (zcodeServers.length > 0) {
     return zcodeServers;
@@ -337,15 +359,19 @@ async function readDirectoryServersFromPreferredSources(
   return readDirectoryServersFromFile(AGENTS_MCP_DESCRIPTOR, scope, workspacePath);
 }
 
-async function writeZCodeServersToFile(
+/** 写前重读 `.zcode` 的 server map，只改 update 涉及的 server，其他字段原样保留。 */
+async function updateZCodeServersInFile(
   scope: Exclude<McpScope, "common">,
-  servers: Record<string, Record<string, unknown>>,
-  workspacePath?: string,
+  workspacePath: string | undefined,
+  update: (servers: Record<string, Record<string, unknown>>) => void,
 ): Promise<void> {
   const filePath = buildDirectoryConfigPath(ZCODE_MCP_DESCRIPTOR, scope, workspacePath);
-  const current = (await readJsonObject(filePath)) ?? {};
-  const next = writeServerMapToJson(current, ZCODE_MCP_DESCRIPTOR.configKeyName, servers);
-  await writeTextAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
+  const key = ZCODE_MCP_DESCRIPTOR.configKeyName;
+  await updateJsonObjectFile(filePath, (current) => {
+    const servers = { ...migrateLegacyEnableFlag(readServerMapFromJson(current, key)).servers };
+    update(servers);
+    return writeServerMapToJson(current, key, servers);
+  });
 }
 
 export async function loadCliMcpFromUserDirectory(
@@ -355,10 +381,12 @@ export async function loadCliMcpFromUserDirectory(
 
   // 去掉其他 provider 后，ZCode Agent 只按目录约定读取；先 workspace，再 user。
   if (request?.workspacePath) {
-    servers.push(...await readDirectoryServersFromPreferredSources("workspace", request.workspacePath));
+    servers.push(
+      ...(await readDirectoryServersFromPreferredSources("workspace", request.workspacePath)),
+    );
   }
 
-  servers.push(...await readDirectoryServersFromPreferredSources("user", request?.workspacePath));
+  servers.push(...(await readDirectoryServersFromPreferredSources("user", request?.workspacePath)));
 
   return { servers };
 }
@@ -371,24 +399,29 @@ export async function saveCliMcpToUserDirectory(
       throw new Error("Missing enabled value for MCP set-enabled action");
     }
     const scope: Exclude<McpScope, "common"> = payload.projectPath ? "workspace" : "user";
-    const location = payload.location ?? buildDirectoryMcpLocation(ZCODE_MCP_DESCRIPTOR, scope, payload.projectPath);
-    await writeServerEnabledToFile(findDescriptorByLocation(location), location, payload.name, payload.enabled);
+    const location =
+      payload.location ??
+      buildDirectoryMcpLocation(ZCODE_MCP_DESCRIPTOR, scope, payload.projectPath);
+    await writeServerEnabledToFile(
+      findDescriptorByLocation(location),
+      location,
+      payload.name,
+      payload.enabled,
+    );
     await cleanupLegacyMcpEnabledOverride(location, payload.name);
     return;
   }
 
   const scope: Exclude<McpScope, "common"> = payload.projectPath ? "workspace" : "user";
-  const existingServers = await readDirectoryServersFromFile(ZCODE_MCP_DESCRIPTOR, scope, payload.projectPath);
-  const nextServers = Object.fromEntries(existingServers.map((server) => [server.name, server.config]));
-
-  if (payload.action === "upsert") {
-    if (!payload.config) {
-      throw new Error("Missing MCP config for upsert action");
-    }
-    nextServers[payload.name] = payload.config;
-  } else {
-    delete nextServers[payload.name];
+  const config = payload.action === "upsert" ? payload.config : undefined;
+  if (payload.action === "upsert" && !config) {
+    throw new Error("Missing MCP config for upsert action");
   }
-
-  await writeZCodeServersToFile(scope, nextServers, payload.projectPath);
+  await updateZCodeServersInFile(scope, payload.projectPath, (servers) => {
+    if (config) {
+      servers[payload.name] = config as Record<string, unknown>;
+    } else {
+      delete servers[payload.name];
+    }
+  });
 }

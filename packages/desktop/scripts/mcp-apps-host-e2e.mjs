@@ -168,7 +168,7 @@ await writeFile(
 );
 await writeFile(
   join(output, "managed.html"),
-  '<!doctype html><meta charset="utf-8"><style>.h-full{height:100%}.w-full{width:100%}.flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1}.min-h-0{min-height:0}.overflow-y-auto{overflow-y:auto}.relative{position:relative}</style><body><div id="root"></div><script src="managed.js"></script>',
+  '<!doctype html><meta charset="utf-8"><style>.contents{display:contents}.h-full{height:100%}.w-full{width:100%}.flex{display:flex}.flex-col{flex-direction:column}.flex-1{flex:1}.min-h-0{min-height:0}.overflow-y-auto{overflow-y:auto}.relative{position:relative}</style><body><div id="root"></div><script src="managed.js"></script>',
 );
 const electron = require("electron");
 const modes =

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-ssh-remote-startup-reconnect-slow-auth",
+  "spec": "./test/e2e/conversation-session/conversation-session-ssh-remote-startup-reconnect-slow-auth.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-ssh-remote-startup-reconnect-slow-auth.json"
+  ],
+  "fileFixtures": [],
+  "providerRequestPolicy": "none",
+  "noProviderRequests": true,
+  "requests": []
+}

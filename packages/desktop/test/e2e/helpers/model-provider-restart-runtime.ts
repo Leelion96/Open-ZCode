@@ -5,7 +5,7 @@ import { flushElectronStorageData } from "./e2e-electron-storage.js";
 import { skipOccupationOnboardingIfPresent } from "./occupation-onboarding.js";
 
 const paths = getE2EAppDataPaths();
-const MODEL_SELECTION_RECENT_KEY_PREFIX = "zcode-model-selection-recent-v1:";
+const MODEL_SELECTION_RECENT_KEY_PREFIX = "zcode-composer-recent:v2:";
 let retainedRestartUserDataDir: string | null = null;
 
 export interface ModelProviderRestartOptions {
@@ -77,10 +77,9 @@ export async function restartIntoWorkspaceRestoringPreferences(
         Object.entries(window.localStorage).filter(
           ([key]) =>
             key.startsWith("zcode-last-agent-") ||
-            // Bug 根因：重启 helper 只恢复旧的 agent 键，遗漏当前唯一结构化
-            // Model Selection recent 键，导致冷启动断言看到 storedConfig=null 并
-            // 回退 preferredSelection。两类键必须在同一退出屏障后一起恢复。
-            key.startsWith(modelSelectionRecentKeyPrefix),
+            // 旧 helper 遗漏项目 Recent 与导航映射，重启后播种值不再属于当前作用域。
+            key.startsWith(modelSelectionRecentKeyPrefix) ||
+            key.startsWith("zcode-composer-workspace-scope:v1:"),
         ),
       ),
     MODEL_SELECTION_RECENT_KEY_PREFIX,

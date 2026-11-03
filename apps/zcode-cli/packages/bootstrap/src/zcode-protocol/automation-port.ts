@@ -11,6 +11,7 @@ import {
   zcodeAutomationCreateResultSchema,
   zcodeAutomationDeleteResultSchema,
   zcodeAutomationListResultSchema,
+  zcodeAutomationPauseResultSchema,
   zcodeAutomationUpdateResultSchema,
   zcodeProtocolMethods,
   type ZCodeAutomationProtocol,
@@ -38,6 +39,14 @@ export function createProtocolAutomationPort(
   // 之前会导致 activeSession 命中失败、权限/思考等级丢失（模型有 createContext 兜底才幸存）。
   resolveOwnSession?: () => ZCodeProtocolSessionRecord | undefined,
 ): AutomationPort {
+  // 共享连接不能借用首个工作区；包括只有 automationId 或空参数的列表请求。
+  const requestClient: typeof context.requestClient = (...args) => {
+    if (!context.sessionWorkspaceRoutingEnabled) return context.requestClient(...args);
+    const workspace = resolveOwnSession?.()?.workspace;
+    if (!workspace) throw new Error("Session workspace is unavailable");
+    const [method, params, schema, ...options] = args;
+    return context.requestClient(method, { ...(params as object), workspace }, schema, ...options);
+  };
   return {
     async create(input, createContext) {
       // 优先用归属 session（本工具运行所在会话）；退回按 createContext.sessionId 查 legacy map。
@@ -60,7 +69,7 @@ export function createProtocolAutomationPort(
         let bound: boolean;
         try {
           try {
-            const result = await context.requestClient(
+            const result = await requestClient(
               zcodeProtocolMethods.automationCheckTaskBinding,
               { targetTaskId: ownSessionId },
               zcodeAutomationCheckTaskBindingResultSchema,
@@ -73,7 +82,7 @@ export function createProtocolAutomationPort(
             // 协议版本仍为 1，新 CLI 连接升级前仍存活或远端的旧 Host 时，专用归属
             // 方法会返回 -32601。只有“方法不存在”能证明是能力差异，此时回退旧版列表筛选；
             // 数据库、传输和协议错误仍交给外层 fail-closed，不能误判为未绑定。
-            const legacyResult = await context.requestClient(
+            const legacyResult = await requestClient(
               zcodeProtocolMethods.automationList,
               {},
               zcodeAutomationListResultSchema,
@@ -114,7 +123,7 @@ export function createProtocolAutomationPort(
       const hasIntervalCarrier = input.intervalUnit !== undefined && input.interval !== undefined;
       let result;
       try {
-        result = await context.requestClient(
+        result = await requestClient(
           zcodeProtocolMethods.automationCreate,
           {
             // 相对时间不由模型换算绝对时刻；兼容协议仍要求 cronExpr，服务层会用真实时钟覆盖占位值。
@@ -181,7 +190,7 @@ export function createProtocolAutomationPort(
     },
     async update(input) {
       const hasIntervalCarrier = input.intervalUnit !== undefined && input.interval !== undefined;
-      const result = await context.requestClient(
+      const result = await requestClient(
         zcodeProtocolMethods.automationUpdate,
         {
           automationId: input.id,
@@ -207,7 +216,7 @@ export function createProtocolAutomationPort(
       return toCronAutomation(result.automation);
     },
     async list() {
-      const result = await context.requestClient(
+      const result = await requestClient(
         zcodeProtocolMethods.automationList,
         {},
         zcodeAutomationListResultSchema,
@@ -215,12 +224,22 @@ export function createProtocolAutomationPort(
       return result.automations.map(toCronAutomation);
     },
     async delete(input) {
-      const result = await context.requestClient(
+      const result = await requestClient(
         zcodeProtocolMethods.automationDelete,
         { automationId: input.id },
         zcodeAutomationDeleteResultSchema,
       );
       return result.deleted;
+    },
+    async pause(input) {
+      // 目标 id 由 core 执行器从 loop automationId 注入，这里只透传给 Host 做条件暂停；
+      // 旧 Host 不认识 automation/pause 时返回 -32601，直接作为工具错误冒泡，不做兜底。
+      const result = await requestClient(
+        zcodeProtocolMethods.automationPause,
+        { automationId: input.id },
+        zcodeAutomationPauseResultSchema,
+      );
+      return result.paused;
     },
   };
 }

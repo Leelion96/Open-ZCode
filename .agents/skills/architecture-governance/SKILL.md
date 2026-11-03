@@ -48,9 +48,9 @@ Every new source file under `packages/` or `apps/` must belong to a managed modu
 pnpm architecture:adopt <module-id> --root <dir> [--root <dir2>] --layer <domain|app|adapters|ui> [--owner <group>]
 ```
 
-`adopt` infers `requires` from the real imports, scaffolds the five artifacts if missing, and registers the module in `architecture-policy.yaml` without touching existing comments. Fill `contract.ts` and `CONTRACT.md` before adding behavior; keep the module's public surface to one intent per method.
+`adopt` infers `requires` from the real imports, scaffolds the four artifacts if missing, and registers the module in `architecture-policy.yaml` without touching existing comments. Fill `contract.ts` and `CONTRACT.md` before adding behavior; keep the module's public surface to one intent per method.
 
-For a new managed module, provide `module.ts`, `contract.ts`, `contract.example.ts`, `contract.test.ts`, and a short `CONTRACT.md`. Keep runtime and persistence details behind the contract. Prefer typed service calls for one-to-one interactions, commands for state changes, and typed events for broadcast facts.
+For a new managed module, provide `module.ts`, `contract.ts`, `contract.example.ts`, and a short `CONTRACT.md`. App unit tests are retired; do not scaffold `contract.test.ts`. CLI/CUA keep their own testing rules. Keep runtime and persistence details behind the contract. Prefer typed service calls for one-to-one interactions, commands for state changes, and typed events for broadcast facts.
 
 See [policy-schema.md](references/policy-schema.md), [module-contract.md](references/module-contract.md), and [rule-catalog.md](references/rule-catalog.md) when the change needs their detailed guidance. The [golden-module](references/golden-module) fixture is the smallest compliant example.
 See [ai-guidance.md](references/ai-guidance.md) for the anti-patterns this workflow is designed to prevent and the questions an agent must answer before proposing code.

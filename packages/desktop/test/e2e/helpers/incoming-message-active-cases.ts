@@ -50,6 +50,12 @@ export function registerIncomingMessageActiveCases(): void {
         const marker = `E2E_INCOMING_${anchor.toUpperCase()}`;
         const fixture = `incoming-${anchor}`;
         const evidenceLabel = `${label}-${anchor}`;
+        // text-only 回复之后的中途消息（人类 guide 与 peer/task）没有 user/tool 锚点，MCS 下整组降级为 user reminder。
+        const textFallback = mcs && anchor === "text";
+        const parentIncoming = {
+          role: mcs && !textFallback ? "system" : "user",
+          mcsFallback: textFallback,
+        } as const;
         const afterIndex = (await getUpstreamRequestRecordCount()) - 1;
         const waitForStage = (stage: string) =>
           waitForIncomingFixture(`${fixture}-${stage}`, afterIndex);
@@ -102,30 +108,24 @@ export function registerIncomingMessageActiveCases(): void {
           const peerWire = await assertIncomingMessage(peer.requestJson, {
             presentation: "subagent_reply_steer",
             marker: `${marker}_PROGRESS`,
-            role: mcs && anchor === "tool" ? "system" : "user",
+            ...parentIncoming,
             evidenceLabel,
             body: `<subagent-message>\n<agent-id>${peerText}</agent-id>\n<agent-type>general-purpose</agent-type>\n<summary>${marker}_PROGRESS</summary>\n<message>${marker}_REPLY: Claude Code / Claude session / CLAUDE.md remain payload.\n${XML_ESCAPED_REMINDER_INJECTION}</message>\n</subagent-message>`,
           });
           if (anchor === "text") {
-            await assertIncomingMessage(peer.requestJson, {
+            const guideWire = await assertIncomingMessage(peer.requestJson, {
               presentation: "user_steer",
               marker: `${marker}_GUIDE_PEER`,
               role: "user",
+              mcsFallback: textFallback,
               evidenceLabel,
               body: `${marker}_GUIDE_PEER: Continue this same turn.\n${REMINDER_INJECTION}`,
             });
-            expect(wireText(peerWire.messages[peerWire.index]?.content)).toContain(
-              `${marker}_GUIDE_PEER`,
-            );
-            expect(
-              wireText(peerWire.messages[peerWire.index]?.content).indexOf(`${marker}_GUIDE_PEER`),
-            ).toBeLessThan(
-              wireText(peerWire.messages[peerWire.index]?.content).indexOf("<subagent-message>"),
-            );
-            expect(peerWire.messages[peerWire.index - 1]?.role).toBe("assistant");
-            expect(wireText(peerWire.messages[peerWire.index - 1]?.content)).toContain(
-              `${marker}_PARENT_PEER_TEXT`,
-            );
+            assertGuideBeforeIncoming(guideWire, peerWire, {
+              guide: `${marker}_GUIDE_PEER`,
+              incoming: "<subagent-message>",
+              assistant: `${marker}_PARENT_PEER_TEXT`,
+            });
           }
           // 发送者必须等于主 Agent 的 SendMessage 绑定身份，不能取回信正文中的任意 ID。
           const senderCalls = (
@@ -171,7 +171,7 @@ export function registerIncomingMessageActiveCases(): void {
           const taskWire = await assertIncomingMessage(task.requestJson, {
             presentation: "task_notification_steer",
             marker: `${marker}_FINAL`,
-            role: mcs && anchor === "tool" ? "system" : "user",
+            ...parentIncoming,
             evidenceLabel,
           });
           expect(wireText(taskWire.messages[taskWire.index]?.content)).toContain(
@@ -180,29 +180,23 @@ export function registerIncomingMessageActiveCases(): void {
           const priorPeer = await assertIncomingMessage(task.requestJson, {
             presentation: "subagent_reply_steer",
             marker: `${marker}_PROGRESS`,
-            role: mcs && anchor === "tool" ? "system" : "user",
+            ...parentIncoming,
             evidenceLabel: `${evidenceLabel}-history`,
           });
           expect(taskWire.index).toBeGreaterThan(priorPeer.index);
           if (anchor === "text") {
-            expect(wireText(taskWire.messages[taskWire.index]?.content)).toContain(
-              `${marker}_GUIDE_TASK`,
-            );
-            expect(
-              wireText(taskWire.messages[taskWire.index]?.content).indexOf(`${marker}_GUIDE_TASK`),
-            ).toBeLessThan(
-              wireText(taskWire.messages[taskWire.index]?.content).indexOf("<task-notification>"),
-            );
-            expect(taskWire.messages[taskWire.index - 1]?.role).toBe("assistant");
-            expect(wireText(taskWire.messages[taskWire.index - 1]?.content)).toContain(
-              `${marker}_PARENT_TASK_TEXT`,
-            );
-            await assertIncomingMessage(task.requestJson, {
+            const guideWire = await assertIncomingMessage(task.requestJson, {
               presentation: "user_steer",
               marker: `${marker}_GUIDE_TASK`,
               role: "user",
+              mcsFallback: textFallback,
               evidenceLabel,
               body: `${marker}_GUIDE_TASK: Continue until the task event is consumed.`,
+            });
+            assertGuideBeforeIncoming(guideWire, taskWire, {
+              guide: `${marker}_GUIDE_TASK`,
+              incoming: "<task-notification>",
+              assistant: `${marker}_PARENT_TASK_TEXT`,
             });
           }
           await waitForV4TimelineContaining(`${marker}_TASK_CONSUMED`);
@@ -247,13 +241,13 @@ export function registerIncomingMessageActiveCases(): void {
           await assertIncomingMessage(cold.requestJson, {
             presentation: "subagent_reply_steer",
             marker: `${marker}_PROGRESS`,
-            role: mcs && anchor === "tool" ? "system" : "user",
+            ...parentIncoming,
             evidenceLabel: `${evidenceLabel}-compact-cold`,
           });
           const coldTask = await assertIncomingMessage(cold.requestJson, {
             presentation: "task_notification_steer",
             marker: `${marker}_FINAL`,
-            role: mcs && anchor === "tool" ? "system" : "user",
+            ...parentIncoming,
             evidenceLabel: `${evidenceLabel}-compact-cold`,
           });
           expect(wireText(coldTask.messages[coldTask.index]?.content)).toContain(
@@ -311,6 +305,41 @@ export function registerIncomingMessageActiveCases(): void {
       });
     }
   }
+}
+
+type IncomingWire = Awaited<ReturnType<typeof assertIncomingMessage>>;
+
+/**
+ * text-only 之后先消费人类 guide，再消费 peer/task。非 MCS 下二者是同一条 user 的相邻 reminder；
+ * MCS 下 guide 是 user 文本，peer/task 合成 system 落在 user run 末尾。
+ */
+function assertGuideBeforeIncoming(
+  guide: IncomingWire,
+  incoming: IncomingWire,
+  markers: { guide: string; incoming: string; assistant: string },
+): void {
+  const { messages } = incoming;
+  const guideText = wireText(messages[guide.index]?.content);
+  if (guide.index === incoming.index) {
+    expect(guideText.indexOf(markers.guide)).toBeLessThan(guideText.indexOf(markers.incoming));
+  } else {
+    expect(guide.index).toBeLessThan(incoming.index);
+    expect(messages[incoming.index]?.role).toBe("system");
+    // 只比较下标会放过中间夹着 assistant 或 tool 结果的错误顺序；二者之间只能是同一段 user run。
+    const between = messages.slice(guide.index + 1, incoming.index);
+    expect(
+      between.every(
+        (message) =>
+          message.role === "user" &&
+          !(
+            Array.isArray(message.content) &&
+            message.content.some((block) => block?.type === "tool_result")
+          ),
+      ),
+    ).toBe(true);
+  }
+  expect(messages[guide.index - 1]?.role).toBe("assistant");
+  expect(wireText(messages[guide.index - 1]?.content)).toContain(markers.assistant);
 }
 
 async function waitForIncomingFixture(id: string, afterIndex: number) {

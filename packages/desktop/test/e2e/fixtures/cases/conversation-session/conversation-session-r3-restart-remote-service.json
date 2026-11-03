@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "caseName": "conversation-session-r3-restart-remote-service",
+  "spec": "./test/e2e/conversation-session/conversation-session-r3-restart-remote-service.test.ts",
+  "providerFixtures": [
+    "./test/e2e/fixtures/upstream/common.json",
+    "./test/e2e/fixtures/upstream/conversation-session/conversation-session-r3-restart-remote-service.json"
+  ],
+  "fileFixtures": [],
+  "requests": [
+    {
+      "id": "r3-restart-remote-service-title",
+      "description": "重启远端服务用例的 task 标题辅助响应。",
+      "kind": "common",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "标题不属于重启远端服务的断言。"
+    },
+    {
+      "id": "r3-restart-remote-service-main",
+      "description": "重启前首发和重启后续发的通用响应。",
+      "kind": "main",
+      "timingPolicy": "fast-text",
+      "source": "synthetic",
+      "syntheticReason": "首发与重启后续发都只需要稳定完成，用 task history 与远端会话换代断言路由。"
+    }
+  ]
+}

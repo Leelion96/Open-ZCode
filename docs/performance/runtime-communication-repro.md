@@ -51,7 +51,7 @@ Run PERF02 with:
 ```bash
 E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/common.json,packages/desktop/test/e2e/fixtures/upstream/conversation-session/conversation-session-runtime-communication-performance.json \
 ZCODE_E2E_MANUAL_REVIEW=1 \
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-runtime-communication-performance.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-runtime-communication-performance.test.ts'
 ```
 
 Run the same case without video recording but with a renderer CPU profile:
@@ -61,7 +61,7 @@ E2E_PROVIDER_REPLAY_FIXTURE_PATH=packages/desktop/test/e2e/fixtures/upstream/com
 ZCODE_E2E_PROFILE_ONLY=1 \
 ZCODE_E2E_PROFILE_STREAMING=1 \
 ZCODE_E2E_MANUAL_REVIEW=1 \
-pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/manual-review/pending/conversation-session-runtime-communication-performance.test.ts'
+pnpm --filter @zcode/desktop test:e2e -- --spec './test/e2e/conversation-session/conversation-session-runtime-communication-performance.test.ts'
 ```
 
 Phase 2 adds profiler evidence after PERF02 reliably reproduces high CPU:

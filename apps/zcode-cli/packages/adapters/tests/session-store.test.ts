@@ -20,6 +20,7 @@ import {
   type SharedContextImportCommitBundle,
   type ModelId,
   type ModelProviderId,
+  type SessionId,
   type WorkspaceId,
 } from "@zcode/contracts";
 import { OFFICIAL_CUA_PERMISSION_RULE_TOOL_NAME } from "@zcode/shared";
@@ -190,6 +191,74 @@ describe("virtual project CLI session facts", () => {
     expect(store.debugCounts(bundle.session.id)).toEqual(before);
     await store.createSession(bundle.session);
     expect(await store.listSessions()).toEqual([]);
+    store.close();
+  });
+
+  it("purges a session with its owned children but never a fork or an unrelated session", async () => {
+    const store = await createSqliteSessionStore({ dbPath: ":memory:" });
+    const parent = createSharedContextImportBundle({ sessionSlug: "purge-parent", shareId: "s1" });
+    await store.commitSharedContextImportBundle?.(parent);
+    const child = createSessionId("purge-child");
+    const grandchild = createSessionId("purge-grandchild");
+    const fork = createSessionId("purge-fork");
+    const unrelated = createSessionId("purge-unrelated");
+    const base = { ...parent.session, title: "x", time: { created: 1, updated: 1 } };
+    await store.createSession({ ...base, id: child, slug: "c", parentID: parent.session.id, taskType: "subagent_child" });
+    await store.createSession({ ...base, id: grandchild, slug: "g", parentID: child, taskType: "workflow_child" });
+    await store.createSession({ ...base, id: fork, slug: "f", parentID: parent.session.id, taskType: "fork" });
+    await store.createSession({ ...base, id: unrelated, slug: "u" });
+
+    const trees = await store.listOwnedSessionTrees?.([parent.session.id, unrelated]);
+    expect(trees?.get(parent.session.id)?.sort()).toEqual([child, parent.session.id, grandchild].sort());
+    expect(trees?.get(unrelated)).toEqual([unrelated]);
+
+    await store.purgeSessions?.([parent.session.id]);
+    expect(await store.getSession(parent.session.id)).toBeNull();
+    expect(await store.getSession(child)).toBeNull();
+    expect(await store.getSession(grandchild)).toBeNull();
+    expect(await store.messages({ sessionID: parent.session.id })).toEqual([]);
+    expect(store.debugCounts(parent.session.id)).toMatchObject({ messages: 0, parts: 0 });
+    // fork 是独立的用户任务（可能属于别的项目），源会话删除后仍保留。
+    expect(await store.getSession(fork)).not.toBeNull();
+    expect(await store.getSession(unrelated)).not.toBeNull();
+    // 已不存在的会话再次删除是空操作。
+    await store.purgeSessions?.([parent.session.id]);
+    expect((await store.listOwnedSessionTrees?.([parent.session.id]))?.get(parent.session.id)).toEqual([]);
+    store.close();
+  });
+
+  it("lists the live sessions whose parts still point at another session's artifacts", async () => {
+    const store = await createSqliteSessionStore({ dbPath: ":memory:" });
+    const source = createSharedContextImportBundle({ sessionSlug: "artifact-source", shareId: "s2" });
+    await store.commitSharedContextImportBundle?.(source);
+    const base = { ...source.session, title: "x", time: { created: 1, updated: 1 } };
+    const fork = createSessionId("artifact-fork");
+    const deletedFork = createSessionId("artifact-deleted-fork");
+    const other = createSessionId("artifact-other");
+    const refer = async (sessionID: SessionId, text: string) => {
+      const messageID = createMessageId(`${sessionID}-m`);
+      await store.saveMessage({
+        id: messageID,
+        sessionID,
+        role: "user",
+        time: { created: 1 },
+        agent: "zcode-agent",
+        model: { providerID: "p" as ModelProviderId, modelID: "m" as ModelId },
+      });
+      await store.savePart({ id: createPartId(`${sessionID}-p`), sessionID, messageID, type: "text", text, time: { start: 1, end: 1 } });
+    };
+    for (const id of [fork, deletedFork, other])
+      await store.createSession({ ...base, id, slug: id, parentID: source.session.id, taskType: "fork" });
+    const uri = `zcode-artifact://${source.session.id}/art_1`;
+    await refer(fork, `image ${uri} and again ${uri}`);
+    await refer(deletedFork, uri);
+    await store.softDeleteSession(deletedFork);
+    // 引用自身附件不算外部引用；没有引用的会话不出现在结果里。
+    await refer(other, `zcode-artifact://${other}/own`);
+
+    const referrers = await store.listArtifactReferrers?.([source.session.id, other]);
+    expect(referrers?.get(source.session.id)).toEqual([fork]);
+    expect(referrers?.has(other)).toBe(false);
     store.close();
   });
 

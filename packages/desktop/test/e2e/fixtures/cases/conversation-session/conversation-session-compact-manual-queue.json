@@ -15,46 +15,53 @@
   ],
   "requests": [
     {
-      "id": "upstream-conversation-readonly-tool-call",
+      "id": "conversation-session-compact-manual-queue-title-sidecar",
       "kind": "common",
       "source": "synthetic",
       "timingPolicy": "fast-text",
-      "syntheticReason": "通用只读 Read tool_use 让 compact 前历史包含稳定 tool_result。"
+      "syntheticReason": "运行时证据显示标题旁路缺少响应；在本例显式登记固定标题，避免依赖 legacy fixture 或触发后台网络重试。"
     },
     {
       "id": "upstream-compact-manual-queue-prep-one",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "第一轮只用于形成可 compact 的普通历史，真实 provider 文案不影响 held queue 语义。"
     },
     {
       "id": "upstream-compact-manual-queue-readonly-final",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "第二轮只用于构造含 readonly tool_result 的 compact 历史，工具业务由本地文件 fixture 决定。"
     },
     {
       "id": "upstream-compact-manual-queue-summary-success",
       "kind": "main",
+      "timingPolicy": "controlled-stream",
       "source": "synthetic",
-      "timingPolicy": "fast-text",
-      "syntheticReason": "该响应只用于证明 manual compact marker 完成且 held queue 未被消费，不依赖真实 summary 内容。"
+      "syntheticReason": "检查真实 compacting 时 held queue 身份后显式释放摘要响应，完成后继续验证未被消费。"
     },
     {
       "id": "upstream-compact-manual-queue-held-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "held queue 在 manual compact 前后都必须保留；fixture 只覆盖 marker 合同。"
     },
     {
       "id": "upstream-compact-manual-queue-append-contract",
       "kind": "main",
-      "source": "synthetic",
       "timingPolicy": "fast-text",
+      "source": "synthetic",
       "syntheticReason": "manual compact 完成后 queue 仍 held，追加文本应入队而不是触发 provider。"
+    },
+    {
+      "id": "upstream-compact-manual-queue-running",
+      "kind": "main",
+      "source": "synthetic",
+      "timingPolicy": "controlled-stream",
+      "syntheticReason": "真实 partial 输出后保持流，直到测试点击 Stop；不存在错过停止窗口而跳过断言的路径。"
     }
   ]
 }

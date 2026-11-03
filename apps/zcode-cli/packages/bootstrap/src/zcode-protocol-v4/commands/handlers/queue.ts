@@ -12,7 +12,7 @@ import { isHighspeedProviderId } from "@zcode/shared";
 import { createModelExecutionContext } from "../../../session-execution/index.js";
 import { mapAttachmentRefsToTurnAttachments } from "../attachment-refs.js";
 import { inputIntentMetadataFromQueueItem } from "../input-intent.js";
-import { startPromptTurn } from "../prompt-turn.js";
+import { startPromptTurn, turnBackgroundAttributionOf } from "../prompt-turn.js";
 import { requireRecord } from "../record-access.js";
 import type { V4CommandCoreHost } from "../types.js";
 import {
@@ -218,9 +218,8 @@ async function sendQueuedNow(
         ? undefined
         : await mapAttachmentRefsToTurnAttachments(record.app, queueItem.attachments);
     if (!autoDrainPromotion) acquirePromotionLease("after-current");
-    let preempted = false;
     if (!autoDrainPromotion) {
-      preempted = await preemptActiveTurnAndWait(host, record, {
+      await preemptActiveTurnAndWait(host, record, {
         abortMessage: "v4 sendQueuedNow preempts active turn",
         goalPausedMutationReason: "send_queued_now_goal_paused",
         preserveQueueAutoDrainOnCancel: true,
@@ -232,7 +231,14 @@ async function sendQueuedNow(
       throw new V4QueueItemReservedError(payload.queueItemId);
     }
     if (queueItem.kind === "compact") {
-      await startManualCompact(host, record, queueItem.sourceCommandId, foregroundPromotionLeaseId);
+      // 旧提升只传 commandId，丢失入队时的 B；与普通输入一样恢复完整意图，禁止重读 Composer。
+      const intent = inputIntentMetadataFromQueueItem(queueItem, queueItem.text);
+      intent.modelSelection ??= resolveSessionFallbackModelSelection(record);
+      await startManualCompact(host, record, {
+        inputId: queueItem.sourceCommandId,
+        foregroundPromotionLeaseId,
+        intent,
+      });
       leaseReleaseOwnedByBackground = true;
     } else if (queueItem.kind === "sendGoalCommand") {
       const intent = inputIntentMetadataFromQueueItem(queueItem, objective ?? queueItem.text);
@@ -315,10 +321,11 @@ async function sendQueuedNow(
       const started = await startPromptTurn(host, record, {
         content: queueItem.text,
         inputId: queueItem.sourceCommandId,
-        // 手动提升若实际抢占旧执行，同样是 human steer；自动 drain 不产生此标记。
-        ...(preempted && !attachments?.length ? { inputPresentation: "user_steer" as const } : {}),
+        // 手动提升即使抢占了旧执行，被点文本也是普通用户消息，与自动 drain 相同（原因见 sendText）。
         intent,
         requireIdle: true,
+        // Bug 根因：提升曾只回放 inputId 和 denylist，导致可信 automation attribution 丢失。
+        ...turnBackgroundAttributionOf({ automationId: queueItem.automationId }),
         toolDisallowlist: queueItem.toolDisallowlist,
         ...(turnExecution ? { modelExecution: createModelExecutionContext(turnExecution) } : {}),
         ...(attachments ? { attachments } : {}),

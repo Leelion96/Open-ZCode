@@ -33,17 +33,18 @@ export function createWindowTopicResourceRelay(deps: {
     return bots;
   };
   return createTopicResourceRelayChannel({
-    reply: (request) => {
-      if (!request.remoteSessionId || !request.workspaceIdentity)
-        throw new Error("Remote channel reply scope missing");
-      const bots = resolve({
-        ...request,
-        remoteSessionId: request.remoteSessionId,
-        workspaceIdentity: request.workspaceIdentity,
-      });
-      if (!bots.replyToChannel) throw new Error("Bot channel reply unavailable");
-      return bots.replyToChannel(request);
-    },
+    // 渠道工具等待插件入口接入，仅停用默认发送接线，保留完整实现。
+    // reply: (request) => {
+    //   if (!request.remoteSessionId || !request.workspaceIdentity)
+    //     throw new Error("Remote channel reply scope missing");
+    //   const bots = resolve({
+    //     ...request,
+    //     remoteSessionId: request.remoteSessionId,
+    //     workspaceIdentity: request.workspaceIdentity,
+    //   });
+    //   if (!bots.replyToChannel) throw new Error("Bot channel reply unavailable");
+    //   return bots.replyToChannel(request);
+    // },
     validate: (request, signal) => resolve(request).validateTopicResource!({ ...request, signal }),
     read: (request, signal) => resolve(request).readTopicResource!({ ...request, signal }),
   });

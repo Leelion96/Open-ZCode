@@ -39,3 +39,20 @@ Main/Renderer 随后使用 `remote:server:<同一 Source ID>:/home/dev/r3-worksp
 证据目录：`packages/desktop/.e2e-artifacts/r3-server-20261011105317614-4a6780-sourcelines/`；
 对应 run log 保留在同批 `r3-server/run-logs/`。测试 helper 已补项目 identity 的严格就绪检查，
 该补丁尚待同基线复验，不将静态检查算作 E2E 通过。
+
+## 2026-10-20 最新 staging 复验
+
+基线 `52cd1bc1d3`，批次 `r3-server-pending-52cd-b-pending-sourcelines` 仍失败。
+这次先验证链接夹具：`ln -sfn` 返回 0，`test -L` 成功，远端 `cd -P` / `pwd -P`
+返回 `/home/dev/r3-workspace-a`。随后真实项目创建入口得到的活动 cwd 与 identity
+仍包含 `/home/dev/r3-workspace-link`，并创建独立 logical session。
+证据为该批次的 `source-lines.json`、Host 绑定日志和 WebDriver 失败快照。
+第二条 alias 线路和 Provider 同步断言尚未到达，不据此推断它们失败。
+
+需保留[项目设计](../../superpowers/specs/2026-09-09-virtual-project-design.md)的身份所有权边界：
+已有项目或历史任务的 cwd / identity 由所属 Host 提供，Renderer 不能再次 realpath 后改写；
+普通文件夹选择仍应解析 canonical path。本次是从目录浏览器新建项目，不是重开历史任务。
+当前 `DirectoryBrowser.navigateTo` 仅验证 `readdir`，保留输入路径；
+`projectService.readDirectory` 仅执行 `normalize`，也不解析符号链接。
+因此问题应继续定位在新目录选择到项目 root 保存的路径链路，不能用 Host 绑定时擅自改写
+既有身份来修复。具体业务修复方案仍待单独处理，本轮仅补测试夹具验证和运行证据。

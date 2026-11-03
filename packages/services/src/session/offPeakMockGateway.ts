@@ -12,7 +12,7 @@
    take → queued（FIFO position）；status 轮询触发晋级（轮询即 Promote）：
    取号超过 readyDelayMs → ready（readyDeadline = +readyTtlMs）；ready 超时未发首个
    message → expired；首个 message 准入 → active（activeDeadline = +activeMs）；
-   active 到期 → expired，messages 返回 400/3102；settle → settled（幂等）。
+   active 到期 → expired，messages 返回 400/3106；settle → settled（幂等）。
    messages 准入前可注入 N 次 429/3105 + Retry-After（模拟资源满载细阀，D24）。 */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { ServiceLogger } from "../logger/serviceLogger.js";
@@ -22,7 +22,7 @@ export interface OffPeakMockGatewayOptions {
   readyDelayMs?: number;
   /** ready 后须发首个 message 的窗口；默认 5min。 */
   readyTtlMs?: number;
-  /** active 硬顶；默认 3h（调小可演示 400/3102 自动续跑）。 */
+  /** active 硬顶；默认 3h（调小可演示 400/3106 到期收口）。 */
   activeMs?: number;
   /** 每张票准入前先回多少次 429/3105；默认 0。 */
   queue429Count?: number;
@@ -325,25 +325,25 @@ export async function startOffPeakMockGateway(
     const ticket = tickets.get(ticketId);
     const now = Date.now();
     if (ticket) advance(ticket, now);
-    if (!ticket || ticket.state === "expired" || ticket.state === "settled") {
-      json(res, 400, { code: 3102, msg: "wrong off-peak ticket" });
+    if (!ticket || ticket.state === "settled" || ticket.state === "queued") {
+      json(res, 400, { code: 3104, msg: "invalid off-peak ticket" });
+      return;
+    }
+    if (ticket.state === "expired") {
+      // 已激活与未激活的过期票必须按服务端新契约分码，不能让 mock 掩盖客户端遗漏 3106。
+      json(res, 400, {
+        code: ticket.activeDeadline === undefined ? 3102 : 3106,
+        msg:
+          ticket.activeDeadline === undefined
+            ? "off-peak ready window expired"
+            : "off-peak active window expired",
+      });
       return;
     }
     if (config.scenario === "invalid-ticket") {
-      // 让 E2E 走真实的 3102 终态路径：客户端必须重取票/保留原任务身份，
-      // 且不能把失败的闲时请求偷偷改发到普通 Chat provider。
+      // 故障注入运行超时；真实 Host/CLI 必须结束任务，不能补号或切换普通套餐。
       invalidTicketRequests += 1;
-      json(res, 400, { code: 3102, msg: "wrong off-peak ticket" });
-      return;
-    }
-    if (ticket.state === "queued") {
-      // 粗阀未开就来了 message：按细阀排队应答（客户端不应走到这，防御分支）。
-      json(
-        res,
-        429,
-        { code: 3105, msg: "not ready" },
-        { "retry-after": String(config.retryAfterS) },
-      );
+      json(res, 400, { code: 3106, msg: "off-peak active window expired" });
       return;
     }
     if (ticket.queue429Remaining > 0) {
@@ -396,7 +396,7 @@ export async function startOffPeakMockGateway(
         ticket.state = "expired";
         invalidTicketRequests++;
         capturedRequests[capturedRequests.length - 1]!.stage = "parent-wakeup-expired";
-        json(res, 400, { code: 3102, msg: "wrong off-peak ticket" });
+        json(res, 400, { code: 3106, msg: "off-peak active window expired" });
         return;
       }
       const scripted =
@@ -513,6 +513,7 @@ export async function startOffPeakMockGateway(
       ) {
         json(res, 200, {
           invalidTicketRequests,
+          issuedTicketCount: tickets.size,
           requests: capturedRequests,
         });
         return;

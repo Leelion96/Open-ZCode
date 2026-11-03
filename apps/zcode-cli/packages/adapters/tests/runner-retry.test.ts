@@ -1,5 +1,5 @@
 import { APICallError, RetryError } from "ai";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ModelErrorCode, ModelFailureReason, ModelRetryReason } from "@zcode/contracts";
 import { classifyModelFailure } from "../src/model/failure-classifier.js";
 import type { ResolvedAiSdkModelRetryOptions } from "../src/model/retry-policy.js";
@@ -42,6 +42,26 @@ describe("calculateRetryDelay", () => {
 
   it("falls back to local backoff when retry-after is above five minutes", () => {
     expect(calculateRetryDelay(retry, 1, 300_001)).toBe(2_000);
+  });
+
+  // 修复原因：同一批被限流的请求拿到同一个 retry-after，不加抖动会在同一毫秒一起醒来再撞限流。
+  it("jitters retry-after hints upwards only, by at most 20% capped at five seconds", () => {
+    const jittered = { ...retry, jitter: true };
+    const random = vi.spyOn(Math, "random");
+    try {
+      random.mockReturnValue(0);
+      expect(calculateRetryDelay(jittered, 1, 10_000)).toBe(10_000);
+      random.mockReturnValue(0.999_999);
+      expect(calculateRetryDelay(jittered, 1, 10_000)).toBe(12_000);
+      expect(calculateRetryDelay(jittered, 1, 60_000)).toBe(65_000);
+      expect(calculateRetryDelay(jittered, 1, 0)).toBe(0);
+    } finally {
+      random.mockRestore();
+    }
+  });
+
+  it("keeps retry-after exact when jitter is disabled", () => {
+    expect(calculateRetryDelay(retry, 1, 41_000)).toBe(41_000);
   });
 });
 

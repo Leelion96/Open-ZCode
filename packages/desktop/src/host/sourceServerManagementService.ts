@@ -2,6 +2,8 @@ import { createSourceServerMigrationCounts } from "./sourceServerMigrationCounts
 import { Emitter, type Event } from "@zcode/rpc";
 import {
   sourceServerManagementSnapshotSchema,
+  sourceServerLifecycleSourceIdSchema,
+  sourceServerRunningTasksResultSchema,
   sourceServerUpdateRequestSchema,
   isSameSourceServerUpdateTarget,
   sourceServerManagementSnapshotRequestSchema,
@@ -19,8 +21,12 @@ import {
   type SourceServerManagementSnapshot,
   type SourceServerManagementStateDelta,
   type SourceServerOperationLog,
+  type SourceServerRunningTasksResult,
 } from "@zcode/shared";
-import type { SourceServerDirectorySnapshot } from "./sourceServerDirectory.js";
+import type {
+  SourceServerDirectorySnapshot,
+  SourceServerReconnectCandidate,
+} from "./sourceServerDirectory.js";
 import type {
   ManagedSourceServerConnection,
   SourceServerConnectionManagerOptions,
@@ -34,6 +40,7 @@ interface SourceServerManagementDirectory {
   resolveProfileTarget(
     profileOrId: string | ConnectionProfile,
   ): Promise<Exclude<RemoteTarget, { kind: "server" }>>;
+  resolveSourceLifecycleRoute(sourceServerId: string): Promise<SourceServerReconnectCandidate>;
   renameSource(sourceServerId: string, displayName: string): Promise<void>;
   renameProfile(profileId: string, displayName: string): Promise<void>;
   updateProfile(input: UpdateConnectionProfileInput): Promise<void>;
@@ -62,11 +69,24 @@ interface SourceServerManagementManager {
     profile: ConnectionProfile;
     target: Exclude<RemoteTarget, { kind: "server" }>;
     force?: boolean;
+    allowDowngrade?: boolean;
     resolveRelease?: SourceServerConnectionManagerOptions["resolveRelease"];
     context?: {
       onLog?: (event: { phase: string; message: string; progress?: number }) => void;
     };
   }): Promise<ManagedSourceServerConnection>;
+  stopSource(input: {
+    sourceServerId: string;
+    resolveOfflineRoute: () => Promise<SourceServerReconnectCandidate>;
+  }): Promise<void>;
+  restartSource(input: {
+    sourceServerId: string;
+    resolveOfflineRoute: () => Promise<SourceServerReconnectCandidate>;
+  }): Promise<ManagedSourceServerConnection>;
+  getSourceRunningTasks(input: {
+    sourceServerId: string;
+    resolveOfflineRoute: () => Promise<SourceServerReconnectCandidate>;
+  }): Promise<SourceServerRunningTasksResult>;
   disconnect(sourceServerId: string): void;
   removeProfile(profileId: string): void;
 }
@@ -220,7 +240,8 @@ export function createSourceServerManagementService(options: {
       return result;
     },
     async updateSource(input) {
-      const { profileId, expectedTarget, force } = sourceServerUpdateRequestSchema.parse(input);
+      const { profileId, expectedTarget, force, allowDowngrade } =
+        sourceServerUpdateRequestSchema.parse(input);
       const profile = await readProfile(profileId);
       // Profile ID 可原位改址；在读取凭据前核验失败身份，再从同一 Profile 固定执行目标。
       // force 确认后的请求也必须经过此边界，不能把旧授权用于另一设备/账户。
@@ -238,9 +259,35 @@ export function createSourceServerManagementService(options: {
         profile,
         target,
         force,
+        allowDowngrade,
         resolveRelease: options.resolveRelease,
       });
       return await getSnapshot();
+    },
+    async stopSource(input) {
+      const sourceServerId = sourceServerLifecycleSourceIdSchema.parse(input);
+      await options.manager.stopSource({
+        sourceServerId,
+        resolveOfflineRoute: () => options.directory.resolveSourceLifecycleRoute(sourceServerId),
+      });
+      return await getSnapshot();
+    },
+    async restartSource(input) {
+      const sourceServerId = sourceServerLifecycleSourceIdSchema.parse(input);
+      await options.manager.restartSource({
+        sourceServerId,
+        resolveOfflineRoute: () => options.directory.resolveSourceLifecycleRoute(sourceServerId),
+      });
+      return await getSnapshot();
+    },
+    async getSourceRunningTasks(input) {
+      const sourceServerId = sourceServerLifecycleSourceIdSchema.parse(input);
+      return sourceServerRunningTasksResultSchema.parse(
+        await options.manager.getSourceRunningTasks({
+          sourceServerId,
+          resolveOfflineRoute: () => options.directory.resolveSourceLifecycleRoute(sourceServerId),
+        }),
+      );
     },
     async renameSource(sourceServerId, displayName) {
       await options.directory.renameSource(sourceServerId, displayName);

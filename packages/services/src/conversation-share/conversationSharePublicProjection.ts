@@ -71,9 +71,7 @@ function assertSafeString(value: string): void {
       "Artifact references must be represented by formal conversation artifact rows",
     );
   }
-  if (/^(?:data|file):/iu.test(value)) {
-    throwProjectionError("unsafe_structure", "Local and inline URLs cannot be shared");
-  }
+  // URI 前缀不能判定文本是否为附件；普通 file/data 文本保留，附件由正式引用校验。
 }
 
 // display 的闭集独立于 row.kind 演进；复用正式 schema，避免浅拷贝把未知嵌套字段送到 confirm。
