@@ -2256,6 +2256,12 @@ export function createLocalServices(options: {
       return !(await taskIndexRepo.getProjectRepository()).hasProjectWorkspace(target);
     },
     prepareProjectExecution,
+    prepareForkCreation: async (target) => {
+      (await taskIndexRepo.getProjectRepository()).reserveCreatedTask({
+        task: { ...target, taskId: target.sessionId },
+        parentTaskId: target.parentSessionId,
+      });
+    },
     prepareSessionCreation: async (target) => {
       const prepared = (await taskIndexRepo.getProjectRepository()).reserveCreatedTask({
         task: { ...target, taskId: target.sessionId },

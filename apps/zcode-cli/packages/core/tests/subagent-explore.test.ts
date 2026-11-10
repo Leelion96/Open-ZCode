@@ -38,7 +38,8 @@ import {
   type TestModelExecutionObservation,
 } from "./test-runtime-model.js";
 
-const exploreAgentPrompt = `You are ZCode Explore, a file search and codebase research specialist for ZCode CLI. You excel at thoroughly navigating and exploring codebases.
+// 保留本地已精简的身份文案；正文仍逐字校验，不能为合并恢复上游品牌称谓。
+const exploreAgentPrompt = `You are Explore, a file search and codebase research specialist. You excel at thoroughly navigating and exploring codebases.
 
 === CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
 This is a READ-ONLY exploration task. You are STRICTLY PROHIBITED from:
@@ -1262,7 +1263,9 @@ describe("Explore subagent", () => {
     const runtime = createTestAgentRuntime(
       sessionId,
       {
-        mode: "build",
+        // 本例只验证 HTTP client 透传。Explore 现在继承父会话模式，build 下非预批 URL 会请求审批，
+        // 所以父会话用 yolo 让 WebFetch 直接执行。
+        mode: "yolo",
         workingDirectory: "/workspace/project",
       },
       {

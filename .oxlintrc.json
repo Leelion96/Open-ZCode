@@ -9,6 +9,8 @@
     {
       // 本次上游整合保留既有职责完整的实现；这些文件超 800 行只告警，不机械拆分。
       "files": [
+        // plugins/index.ts 已有 882 行；本次合并未修改其实现，保留此前通用文案定制，不为存量行数拆分加载器。
+        "**/apps/zcode-cli/packages/adapters/src/plugins/index.ts",
         // 插件市场沿用上游存量大文件，只补充目录字段投影；不为行数机械拆分安装流程。
         "**/apps/zcode-cli/packages/adapters/src/plugins/marketplace.ts",
         // MCP 连接入口沿用上游存量实现；连接屏障修复不为行数重排整个 adapter。
