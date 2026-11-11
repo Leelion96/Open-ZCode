@@ -11,13 +11,9 @@ import { loadFileConfig, type LoadedConfig } from "./file-config.adapter.js";
 
 const CURRENT_DIRECTORY = ".";
 
-export interface ProjectConfigFile {
+export interface ProjectConfigFile extends LoadedConfig {
   baseDir: string;
-  config: RuntimeConfigPatch;
-  diagnostics: LoadedConfig["diagnostics"];
   hookCandidate?: WorkspaceHookSourceInput;
-  loaded: boolean;
-  path: string;
 }
 
 export interface ProjectConfigDiscovery {
@@ -92,6 +88,7 @@ export function loadProjectConfigFile(
       : {}),
     loaded: result.loaded,
     path: result.path,
+    ...(result.pendingVisualizeMigration ? { pendingVisualizeMigration: true } : {}),
   };
 }
 

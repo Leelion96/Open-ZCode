@@ -1,6 +1,6 @@
 import { PRODUCT_PROJECT_DIRECTORY, PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import type {
@@ -9,6 +9,10 @@ import type {
   SettingsDirectoryLocation,
   SettingsDirectorySource,
 } from "@zcode/shared";
+import {
+  resolveWorkspaceHookTrustIdentity,
+  type WorkspaceHookTrustIdentityFs,
+} from "@zcode/shared/managed-worktree";
 import {
   buildWorkspaceHookBundleSnapshot,
   createWorkspaceHookSourceInput,
@@ -21,6 +25,7 @@ import {
 } from "@zcode/shared/workspace-hook-discovery";
 import { parseWorkspaceHookTrustStoreContent } from "@zcode/shared/workspace-hook-trust-store-file";
 import { createServiceLogger, type ServiceLogger } from "#src/logger/serviceLogger.js";
+import { getDataBaseDir } from "#src/paths.js";
 import type { IHooksService } from "./hooks.js";
 import { updateJsonObjectFile } from "#src/fs/atomicFileUtils.js";
 import {
@@ -31,6 +36,16 @@ import {
   toZCodeHooksEvents,
   type LegacyHooksConfig,
 } from "./workspaceHookSettingsModel.js";
+
+/** Trust identity resolver 的只读文件端口（Host 侧 node:fs/promises 适配）。 */
+const trustIdentityFs: WorkspaceHookTrustIdentityFs = {
+  readFile: (path) => readFile(path, "utf8"),
+  realpath: (path) => realpath(path),
+  stat: async (path) => {
+    const info = await stat(path).catch(() => null);
+    return info ? { isFile: info.isFile(), isDirectory: info.isDirectory() } : null;
+  },
+};
 
 const SETTINGS_FILE = "settings.json";
 const ZCODE_CONFIG_FILE = "config.json";
@@ -240,7 +255,14 @@ async function loadHooksImpl(
     ];
     return { hooks, hooksEnabled: hooks.some((hook) => hook.enabled) };
   }
+  // 对外字段（snapshot、Settings 行）保持 workspaceKey：review binding 与路由按它匹配（D23）。
   const workspaceIdentity = params.workspaceIdentity?.trim() || workspacePath;
+  // Trust identity 只用于读取持久 Trust record，必须与 CLI 侧同一 resolver 计算：
+  // 受管 worktree 归一到源仓库，其余 workspace 等于 workspaceKey。
+  const trustIdentity = await resolveWorkspaceHookTrustIdentity(
+    { workspacePath, workspaceIdentity: params.workspaceIdentity, dataBaseDir: getDataBaseDir() },
+    trustIdentityFs,
+  );
   const [{ sources: projectSources }, userSource] = await Promise.all([
     readWorkspaceHookProjectSources({ workingDirectory: workspacePath }),
     readUserZCodeSource(),
@@ -255,7 +277,7 @@ async function loadHooksImpl(
     sources: projectSources,
     runtimeRoot,
   });
-  const persistentTrust = await readPersistentWorkspaceHookTrustDigests(workspaceIdentity, logger);
+  const persistentTrust = await readPersistentWorkspaceHookTrustDigests(trustIdentity, logger);
   const persistentTrustedDigests = persistentTrust.digests;
   const hooks = [
     ...fromProjectSnapshot({

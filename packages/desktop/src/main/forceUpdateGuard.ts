@@ -5,8 +5,10 @@ import {
   buildZCodeEndpointUrls,
   getForceUpdateMinimalVersionFromConfig,
   resolveForceUpdateRequirement,
+  resolveOptionalZCodeAuthorization,
   type ForceUpdateRequirement,
   type Locale,
+  type ZCodeJwtTokenResolver,
 } from "@zcode/shared";
 import { requestForceAutoUpdate, type ForceAutoUpdateState } from "./autoUpdater.js";
 import { showForceUpdatePrompt } from "./forceUpdatePrompt.js";
@@ -39,7 +41,10 @@ export interface ForceUpdateGuardOptions {
   logger: ForceUpdateGuardLogger;
   endpointOrigin?: string;
   fetchRemoteConfig?: () => Promise<unknown>;
-  requestAutoUpdate?: (onStateChange?: (state: ForceAutoUpdateState) => void) => (() => void) | void;
+  resolveZcodeJwtToken?: ZCodeJwtTokenResolver;
+  requestAutoUpdate?: (
+    onStateChange?: (state: ForceAutoUpdateState) => void,
+  ) => (() => void) | void;
   onBlocked?: (requirement: ForceUpdateRequirement) => void;
 }
 
@@ -75,12 +80,14 @@ function getForceUpdateMinimalVersionFromClientConfig(config: unknown): string |
 async function fetchRemoteForceUpdateConfig(
   endpointOrigin?: string,
   fetchRemoteConfig?: () => Promise<unknown>,
+  resolveZcodeJwtToken?: ZCodeJwtTokenResolver,
 ): Promise<unknown> {
   if (fetchRemoteConfig) {
     return fetchRemoteConfig();
   }
 
   const { net } = await import("electron");
+  const authorization = await resolveOptionalZCodeAuthorization(resolveZcodeJwtToken);
   return new Promise<unknown>((resolve, reject) => {
     let request: ReturnType<typeof net.request>;
     let timer: ReturnType<typeof setTimeout>;
@@ -113,6 +120,10 @@ async function fetchRemoteForceUpdateConfig(
     timer.unref?.();
 
     request = net.request(resolveForceUpdateClientConfigUrl(endpointOrigin));
+    // 同一 URL 可返回不同身份的配置，不能由 Chromium 的匿名 HTTP 缓存绕过本次登录头。
+    request.setHeader("Cache-Control", "no-cache");
+    if (authorization) request.setHeader("Authorization", authorization);
+    request.on("redirect", () => fail(new Error("force update config redirect rejected")));
     request.on("response", (response) => {
       const statusCode = response.statusCode ?? 0;
       if (statusCode < 200 || statusCode >= 300) {
@@ -152,6 +163,7 @@ export async function resolveDesktopForceUpdateRequirement(options: {
   logger: ForceUpdateGuardLogger;
   endpointOrigin?: string;
   fetchRemoteConfig?: () => Promise<unknown>;
+  resolveZcodeJwtToken?: ZCodeJwtTokenResolver;
 }): Promise<ForceUpdateRequirement | null> {
   const resolveFromConfig = (config: unknown) =>
     resolveForceUpdateRequirement({
@@ -168,6 +180,7 @@ export async function resolveDesktopForceUpdateRequirement(options: {
     const remoteConfig = await fetchRemoteForceUpdateConfig(
       options.endpointOrigin,
       options.fetchRemoteConfig,
+      options.resolveZcodeJwtToken,
     );
     const remoteRequirement = resolveFromConfig(remoteConfig);
     if (remoteRequirement) {

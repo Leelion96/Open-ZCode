@@ -1,6 +1,7 @@
 import type { ProviderSettingsView } from "@zcode/services";
 import { ArrowLeftIcon, ChevronRightIcon, PlusIcon } from "lucide-react";
 import { resolveProviderTemplateName } from "@zcode/provider";
+import { toZhOrEnLocale } from "@zcode/shared";
 import type { ReactNode } from "react";
 import {
   TID_MODEL_PROVIDER_TEMPLATE_BACK_BUTTON,
@@ -75,7 +76,7 @@ export function ProviderTemplatePicker({
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {templates.map((template) => {
-          const label = resolveProviderTemplateName(template.templateId, template, locale);
+          const label = resolveProviderTemplateName(template.templateId, template, toZhOrEnLocale(locale));
           return (
             <ProviderTemplateCard
               key={template.templateId}

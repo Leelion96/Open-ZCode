@@ -35,6 +35,7 @@ await build({
 import { app, ipcMain } from 'electron';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { writeFile } from 'node:fs/promises';
 import pkg from 'electron-updater';
@@ -57,6 +58,10 @@ const requests = [];
 async function listen(label) {
   const server = createServer((req, res) => {
     requests.push({ label, url: req.url, headers: req.headers });
+    if (req.url === '/package.bin') {
+      res.end('update-auth-download-fixture');
+      return;
+    }
     res.writeHead(scenario.failure === '501' && label === 'trusted' ? 501 : 200, { 'Content-Type': 'text/yaml' });
     res.end('version: 0.0.1\\nfiles: []\\n');
   });
@@ -90,9 +95,31 @@ async function listen(label) {
   const originalHandle = ipcMain.handle.bind(ipcMain);
   ipcMain.handle = (channel, handler) => { handlers.set(channel, handler); originalHandle(channel, handler); };
   const installOrder = [];
-  await initAutoUpdater({ onBeforeQuitAndInstall: async () => { installOrder.push('prepare'); }, updateFeedSource, deviceMid: '00000000-0000-4000-8000-000000000000', resolveEndpointOrigin: () => scenario.input === "backend" ? override.url : trusted.url });
+  let loginToken = null;
+  let failCredentialRead = false;
+  await initAutoUpdater({ onBeforeQuitAndInstall: async () => { installOrder.push('prepare'); }, updateFeedSource, deviceMid: '00000000-0000-4000-8000-000000000000', resolveZcodeJwtToken: async () => {
+    if (failCredentialRead) throw new Error('sensitive-fixture-credential-error');
+    return loginToken;
+  }, resolveEndpointOrigin: () => scenario.input === "backend" ? override.url : trusted.url });
   if (scenario.failure) await completed.then(() => { throw new Error('expected update failure'); }, () => {});
-  else await completed;
+  else {
+    await completed;
+    // 失败用例保留单次检查验证“不回落官方”；成功用例再验证每次读取登录态及下载不携带令牌。
+    await autoUpdater.checkForUpdates();
+    for (const token of [' fixture-account-a ', 'fixture-account-b', '   ', 'bad' + String.fromCharCode(10) + 'token', '非ascii', null, 'fixture-recovered']) {
+      loginToken = token;
+      failCredentialRead = token === null;
+      await autoUpdater.checkForUpdates();
+      if (token?.trim() === 'fixture-account-a') {
+        const provider = await autoUpdater.clientPromise;
+        await autoUpdater.httpExecutor.download(new URL('/package.bin', trusted.url), resolve(root, 'package.bin'), {
+          cancellationToken: new pkg.CancellationToken(),
+          headers: autoUpdater.computeRequestHeaders(provider),
+          sha512: createHash('sha512').update('update-auth-download-fixture').digest('base64'),
+        });
+      }
+    }
+  }
   const signatureChecks = [];
   const cachedInstallChecks = [];
   if (autoUpdater instanceof pkg.NsisUpdater) {
@@ -246,10 +273,40 @@ for (const scenario of cases) {
     results.push(result);
     await writeFile(resolve(artifactDir, "results.json"), JSON.stringify(results, null, 2));
     assert.deepEqual(
-      result.requests.map((item) => item.label),
-      scenario.expected ? [scenario.expected] : [],
+      result.requests.filter((item) => item.url !== "/package.bin").map((item) => item.label),
+      scenario.expected ? Array(scenario.failure ? 1 : 8).fill(scenario.expected) : [],
       scenario.name,
     );
+    if (!scenario.failure) {
+      assert.deepEqual(
+        result.requests
+          .filter((item) => item.url !== "/package.bin")
+          .map((item) => item.headers.authorization ?? null),
+        [
+          null,
+          "Bearer fixture-account-a",
+          "Bearer fixture-account-b",
+          null,
+          null,
+          null,
+          null,
+          "Bearer fixture-recovered",
+        ],
+        `${scenario.name}: current login token must be read for each manifest request`,
+      );
+      assert.match(output, /credential read failed; checking manifest without authorization/);
+      assert.ok(
+        !output.includes("sensitive-fixture-credential-error"),
+        "credential errors must not leak into logs",
+      );
+      const downloadRequests = result.requests.filter((item) => item.url === "/package.bin");
+      assert.equal(downloadRequests.length, 1);
+      assert.equal(
+        downloadRequests[0].headers.authorization,
+        undefined,
+        "download must not receive login token",
+      );
+    }
     if (useAppImageUpdater) assert.equal(result.updaterType, "AppImageUpdater");
     if (useNsisUpdater) {
       assert.equal(result.updaterType, "NsisUpdater");
