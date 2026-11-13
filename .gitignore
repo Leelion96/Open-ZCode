@@ -84,3 +84,6 @@ packages/desktop/.e2e-network-capture/
 
 # Generated from config/product.json by the desktop packaging config.
 packages/desktop/build/product.nsh
+
+# CR-01：afterPack 生成的 NSIS helper define，按架构命名，不得入库
+packages/desktop/build/generated/

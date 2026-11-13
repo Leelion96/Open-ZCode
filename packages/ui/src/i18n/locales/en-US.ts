@@ -3797,6 +3797,9 @@ const enUS: Record<string, string> = {
   "settings.appearance.codeTitle": "Code settings",
   "settings.appearance.codeDescription":
     "Choose code themes, font size, and display options independently from the interface font size.",
+  "settings.fontSmoothing": "Font smoothing",
+  "settings.fontSmoothingDescription":
+    "Use grayscale smoothing. Text may look thinner; results vary by display.",
   "settings.uiFontSize": "UI font size",
   "settings.uiFontSizeDescription":
     "Adjust interface text without changing icons or layout dimensions.",
@@ -9049,10 +9052,18 @@ const enUS: Record<string, string> = {
   "voiceInput.button.recognizing": "Recognizing…",
   "voiceInput.action.openPrivacySettings": "Open System Settings",
   "voiceInput.action.openSoundSettings": "Open Sound Settings",
-  "voiceInput.error.permissionDenied.mac":
-    "{productName} cannot use the microphone. Allow {productName} in System Settings › Privacy & Security › Microphone. On some macOS versions, restart the app after you change it.",
-  "voiceInput.error.permissionDenied.windows":
-    '{productName} cannot use the microphone. In Settings › Privacy & security › Microphone, turn on both "Microphone access" and "Let desktop apps access your microphone".',
+  "voiceInput.permission.title": "Microphone access needed",
+  "voiceInput.permission.description.mac":
+    'Click "Request again", then choose "Allow" in the system dialog. You can also turn on {productName} in System Settings › Privacy & Security › Microphone.',
+  "voiceInput.permission.reauthorize": "Request again",
+  "voiceInput.permission.restartTitle": "Restart {productName}",
+  "voiceInput.permission.restartDescription":
+    'The microphone permission was reset. Restart {productName}, click the microphone, then choose "Allow" in the system dialog.',
+  "voiceInput.permission.relaunch": "Restart {productName}",
+  "voiceInput.permission.granted":
+    "Microphone access is on. Click the microphone to start voice input.",
+  "voiceInput.permission.description.windows":
+    'In Settings › Privacy & security › Microphone, turn on both "Microphone access" and "Let desktop apps access your microphone".',
   "voiceInput.error.permissionDenied.linux":
     "Cannot access the microphone. Check the system microphone permission and the PulseAudio / PipeWire input device.",
   "voiceInput.error.silent":
