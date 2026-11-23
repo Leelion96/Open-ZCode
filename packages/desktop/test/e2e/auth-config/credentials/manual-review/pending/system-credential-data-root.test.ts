@@ -4,7 +4,7 @@ import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { AsyncEntry } from "@napi-rs/keyring";
-import { readE2EProductUserDirectory } from "#e2e/helpers/e2e-worker-environment";
+import { E2E_PRODUCT_USER_DIRECTORY } from "#e2e/helpers/e2e-worker-environment";
 import { TID_V4_COMPOSER, TID_LOGIN_TRIGGER } from "@zcode/shared/test-ids";
 import { reloadElectronSessionPreservingBrowserProfile } from "#e2e/helpers/e2e-electron-reload";
 import { clearAppData, getE2EAppDataPaths } from "#e2e/helpers/desktop-app";
@@ -114,7 +114,7 @@ describe("System credential storage across a data directory change", () => {
   it("registers the OS key for the new data root so credentials survive restart and new writes succeed", async function () {
     this.timeout(CASE_TIMEOUT_MS);
     const { homeDir } = getE2EAppDataPaths();
-    const userDir = await readE2EProductUserDirectory();
+    const userDir = E2E_PRODUCT_USER_DIRECTORY;
     const appDataDir = join(homeDir, userDir, "v2");
     const credentialsFile = join(appDataDir, "credentials.json");
     const customBaseDir = join(homeDir, "scs-data-root-custom");

@@ -15,7 +15,9 @@
 2. **自建 [Open-ZCode-Server](https://github.com/Leelion96/Open-ZCode-Server) 服务，接管项目内各类上游服务能力**：目前已实现配置下发、插件市场和普通公告；登录、分享、反馈、更新等业务暂未实现，相关 API 为占位接口。
 3. **调整官方服务与商业入口**：关闭审计上报、官方授权登录及商业套餐等入口。
 
-上游源码版本：ZCode v3.18.2（`fec97590`）。
+上游源码版本：ZCode v4.0.0（`a4b44451`）。
+
+桌面文档工具（Python、qpdf、Pandoc、Poppler、LibreOffice）默认从上游 CDN 下载，可在「帮助 → 预装工具」中管理。部署镜像可通过 `ZCODE_PREINSTALLED_TOOLS_CDN_BASE_URL` 指定。
 
 ## 改动原则
 

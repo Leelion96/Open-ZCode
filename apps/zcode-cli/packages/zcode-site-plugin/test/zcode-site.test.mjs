@@ -1,20 +1,49 @@
 // zcode-site CLI 测试：用内存里的 Sites API 替身（按 api/openapi.yaml 的状态机）代替 zcode-server 和后面的控制面。
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { promisify } from "node:util";
 
 import { createServer } from "node:http";
 
-import { createEndpointFetch, main, normalizePrefix } from "../scripts/zcode-site.mjs";
-import { packStage } from "../scripts/stage.mjs";
+import {
+  createEndpointFetch,
+  main,
+  normalizePrefix,
+} from "../skills/site-deploy/scripts/zcode-site.mjs";
+import { packStage } from "../skills/site-deploy/scripts/stage.mjs";
 
 // CLI 只认 agent 注入的官方命令端点（技术方案 5.8）；身份头和版本头由端点补，CLI 不带。
 const ENV = {
   ZCODE_OFFICIAL_ENDPOINT: "/tmp/zcode-official-test.sock",
   ZCODE_OFFICIAL_ENDPOINT_TOKEN: "session-token",
 };
+
+test("单独分发 site-deploy 技能时仍按产品项目隔离开关选择绑定文件", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "site-deploy-skill-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await cp(new URL("../skills/site-deploy/", import.meta.url), directory, { recursive: true });
+  const script = join(directory, "scripts", "zcode-site.mjs");
+  for (const isolateProjectData of [true, false]) {
+    const { stdout } = await promisify(execFile)(process.execPath, [script, "help"], {
+      cwd: directory,
+      env: {
+        ...process.env,
+        ZCODE_PRODUCT_CONFIG_JSON: JSON.stringify({
+          name: "Team Test",
+          appId: "dev.test.team",
+          customizeIdentity: true,
+          isolateUserData: true,
+          isolateProjectData,
+        }),
+      },
+    });
+    assert.ok(stdout.includes(isolateProjectData ? ".team-test-site.json" : ".zcode-site.json"));
+  }
+});
 
 class FakeSites {
   constructor() {
@@ -397,7 +426,7 @@ test("local and auth errors", async () => {
   const expired = await run(fake, cwd, "usage");
   assert.equal(expired.code, 2);
   assert.equal(expired.error.code, 3101);
-  assert.match(expired.error.hint, /sign in to the app again/);
+  assert.match(expired.error.hint, /sign in again/);
 
   const noEnv = await main(["usage"], {
     env: {},
@@ -455,6 +484,109 @@ test("createEndpointFetch talks HTTP over the endpoint socket", async () => {
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+// Z.ai 沙箱把官方命令端点提供成 http(s) 地址：起一个真实的 HTTP 服务挂在 /sandbox 前缀下，把请求转给 FakeSites，
+// 不注入 fetchImpl，走 main() 默认的 createEndpointFetch 和全局 fetch。
+async function startHttpEndpoint(fake) {
+  const seen = [];
+  const server = createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", async () => {
+      const raw = Buffer.concat(chunks);
+      seen.push({ method: req.method, url: req.url, headers: req.headers, bodyLength: raw.length });
+      const headers = {};
+      if (req.headers.authorization) headers.Authorization = req.headers.authorization;
+      const type = req.headers["content-type"];
+      if (type) headers["Content-Type"] = type;
+      const body =
+        raw.length === 0 ? undefined : type === "application/json" ? raw.toString("utf8") : raw;
+      try {
+        const out = await fake.fetch(`http://fake${req.url.replace(/^\/sandbox/, "")}`, {
+          method: req.method,
+          headers,
+          body,
+        });
+        res.writeHead(out.status, Object.fromEntries(out.headers));
+        res.end(Buffer.from(await out.arrayBuffer()));
+      } catch (err) {
+        res.writeHead(500).end(String(err));
+      }
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address();
+  return {
+    seen,
+    url: `http://127.0.0.1:${port}/sandbox/`,
+    close: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+async function runWithEndpoint(endpoint, cwd, ...argv) {
+  let stdout = "";
+  let stderr = "";
+  const code = await main(argv, {
+    env: { ZCODE_OFFICIAL_ENDPOINT: endpoint, ZCODE_OFFICIAL_ENDPOINT_TOKEN: "session-token" },
+    cwd,
+    stdout: { write: (s) => (stdout += s) },
+    stderr: { write: (s) => (stderr += s) },
+    sleep: async () => {},
+    now: () => 0,
+  });
+  const lines = stdout
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l));
+  return { code, result: lines.at(-1), error: stderr ? JSON.parse(stderr).error : undefined };
+}
+
+test("an http(s) endpoint is requested with fetch under its base path", async () => {
+  const fake = new FakeSites();
+  const endpoint = await startHttpEndpoint(fake);
+  try {
+    const cwd = await project();
+    const r = await runWithEndpoint(endpoint.url, cwd, "deploy", "stage", "--name", "My App");
+
+    assert.equal(r.code, 0, JSON.stringify(r.error));
+    assert.equal(r.result.status, "success");
+    assert.equal(r.result.url, fake.sites[0].url);
+    assert.ok(endpoint.seen.length > 0);
+    for (const req of endpoint.seen) {
+      assert.match(req.url, /^\/sandbox\/api\/v1\/sites(\/|\?|$)/);
+      assert.equal(req.headers.authorization, "Bearer session-token");
+    }
+    const upload = endpoint.seen.find(
+      (req) => req.method === "PUT" && req.url.endsWith("/package"),
+    );
+    assert.ok(upload, "the package is uploaded through the http endpoint");
+    assert.equal(upload.headers["content-type"], "application/gzip");
+    assert.equal(upload.headers["content-length"], String(fake.deployments[0].artifactSize));
+    assert.equal(upload.bodyLength, fake.deployments[0].artifactSize);
+    assert.equal(upload.headers["transfer-encoding"], undefined);
+    assert.ok(
+      endpoint.seen.some((req) => req.url.includes("?offset=")),
+      "query is kept",
+    );
+
+    // 端点自己连不上 zcode-server 时用响应头报 network，http 端点也照样映射成 NETWORK_ERROR。
+    fake.endpointNetworkError = true;
+    const offline = await runWithEndpoint(endpoint.url, cwd, "usage");
+    assert.equal(offline.code, 4);
+    assert.equal(offline.error.code, "NETWORK_ERROR");
+  } finally {
+    await endpoint.close();
+  }
+});
+
+test("an unreachable http endpoint exits with NETWORK_ERROR", async () => {
+  const endpoint = await startHttpEndpoint(new FakeSites());
+  await endpoint.close();
+  const r = await runWithEndpoint(endpoint.url, await project(), "usage");
+  assert.equal(r.code, 4);
+  assert.equal(r.error.code, "NETWORK_ERROR");
 });
 
 test("status, rename, offline and online use the bound site", async () => {

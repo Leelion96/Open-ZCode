@@ -1,15 +1,11 @@
-import { readFile } from "node:fs/promises";
+import rawProductConfig from "../../../../../config/product.json" with { type: "json" };
 import { parseProductConfig, productKey } from "@zcode/shared/product";
 
 /** WDIO 没有桌面的编译注入；按同一份构建配置定位夹具，避免读写官方资料目录。 */
-export async function readE2EProductUserDirectory(): Promise<string> {
-  const product = parseProductConfig(
-    JSON.parse(
-      await readFile(new URL("../../../../../config/product.json", import.meta.url), "utf8"),
-    ),
-  );
-  return product.isolateUserData ? `.${productKey(product)}` : ".zcode";
-}
+const product = parseProductConfig(rawProductConfig);
+export const E2E_PRODUCT_USER_DIRECTORY = product.isolateUserData
+  ? `.${productKey(product)}`
+  : ".zcode";
 
 const ASK_USER_QUESTION_AUTO_RESOLUTION_SETTING_SPEC =
   "conversation-session-ask-user-question-auto-resolution-setting.test.ts";
@@ -38,7 +34,7 @@ export function resolveE2ECredentialSecret(
   if (configured) return configured;
   if (
     specs.some((spec) =>
-      /\/system-credential-(storage|data-root|owner|owner-mcp)\.test\.ts$/.test(
+      /\/system-credential-(storage|data-root|auto-reset|owner|owner-mcp)\.test\.ts$/.test(
         spec.replaceAll("\\", "/"),
       ),
     )
@@ -52,5 +48,7 @@ export function resolveE2ECredentialSecret(
  * owner 专项使用原生 API 边界替身，不需要链接。
  */
 export function isNativeKeychainCredentialSpec(spec: string): boolean {
-  return /\/system-credential-(storage|data-root)\.test\.ts$/.test(spec.replaceAll("\\", "/"));
+  return /\/system-credential-(storage|data-root|auto-reset)\.test\.ts$/.test(
+    spec.replaceAll("\\", "/"),
+  );
 }

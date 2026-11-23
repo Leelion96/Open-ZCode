@@ -9,13 +9,17 @@ import { writeNotices } from "../../office-runtime/scripts/licenses.mjs";
 // 面板脚本内联进 panel.html（体积远低于宿主单次读资源的上限，不用分片）。
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
+const skillDist = join(root, "skills/site-deploy/dist");
+await Promise.all([dist, skillDist].map((dir) => rm(dir, { recursive: true, force: true })));
+if (process.argv.includes("--clean")) process.exit(0);
 const productConfig = await loadProductConfig();
-await rm(dist, { recursive: true, force: true });
 await mkdir(join(dist, "ui"), { recursive: true });
 
 await build({
   entryPoints: [resolve(root, "../../../../packages/shared/src/product.ts")],
-  outfile: join(dist, "product.mjs"), bundle: true, platform: "node", format: "esm", target: "node24",
+  // 部署脚本随技能目录独立分发，产品路径模块也要随同复制。
+  outfile: join(skillDist, "product.mjs"),
+  bundle: true, platform: "node", format: "esm", target: "node24",
 });
 const server = await build({
   metafile: true,

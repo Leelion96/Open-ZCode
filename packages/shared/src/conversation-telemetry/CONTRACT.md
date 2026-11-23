@@ -8,3 +8,7 @@
 
 Main 注入 `trackPendingReport`，dispatcher 在接收事件时同步登记完整投递 Promise。
 退出等待与超时由 TelemetryCore 单独管理，dispatcher 不创建第二份 pending 集合或退出计时器。
+
+首响归属仅由本 owner 冻结。旧 strict fact 通道不可新增字段；独立的 admission 与
+model.request.metrics 通过 App 内部 ConversationTelemetryInput 合流，复用现有有界缓冲。
+补充通知与原事实同 eventId 时分通道去重，Token 指标不再次参与累计。

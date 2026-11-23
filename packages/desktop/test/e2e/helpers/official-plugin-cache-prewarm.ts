@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { readE2EProductUserDirectory } from "./e2e-worker-environment.js";
+import { E2E_PRODUCT_USER_DIRECTORY } from "./e2e-worker-environment.js";
 
 /*
  * 官方插件缓存预热（docs/testing/conversation-session-automatic-e2e-ci.md「官方插件缓存预热」）。
@@ -45,9 +45,7 @@ export async function prepareOfficialPluginCacheTemplate(input: {
     timeout: SEED_TIMEOUT_MS,
     windowsHide: true,
   });
-  if (
-    !existsSync(officialPluginCacheDir(input.templateHome, await readE2EProductUserDirectory()))
-  ) {
+  if (!existsSync(officialPluginCacheDir(input.templateHome, E2E_PRODUCT_USER_DIRECTORY))) {
     throw new Error(`官方插件缓存预热没有生成 cache 目录: ${input.templateHome}`);
   }
 }
@@ -57,7 +55,7 @@ export async function installOfficialPluginCacheTemplate(input: {
   homeDir: string;
   templateHome: string;
 }): Promise<boolean> {
-  const userDirectory = await readE2EProductUserDirectory();
+  const userDirectory = E2E_PRODUCT_USER_DIRECTORY;
   const source = officialPluginCacheDir(input.templateHome, userDirectory);
   if (!existsSync(source)) return false;
   await cp(source, officialPluginCacheDir(input.homeDir, userDirectory), { recursive: true });

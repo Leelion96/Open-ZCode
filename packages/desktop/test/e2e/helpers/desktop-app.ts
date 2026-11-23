@@ -16,8 +16,14 @@ import {
 import { ZAI_PROVIDER_ID } from "@zcode/shared";
 import {
   TID_COMPOSER_WORKSPACE_TRIGGER,
+  TID_SETTINGS_BACK_BUTTON,
+  TID_SETTINGS_PAGE,
+  TID_SETTINGS_REPLY_LANGUAGE_INPUT,
+  TID_SETTINGS_SECTION_NAV,
+  TID_TASK_SETTINGS_BUTTON,
   TID_V4_SESSION_PANE,
   TID_WORKSPACE_PATH,
+  testId as composeTestId,
 } from "@zcode/shared/test-ids";
 import type { AppSettings } from "@zcode/shared";
 import { collectWindowsE2EProcessTreePids } from "./e2e-process-cleanup.js";
@@ -27,6 +33,7 @@ import {
 } from "./e2e-window-target.js";
 import { dismissOccupationOnboarding } from "./occupation-onboarding.js";
 import { sel } from "./selectors.js";
+import { resolveE2EStorageRoot } from "./e2e-runtime-paths.js";
 import { projectSectionSelector } from "./project-sidebar.js";
 
 const DEFAULT_E2E_HOME_DIR = resolve(process.cwd(), ".e2e-home");
@@ -37,9 +44,7 @@ const E2E_HOME_DIR =
   // 修复原因：WDIO worker 环境不稳定时，helper 曾回落到真实 HOME，
   // 导致 provider 诊断和清理读写开发者本机配置，而不是当前 e2e sandbox。
   DEFAULT_E2E_HOME_DIR;
-// Bug 根因：storage profile 回滚删除了该共享根字段，但多个 E2E 仍需定位 CLI 数据。
-// 隔离由测试 HOME 保证，目录名保持生产历史语义 .zcode。
-const E2E_STORAGE_ROOT = join(E2E_HOME_DIR, ".zcode");
+const E2E_STORAGE_ROOT = resolveE2EStorageRoot(E2E_HOME_DIR);
 const E2E_APP_DATA_DIR = join(E2E_STORAGE_ROOT, "v2");
 export const DEFAULT_WORKSPACE = join(E2E_HOME_DIR, "ZCodeProject");
 export const DEFAULT_CONVERSATION_WORKSPACE = join(E2E_STORAGE_ROOT, "workspace", "default");
@@ -287,6 +292,37 @@ export async function clickTestIdByWebDriver(
   const element = $(sel(testId));
   await element.waitForClickable({ timeout, timeoutMsg });
   await element.click();
+}
+
+/**
+ * 从任务页打开设置 → 行为与工具 → 写入回复语言（失焦保存）→ 等落盘 → 返回。
+ * 空串表示清除：setting.json 里不再有 replyLanguage。
+ */
+export async function setReplyLanguageInSettings(value: string) {
+  await clickTestIdByDom(TID_TASK_SETTINGS_BUTTON, {
+    timeout: 15000,
+    timeoutMsg: "没有找到设置入口按钮",
+  });
+  await $(sel(TID_SETTINGS_PAGE)).waitForDisplayed({ timeout: 15000 });
+  await clickTestIdByDom(composeTestId(TID_SETTINGS_SECTION_NAV, "agentBehavior"), {
+    timeout: 15000,
+    timeoutMsg: "设置页没有出现行为与工具分区入口",
+  });
+  // 原生 setter 写值（不触发失焦），再真实 blur：走输入框的失焦保存路径。
+  await setInputValueByTestIdDom(TID_SETTINGS_REPLY_LANGUAGE_INPUT, value, {
+    timeout: 15000,
+    timeoutMsg: "回复语言输入框没有出现",
+  });
+  await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+  const expected = value.trim() || undefined;
+  await browser.waitUntil(async () => (await readSettings()).replyLanguage === expected, {
+    timeout: 15000,
+    timeoutMsg: `回复语言没有写入 setting.json: ${JSON.stringify(value)}`,
+  });
+  await clickTestIdByDom(TID_SETTINGS_BACK_BUTTON, {
+    timeout: 15000,
+    timeoutMsg: "设置页没有返回按钮",
+  });
 }
 
 export async function hoverTestIdByWebDriver(
@@ -1212,6 +1248,7 @@ export async function setCurrentElectronRendererContentSize(
         ok: true as const,
         appliedHeight,
         appliedWidth,
+        scaleFactor: electron.screen.getDisplayMatching(target.getBounds()).scaleFactor,
         zoomFactor: target.webContents.getZoomFactor(),
         snapshot: {
           height: originalHeight,
@@ -1230,9 +1267,12 @@ export async function setCurrentElectronRendererContentSize(
       `当前 WebDriver URL 没有精确匹配 Electron renderer 窗口: ${currentUrl}; candidates=${JSON.stringify(result.candidateUrls)}`,
     );
   }
+  // 根因：Windows 125% 等小数缩放下，窗口尺寸取整后内容区可差 2 像素（实测请求 760x641 得到 642）；
+  // 这不是窗口尺寸没有应用，整数缩放仍按 1 像素核对。
+  const sizeTolerance = Number.isInteger(result.scaleFactor) ? 1 : 2;
   if (
-    Math.abs(result.appliedWidth - width) > 1 ||
-    (height !== undefined && Math.abs(result.appliedHeight - height) > 1)
+    Math.abs(result.appliedWidth - width) > sizeTolerance ||
+    (height !== undefined && Math.abs(result.appliedHeight - height) > sizeTolerance)
   ) {
     await restoreElectronRendererContentSize(result.snapshot);
     throw new Error(

@@ -5,6 +5,7 @@ import { cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, join, win32 } from "node:path";
 import { homedir } from "node:os";
+import { readAssignedCredentialsFile } from "@zcode/shared/credential-security";
 import {
   DATA_BASE_DIR_FORBIDDEN_WINDOWS_INSTALL_DIR_ERROR_CODE,
   ZCODE_AGENT_RUNTIME,
@@ -56,6 +57,15 @@ export function getConversationWorkspaceDir(): string {
 /** 当前或目标数据根的产品 v2 目录，复制和凭据登记使用同一路径。 */
 export function getAppConfigDir(baseDir = getDataBaseDir()): string {
   return join(getZCodeDataRootDir(baseDir), "v2");
+}
+
+/**
+ * 本进程读写的凭据文件，所有凭据读写方的唯一解析入口。
+ * 进程装配的 ZCODE_CREDENTIALS_FILE 优先（只有使用自有凭据库的 Source Server Core 设置，
+ * 其 Agent 继承）；否则为 {appConfigDir}/credentials.json。调用时读取，不在模块加载时缓存。
+ */
+export function getCredentialsFilePath(): string {
+  return readAssignedCredentialsFile(process.env) ?? join(getAppConfigDir(), "credentials.json");
 }
 
 /**

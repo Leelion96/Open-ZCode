@@ -1,3 +1,4 @@
+import { PRODUCT_USER_DIRECTORY } from "@zcode/shared/product";
 import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
@@ -23,6 +24,10 @@ export interface ServerLayout {
   readonly updateLockFile: string;
   /** Supervisor 写出第一份状态前失败时的诊断摘要；不参与任何状态判断（R2 §7.1）。 */
   readonly supervisorStartupFailureFile: string;
+  /** 共享凭据按当前运行组件的用户资料配置定位，服务安装根沿用现有布局。 */
+  readonly sharedCredentialsFile: string;
+  /** Server 自有凭据文件；所在目录存在即表示已改用自有库（ZCT-2120452663971209216）。 */
+  readonly serverCredentialsFile: string;
 }
 
 export function getDefaultServerDataRoot(): string {
@@ -33,8 +38,9 @@ export function getDefaultServerDataRoot(): string {
 export function resolveServerLayout(serverRoot = getDefaultServerDataRoot()): ServerLayout {
   const root = resolve(serverRoot);
   const runDir = join(root, "run");
+  const dataBaseDir = inferDataBaseDir(root);
   return {
-    dataBaseDir: inferDataBaseDir(root),
+    dataBaseDir,
     serverRoot: root,
     releasesDir: join(root, "releases"),
     runDir,
@@ -56,6 +62,8 @@ export function resolveServerLayout(serverRoot = getDefaultServerDataRoot()): Se
     updateTransactionFile: join(root, "update-transaction.json"),
     updateLockFile: join(runDir, "update.lock"),
     supervisorStartupFailureFile: join(runDir, "supervisor-startup-failure.json"),
+    sharedCredentialsFile: join(dataBaseDir, PRODUCT_USER_DIRECTORY, "v2", "credentials.json"),
+    serverCredentialsFile: join(root, "credentials", "credentials.json"),
   };
 }
 

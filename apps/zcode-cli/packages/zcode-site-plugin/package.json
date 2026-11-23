@@ -8,10 +8,10 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "clean": "node ../../scripts/clean-dist.mjs",
+    "clean": "node scripts/build.mjs --clean",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test test/*.test.mjs && vitest run --config src/vitest.config.ts",
-    "lint": "oxlint src scripts --no-ignore"
+    "lint": "oxlint src scripts skills/site-deploy/scripts --no-ignore"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.0.0",

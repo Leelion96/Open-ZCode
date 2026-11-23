@@ -71,6 +71,7 @@ import {
 } from "./app/official-plugin-definitions.js";
 import { getCliStorageRoot, getPluginStorageRoot } from "./app/paths.js";
 import { type PluginStorageLock, withPluginStorageLock } from "./lib/plugin-storage-lock.js";
+import { resolveWorkspacePluginDiscovery } from "./workspace-plugin-trust/index.js";
 import {
   removeStoredPluginSecrets,
   resolvePluginSecretsPath,
@@ -328,6 +329,13 @@ export async function resolveZCodePlugins(
         officialPluginsEnabledByDefault: DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
         storageRoot: pluginStorageRoot,
         workingDirectory,
+        workspacePlugins: await resolveWorkspacePluginDiscovery({
+          configResult,
+          env: options.env,
+          logger: options.logger,
+          workingDirectory,
+          workspaceIdentity: options.workspaceIdentity,
+        }),
       },
       { signal: options.pluginPreparation?.signal },
     );

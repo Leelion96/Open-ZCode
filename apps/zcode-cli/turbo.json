@@ -7,6 +7,16 @@
       "outputs": ["dist/**"],
       "cache": true
     },
+    "@zcode/zcode-site-plugin#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/../../config/product.json",
+        "$TURBO_ROOT$/../../scripts/product-config.mjs",
+        "$TURBO_ROOT$/../../packages/shared/src/product.ts"
+      ],
+      "outputs": ["dist/**", "skills/site-deploy/dist/**"]
+    },
     "build:desktop-agent": {
       "dependsOn": [
         "@zcode/shared-types#build",
