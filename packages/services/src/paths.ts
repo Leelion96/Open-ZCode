@@ -43,9 +43,9 @@ export function getDataBaseDir(): string {
   return defaultDataBaseDir;
 }
 
-/** {dataBaseDir}/.zcode */
-export function getZCodeDataRootDir(): string {
-  return join(getDataBaseDir(), PRODUCT_USER_DIRECTORY);
+/** 产品在指定数据根下的用户资料目录。 */
+export function getZCodeDataRootDir(baseDir = getDataBaseDir()): string {
+  return join(baseDir, PRODUCT_USER_DIRECTORY);
 }
 
 /** 非项目对话共享的真实工作目录；默认 ~/.zcode/workspace/default。 */
@@ -53,9 +53,9 @@ export function getConversationWorkspaceDir(): string {
   return join(getZCodeDataRootDir(), "workspace", "default");
 }
 
-/** {dataBaseDir}/.zcode/v2 */
-export function getAppConfigDir(): string {
-  return join(getZCodeDataRootDir(), "v2");
+/** 当前或目标数据根的产品 v2 目录，复制和凭据登记使用同一路径。 */
+export function getAppConfigDir(baseDir = getDataBaseDir()): string {
+  return join(getZCodeDataRootDir(baseDir), "v2");
 }
 
 /**
@@ -267,8 +267,8 @@ export function getProviderWorkspaceConfigDir(): string {
  * state must only live at the default homedir location.
  */
 export async function copyDataDirectory(oldBaseDir: string, newBaseDir: string): Promise<void> {
-  const oldDir = join(oldBaseDir, PRODUCT_USER_DIRECTORY, "v2");
-  const newDir = join(newBaseDir, PRODUCT_USER_DIRECTORY, "v2");
+  const oldDir = getAppConfigDir(oldBaseDir);
+  const newDir = getAppConfigDir(newBaseDir);
   await cp(oldDir, newDir, {
     recursive: true,
     force: false,

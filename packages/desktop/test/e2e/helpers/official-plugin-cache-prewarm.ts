@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { readE2EProductUserDirectory } from "./e2e-worker-environment.js";
 
 /*
  * 官方插件缓存预热（docs/testing/conversation-session-automatic-e2e-ci.md「官方插件缓存预热」）。
@@ -15,7 +16,6 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const OFFICIAL_PLUGIN_CACHE_SEGMENTS = [
-  ".zcode",
   "cli",
   "plugins",
   "cache",
@@ -23,8 +23,8 @@ const OFFICIAL_PLUGIN_CACHE_SEGMENTS = [
 ] as const;
 const SEED_TIMEOUT_MS = 180_000;
 
-function officialPluginCacheDir(homeDir: string): string {
-  return join(homeDir, ...OFFICIAL_PLUGIN_CACHE_SEGMENTS);
+function officialPluginCacheDir(homeDir: string, userDirectory: string): string {
+  return join(homeDir, userDirectory, ...OFFICIAL_PLUGIN_CACHE_SEGMENTS);
 }
 
 /** 用 E2E 实际启动的 CLI 在模板 HOME 中 seed 官方插件缓存；`plugin list` 会完成 seed 后退出。 */
@@ -45,7 +45,9 @@ export async function prepareOfficialPluginCacheTemplate(input: {
     timeout: SEED_TIMEOUT_MS,
     windowsHide: true,
   });
-  if (!existsSync(officialPluginCacheDir(input.templateHome))) {
+  if (
+    !existsSync(officialPluginCacheDir(input.templateHome, await readE2EProductUserDirectory()))
+  ) {
     throw new Error(`官方插件缓存预热没有生成 cache 目录: ${input.templateHome}`);
   }
 }
@@ -55,8 +57,9 @@ export async function installOfficialPluginCacheTemplate(input: {
   homeDir: string;
   templateHome: string;
 }): Promise<boolean> {
-  const source = officialPluginCacheDir(input.templateHome);
+  const userDirectory = await readE2EProductUserDirectory();
+  const source = officialPluginCacheDir(input.templateHome, userDirectory);
   if (!existsSync(source)) return false;
-  await cp(source, officialPluginCacheDir(input.homeDir), { recursive: true });
+  await cp(source, officialPluginCacheDir(input.homeDir, userDirectory), { recursive: true });
   return true;
 }
